@@ -195,15 +195,17 @@ export class TelegramAdapter extends ChannelAdapter {
       // Notification topic → ignore
       if (threadId === this.notificationTopicId) return;
 
-      // Assistant topic → forward to assistant session (fire-and-forget)
+      // Assistant topic → send typing indicator and forward to assistant session
       if (threadId === this.assistantTopicId) {
+        ctx.replyWithChatAction("typing").catch(() => {});
         handleAssistantMessage(this.assistantSession, ctx.message.text).catch(
           (err) => log.error({ err }, "Assistant error"),
         );
         return;
       }
 
-      // Session topic → forward to core (fire-and-forget to avoid blocking polling)
+      // Session topic → send typing indicator and forward to core
+      ctx.replyWithChatAction("typing").catch(() => {});
       (this.core as OpenACPCore)
         .handleMessage({
           channelId: "telegram",

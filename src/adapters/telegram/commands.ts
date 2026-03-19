@@ -94,6 +94,12 @@ async function handleNew(
     const topicName = `🔄 New Session`;
     threadId = await createSessionTopic(botFromCtx(ctx), chatId, topicName);
 
+    // Let user know we're setting up (spawn + warm-up can take a while)
+    await ctx.api.sendMessage(chatId, `⏳ Setting up session, please wait...`, {
+      message_thread_id: threadId,
+      parse_mode: "HTML",
+    });
+
     const session = await core.handleNewSession(
       "telegram",
       agentName,
@@ -119,6 +125,9 @@ async function handleNew(
         parse_mode: "HTML",
       },
     );
+
+    // Warm up model cache in background while user types
+    session.warmup().catch((err) => log.error({ err }, "Warm-up error"));
   } catch (err) {
     // Clean up orphaned topic if session creation failed
     if (threadId) {
@@ -162,6 +171,12 @@ async function handleNewChat(
       chatId,
       topicName,
     );
+
+    await ctx.api.sendMessage(chatId, `⏳ Setting up session, please wait...`, {
+      message_thread_id: newThreadId,
+      parse_mode: "HTML",
+    });
+
     session.threadId = String(newThreadId);
 
     await ctx.api.sendMessage(
@@ -174,6 +189,9 @@ async function handleNewChat(
         parse_mode: "HTML",
       },
     );
+
+    // Warm up model cache in background while user types
+    session.warmup().catch((err) => log.error({ err }, "Warm-up error"));
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     await ctx.reply(`❌ ${escapeHtml(message)}`, { parse_mode: "HTML" });

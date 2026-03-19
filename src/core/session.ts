@@ -101,6 +101,30 @@ export class Session {
     }
   }
 
+  /** Fire-and-forget warm-up: primes model cache while user types their first message */
+  async warmup(): Promise<void> {
+    this.promptRunning = true
+    const prevHandler = this.agentInstance.onSessionUpdate
+    this.agentInstance.onSessionUpdate = () => {} // suppress warm-up output
+
+    try {
+      const start = Date.now()
+      await this.agentInstance.prompt('Reply with only "ready".')
+      this.log.info({ durationMs: Date.now() - start }, 'Warm-up complete')
+    } catch (err) {
+      this.log.error({ err }, 'Warm-up failed')
+    } finally {
+      this.agentInstance.onSessionUpdate = prevHandler
+      this.promptRunning = false
+
+      // Drain any prompts queued while warming up
+      if (this.promptQueue.length > 0) {
+        const next = this.promptQueue.shift()!
+        await this.runPrompt(next)
+      }
+    }
+  }
+
   async cancel(): Promise<void> {
     this.status = 'cancelled'
     this.log.info('Session cancelled')

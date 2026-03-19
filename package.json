@@ -8,6 +8,7 @@
     "dev": "pnpm --filter @openacp/core dev",
     "start": "node packages/core/dist/main.js"
   },
+  "packageManager": "pnpm@10.5.0",
   "engines": {
     "node": ">=20"
   },

@@ -103,12 +103,17 @@ export class TelegramAdapter extends ChannelAdapter {
     // Setup message routing
     this.setupRoutes();
 
-    // Start bot polling
+    // Start bot polling — spawn assistant and send welcome only after bot is ready
     this.bot.start({
       allowed_updates: ["message", "callback_query"],
-      onStart: () => log.info("Telegram bot started"),
+      onStart: () => {
+        log.info("Telegram bot started");
+        this.onBotReady().catch((err) => log.error("onBotReady error:", err));
+      },
     });
+  }
 
+  private async onBotReady(): Promise<void> {
     // Spawn assistant session
     try {
       this.assistantSession = await spawnAssistant(

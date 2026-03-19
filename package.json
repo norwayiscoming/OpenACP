@@ -1,8 +1,10 @@
 {
   "name": "openacp",
+  "version": "0.1.0",
   "private": true,
   "scripts": {
     "build": "pnpm -r build",
+    "build:publish": "tsx scripts/build-publish.ts",
     "dev": "pnpm --filter @openacp/core dev",
     "start": "node packages/core/dist/main.js"
   },
@@ -11,5 +13,10 @@
   },
   "dependencies": {
     "@zed-industries/claude-agent-acp": "^0.22.2"
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.0",
+    "tsup": "^8.5.1",
+    "tsx": "^4.21.0"
   }
 }

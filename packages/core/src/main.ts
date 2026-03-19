@@ -2,14 +2,15 @@
 
 import { ConfigManager } from './config.js'
 import { OpenACPCore } from './core.js'
+import { loadAdapterFactory } from './plugin-manager.js'
 import { log } from './log.js'
 
 let shuttingDown = false
 
-async function main() {
+export async function startServer() {
   // 1. Load config
   const configManager = new ConfigManager()
-  await configManager.load()  // exits if config missing/invalid
+  await configManager.load()
 
   const config = configManager.get()
   log.info('Config loaded from', configManager['configPath'])
@@ -17,14 +18,38 @@ async function main() {
   // 2. Create core
   const core = new OpenACPCore(configManager)
 
-  // 3. Register enabled adapters
-  if (config.channels.telegram?.enabled) {
-    // Resolve adapter from workspace root (not from core's node_modules, to avoid circular dep)
-    const adapterPath = new URL('../../adapters/telegram/dist/index.js', import.meta.url).pathname
-    // @ts-ignore — dynamic path import
-    const { TelegramAdapter } = await import(adapterPath)
-    core.registerAdapter('telegram', new TelegramAdapter(core, config.channels.telegram))
-    log.info('Telegram adapter registered')
+  // 3. Register adapters from config
+  for (const [channelName, channelConfig] of Object.entries(config.channels)) {
+    if (!channelConfig.enabled) continue
+
+    if (channelName === 'telegram') {
+      // Built-in adapter — try bundled import first, fall back to relative path for dev
+      let TelegramAdapter: any
+      try {
+        // @ts-ignore — optional peer dependency, may not be installed
+        const mod = await import('@openacp/adapter-telegram')
+        TelegramAdapter = mod.TelegramAdapter
+      } catch {
+        // Dev mode: resolve from workspace via relative path
+        const adapterPath = new URL('../../adapters/telegram/dist/index.js', import.meta.url).pathname
+        const mod = await import(adapterPath)
+        TelegramAdapter = mod.TelegramAdapter
+      }
+      core.registerAdapter('telegram', new TelegramAdapter(core, channelConfig))
+      log.info('Telegram adapter registered (built-in)')
+    } else if (channelConfig.adapter) {
+      // Plugin adapter
+      const factory = await loadAdapterFactory(channelConfig.adapter)
+      if (factory) {
+        const adapter = factory.createAdapter(core, channelConfig)
+        core.registerAdapter(channelName, adapter)
+        log.info(`${channelName} adapter registered (plugin: ${channelConfig.adapter})`)
+      } else {
+        log.error(`Skipping channel "${channelName}" — adapter "${channelConfig.adapter}" failed to load`)
+      }
+    } else {
+      log.error(`Channel "${channelName}" has no built-in adapter. Set "adapter" field to a plugin package.`)
+    }
   }
 
   if (core.adapters.size === 0) {
@@ -67,7 +92,11 @@ async function main() {
   })
 }
 
-main().catch((err) => {
-  log.error('Fatal:', err)
-  process.exit(1)
-})
+// Direct execution for dev (node packages/core/dist/main.js)
+const isDirectExecution = process.argv[1]?.endsWith('main.js')
+if (isDirectExecution) {
+  startServer().catch((err) => {
+    log.error('Fatal:', err)
+    process.exit(1)
+  })
+}

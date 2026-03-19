@@ -44,18 +44,18 @@ You send a message in Telegram → OpenACP forwards it to an AI coding agent via
 ### Install
 
 ```bash
-git clone https://github.com/your-username/OpenACP.git
-cd OpenACP
-pnpm install
-pnpm build
+npm install -g @openacp/cli
+openacp
 ```
+
+On first run, OpenACP creates `~/.openacp/config.json` with defaults.
 
 ### Configure
 
 Run once to generate the default config:
 
 ```bash
-node packages/core/dist/main.js
+openacp
 ```
 
 Edit `~/.openacp/config.json`:
@@ -89,7 +89,13 @@ Edit `~/.openacp/config.json`:
 ### Run
 
 ```bash
-node packages/core/dist/main.js
+openacp
+```
+
+Or without global install:
+
+```bash
+openacp
 ```
 
 OpenACP will auto-create two topics in your group:
@@ -176,6 +182,30 @@ Config file: `~/.openacp/config.json`
 | `OPENACP_DEFAULT_AGENT` | `defaultAgent` |
 | `OPENACP_DEBUG` | Enable debug logging (set to `1`) |
 
+## Plugins
+
+Install additional adapters:
+
+```bash
+openacp install @openacp/adapter-discord
+openacp plugins                              # list installed
+openacp uninstall @openacp/adapter-discord   # remove
+```
+
+Configure in `~/.openacp/config.json`:
+
+```json
+{
+  "channels": {
+    "discord": {
+      "enabled": true,
+      "adapter": "@openacp/adapter-discord",
+      "botToken": "..."
+    }
+  }
+}
+```
+
 ## Project Structure
 
 ```
@@ -228,6 +258,21 @@ class MyAdapter extends ChannelAdapter {
   async createSessionThread(sessionId, name) { /* create thread */ }
   async renameSessionThread(sessionId, name) { /* rename thread */ }
 }
+```
+
+## Development
+
+```bash
+git clone https://github.com/nicepkg/OpenACP.git
+cd OpenACP
+pnpm install
+pnpm build
+```
+
+Run locally:
+
+```bash
+node packages/core/dist/main.js
 ```
 
 ## License

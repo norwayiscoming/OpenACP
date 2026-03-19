@@ -4,13 +4,12 @@ import * as path from 'node:path'
 import * as os from 'node:os'
 import { log } from './log.js'
 
-const TelegramChannelSchema = z.object({
+const BaseChannelSchema = z.object({
   enabled: z.boolean().default(false),
-  botToken: z.string(),
-  chatId: z.number(),
-  notificationTopicId: z.number().nullable().default(null),
-  assistantTopicId: z.number().nullable().default(null),
-}).optional()
+  adapter: z.string().optional(),  // package name for plugin adapters
+}).passthrough()
+
+export const PLUGINS_DIR = path.join(os.homedir(), '.openacp', 'plugins')
 
 const AgentSchema = z.object({
   command: z.string(),
@@ -20,9 +19,7 @@ const AgentSchema = z.object({
 })
 
 export const ConfigSchema = z.object({
-  channels: z.object({
-    telegram: TelegramChannelSchema,
-  }),
+  channels: z.record(z.string(), BaseChannelSchema),
   agents: z.record(z.string(), AgentSchema),
   defaultAgent: z.string(),
   workspace: z.object({

@@ -1,0 +1,12 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "dist-publish/dist",
+    "rootDir": ".",
+    "types": ["node"]
+  },
+  "include": [
+    "packages/core/src/**/*",
+    "packages/adapters/telegram/src/**/*"
+  ]
+}

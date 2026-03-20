@@ -96,7 +96,7 @@ export class TelegramAdapter extends ChannelAdapter {
   private notificationTopicId!: number;
   private assistantTopicId!: number;
   private skillMessages: Map<string, number> = new Map(); // sessionId → pinned messageId
-  private sendQueue = new TelegramSendQueue()
+  private sendQueue = new TelegramSendQueue(3000)
 
   constructor(core: OpenACPCore, config: TelegramChannelConfig) {
     super(core, config as never);
@@ -128,6 +128,11 @@ export class TelegramAdapter extends ChannelAdapter {
         const retryAfter =
           ((result as { parameters?: { retry_after?: number } }).parameters
             ?.retry_after ?? 5) + 1;
+        // Drop pending text items on message-related 429
+        const rateLimitedMethods = ['sendMessage', 'editMessageText', 'editMessageReplyMarkup'];
+        if (rateLimitedMethods.includes(method)) {
+          this.sendQueue.onRateLimited();
+        }
         log.warn(
           { method, retryAfter, attempt: attempt + 1 },
           "Rate limited by Telegram, retrying",
@@ -296,6 +301,7 @@ export class TelegramAdapter extends ChannelAdapter {
 
       // Assistant topic → send typing indicator and forward to assistant session
       if (threadId === this.assistantTopicId) {
+        await this.finalizeDraft(this.assistantSession!.id);
         ctx.replyWithChatAction("typing").catch(() => {});
         handleAssistantMessage(this.assistantSession, ctx.message.text).catch(
           (err) => log.error({ err }, "Assistant error"),
@@ -304,6 +310,8 @@ export class TelegramAdapter extends ChannelAdapter {
       }
 
       // Session topic → send typing indicator and forward to core
+      const sessionId = (this.core as OpenACPCore).sessionManager.getSessionByThread("telegram", String(threadId))?.id;
+      if (sessionId) await this.finalizeDraft(sessionId);
       ctx.replyWithChatAction("typing").catch(() => {});
       (this.core as OpenACPCore)
         .handleMessage({

@@ -3,10 +3,10 @@ import { InlineKeyboard } from "grammy";
 import type { OpenACPCore } from "../../core/index.js";
 import { escapeHtml } from "./formatting.js";
 import { createSessionTopic } from "./topics.js";
-import { createChildLogger } from '../../core/log.js'
-import { nanoid } from 'nanoid'
-import type { AgentCommand } from '../../core/index.js'
-const log = createChildLogger({ module: 'telegram-commands' })
+import { createChildLogger } from "../../core/log.js";
+import { nanoid } from "nanoid";
+import type { AgentCommand } from "../../core/index.js";
+const log = createChildLogger({ module: "telegram-commands" });
 
 export function setupCommands(
   bot: Bot,
@@ -88,7 +88,7 @@ async function handleNew(
   const agentName = args[0];
   const workspace = args[1];
 
-  log.info({ userId: ctx.from?.id, agentName }, 'New session command')
+  log.info({ userId: ctx.from?.id, agentName }, "New session command");
 
   // Create topic first so threadId is ready before session events fire
   let threadId: number | undefined;
@@ -108,6 +108,11 @@ async function handleNew(
       workspace,
     );
     session.threadId = String(threadId);
+
+    // Persist platform mapping
+    await core.sessionManager.updateSessionPlatform(session.id, {
+      topicId: threadId,
+    });
 
     // Rename topic with actual agent name
     const finalName = `🔄 ${session.agentName} — New Session`;
@@ -181,6 +186,11 @@ async function handleNewChat(
 
     session.threadId = String(newThreadId);
 
+    // Persist platform mapping for new chat
+    await core.sessionManager.updateSessionPlatform(session.id, {
+      topicId: newThreadId,
+    });
+
     await ctx.api.sendMessage(
       chatId,
       `✅ New chat (same agent &amp; workspace)\n` +
@@ -209,7 +219,7 @@ async function handleCancel(ctx: Context, core: OpenACPCore): Promise<void> {
     String(threadId),
   );
   if (session) {
-    log.info({ sessionId: session.id }, 'Cancel session command')
+    log.info({ sessionId: session.id }, "Cancel session command");
     await session.cancel();
     await ctx.reply("⛔ Session cancelled.", { parse_mode: "HTML" });
   }
@@ -290,64 +300,63 @@ function botFromCtx(ctx: Context): Bot {
 
 // Skill command callback lookup map (short key → session + command)
 interface SkillCallbackEntry {
-  sessionId: string
-  commandName: string
+  sessionId: string;
+  commandName: string;
 }
 
-const skillCallbackMap = new Map<string, SkillCallbackEntry>()
+const skillCallbackMap = new Map<string, SkillCallbackEntry>();
 
 export function buildSkillKeyboard(
   sessionId: string,
   commands: AgentCommand[],
 ): InlineKeyboard {
-  const keyboard = new InlineKeyboard()
-  const sorted = [...commands].sort((a, b) => a.name.localeCompare(b.name))
+  const keyboard = new InlineKeyboard();
+  const sorted = [...commands].sort((a, b) => a.name.localeCompare(b.name));
   for (let i = 0; i < sorted.length; i++) {
-    const cmd = sorted[i]
-    const key = nanoid(8)
-    skillCallbackMap.set(key, { sessionId, commandName: cmd.name })
-    keyboard.text(`/${cmd.name}`, `s:${key}`)
+    const cmd = sorted[i];
+    const key = nanoid(8);
+    skillCallbackMap.set(key, { sessionId, commandName: cmd.name });
+    keyboard.text(`/${cmd.name}`, `s:${key}`);
     if (i % 2 === 1 && i < sorted.length - 1) {
-      keyboard.row()
+      keyboard.row();
     }
   }
-  return keyboard
+  return keyboard;
 }
 
 export function clearSkillCallbacks(sessionId: string): void {
   for (const [key, entry] of skillCallbackMap) {
     if (entry.sessionId === sessionId) {
-      skillCallbackMap.delete(key)
+      skillCallbackMap.delete(key);
     }
   }
 }
 
-export function setupSkillCallbacks(
-  bot: Bot,
-  core: OpenACPCore,
-): void {
+export function setupSkillCallbacks(bot: Bot, core: OpenACPCore): void {
   bot.callbackQuery(/^s:/, async (ctx) => {
     try {
-      await ctx.answerCallbackQuery()
-    } catch { /* expired */ }
+      await ctx.answerCallbackQuery();
+    } catch {
+      /* expired */
+    }
 
-    const key = ctx.callbackQuery.data.slice(2)
-    const entry = skillCallbackMap.get(key)
-    if (!entry) return
+    const key = ctx.callbackQuery.data.slice(2);
+    const entry = skillCallbackMap.get(key);
+    if (!entry) return;
 
-    const session = core.sessionManager.getSession(entry.sessionId)
-    if (!session || session.status !== 'active') return
+    const session = core.sessionManager.getSession(entry.sessionId);
+    if (!session || session.status !== "active") return;
 
-    await session.enqueuePrompt(`/${entry.commandName}`)
-  })
+    await session.enqueuePrompt(`/${entry.commandName}`);
+  });
 }
 
 export const STATIC_COMMANDS = [
-  { command: 'new', description: 'Create new session' },
-  { command: 'new_chat', description: 'New chat, same agent & workspace' },
-  { command: 'cancel', description: 'Cancel current session' },
-  { command: 'status', description: 'Show status' },
-  { command: 'agents', description: 'List available agents' },
-  { command: 'help', description: 'Help' },
-  { command: 'menu', description: 'Show menu' },
-]
+  { command: "new", description: "Create new session" },
+  { command: "new_chat", description: "New chat, same agent & workspace" },
+  { command: "cancel", description: "Cancel current session" },
+  { command: "status", description: "Show status" },
+  { command: "agents", description: "List available agents" },
+  { command: "help", description: "Help" },
+  { command: "menu", description: "Show menu" },
+];

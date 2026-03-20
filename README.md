@@ -44,39 +44,8 @@ You send a message in Telegram → OpenACP forwards it to an AI coding agent via
 ### Install
 
 ```bash
-git clone https://github.com/your-username/OpenACP.git
-cd OpenACP
-pnpm install
-pnpm build
-```
-
-### Configure
-
-Run once to generate the default config:
-
-```bash
-node packages/core/dist/main.js
-```
-
-Edit `~/.openacp/config.json`:
-
-```json
-{
-  "channels": {
-    "telegram": {
-      "enabled": true,
-      "botToken": "YOUR_BOT_TOKEN",
-      "chatId": -100YOUR_CHAT_ID
-    }
-  },
-  "agents": {
-    "claude": {
-      "command": "claude-agent-acp",
-      "args": []
-    }
-  },
-  "defaultAgent": "claude"
-}
+npm install -g @openacp/cli
+openacp
 ```
 
 ### Setup Telegram
@@ -89,12 +58,21 @@ Edit `~/.openacp/config.json`:
 ### Run
 
 ```bash
-node packages/core/dist/main.js
+openacp
 ```
 
+On first run (no config file), an **interactive setup wizard** walks you through:
+
+1. **Telegram** — bot token + chat ID (validated against Telegram API)
+2. **Agents** — auto-detects installed agents, select which to enable
+3. **Workspace** — base directory for project workspaces
+4. **Security** — allowed users, session limits, timeout
+
+Config is saved to `~/.openacp/config.json`. See [docs/setup-guide.md](docs/setup-guide.md) for details.
+
 OpenACP will auto-create two topics in your group:
-- **📋 Notifications** — aggregated alerts with deep links
-- **🤖 Assistant** — AI helper for managing sessions
+- Notifications — aggregated alerts with deep links
+- Assistant — AI helper for managing sessions
 
 ## Usage
 
@@ -176,6 +154,30 @@ Config file: `~/.openacp/config.json`
 | `OPENACP_DEFAULT_AGENT` | `defaultAgent` |
 | `OPENACP_DEBUG` | Enable debug logging (set to `1`) |
 
+## Plugins
+
+Install additional adapters:
+
+```bash
+openacp install @openacp/adapter-discord
+openacp plugins                              # list installed
+openacp uninstall @openacp/adapter-discord   # remove
+```
+
+Configure in `~/.openacp/config.json`:
+
+```json
+{
+  "channels": {
+    "discord": {
+      "enabled": true,
+      "adapter": "@openacp/adapter-discord",
+      "botToken": "..."
+    }
+  }
+}
+```
+
 ## Project Structure
 
 ```
@@ -186,6 +188,7 @@ openacp/
         main.ts                → Entry point
         core.ts                → OpenACPCore orchestrator
         config.ts              → ConfigManager + Zod validation
+        setup.ts               → Interactive setup wizard
         session.ts             → Session (prompt queue, auto-name)
         agent-instance.ts      → ACP SDK integration
         channel.ts             → ChannelAdapter abstract class
@@ -228,6 +231,21 @@ class MyAdapter extends ChannelAdapter {
   async createSessionThread(sessionId, name) { /* create thread */ }
   async renameSessionThread(sessionId, name) { /* rename thread */ }
 }
+```
+
+## Development
+
+```bash
+git clone https://github.com/nicepkg/OpenACP.git
+cd OpenACP
+pnpm install
+pnpm build
+```
+
+Run locally:
+
+```bash
+node packages/core/dist/main.js
 ```
 
 ## License

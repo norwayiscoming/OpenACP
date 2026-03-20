@@ -190,21 +190,16 @@ export class OpenACPCore {
     }
 
     session.agentInstance.onPermissionRequest = async (request: PermissionRequest) => {
-      // Send permission UI to session topic
-      await adapter.sendPermissionRequest(session.id, request)
-
-      // Send notification with deep link
-      await this.notificationManager.notify(session.channelId, {
-        sessionId: session.id,
-        sessionName: session.name,
-        type: 'permission',
-        summary: request.description,
-      })
-
-      // Wait for user response — adapter resolves this promise
-      return new Promise<string>((resolve) => {
+      // Set pending BEFORE sending UI to avoid race condition
+      const promise = new Promise<string>((resolve) => {
         session.pendingPermission = { requestId: request.id, resolve }
       })
+
+      // Send permission UI to session topic (notification is sent by adapter)
+      await adapter.sendPermissionRequest(session.id, request)
+
+      // Wait for user response — adapter resolves this promise
+      return promise
     }
   }
 }

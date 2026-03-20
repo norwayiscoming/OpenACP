@@ -55,34 +55,68 @@ export function markdownToTelegramHtml(md: string): string {
   return text
 }
 
-export function formatToolCall(tool: { id: string; name?: string; kind?: string; status?: string }): string {
-  const statusIcon: Record<string, string> = {
-    pending: '⏳',
-    in_progress: '⏳',
-    completed: '✅',
-    failed: '❌',
-  }
-  const kindIcon: Record<string, string> = {
-    read: '📄', edit: '✏️', delete: '🗑️', execute: '⚡',
-    search: '🔍', fetch: '🌐', think: '💭',
-  }
-  const si = statusIcon[tool.status || ''] || '🔧'
-  const ki = kindIcon[tool.kind || ''] || '🔧'
-  return `${ki} ${si} <b>${escapeHtml(tool.name || 'Tool')}</b>`
+const STATUS_ICON: Record<string, string> = {
+  pending: '⏳',
+  in_progress: '🔄',
+  completed: '✅',
+  failed: '❌',
 }
 
-export function formatToolUpdate(update: { id: string; status: string; content?: unknown }): string {
-  const statusIcon: Record<string, string> = {
-    pending: '⏳',
-    in_progress: '⏳',
-    completed: '✅',
-    failed: '❌',
+const KIND_ICON: Record<string, string> = {
+  read: '📖', edit: '✏️', delete: '🗑️', execute: '▶️',
+  search: '🔍', fetch: '🌐', think: '🧠', move: '📦', other: '🛠️',
+}
+
+function extractContentText(content: unknown): string {
+  if (!content) return ''
+  if (typeof content === 'string') return content
+  if (Array.isArray(content)) {
+    return content
+      .map((c: any) => extractContentText(c))
+      .filter(Boolean)
+      .join('\n')
   }
-  const si = statusIcon[update.status] || '🔧'
-  let text = `${si} <b>Tool ${update.status}</b>`
-  if (update.content) {
-    const contentStr = typeof update.content === 'string' ? update.content : JSON.stringify(update.content)
-    text += `\n<pre>${escapeHtml(contentStr)}</pre>`
+  if (typeof content === 'object' && content !== null) {
+    const c = content as any
+    // ACP content blocks: {type: ..., text: ...} or {type: ..., content: ...}
+    if (c.type === 'text' && typeof c.text === 'string') return c.text
+    if (typeof c.text === 'string') return c.text
+    if (typeof c.content === 'string') return c.content
+    // Tool input/output objects
+    if (c.input) return extractContentText(c.input)
+    if (c.output) return extractContentText(c.output)
+    // Fallback: pretty-print JSON (but skip type-only objects)
+    const keys = Object.keys(c).filter(k => k !== 'type')
+    if (keys.length === 0) return ''
+    return JSON.stringify(c, null, 2)
+  }
+  return String(content)
+}
+
+function truncateContent(text: string, maxLen = 3800): string {
+  if (text.length <= maxLen) return text
+  return text.slice(0, maxLen) + '\n… (truncated)'
+}
+
+export function formatToolCall(tool: { id: string; name?: string; kind?: string; status?: string; content?: unknown }): string {
+  const si = STATUS_ICON[tool.status || ''] || '🔧'
+  const ki = KIND_ICON[tool.kind || ''] || '🛠️'
+  let text = `${si} ${ki} <b>${escapeHtml(tool.name || 'Tool')}</b>`
+  const details = extractContentText(tool.content)
+  if (details) {
+    text += `\n<pre>${escapeHtml(truncateContent(details))}</pre>`
+  }
+  return text
+}
+
+export function formatToolUpdate(update: { id: string; name?: string; kind?: string; status: string; content?: unknown }): string {
+  const si = STATUS_ICON[update.status] || '🔧'
+  const ki = KIND_ICON[update.kind || ''] || '🛠️'
+  const name = update.name || 'Tool'
+  let text = `${si} ${ki} <b>${escapeHtml(name)}</b>`
+  const details = extractContentText(update.content)
+  if (details) {
+    text += `\n<pre>${escapeHtml(truncateContent(details))}</pre>`
   }
   return text
 }

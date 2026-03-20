@@ -84,14 +84,11 @@ async function handleNew(
   const agentName = args[0];
   const workspace = args[1];
 
+  // Create topic first so threadId is ready before session events fire
+  let threadId: number | undefined;
   try {
-    // Create topic first so threadId is ready before session events fire
     const topicName = `🔄 New Session`;
-    const threadId = await createSessionTopic(
-      botFromCtx(ctx),
-      chatId,
-      topicName,
-    );
+    threadId = await createSessionTopic(botFromCtx(ctx), chatId, topicName);
 
     const session = await core.handleNewSession(
       "telegram",
@@ -119,6 +116,14 @@ async function handleNew(
       },
     );
   } catch (err) {
+    // Clean up orphaned topic if session creation failed
+    if (threadId) {
+      try {
+        await ctx.api.deleteForumTopic(chatId, threadId);
+      } catch {
+        /* ignore cleanup failures */
+      }
+    }
     const message = err instanceof Error ? err.message : String(err);
     await ctx.reply(`❌ ${escapeHtml(message)}`, { parse_mode: "HTML" });
   }

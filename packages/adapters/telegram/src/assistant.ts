@@ -17,12 +17,14 @@ export async function spawnAssistant(
   );
   session.threadId = String(assistantTopicId);
 
-  // Send system prompt BEFORE wiring events so the agent's initial response
-  // is processed silently (threadId is set but events not yet forwarded)
+  // Send system prompt BEFORE wiring events. enqueuePrompt awaits the full
+  // agent response, so by the time it returns the system prompt conversation
+  // is complete. Since no event handler is wired yet, the response is
+  // intentionally discarded — users only see responses to their own messages.
   const systemPrompt = buildAssistantSystemPrompt(config);
   await session.enqueuePrompt(systemPrompt);
 
-  // Wire events to adapter after system prompt is queued
+  // Wire events to adapter — only messages after this point reach the user
   core.wireSessionEvents(session, adapter);
 
   return session;

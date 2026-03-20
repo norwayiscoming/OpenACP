@@ -183,6 +183,7 @@ export class AgentInstance {
               name: update.title,
               kind: update.kind ?? undefined,
               status: update.status ?? 'pending',
+              content: update.content ?? undefined,
             }
             break
           case 'tool_call_update':
@@ -190,6 +191,7 @@ export class AgentInstance {
               type: 'tool_update',
               id: update.toolCallId,
               status: update.status ?? 'pending',
+              content: update.content ?? undefined,
             }
             break
           case 'plan':

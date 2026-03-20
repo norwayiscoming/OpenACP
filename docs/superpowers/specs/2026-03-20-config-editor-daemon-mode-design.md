@@ -27,7 +27,7 @@ autoStart: z.boolean().default(false)
 | `openacp start` | Force daemon mode (regardless of config) |
 | `openacp stop` | Reads PID from `~/.openacp/openacp.pid`, sends SIGTERM |
 | `openacp status` | Checks PID file, reports running/stopped |
-| `openacp logs` | Tails `~/.openacp/logs/openacp.log` |
+| `openacp logs` | Reads `logDir` from config, tails active log file with `tail -f -n 50` |
 | `openacp config` | Menu-based config editor |
 | `openacp --foreground` | Force foreground (overrides `runMode: daemon`) |
 | `openacp --daemon-child` | Internal flag — actual server process spawned by daemon mode |
@@ -36,15 +36,22 @@ autoStart: z.boolean().default(false)
 
 1. Check `~/.openacp/openacp.pid` — if process alive, print "Already running (PID xxx)" and exit
 2. Spawn `node <cli-path> --daemon-child` with `{ detached: true, stdio: 'ignore' }`
-3. Write child PID to `~/.openacp/openacp.pid`
+3. **Parent** writes child PID to `~/.openacp/openacp.pid` (single writer — child does NOT write PID)
 4. Parent exits immediately
 
 ### `--daemon-child` Behavior
 
-- Redirects stdout/stderr to `~/.openacp/logs/openacp.log`
-- Writes own PID to `~/.openacp/openacp.pid`
+- Initializes pino logger before any output (structured JSON logs, consistent with existing format)
+- Redirects stdout/stderr to log file at configured `logDir` path
 - Runs `startServer()` as normal
 - On shutdown (SIGTERM): removes PID file
+
+### Foreground/Daemon Interaction
+
+- `openacp --foreground` does NOT write a PID file — it runs like the current behavior
+- `openacp start` and daemon-mode `openacp` always check/write PID file
+- `openacp stop` only affects daemon processes (PID file). Foreground processes are stopped with Ctrl+C as usual
+- If a foreground instance is running and user runs `openacp start`, the daemon starts independently (no conflict — they are separate processes)
 
 ## Menu-based Config Editor
 
@@ -82,6 +89,7 @@ Selecting a group shows current values and edit options:
 - After editing a field → returns to group menu
 - Back → returns to main menu
 - Exit → saves config to disk
+- Ctrl+C at any point → discards unsaved changes (same as existing setup wizard's `ExitPromptError` handling)
 
 ### Run Mode Submenu
 
@@ -94,8 +102,11 @@ Selecting a group shows current values and edit options:
     ← Back
 ```
 
-- "Switch to daemon" → sets `runMode: 'daemon'`, `autoStart: true`, installs OS service
-- "Switch to foreground" → sets `runMode: 'foreground'`, `autoStart: false`, removes OS service
+- "Switch to daemon" → sets `runMode: 'daemon'`, installs OS service, sets `autoStart: true`
+- "Switch to foreground" → sets `runMode: 'foreground'`, removes OS service, sets `autoStart: false`
+- "Toggle auto-start" → independently toggle `autoStart` (install/remove OS service without changing `runMode`)
+
+Users can run daemon mode without auto-start, or enable auto-start independently.
 
 ## Auto-start on Boot
 
@@ -119,9 +130,9 @@ File: `~/Library/LaunchAgents/com.openacp.daemon.plist`
   <key>KeepAlive</key>
   <true/>
   <key>StandardOutPath</key>
-  <string>~/.openacp/logs/openacp.log</string>
+  <string>/Users/username/.openacp/logs/openacp.log</string>
   <key>StandardErrorPath</key>
-  <string>~/.openacp/logs/openacp.log</string>
+  <string>/Users/username/.openacp/logs/openacp.log</string>
 </dict>
 </plist>
 ```
@@ -152,6 +163,14 @@ WantedBy=default.target
 
 `process.platform === 'darwin'` → launchd, `'linux'` → systemd.
 
+### Windows
+
+Daemon mode and auto-start are not supported on Windows. If `runMode: 'daemon'` is set on Windows, fall back to foreground with a warning. The onboarding step will not show the daemon option on Windows.
+
+### Path Expansion
+
+All paths in generated service files (plist, systemd) must use absolute paths via `os.homedir()`. Tilde (`~`) is NOT expanded by launchd or systemd.
+
 ## Onboarding Changes
 
 Add step 4 after Workspace:
@@ -173,7 +192,7 @@ Add step 4 after Workspace:
 - **Background** → `runMode: 'daemon'`, `autoStart: true` → install OS service → spawn daemon → print "OpenACP is running in background (PID xxx)"
 - **Foreground** → `runMode: 'foreground'`, `autoStart: false` → start server directly (current behavior)
 
-Step numbering updates: `[1/4] Telegram`, `[2/4] Agent` (now explicitly shown), `[3/4] Workspace`, `[4/4] Run Mode`.
+Step numbering updates: `[1/3] Telegram` (includes bot token + group chat as before), `[2/3] Workspace`, `[3/3] Run Mode`. Agent detection remains non-interactive (auto-detect, print result) — no step header needed.
 
 ## New Files
 

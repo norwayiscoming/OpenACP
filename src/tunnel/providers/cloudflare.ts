@@ -1,6 +1,7 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import { createChildLogger } from '../../core/log.js'
 import type { TunnelProvider } from '../provider.js'
+import { ensureCloudflared } from './install-cloudflared.js'
 
 const log = createChildLogger({ module: 'cloudflare-tunnel' })
 
@@ -14,6 +15,9 @@ export class CloudflareTunnelProvider implements TunnelProvider {
   }
 
   async start(localPort: number): Promise<string> {
+    // Auto-install cloudflared if not present
+    const binaryPath = await ensureCloudflared()
+
     const args = ['tunnel', '--url', `http://localhost:${localPort}`]
     if (this.options.domain) {
       args.push('--hostname', String(this.options.domain))
@@ -22,16 +26,14 @@ export class CloudflareTunnelProvider implements TunnelProvider {
     return new Promise<string>((resolve, reject) => {
       const timeout = setTimeout(() => {
         this.stop()
-        reject(new Error('Cloudflare tunnel timed out after 30s. Is cloudflared installed?'))
+        reject(new Error('Cloudflare tunnel timed out after 30s'))
       }, 30_000)
 
       try {
-        this.child = spawn('cloudflared', args, { stdio: ['ignore', 'pipe', 'pipe'] })
+        this.child = spawn(binaryPath, args, { stdio: ['ignore', 'pipe', 'pipe'] })
       } catch {
         clearTimeout(timeout)
-        reject(new Error(
-          'Failed to start cloudflared. Install it from https://developers.cloudflare.com/cloudflare-one/connections/connect-apps/install-and-setup/installation/'
-        ))
+        reject(new Error(`Failed to start cloudflared at ${binaryPath}`))
         return
       }
 
@@ -54,9 +56,7 @@ export class CloudflareTunnelProvider implements TunnelProvider {
 
       this.child.on('error', (err) => {
         clearTimeout(timeout)
-        reject(new Error(
-          `cloudflared failed to start: ${err.message}. Install it from https://developers.cloudflare.com/cloudflare-one/connections/connect-apps/install-and-setup/installation/`
-        ))
+        reject(new Error(`cloudflared failed to start: ${err.message}`))
       })
 
       this.child.on('exit', (code) => {

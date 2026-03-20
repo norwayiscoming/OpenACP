@@ -1,4 +1,4 @@
-import { Bot } from "grammy";
+import { Bot, InlineKeyboard } from "grammy";
 import {
   ChannelAdapter,
   type OpenACPCore,
@@ -39,6 +39,12 @@ import {
   formatPlan,
   formatUsage,
 } from "./formatting.js";
+import {
+  detectAction,
+  storeAction,
+  buildActionKeyboard,
+  setupActionCallbacks,
+} from "./action-detect.js";
 
 /**
  * Wraps native fetch to work around grammY's polyfilled AbortController.
@@ -157,6 +163,12 @@ export class TelegramAdapter extends ChannelAdapter {
     // Callback registration order matters!
     // Specific regex handlers first, catch-all last.
     setupSkillCallbacks(this.bot, this.core as OpenACPCore);
+    setupActionCallbacks(
+      this.bot,
+      this.core as OpenACPCore,
+      this.telegramConfig.chatId,
+      () => this.assistantSession?.id,
+    );
     setupMenuCallbacks(
       this.bot,
       this.core as OpenACPCore,
@@ -389,6 +401,7 @@ export class TelegramAdapter extends ChannelAdapter {
       }
 
       case "usage": {
+        await this.finalizeDraft(sessionId);
         // Show usage stats
         await this.bot.api.sendMessage(
           this.telegramConfig.chatId,
@@ -621,9 +634,22 @@ export class TelegramAdapter extends ChannelAdapter {
 
   private async finalizeDraft(sessionId: string): Promise<void> {
     const draft = this.sessionDrafts.get(sessionId);
-    if (draft) {
-      await draft.finalize();
-      this.sessionDrafts.delete(sessionId);
+    if (!draft) return;
+
+    // Detect actions in assistant responses and pass keyboard to finalize in one API call
+    let keyboard: InlineKeyboard | undefined;
+    if (sessionId === this.assistantSession?.id) {
+      const fullText = draft.getBuffer();
+      if (fullText) {
+        const detected = detectAction(fullText);
+        if (detected) {
+          const actionId = storeAction(detected);
+          keyboard = buildActionKeyboard(actionId, detected);
+        }
+      }
     }
+
+    await draft.finalize(keyboard);
+    this.sessionDrafts.delete(sessionId);
   }
 }

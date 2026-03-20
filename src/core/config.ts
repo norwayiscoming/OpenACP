@@ -72,6 +72,12 @@ export const ConfigSchema = z.object({
     })
     .default({}),
   logging: LoggingSchema,
+  runMode: z.enum(['foreground', 'daemon']).default('foreground'),
+  autoStart: z.boolean().default(false),
+  api: z.object({
+    port: z.number().default(21420),
+    host: z.string().default('127.0.0.1'),
+  }).default({}),
   sessionStore: z
     .object({
       ttlDays: z.number().default(30),
@@ -240,6 +246,8 @@ export class ConfigManager {
       ["OPENACP_TELEGRAM_BOT_TOKEN", ["channels", "telegram", "botToken"]],
       ["OPENACP_TELEGRAM_CHAT_ID", ["channels", "telegram", "chatId"]],
       ["OPENACP_DEFAULT_AGENT", ["defaultAgent"]],
+      ["OPENACP_RUN_MODE", ["runMode"]],
+      ["OPENACP_API_PORT", ["api", "port"]],
     ];
     for (const [envVar, configPath] of overrides) {
       const value = process.env[envVar];
@@ -250,8 +258,8 @@ export class ConfigManager {
           target = target[configPath[i]];
         }
         const key = configPath[configPath.length - 1];
-        // Convert chatId to number
-        target[key] = key === "chatId" ? Number(value) : value;
+        // Convert numeric fields to number
+        target[key] = (key === "chatId" || key === "port") ? Number(value) : value;
       }
     }
 

@@ -1,8 +1,9 @@
 import type { Bot, Context } from "grammy";
 import { InlineKeyboard } from "grammy";
 import type { OpenACPCore } from "../../core/index.js";
+import type { Session } from "../../core/session.js";
 import { escapeHtml } from "./formatting.js";
-import { createSessionTopic } from "./topics.js";
+import { createSessionTopic, renameSessionTopic } from "./topics.js";
 import { createChildLogger } from "../../core/log.js";
 import { nanoid } from "nanoid";
 import type { AgentCommand } from "../../core/index.js";
@@ -136,6 +137,7 @@ async function handleNew(
     // Warm up model cache in background while user types
     session.warmup().catch((err) => log.error({ err }, "Warm-up error"));
   } catch (err) {
+    log.error({ err }, "Session creation failed");
     // Clean up orphaned topic if session creation failed
     if (threadId) {
       try {
@@ -144,7 +146,7 @@ async function handleNew(
         /* ignore cleanup failures */
       }
     }
-    const message = err instanceof Error ? err.message : String(err);
+    const message = err instanceof Error ? err.message : (typeof err === 'object' ? JSON.stringify(err) : String(err));
     await ctx.reply(`❌ ${escapeHtml(message)}`, { parse_mode: "HTML" });
   }
 }
@@ -349,6 +351,69 @@ export function setupSkillCallbacks(bot: Bot, core: OpenACPCore): void {
 
     await session.enqueuePrompt(`/${entry.commandName}`);
   });
+}
+
+export async function executeNewSession(
+  bot: Bot,
+  core: OpenACPCore,
+  chatId: number,
+  agentName?: string,
+  workspace?: string,
+): Promise<{ session: Session; threadId: number }> {
+  // Create topic with generic name first (same as original handleNew)
+  const threadId = await createSessionTopic(bot, chatId, "🔄 New Session");
+
+  await bot.api.sendMessage(chatId, "⏳ Setting up session, please wait...", {
+    message_thread_id: threadId,
+    parse_mode: "HTML",
+  });
+
+  try {
+    // core.handleNewSession() already wires events internally — do NOT call wireSessionEvents again
+    const session = await core.handleNewSession(
+      "telegram",
+      agentName,
+      workspace,
+    );
+    session.threadId = String(threadId);
+
+    await core.sessionManager.updateSessionPlatform(session.id, {
+      topicId: threadId,
+    });
+
+    // Rename topic with agent name after session is created
+    const finalName = `🔄 ${session.agentName} — New Session`;
+    await renameSessionTopic(bot, chatId, threadId, finalName);
+
+    // Warm up model cache in background while user types
+    session.warmup().catch((err) => log.error({ err }, "Warm-up error"));
+
+    return { session, threadId };
+  } catch (err) {
+    // Clean up orphaned topic on failure
+    try {
+      await bot.api.deleteForumTopic(chatId, threadId);
+    } catch {
+      /* best effort */
+    }
+    throw err;
+  }
+}
+
+export async function executeCancelSession(
+  core: OpenACPCore,
+  excludeSessionId?: string,
+): Promise<Session | null> {
+  const sessions = core.sessionManager
+    .listSessions("telegram")
+    .filter((s) => s.status === "active" && s.id !== excludeSessionId)
+    .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+
+  const session = sessions[0];
+  if (!session) return null;
+
+  await session.cancel();
+  return session;
 }
 
 export const STATIC_COMMANDS = [

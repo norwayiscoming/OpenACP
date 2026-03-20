@@ -43,6 +43,7 @@ import {
   detectAction,
   storeAction,
   buildActionKeyboard,
+  setupActionCallbacks,
 } from "./action-detect.js";
 
 export class TelegramAdapter extends ChannelAdapter {
@@ -136,6 +137,12 @@ export class TelegramAdapter extends ChannelAdapter {
     // Callback registration order matters!
     // Specific regex handlers first, catch-all last.
     setupSkillCallbacks(this.bot, this.core as OpenACPCore);
+    setupActionCallbacks(
+      this.bot,
+      this.core as OpenACPCore,
+      this.telegramConfig.chatId,
+      () => this.assistantSession?.id,
+    );
     setupMenuCallbacks(
       this.bot,
       this.core as OpenACPCore,

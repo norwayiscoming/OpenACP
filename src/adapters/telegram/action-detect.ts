@@ -1,5 +1,8 @@
 import { nanoid } from "nanoid";
 import { InlineKeyboard } from "grammy";
+import type { Bot } from "grammy";
+import type { OpenACPCore } from "../../core/core.js";
+import { executeNewSession, executeCancelSession } from "./commands.js";
 
 export interface DetectedAction {
   action: "new_session" | "cancel_session";
@@ -86,4 +89,100 @@ export function buildActionKeyboard(
     keyboard.text("❌ Không", `a:dismiss:${actionId}`);
   }
   return keyboard;
+}
+
+export function setupActionCallbacks(
+  bot: Bot,
+  core: OpenACPCore,
+  chatId: number,
+  getAssistantSessionId: () => string | undefined,
+): void {
+  // IMPORTANT: dismiss handler MUST be registered BEFORE generic a: handler
+  // because grammY routes to the first matching handler and /^a:/ also matches a:dismiss:
+  bot.callbackQuery(/^a:dismiss:/, async (ctx) => {
+    const actionId = ctx.callbackQuery.data.replace("a:dismiss:", "");
+    removeAction(actionId);
+    try {
+      await ctx.editMessageReplyMarkup({
+        reply_markup: { inline_keyboard: [] },
+      });
+    } catch {
+      /* message may be old */
+    }
+    await ctx.answerCallbackQuery({ text: "Đã huỷ" });
+  });
+
+  bot.callbackQuery(/^a:(?!dismiss)/, async (ctx) => {
+    const actionId = ctx.callbackQuery.data.replace("a:", "");
+    const action = getAction(actionId);
+    if (!action) {
+      await ctx.answerCallbackQuery({ text: "Action đã hết hạn" });
+      return;
+    }
+    removeAction(actionId);
+
+    try {
+      if (action.action === "new_session") {
+        await ctx.answerCallbackQuery({ text: "⏳ Đang tạo session..." });
+        const { threadId } = await executeNewSession(
+          bot,
+          core,
+          chatId,
+          action.agent,
+          action.workspace,
+        );
+        const topicLink = `https://t.me/c/${String(chatId).replace("-100", "")}/${threadId}`;
+        const originalText = ctx.callbackQuery.message?.text ?? "";
+        try {
+          await ctx.editMessageText(
+            originalText +
+              `\n\n✅ Session created → <a href="${topicLink}">Go to topic</a>`,
+            { parse_mode: "HTML" },
+          );
+        } catch {
+          await ctx.editMessageReplyMarkup({
+            reply_markup: { inline_keyboard: [] },
+          });
+        }
+      } else if (action.action === "cancel_session") {
+        const assistantId = getAssistantSessionId();
+        const cancelled = await executeCancelSession(core, assistantId);
+        if (cancelled) {
+          await ctx.answerCallbackQuery({ text: "⛔ Session đã huỷ" });
+          const originalText = ctx.callbackQuery.message?.text ?? "";
+          try {
+            await ctx.editMessageText(
+              originalText +
+                `\n\n⛔ Session "${cancelled.name ?? cancelled.id}" đã huỷ`,
+              { parse_mode: "HTML" },
+            );
+          } catch {
+            await ctx.editMessageReplyMarkup({
+              reply_markup: { inline_keyboard: [] },
+            });
+          }
+        } else {
+          await ctx.answerCallbackQuery({
+            text: "Không có session nào đang chạy",
+          });
+          try {
+            await ctx.editMessageReplyMarkup({
+              reply_markup: { inline_keyboard: [] },
+            });
+          } catch {
+            /* best effort */
+          }
+        }
+      }
+    } catch {
+      await ctx.answerCallbackQuery({ text: "❌ Lỗi, thử lại sau" });
+      try {
+        await ctx.editMessageReplyMarkup({
+          reply_markup: { inline_keyboard: [] },
+        });
+      } catch {
+        /* best effort */
+      }
+    }
+  });
 }

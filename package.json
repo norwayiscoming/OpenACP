@@ -30,6 +30,7 @@
     "zod": "^3.25.0"
   },
   "devDependencies": {
+    "@rolldown/binding-darwin-arm64": "1.0.0-rc.10",
     "@types/node": "^25.5.0",
     "tsup": "^8.5.1",
     "tsx": "^4.21.0",

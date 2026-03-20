@@ -36,6 +36,9 @@ importers:
         specifier: ^3.25.0
         version: 3.25.76
     devDependencies:
+      '@rolldown/binding-darwin-arm64':
+        specifier: 1.0.0-rc.10
+        version: 1.0.0-rc.10
       '@types/node':
         specifier: ^25.5.0
         version: 25.5.0
@@ -1707,8 +1710,7 @@ snapshots:
   '@rolldown/binding-android-arm64@1.0.0-rc.10':
     optional: true
 
-  '@rolldown/binding-darwin-arm64@1.0.0-rc.10':
-    optional: true
+  '@rolldown/binding-darwin-arm64@1.0.0-rc.10': {}
 
   '@rolldown/binding-darwin-x64@1.0.0-rc.10':
     optional: true

@@ -47,31 +47,25 @@ describe('ThinkingIndicator', () => {
     expect(api.sendMessage).toHaveBeenCalledOnce()
   })
 
-  it('dismiss() is no-op when not shown', async () => {
-    await indicator.dismiss()
+  it('dismiss() clears state without calling Telegram API', async () => {
+    await indicator.show()
+    indicator.dismiss()
     expect(api.deleteMessage).not.toHaveBeenCalled()
   })
 
-  it('dismiss() deletes the message after show()', async () => {
+  it('show() works again after dismiss() + reset()', async () => {
     await indicator.show()
-    await indicator.dismiss()
-    expect(api.deleteMessage).toHaveBeenCalledWith(100, 42)
-  })
-
-  it('dismiss() clears msgId even if deleteMessage fails', async () => {
-    api.deleteMessage.mockRejectedValue(new Error('not found'))
-    await indicator.show()
-    await indicator.dismiss()
-    // Should not throw; subsequent dismiss() is a no-op
-    await indicator.dismiss()
-    expect(api.deleteMessage).toHaveBeenCalledOnce()
-  })
-
-  it('show() works again after dismiss()', async () => {
-    await indicator.show()
-    await indicator.dismiss()
+    indicator.dismiss()
+    indicator.reset()
     await indicator.show()
     expect(api.sendMessage).toHaveBeenCalledTimes(2)
+  })
+
+  it('show() is blocked after dismiss() without reset()', async () => {
+    await indicator.show()
+    indicator.dismiss()
+    await indicator.show()
+    expect(api.sendMessage).toHaveBeenCalledOnce()
   })
 })
 
@@ -261,40 +255,35 @@ describe('ActivityTracker', () => {
     expect(api.sendMessage).toHaveBeenCalledOnce()
   })
 
-  it('onToolCall() dismisses thinking indicator', async () => {
+  it('onToolCall() dismisses thinking (no deleteMessage API call)', async () => {
     await tracker.onThought()
     await tracker.onToolCall()
-    expect(api.deleteMessage).toHaveBeenCalledOnce()
+    expect(api.deleteMessage).not.toHaveBeenCalled()
   })
 
-  it('onTextStart() dismisses thinking indicator', async () => {
+  it('onTextStart() dismisses thinking (no deleteMessage API call)', async () => {
     await tracker.onThought()
     await tracker.onTextStart()
+    expect(api.deleteMessage).not.toHaveBeenCalled()
+  })
+
+  it('sendUsage() sends immediately', async () => {
+    await tracker.sendUsage({ tokensUsed: 1000, contextSize: 10000 })
+    expect(api.sendMessage).toHaveBeenCalledOnce()
+  })
+
+  it('firstEvent guard: deletes previous usage on first event of new cycle', async () => {
+    // Send usage so message exists on Telegram
+    await tracker.sendUsage({ tokensUsed: 1000, contextSize: 10000 })
+    expect(api.sendMessage).toHaveBeenCalledOnce()
+
+    // New prompt cycle
+    await tracker.onNewPrompt()
+    expect(api.deleteMessage).not.toHaveBeenCalled()
+
+    // First event triggers deletion of old usage message
+    await tracker.onThought()
     expect(api.deleteMessage).toHaveBeenCalledOnce()
-  })
-
-  it('firstEvent guard: deletes usage message on first event', async () => {
-    // Simulate a previous usage message existing
-    await tracker.sendUsage({ tokensUsed: 1000, contextSize: 10000 })
-    expect(api.sendMessage).toHaveBeenCalledOnce() // usage sent
-
-    // Simulate new prompt cycle
-    await tracker.onNewPrompt()
-    expect(api.deleteMessage).not.toHaveBeenCalled() // not deleted yet
-
-    // First event of new cycle triggers deletion
-    await tracker.onThought()
-    expect(api.deleteMessage).toHaveBeenCalledOnce() // usage deleted
-  })
-
-  it('firstEvent guard only runs once per prompt cycle', async () => {
-    await tracker.sendUsage({ tokensUsed: 1000, contextSize: 10000 })
-    await tracker.onNewPrompt()
-    await tracker.onThought()
-    await tracker.onThought()
-    await tracker.onToolCall()
-    // deleteMessage called once for usage, once for thinking indicator
-    expect(api.deleteMessage).toHaveBeenCalledTimes(2)
   })
 
   it('onNewPrompt() resets hasPlanCard', async () => {
@@ -337,10 +326,10 @@ describe('ActivityTracker', () => {
     expect(doneCall).toBeUndefined()
   })
 
-  it('onNewPrompt() defensively dismisses stale ThinkingIndicator', async () => {
+  it('onNewPrompt() dismisses thinking without API call', async () => {
     await tracker.onThought()
     expect(api.sendMessage).toHaveBeenCalledOnce()
     await tracker.onNewPrompt()
-    expect(api.deleteMessage).toHaveBeenCalledOnce()
+    expect(api.deleteMessage).not.toHaveBeenCalled()
   })
 })

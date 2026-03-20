@@ -2,11 +2,17 @@ import type { OpenACPCore, ChannelAdapter, Config, Session } from "../../core/in
 import { createChildLogger } from "../../core/log.js";
 const log = createChildLogger({ module: "telegram-assistant" });
 
+export type SpawnAssistantResult = {
+  session: Session;
+  /** Resolves when the background system prompt completes (or fails). */
+  ready: Promise<void>;
+};
+
 export async function spawnAssistant(
   core: OpenACPCore,
   adapter: ChannelAdapter,
   assistantTopicId: number,
-): Promise<Session> {
+): Promise<SpawnAssistantResult> {
   const config = core.configManager.get();
 
   // Create session with default agent
@@ -18,20 +24,20 @@ export async function spawnAssistant(
     core.agentManager,
   );
   session.threadId = String(assistantTopicId);
-  log.info({ sessionId: session.id }, "Assistant agent spawned, sending system prompt...");
+  log.info({ sessionId: session.id }, "Assistant agent spawned");
 
-  // Send system prompt BEFORE wiring events. enqueuePrompt awaits the full
-  // agent response, so by the time it returns the system prompt conversation
-  // is complete. Since no event handler is wired yet, the response is
-  // intentionally discarded — users only see responses to their own messages.
-  const systemPrompt = buildAssistantSystemPrompt(config);
-  await session.enqueuePrompt(systemPrompt);
-  log.info({ sessionId: session.id }, "Assistant system prompt completed");
-
-  // Wire events to adapter — only messages after this point reach the user
+  // Wire events first so the adapter is ready to receive real user responses.
+  // The system prompt response will be suppressed by the adapter via the
+  // assistantInitializing flag — it checks the flag before routing messages.
   core.wireSessionEvents(session, adapter);
 
-  return session;
+  // Fire system prompt in background — don't block startup.
+  const systemPrompt = buildAssistantSystemPrompt(config);
+  const ready = session.enqueuePrompt(systemPrompt)
+    .then(() => { log.info({ sessionId: session.id }, "Assistant system prompt completed"); })
+    .catch((err) => { log.warn({ err }, "Assistant system prompt failed"); });
+
+  return { session, ready };
 }
 
 export function buildAssistantSystemPrompt(config: Config): string {

@@ -31,6 +31,7 @@ import {
   spawnAssistant,
   handleAssistantMessage,
   redirectToAssistant,
+  type SpawnAssistantResult,
 } from "./assistant.js";
 import {
   escapeHtml,
@@ -93,6 +94,7 @@ export class TelegramAdapter extends ChannelAdapter {
   > = new Map(); // sessionId → (toolCallId → state)
   private permissionHandler!: PermissionHandler;
   private assistantSession: Session | null = null;
+  private assistantInitializing = false;
   private notificationTopicId!: number;
   private assistantTopicId!: number;
   private skillMessages: Map<string, number> = new Map(); // sessionId → pinned messageId
@@ -248,36 +250,12 @@ export class TelegramAdapter extends ChannelAdapter {
         ),
     });
 
-    // Spawn assistant (after bot is started so it can send messages)
-    try {
-      log.info("Spawning assistant session...");
-      this.assistantSession = await spawnAssistant(
-        this.core as OpenACPCore,
-        this,
-        this.assistantTopicId,
-      );
-      log.info({ sessionId: this.assistantSession.id }, "Assistant session ready");
-    } catch (err) {
-      log.error({ err }, "Failed to spawn assistant");
-      // Notify user in assistant topic
-      this.bot.api.sendMessage(
-        this.telegramConfig.chatId,
-        `⚠️ <b>Failed to start assistant session.</b>\n\n<code>${err instanceof Error ? err.message : String(err)}</code>`,
-        { message_thread_id: this.assistantTopicId, parse_mode: "HTML" },
-      ).catch(() => {});
-    }
-
-    // Send welcome message with menu to assistant topic
+    // Send welcome message immediately — no need to wait for assistant session
     try {
       const config = (this.core as OpenACPCore).configManager.get();
-      const agents = (
-        this.core as OpenACPCore
-      ).agentManager.getAvailableAgents();
+      const agents = (this.core as OpenACPCore).agentManager.getAvailableAgents();
       const agentList = agents
-        .map(
-          (a) =>
-            `${escapeHtml(a.name)}${a.name === config.defaultAgent ? " (default)" : ""}`,
-        )
+        .map((a) => `${escapeHtml(a.name)}${a.name === config.defaultAgent ? " (default)" : ""}`)
         .join(", ");
       const workspace = escapeHtml(config.workspace.baseDir);
 
@@ -294,6 +272,31 @@ export class TelegramAdapter extends ChannelAdapter {
       });
     } catch (err) {
       log.warn({ err }, "Failed to send welcome message");
+    }
+
+    // Spawn assistant in background — system prompt runs without blocking startup.
+    // Messages are suppressed via assistantInitializing until the prompt completes.
+    try {
+      log.info("Spawning assistant session...");
+      const { session, ready } = await spawnAssistant(
+        this.core as OpenACPCore,
+        this,
+        this.assistantTopicId,
+      );
+      this.assistantSession = session;
+      this.assistantInitializing = true;
+      log.info({ sessionId: session.id }, "Assistant session ready, system prompt running in background");
+      ready.then(() => {
+        this.assistantInitializing = false;
+        log.info({ sessionId: session.id }, "Assistant ready for user messages");
+      });
+    } catch (err) {
+      log.error({ err }, "Failed to spawn assistant");
+      this.bot.api.sendMessage(
+        this.telegramConfig.chatId,
+        `⚠️ <b>Failed to start assistant session.</b>\n\n<code>${err instanceof Error ? err.message : String(err)}</code>`,
+        { message_thread_id: this.assistantTopicId, parse_mode: "HTML" },
+      ).catch(() => {});
     }
   }
 
@@ -361,6 +364,10 @@ export class TelegramAdapter extends ChannelAdapter {
     sessionId: string,
     content: OutgoingMessage,
   ): Promise<void> {
+    // Suppress all messages from the assistant session while it is processing
+    // its background system prompt — those responses are not for the user.
+    if (this.assistantInitializing && sessionId === this.assistantSession?.id) return;
+
     // log.debug({ sessionId, type: content.type }, "Sending message to Telegram");
     const session = (this.core as OpenACPCore).sessionManager.getSession(
       sessionId,
@@ -517,6 +524,7 @@ export class TelegramAdapter extends ChannelAdapter {
           tokensUsed?: number;
           contextSize?: number;
         }
+        await this.finalizeDraft(sessionId)
         const tracker = this.getOrCreateTracker(sessionId, threadId)
         await tracker.sendUsage(meta)
         break;

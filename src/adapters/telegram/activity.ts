@@ -8,8 +8,14 @@ const log = createChildLogger({ module: 'telegram:activity' })
 
 // ─── ThinkingIndicator ────────────────────────────────────────────────────────
 
+const THINKING_REFRESH_MS = 10_000
+
 export class ThinkingIndicator {
   private msgId?: number
+  private sending = false
+  private dismissed = false
+  private refreshTimer?: ReturnType<typeof setInterval>
+  private showTime = 0
 
   constructor(
     private api: Bot['api'],
@@ -19,7 +25,9 @@ export class ThinkingIndicator {
   ) {}
 
   async show(): Promise<void> {
-    if (this.msgId) return
+    if (this.msgId || this.sending || this.dismissed) return
+    this.sending = true
+    this.showTime = Date.now()
     try {
       const result = await this.sendQueue.enqueue(() =>
         this.api.sendMessage(this.chatId, '💭 <i>Thinking...</i>', {
@@ -28,20 +36,55 @@ export class ThinkingIndicator {
           disable_notification: true,
         }),
       )
-      if (result) this.msgId = result.message_id
+      if (result && !this.dismissed) {
+        this.msgId = result.message_id
+        this.startRefreshTimer()
+      }
     } catch (err) {
       log.warn({ err }, 'ThinkingIndicator.show() failed')
+    } finally {
+      this.sending = false
     }
   }
 
-  async dismiss(): Promise<void> {
-    if (!this.msgId) return
-    const id = this.msgId
+  /** Clear state — stops refresh timer, no Telegram API call */
+  dismiss(): void {
+    this.dismissed = true
     this.msgId = undefined
-    try {
-      await this.sendQueue.enqueue(() => this.api.deleteMessage(this.chatId, id))
-    } catch (err) {
-      log.warn({ err }, 'ThinkingIndicator.dismiss() failed')
+    this.stopRefreshTimer()
+  }
+
+  /** Reset for a new prompt cycle */
+  reset(): void {
+    this.dismissed = false
+  }
+
+  private startRefreshTimer(): void {
+    this.stopRefreshTimer()
+    this.refreshTimer = setInterval(() => {
+      if (this.dismissed || !this.msgId) {
+        this.stopRefreshTimer()
+        return
+      }
+      const elapsed = Math.round((Date.now() - this.showTime) / 1000)
+      this.sendQueue.enqueue(() =>
+        this.api.sendMessage(this.chatId, `💭 <i>Still thinking... (${elapsed}s)</i>`, {
+          message_thread_id: this.threadId,
+          parse_mode: 'HTML',
+          disable_notification: true,
+        }),
+      ).then(result => {
+        if (result && !this.dismissed) {
+          this.msgId = result.message_id
+        }
+      }).catch(() => {})
+    }, THINKING_REFRESH_MS)
+  }
+
+  private stopRefreshTimer(): void {
+    if (this.refreshTimer) {
+      clearInterval(this.refreshTimer)
+      this.refreshTimer = undefined
     }
   }
 }
@@ -210,7 +253,8 @@ export class ActivityTracker {
   async onNewPrompt(): Promise<void> {
     this.isFirstEvent = true
     this.hasPlanCard = false
-    await this.thinking.dismiss()
+    this.thinking.dismiss()
+    this.thinking.reset()
   }
 
   async onThought(): Promise<void> {
@@ -220,19 +264,20 @@ export class ActivityTracker {
 
   async onPlan(entries: PlanEntry[]): Promise<void> {
     await this._firstEventGuard()
-    await this.thinking.dismiss()
+    this.thinking.dismiss()
     this.hasPlanCard = true
     this.planCard.update(entries)
   }
 
   async onToolCall(): Promise<void> {
     await this._firstEventGuard()
-    await this.thinking.dismiss()
+    this.thinking.dismiss()
+    this.thinking.reset()
   }
 
   async onTextStart(): Promise<void> {
     await this._firstEventGuard()
-    await this.thinking.dismiss()
+    this.thinking.dismiss()
   }
 
   async sendUsage(data: { tokensUsed?: number; contextSize?: number }): Promise<void> {

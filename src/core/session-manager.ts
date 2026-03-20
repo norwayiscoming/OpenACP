@@ -95,6 +95,18 @@ export class SessionManager {
     }
   }
 
+  async updateSessionName(sessionId: string, name: string): Promise<void> {
+    if (!this.store) return;
+    const record = this.store.get(sessionId);
+    if (record) {
+      await this.store.save({ ...record, name });
+    }
+  }
+
+  getSessionRecord(sessionId: string): import("./types.js").SessionRecord | undefined {
+    return this.store?.get(sessionId);
+  }
+
   async cancelSession(sessionId: string): Promise<void> {
     const session = this.sessions.get(sessionId);
     if (session) {

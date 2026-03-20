@@ -25,12 +25,18 @@ export function extractFileInfo(
 
   let info: Partial<FileInfo> | null = null
 
-  // 1. Try _meta.claudeCode.toolResponse.file (Claude Code puts raw file data here)
+  // 1. Try _meta.claudeCode.toolResponse (Claude Code puts raw file data here)
   if (meta) {
     const m = meta as any
-    const file = m?.claudeCode?.toolResponse?.file
+    const tr = m?.claudeCode?.toolResponse
+    // Read tool: toolResponse.file.filePath + toolResponse.file.content
+    const file = tr?.file
     if (file?.filePath && file?.content) {
       info = { filePath: file.filePath, content: file.content }
+    }
+    // Write/Edit tool: toolResponse.filePath + toolResponse.content (direct)
+    if (!info && tr?.filePath && tr?.content) {
+      info = { filePath: tr.filePath, content: tr.content }
     }
   }
 
@@ -39,9 +45,9 @@ export function extractFileInfo(
     const ri = rawInput as any
     const filePath = ri?.file_path || ri?.filePath || ri?.path
     if (typeof filePath === 'string') {
-      // Try to get content from the content field
+      // Try to get content from the content field (including oldContent for diffs)
       const parsed = content ? parseContent(content) : null
-      info = { filePath, content: parsed?.content || ri?.content }
+      info = { filePath, content: parsed?.content || ri?.content, oldContent: parsed?.oldContent }
     }
   }
 

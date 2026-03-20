@@ -117,4 +117,5 @@ export interface SessionRecord<P = Record<string, unknown>> {
 
 export interface TelegramPlatformData {
   topicId: number;
+  skillMsgId?: number;
 }

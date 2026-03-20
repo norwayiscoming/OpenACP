@@ -10,6 +10,7 @@ export class MessageDraft {
   private firstFlushPending = false
   private flushTimer?: ReturnType<typeof setTimeout>
   private flushPromise: Promise<void> = Promise.resolve()
+  private lastSentBuffer: string = ''
 
   constructor(
     private bot: Bot,
@@ -55,6 +56,7 @@ export class MessageDraft {
         )
         if (result) {
           this.messageId = result.message_id
+          this.lastSentBuffer = this.buffer
         }
       } catch {
         // sendMessage failed — next flush will retry
@@ -69,6 +71,7 @@ export class MessageDraft {
           }),
           { type: 'text', key: this.sessionId },
         )
+        this.lastSentBuffer = this.buffer
       } catch {
         // editMessageText failed (message deleted?) — reset messageId
         this.messageId = undefined
@@ -85,6 +88,11 @@ export class MessageDraft {
     await this.flushPromise
 
     if (!this.buffer) return this.messageId
+
+    // Skip if buffer was already sent by flush() and nothing new was appended
+    if (this.messageId && this.buffer === this.lastSentBuffer) {
+      return this.messageId
+    }
 
     const html = markdownToTelegramHtml(this.buffer)
     const chunks = splitMessage(html)
@@ -114,16 +122,19 @@ export class MessageDraft {
         }
       }
     } catch {
-      try {
-        await this.sendQueue.enqueue(
-          () => this.bot.api.sendMessage(this.chatId, this.buffer.slice(0, 4096), {
-            message_thread_id: this.threadId,
-            disable_notification: true,
-          }),
-          { type: 'other' },
-        )
-      } catch {
-        // Give up
+      // Edit/send with HTML failed — only retry if content is new
+      if (this.buffer !== this.lastSentBuffer) {
+        try {
+          await this.sendQueue.enqueue(
+            () => this.bot.api.sendMessage(this.chatId, this.buffer.slice(0, 4096), {
+              message_thread_id: this.threadId,
+              disable_notification: true,
+            }),
+            { type: 'other' },
+          )
+        } catch {
+          // Give up
+        }
       }
     }
 

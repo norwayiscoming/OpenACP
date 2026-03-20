@@ -82,6 +82,8 @@ function extractContentText(content: unknown, depth = 0): string {
     if (c.type === 'text' && typeof c.text === 'string') return c.text
     if (typeof c.text === 'string') return c.text
     if (typeof c.content === 'string') return c.content
+    // ACP content wrapper: {type: "content", content: {type: "text", text: "..."}}
+    if (c.content && typeof c.content === 'object') return extractContentText(c.content, depth + 1)
     // Tool input/output objects
     if (c.input) return extractContentText(c.input, depth + 1)
     if (c.output) return extractContentText(c.output, depth + 1)

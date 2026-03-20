@@ -56,8 +56,9 @@ export class PermissionHandler {
     // Deep link for notification
     const deepLink = buildDeepLink(this.chatId, msg.message_id)
 
-    // Notify in notification topic
-    await this.sendNotification({
+    // Notify in notification topic (fire-and-forget to avoid sendQueue deadlock:
+    // this method runs INSIDE a sendQueue item, so awaiting another enqueue() deadlocks)
+    void this.sendNotification({
       sessionId: session.id,
       sessionName: session.name,
       type: 'permission',

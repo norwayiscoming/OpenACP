@@ -419,34 +419,45 @@ export class TelegramAdapter extends ChannelAdapter {
         };
         const toolState = this.toolCallMessages.get(sessionId)?.get(meta.id);
         if (toolState) {
-          // Wait for tool_call sendMessage to complete (provides msgId)
-          await toolState.ready;
-          // Carry forward and update state from previous updates
-          const viewerLinks = meta.viewerLinks || toolState.viewerLinks;
-          const viewerFilePath = (content.metadata as any)?.viewerFilePath || toolState.viewerFilePath;
-          if (meta.viewerLinks) toolState.viewerLinks = meta.viewerLinks;
+          // Accumulate state from intermediate updates
+          if (meta.viewerLinks) {
+            toolState.viewerLinks = meta.viewerLinks;
+            log.debug({ toolId: meta.id, viewerLinks: meta.viewerLinks }, "Accumulated viewerLinks");
+          }
+          const viewerFilePath = (content.metadata as any)?.viewerFilePath;
           if (viewerFilePath) toolState.viewerFilePath = viewerFilePath;
-          // Update name/kind when ACP provides a better title (e.g. "Read File" → "Read README.md")
           if (meta.name) toolState.name = meta.name;
           if (meta.kind) toolState.kind = meta.kind;
+          // Edit on terminal status OR when viewer links are available (for permission review)
+          const isTerminal = meta.status === "completed" || meta.status === "failed";
+          if (!isTerminal && !meta.viewerLinks) break;
+          await toolState.ready;
+          log.debug(
+            { toolId: meta.id, status: meta.status, hasViewerLinks: !!toolState.viewerLinks, viewerLinks: toolState.viewerLinks, name: toolState.name, msgId: toolState.msgId },
+            "Tool completed, preparing edit",
+          );
           const merged = {
             ...meta,
-            name: meta.name || toolState.name,
-            kind: meta.kind || toolState.kind,
-            viewerLinks,
-            viewerFilePath,
+            name: toolState.name,
+            kind: toolState.kind,
+            viewerLinks: toolState.viewerLinks,
+            viewerFilePath: toolState.viewerFilePath,
           };
+          const formattedText = formatToolUpdate(merged);
           try {
             await this.sendQueue.enqueue(() =>
               this.bot.api.editMessageText(
                 this.telegramConfig.chatId,
                 toolState.msgId,
-                formatToolUpdate(merged),
+                formattedText,
                 { parse_mode: "HTML" },
               ),
             );
-          } catch {
-            /* edit failed */
+          } catch (err) {
+            log.warn(
+              { err, msgId: toolState.msgId, textLen: formattedText.length, hasViewerLinks: !!merged.viewerLinks },
+              "Tool update edit failed",
+            );
           }
         }
         break;
@@ -558,7 +569,7 @@ export class TelegramAdapter extends ChannelAdapter {
       permission: "🔐",
       input_required: "💬",
     };
-    let text = `${emoji[notification.type] || "ℹ️"} <b>${escapeHtml(notification.sessionName || notification.sessionId)}</b>\n`;
+    let text = `${emoji[notification.type] || "ℹ️"} <b>${escapeHtml(notification.sessionName || "New session")}</b>\n`;
     text += escapeHtml(notification.summary);
     if (notification.deepLink) {
       text += `\n\n<a href="${notification.deepLink}">→ Go to message</a>`;
@@ -590,6 +601,10 @@ export class TelegramAdapter extends ChannelAdapter {
       Number(session.threadId),
       newName,
     );
+    await (this.core as OpenACPCore).sessionManager.updateSessionName(
+      sessionId,
+      newName,
+    );
   }
 
   async sendSkillCommands(
@@ -602,6 +617,15 @@ export class TelegramAdapter extends ChannelAdapter {
     if (!session) return;
     const threadId = Number(session.threadId);
     if (!threadId) return;
+
+    // Restore skillMsgId from persisted platform data if not in memory (e.g. after restart)
+    if (!this.skillMessages.has(sessionId)) {
+      const record = (this.core as OpenACPCore).sessionManager.getSessionRecord(sessionId);
+      const platform = record?.platform as import("../../core/types.js").TelegramPlatformData | undefined;
+      if (platform?.skillMsgId) {
+        this.skillMessages.set(sessionId, platform.skillMsgId);
+      }
+    }
 
     // Empty commands → remove pinned message
     if (commands.length === 0) {
@@ -647,6 +671,15 @@ export class TelegramAdapter extends ChannelAdapter {
       );
       this.skillMessages.set(sessionId, msg!.message_id);
 
+      // Persist skillMsgId so it survives restarts
+      const record = (this.core as OpenACPCore).sessionManager.getSessionRecord(sessionId);
+      if (record) {
+        await (this.core as OpenACPCore).sessionManager.updateSessionPlatform(
+          sessionId,
+          { ...record.platform, skillMsgId: msg!.message_id },
+        );
+      }
+
       await this.bot.api.pinChatMessage(
         this.telegramConfig.chatId,
         msg!.message_id,
@@ -680,6 +713,13 @@ export class TelegramAdapter extends ChannelAdapter {
 
     this.skillMessages.delete(sessionId);
     clearSkillCallbacks(sessionId);
+
+    // Clear persisted skillMsgId
+    const record = (this.core as OpenACPCore).sessionManager.getSessionRecord(sessionId);
+    if (record) {
+      const { skillMsgId: _removed, ...rest } = record.platform as unknown as import("../../core/types.js").TelegramPlatformData;
+      await (this.core as OpenACPCore).sessionManager.updateSessionPlatform(sessionId, rest);
+    }
   }
 
   private async updateCommandAutocomplete(

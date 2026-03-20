@@ -4,6 +4,14 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+<<<<<<< HEAD
+=======
+patchedDependencies:
+  grammy:
+    hash: c09faeff2c70d4b373ab13ba2744d7aaa57e2dce88c568414537be78f4aaca61
+    path: patches/grammy.patch
+
+>>>>>>> 7496aadfcc704c6e5dad95ad2ca076520be87276
 importers:
 
   .:
@@ -25,7 +33,11 @@ importers:
         version: 8.0.3
       grammy:
         specifier: ^1.30.0
+<<<<<<< HEAD
         version: 1.41.1
+=======
+        version: 1.41.1(patch_hash=c09faeff2c70d4b373ab13ba2744d7aaa57e2dce88c568414537be78f4aaca61)
+>>>>>>> 7496aadfcc704c6e5dad95ad2ca076520be87276
       hono:
         specifier: ^4.12.8
         version: 4.12.8
@@ -2290,6 +2302,19 @@ snapshots:
       - encoding
       - supports-color
 
+<<<<<<< HEAD
+=======
+  grammy@1.41.1(patch_hash=c09faeff2c70d4b373ab13ba2744d7aaa57e2dce88c568414537be78f4aaca61):
+    dependencies:
+      '@grammyjs/types': 3.25.0
+      abort-controller: 3.0.0
+      debug: 4.4.3
+      node-fetch: 2.7.0
+    transitivePeerDependencies:
+      - encoding
+      - supports-color
+
+>>>>>>> 7496aadfcc704c6e5dad95ad2ca076520be87276
   hast-util-to-html@9.0.5:
     dependencies:
       '@types/hast': 3.0.4

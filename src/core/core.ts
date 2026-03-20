@@ -184,7 +184,8 @@ export class OpenACPCore {
   // --- Lazy Resume ---
 
   private async lazyResume(message: IncomingMessage): Promise<Session | null> {
-    if (!this.sessionStore) return null;
+    const store = this.sessionStore;
+    if (!store) return null;
 
     const lockKey = `${message.channelId}:${message.threadId}`;
 
@@ -192,7 +193,7 @@ export class OpenACPCore {
     const existing = this.resumeLocks.get(lockKey);
     if (existing) return existing;
 
-    const record = this.sessionStore.findByPlatform(
+    const record = store.findByPlatform(
       message.channelId,
       (p) => String(p.topicId) === message.threadId,
     );
@@ -229,7 +230,7 @@ export class OpenACPCore {
         }
 
         // Update store with new agentSessionId (may differ after resume)
-        await this.sessionStore!.save({
+        await store.save({
           ...record,
           agentSessionId: agentInstance.sessionId,
           status: "active",

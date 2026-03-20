@@ -29,6 +29,7 @@ export class JsonFileSessionStore implements SessionStore {
   private ttlDays: number;
   private debounceTimer: ReturnType<typeof setTimeout> | null = null;
   private cleanupInterval: ReturnType<typeof setInterval> | null = null;
+  private flushHandler: (() => void) | null = null;
 
   constructor(filePath: string, ttlDays: number) {
     this.filePath = filePath;
@@ -43,10 +44,10 @@ export class JsonFileSessionStore implements SessionStore {
     );
 
     // Force flush on shutdown
-    const flush = () => this.flushSync();
-    process.on("SIGTERM", flush);
-    process.on("SIGINT", flush);
-    process.on("exit", flush);
+    this.flushHandler = () => this.flushSync();
+    process.on("SIGTERM", this.flushHandler);
+    process.on("SIGINT", this.flushHandler);
+    process.on("exit", this.flushHandler);
   }
 
   async save(record: SessionRecord): Promise<void> {
@@ -98,6 +99,12 @@ export class JsonFileSessionStore implements SessionStore {
   destroy(): void {
     if (this.debounceTimer) clearTimeout(this.debounceTimer);
     if (this.cleanupInterval) clearInterval(this.cleanupInterval);
+    if (this.flushHandler) {
+      process.removeListener("SIGTERM", this.flushHandler);
+      process.removeListener("SIGINT", this.flushHandler);
+      process.removeListener("exit", this.flushHandler);
+      this.flushHandler = null;
+    }
   }
 
   private load(): void {

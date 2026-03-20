@@ -98,13 +98,11 @@ export class AgentInstance {
     this.agentName = agentName;
   }
 
-  static async spawn(
+  private static async spawnSubprocess(
     agentDef: AgentDefinition,
     workingDirectory: string,
   ): Promise<AgentInstance> {
     const instance = new AgentInstance(agentDef.name);
-
-    // 1. Resolve command: find the actual JS entry point to avoid shell wrappers
     const resolved = resolveAgentCommand(agentDef.command);
     log.debug(
       {
@@ -112,11 +110,9 @@ export class AgentInstance {
         command: resolved.command,
         args: resolved.args,
       },
-      "Spawning agent",
+      "Resolved agent command",
     );
-    const spawnStart = Date.now();
 
-    // Spawn subprocess
     instance.child = spawn(
       resolved.command,
       [...resolved.args, ...agentDef.args],
@@ -127,7 +123,6 @@ export class AgentInstance {
       },
     );
 
-    // 2. Handle spawn errors (e.g., command not found)
     await new Promise<void>((resolve, reject) => {
       instance.child.on("error", (err) => {
         reject(
@@ -139,13 +134,11 @@ export class AgentInstance {
       instance.child.on("spawn", () => resolve());
     });
 
-    // 3. Capture stderr
     instance.stderrCapture = new StderrCapture(50);
     instance.child.stderr!.on("data", (chunk: Buffer) => {
       instance.stderrCapture.append(chunk.toString());
     });
 
-    // 3. Create ACP stream with raw NDJSON logging
     const stdinLogger = new Transform({
       transform(chunk, _enc, cb) {
         log.debug(
@@ -172,13 +165,11 @@ export class AgentInstance {
     const fromAgent = nodeToWebReadable(stdoutLogger);
     const stream = ndJsonStream(toAgent, fromAgent);
 
-    // 4. Create ClientSideConnection
     instance.connection = new ClientSideConnection(
       (_agent: Agent): Client => instance.createClient(_agent),
       stream,
     );
 
-    // 5. ACP handshake
     await instance.connection.initialize({
       protocolVersion: 1,
       clientCapabilities: {
@@ -187,31 +178,50 @@ export class AgentInstance {
       },
     });
 
-    // 6. Create session
-    const response = await instance.connection.newSession({
-      cwd: workingDirectory,
-      mcpServers: [],
-    });
-    instance.sessionId = response.sessionId;
+    return instance;
+  }
 
-    // 7. Crash detection
-    instance.child.on("exit", (code, signal) => {
+  private setupCrashDetection(): void {
+    this.child.on("exit", (code, signal) => {
       log.info(
-        { sessionId: instance.sessionId, exitCode: code, signal },
+        { sessionId: this.sessionId, exitCode: code, signal },
         "Agent process exited",
       );
       if (code !== 0 && code !== null) {
-        const stderr = instance.stderrCapture.getLastLines();
-        instance.onSessionUpdate({
+        const stderr = this.stderrCapture.getLastLines();
+        this.onSessionUpdate({
           type: "error",
           message: `Agent crashed (exit code ${code})\n${stderr}`,
         });
       }
     });
 
-    instance.connection.closed.then(() => {
-      log.debug({ sessionId: instance.sessionId }, "ACP connection closed");
+    this.connection.closed.then(() => {
+      log.debug({ sessionId: this.sessionId }, "ACP connection closed");
     });
+  }
+
+  static async spawn(
+    agentDef: AgentDefinition,
+    workingDirectory: string,
+  ): Promise<AgentInstance> {
+    log.debug(
+      { agentName: agentDef.name, command: agentDef.command },
+      "Spawning agent",
+    );
+    const spawnStart = Date.now();
+
+    const instance = await AgentInstance.spawnSubprocess(
+      agentDef,
+      workingDirectory,
+    );
+
+    const response = await instance.connection.newSession({
+      cwd: workingDirectory,
+      mcpServers: [],
+    });
+    instance.sessionId = response.sessionId;
+    instance.setupCrashDetection();
 
     log.info(
       { sessionId: response.sessionId, durationMs: Date.now() - spawnStart },
@@ -225,87 +235,14 @@ export class AgentInstance {
     workingDirectory: string,
     agentSessionId: string,
   ): Promise<AgentInstance> {
-    const instance = new AgentInstance(agentDef.name);
-
-    // 1. Resolve command
-    const resolved = resolveAgentCommand(agentDef.command);
-    log.debug(
-      { agentName: agentDef.name, command: resolved.command, agentSessionId },
-      "Resuming agent",
-    );
+    log.debug({ agentName: agentDef.name, agentSessionId }, "Resuming agent");
     const spawnStart = Date.now();
 
-    // Spawn subprocess
-    instance.child = spawn(
-      resolved.command,
-      [...resolved.args, ...agentDef.args],
-      {
-        stdio: ["pipe", "pipe", "pipe"],
-        cwd: workingDirectory,
-        env: { ...process.env, ...agentDef.env },
-      },
+    const instance = await AgentInstance.spawnSubprocess(
+      agentDef,
+      workingDirectory,
     );
 
-    // 2. Handle spawn errors
-    await new Promise<void>((resolve, reject) => {
-      instance.child.on("error", (err) => {
-        reject(
-          new Error(
-            `Failed to spawn agent "${agentDef.name}": ${err.message}. Is "${agentDef.command}" installed?`,
-          ),
-        );
-      });
-      instance.child.on("spawn", () => resolve());
-    });
-
-    // 3. Capture stderr
-    instance.stderrCapture = new StderrCapture(50);
-    instance.child.stderr!.on("data", (chunk: Buffer) => {
-      instance.stderrCapture.append(chunk.toString());
-    });
-
-    // 4. Create ACP stream with raw NDJSON logging
-    const stdinLogger = new Transform({
-      transform(chunk, _enc, cb) {
-        log.debug(
-          { direction: "send", raw: chunk.toString().trimEnd() },
-          "ACP raw",
-        );
-        cb(null, chunk);
-      },
-    });
-    stdinLogger.pipe(instance.child.stdin!);
-
-    const stdoutLogger = new Transform({
-      transform(chunk, _enc, cb) {
-        log.debug(
-          { direction: "recv", raw: chunk.toString().trimEnd() },
-          "ACP raw",
-        );
-        cb(null, chunk);
-      },
-    });
-    instance.child.stdout!.pipe(stdoutLogger);
-
-    const toAgent = nodeToWebWritable(stdinLogger);
-    const fromAgent = nodeToWebReadable(stdoutLogger);
-    const stream = ndJsonStream(toAgent, fromAgent);
-
-    // 5. ACP connection + handshake
-    instance.connection = new ClientSideConnection(
-      (_agent: Agent): Client => instance.createClient(_agent),
-      stream,
-    );
-
-    await instance.connection.initialize({
-      protocolVersion: 1,
-      clientCapabilities: {
-        fs: { readTextFile: true, writeTextFile: true },
-        terminal: true,
-      },
-    });
-
-    // 6. Resume session with fallback to newSession
     try {
       const response = await instance.connection.unstable_resumeSession({
         sessionId: agentSessionId,
@@ -332,25 +269,7 @@ export class AgentInstance {
       );
     }
 
-    // 7. Crash detection
-    instance.child.on("exit", (code, signal) => {
-      log.info(
-        { sessionId: instance.sessionId, exitCode: code, signal },
-        "Agent process exited",
-      );
-      if (code !== 0 && code !== null) {
-        const stderr = instance.stderrCapture.getLastLines();
-        instance.onSessionUpdate({
-          type: "error",
-          message: `Agent crashed (exit code ${code})\n${stderr}`,
-        });
-      }
-    });
-
-    instance.connection.closed.then(() => {
-      log.debug({ sessionId: instance.sessionId }, "ACP connection closed");
-    });
-
+    instance.setupCrashDetection();
     return instance;
   }
 

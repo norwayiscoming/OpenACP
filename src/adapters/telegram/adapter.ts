@@ -345,6 +345,7 @@ export class TelegramAdapter extends ChannelAdapter {
             threadId,
             this.telegramConfig.streamThrottleMs,
             this.sendQueue,
+            'supergroup',
           );
           this.sessionDrafts.set(sessionId, draft);
         }
@@ -381,7 +382,7 @@ export class TelegramAdapter extends ChannelAdapter {
           this.toolCallMessages.set(sessionId, new Map());
         }
         this.toolCallMessages.get(sessionId)!.set(meta.id, {
-          msgId: msg.message_id,
+          msgId: msg!.message_id,
           name: meta.name,
           kind: meta.kind,
           viewerLinks: meta.viewerLinks,
@@ -623,11 +624,11 @@ export class TelegramAdapter extends ChannelAdapter {
           },
         ),
       );
-      this.skillMessages.set(sessionId, msg.message_id);
+      this.skillMessages.set(sessionId, msg!.message_id);
 
       await this.bot.api.pinChatMessage(
         this.telegramConfig.chatId,
-        msg.message_id,
+        msg!.message_id,
         {
           disable_notification: true,
         },

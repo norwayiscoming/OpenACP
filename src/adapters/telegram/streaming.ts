@@ -1,17 +1,25 @@
 import type { Bot } from 'grammy'
+import { createChildLogger } from '../../core/log.js'
 import { markdownToTelegramHtml, splitMessage } from './formatting.js'
 import type { TelegramSendQueue } from './send-queue.js'
 
+const log = createChildLogger({ module: 'streaming' })
+
 let nextDraftId = 1
 
+export type ChatType = 'private' | 'group' | 'supergroup' | 'channel'
+
 export class MessageDraft {
+  // Once sendMessageDraft fails for a chat, skip it for all future drafts
+  private static draftUnsupportedChats = new Set<number>()
+
   private draftId: number
   private buffer: string = ''
   private lastFlush: number = 0
   private flushTimer?: ReturnType<typeof setTimeout>
   private flushPromise: Promise<void> = Promise.resolve()
   private minInterval: number
-  private useFallback = false
+  private useFallback: boolean
   private messageId?: number  // Only set in fallback mode (sendMessageDraft returns true, not Message)
 
   constructor(
@@ -20,9 +28,13 @@ export class MessageDraft {
     private threadId: number,
     throttleMs = 200,
     private sendQueue?: TelegramSendQueue,
+    chatType?: ChatType,
   ) {
     this.draftId = nextDraftId++
-    this.minInterval = throttleMs
+    // sendMessageDraft only works in private chats (Telegram Bot API limitation)
+    const draftSupported = chatType === 'private' && !MessageDraft.draftUnsupportedChats.has(chatId)
+    this.useFallback = !draftSupported
+    this.minInterval = this.useFallback ? Math.max(throttleMs, 1000) : throttleMs
   }
 
   append(text: string): void {
@@ -62,8 +74,10 @@ export class MessageDraft {
         message_thread_id: this.threadId,
         parse_mode: 'HTML',
       })
-    } catch {
-      // sendMessageDraft failed — switch to fallback for this session
+    } catch (err) {
+      // sendMessageDraft not supported for this chat (e.g. forum supergroups) — use editMessageText for all future drafts
+      log.info({ err, chatId: this.chatId }, 'sendMessageDraft unsupported, using editMessageText fallback')
+      MessageDraft.draftUnsupportedChats.add(this.chatId)
       this.useFallback = true
       this.minInterval = 1000  // Slower interval for editMessageText
       await this.flushFallback(truncated)
@@ -85,7 +99,7 @@ export class MessageDraft {
             disable_notification: true,
           }),
         )
-        this.messageId = msg.message_id
+        this.messageId = msg!.message_id
       } else {
         await exec(() =>
           this.bot.api.editMessageText(this.chatId, this.messageId!, html, {
@@ -102,7 +116,7 @@ export class MessageDraft {
               disable_notification: true,
             }),
           )
-          this.messageId = msg.message_id
+          this.messageId = msg!.message_id
         }
       } catch {
         // Give up on this flush
@@ -123,30 +137,40 @@ export class MessageDraft {
     const html = markdownToTelegramHtml(this.buffer)
     const chunks = splitMessage(html)
 
+    const exec = this.sendQueue
+      ? <T>(fn: () => Promise<T>) => this.sendQueue!.enqueue(fn)
+      : <T>(fn: () => Promise<T>) => fn()
+
     try {
       for (let i = 0; i < chunks.length; i++) {
         const chunk = chunks[i]
         if (i === 0 && this.messageId) {
           // Fallback mode only: messageId is only set when using sendMessage+editMessageText
-          await this.bot.api.editMessageText(this.chatId, this.messageId, chunk, {
-            parse_mode: 'HTML',
-          })
+          await exec(() =>
+            this.bot.api.editMessageText(this.chatId, this.messageId!, chunk, {
+              parse_mode: 'HTML',
+            }),
+          )
         } else {
           // sendMessage replaces the draft (non-fallback) or creates new message (fallback/splits)
-          const msg = await this.bot.api.sendMessage(this.chatId, chunk, {
-            message_thread_id: this.threadId,
-            parse_mode: 'HTML',
-            disable_notification: true,
-          })
-          this.messageId = msg.message_id
+          const msg = await exec(() =>
+            this.bot.api.sendMessage(this.chatId, chunk, {
+              message_thread_id: this.threadId,
+              parse_mode: 'HTML',
+              disable_notification: true,
+            }),
+          )
+          this.messageId = msg!.message_id
         }
       }
     } catch {
       try {
-        await this.bot.api.sendMessage(this.chatId, this.buffer.slice(0, 4096), {
-          message_thread_id: this.threadId,
-          disable_notification: true,
-        })
+        await exec(() =>
+          this.bot.api.sendMessage(this.chatId, this.buffer.slice(0, 4096), {
+            message_thread_id: this.threadId,
+            disable_notification: true,
+          }),
+        )
       } catch {
         // Give up
       }

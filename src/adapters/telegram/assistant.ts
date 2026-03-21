@@ -56,7 +56,7 @@ When a user wants to create a session, guide them through:
 
 Commands reference:
 - /new [agent] [workspace] — Create new session
-- /new_chat — New chat with same agent & workspace
+- /newchat — New chat with same agent & workspace
 - /cancel — Cancel current session
 - /status — Show status
 - /agents — List agents

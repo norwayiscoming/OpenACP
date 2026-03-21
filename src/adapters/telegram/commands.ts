@@ -21,7 +21,7 @@ export function setupCommands(
   assistant?: AssistantContext,
 ): void {
   bot.command("new", (ctx) => handleNew(ctx, core, chatId, assistant));
-  bot.command("new_chat", (ctx) => handleNewChat(ctx, core, chatId));
+  bot.command("newchat", (ctx) => handleNewChat(ctx, core, chatId));
   bot.command("cancel", (ctx) => handleCancel(ctx, core, assistant));
   bot.command("status", (ctx) => handleStatus(ctx, core));
   bot.command("agents", (ctx) => handleAgents(ctx, core));
@@ -36,7 +36,7 @@ export function setupCommands(
 export function buildMenuKeyboard(): InlineKeyboard {
   return new InlineKeyboard()
     .text("🆕 New Session", "m:new")
-    .text("💬 New Chat", "m:new_chat")
+    .text("💬 New Chat", "m:newchat")
     .row()
     .text("⛔ Cancel", "m:cancel")
     .text("📊 Status", "m:status")
@@ -65,7 +65,7 @@ export function setupMenuCallbacks(
       case "m:new":
         await handleNew(ctx, core, chatId);
         break;
-      case "m:new_chat":
+      case "m:newchat":
         await handleNewChat(ctx, core, chatId);
         break;
       case "m:cancel":
@@ -197,7 +197,7 @@ async function handleNewChat(
   const threadId = ctx.message?.message_thread_id;
   if (!threadId) {
     await ctx.reply(
-      "Use /new_chat inside a session topic to inherit its config.",
+      "Use /newchat inside a session topic to inherit its config.",
       { parse_mode: "HTML" },
     );
     return;
@@ -386,7 +386,7 @@ async function handleHelp(ctx: Context): Promise<void> {
   await ctx.reply(
     `<b>OpenACP Commands:</b>\n\n` +
       `/new [agent] [workspace] — Create new session\n` +
-      `/new_chat — New chat, same agent &amp; workspace\n` +
+      `/newchat — New chat, same agent &amp; workspace\n` +
       `/cancel — Cancel current session\n` +
       `/status — Show session/system status\n` +
       `/agents — List available agents\n` +
@@ -655,7 +655,7 @@ export async function executeCancelSession(
 
 export const STATIC_COMMANDS = [
   { command: "new", description: "Create new session" },
-  { command: "new_chat", description: "New chat, same agent & workspace" },
+  { command: "newchat", description: "New chat, same agent & workspace" },
   { command: "cancel", description: "Cancel current session" },
   { command: "status", description: "Show status" },
   { command: "agents", description: "List available agents" },

@@ -903,7 +903,7 @@ Expected: No errors
 Run: `OPENACP_CONFIG_PATH=~/.openacp/config2.json pnpm start`
 1. Create a new session via `/new`
 2. Check `~/.openacp/sessions.json` — should contain the session record with `topicId`
-3. Create another session via `/new_chat` in the topic — should also have `topicId`
+3. Create another session via `/newchat` in the topic — should also have `topicId`
 4. Stop and restart the server
 5. Send a message in the same topic — should lazy-resume
 

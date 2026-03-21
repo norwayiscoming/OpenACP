@@ -314,7 +314,7 @@ Export the static commands list for use by the adapter:
 ```typescript
 export const STATIC_COMMANDS = [
   { command: 'new', description: 'Create new session' },
-  { command: 'new_chat', description: 'New chat, same agent & workspace' },
+  { command: 'newchat', description: 'New chat, same agent & workspace' },
   { command: 'cancel', description: 'Cancel current session' },
   { command: 'status', description: 'Show status' },
   { command: 'agents', description: 'List available agents' },
@@ -558,7 +558,7 @@ Expected: Clean compile.
 
 Run: `pnpm start`
 
-Open Telegram, go to the bot's chat. Type `/` — you should see the autocomplete menu with all 7 commands (new, new_chat, cancel, status, agents, help, menu) with their descriptions.
+Open Telegram, go to the bot's chat. Type `/` — you should see the autocomplete menu with all 7 commands (new, newchat, cancel, status, agents, help, menu) with their descriptions.
 
 - [ ] **Step 3: Verify dynamic skill commands**
 

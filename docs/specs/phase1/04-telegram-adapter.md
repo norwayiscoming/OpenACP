@@ -133,10 +133,10 @@ private setupCommands(): void {
     }
   })
 
-  this.bot.command('new_chat', async (ctx) => {
+  this.bot.command('newchat', async (ctx) => {
     const threadId = ctx.message.message_thread_id
     if (!threadId) {
-      return ctx.reply('Use /new_chat inside a session topic to inherit its config.')
+      return ctx.reply('Use /newchat inside a session topic to inherit its config.')
     }
 
     const session = await this.core.handleNewChat('telegram', String(threadId))
@@ -210,7 +210,7 @@ private setupCommands(): void {
     await ctx.reply(
       `<b>OpenACP Commands:</b>\n\n` +
       `/new [agent] [workspace] — Create new session\n` +
-      `/new_chat — New chat, same agent & workspace\n` +
+      `/newchat — New chat, same agent & workspace\n` +
       `/cancel — Cancel current session\n` +
       `/status — Show session/system status\n` +
       `/agents — List available agents\n` +
@@ -554,7 +554,7 @@ When a user wants to create a session, guide them through:
 
 Commands reference:
 - /new [agent] [workspace] — Create new session
-- /new_chat — New chat with same agent & workspace
+- /newchat — New chat with same agent & workspace
 - /cancel — Cancel current session
 - /status — Show status
 - /agents — List agents

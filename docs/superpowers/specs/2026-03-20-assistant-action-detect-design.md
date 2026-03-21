@@ -126,7 +126,7 @@ User chat in Assistant topic
 
 1. **Adapter-level, not core** — Only Telegram has the Assistant topic concept. If other adapters need this, extract to core later.
 2. **Confirm button required** — Never auto-execute. User must click to confirm action. Prevents accidental actions from LLM misunderstanding.
-3. **Only side-effect actions** — Status, agents, help are read-only and the LLM can answer from system prompt knowledge. No buttons needed. `new_chat` deliberately excluded for v1 — can be added later.
+3. **Only side-effect actions** — Status, agents, help are read-only and the LLM can answer from system prompt knowledge. No buttons needed. `newchat` deliberately excluded for v1 — can be added later.
 4. **Dual detection** — Command pattern first (reliable), keyword fallback with compound phrases only (natural language, minimizes false positives).
 5. **Reuse existing command logic** — Extract `handleNew`/`handleCancel` internals into functions callable from both command handlers and action buttons.
 6. **Post-finalize detection** — Runs on full finalized text after `MessageDraft.finalize()`, not on streaming chunks. Avoids interfering with the streaming architecture.

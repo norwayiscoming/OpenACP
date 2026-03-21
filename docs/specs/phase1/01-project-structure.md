@@ -31,7 +31,7 @@ openacp/
           index.ts            → TelegramAdapter export
           adapter.ts          → TelegramAdapter extends ChannelAdapter
           bot.ts              → grammy bot setup, message routing
-          commands.ts         → /new, /new_chat, /cancel, /status, /agents, /help
+          commands.ts         → /new, /newchat, /cancel, /status, /agents, /help
           formatting.ts       → Markdown → Telegram HTML
           topics.ts           → Topic create/rename/notification management
           streaming.ts        → MessageDraft + Throttle for real-time streaming

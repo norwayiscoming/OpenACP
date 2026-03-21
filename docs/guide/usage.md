@@ -5,7 +5,7 @@
 | Command | Description |
 |---------|-------------|
 | `/new [agent] [workspace]` | Create a new session (new topic) |
-| `/new_chat` | New session, same agent & workspace |
+| `/newchat` | New session, same agent & workspace |
 | `/cancel` | Cancel current session |
 | `/status` | Show session or system status |
 | `/agents` | List available agents |

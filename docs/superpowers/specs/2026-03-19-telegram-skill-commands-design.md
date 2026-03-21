@@ -22,7 +22,7 @@ Commands to register:
 | Command     | Description                      |
 |-------------|----------------------------------|
 | `new`       | Create new session               |
-| `new_chat`  | New chat, same agent & workspace |
+| `newchat`  | New chat, same agent & workspace |
 | `cancel`    | Cancel current session           |
 | `status`    | Show status                      |
 | `agents`    | List available agents            |

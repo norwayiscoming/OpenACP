@@ -32,8 +32,24 @@ export async function spawnAssistant(
   // assistantInitializing flag — it checks the flag before routing messages.
   core.wireSessionEvents(session, adapter);
 
+  // Build dynamic context for system prompt
+  const allRecords = core.sessionManager.listRecords();
+  const activeCount = allRecords.filter(r => r.status === 'active' || r.status === 'initializing').length;
+  const statusCounts = new Map<string, number>();
+  for (const r of allRecords) {
+    statusCounts.set(r.status, (statusCounts.get(r.status) ?? 0) + 1);
+  }
+  const topicSummary = Array.from(statusCounts.entries()).map(([status, count]) => ({ status, count }));
+
+  const ctx: AssistantContext = {
+    config,
+    activeSessionCount: activeCount,
+    totalSessionCount: allRecords.length,
+    topicSummary,
+  };
+
   // Fire system prompt in background — don't block startup.
-  const systemPrompt = buildAssistantSystemPrompt(config);
+  const systemPrompt = buildAssistantSystemPrompt(ctx);
   const ready = session.enqueuePrompt(systemPrompt)
     .then(() => { log.info({ sessionId: session.id }, "Assistant system prompt completed"); })
     .catch((err) => { log.warn({ err }, "Assistant system prompt failed"); });
@@ -41,20 +57,29 @@ export async function spawnAssistant(
   return { session, ready };
 }
 
-export function buildAssistantSystemPrompt(config: Config): string {
-  const agentNames = Object.keys(config.agents).join(", ");
-  return `You are the OpenACP Assistant. Help users manage their AI coding sessions.
+export interface AssistantContext {
+  config: Config
+  activeSessionCount: number
+  totalSessionCount: number
+  topicSummary: { status: string; count: number }[]
+}
 
-Available agents: ${agentNames}
-Default agent: ${config.defaultAgent}
-Workspace base: ${config.workspace.baseDir}
+export function buildAssistantSystemPrompt(ctx: AssistantContext): string {
+  const { config, activeSessionCount, totalSessionCount, topicSummary } = ctx
+  const agentNames = Object.keys(config.agents).join(", ")
+  const topicBreakdown = topicSummary.map(s => `${s.status}: ${s.count}`).join(', ') || 'none'
 
-When a user wants to create a session, guide them through:
-1. Which agent to use
-2. Which workspace/project
-3. Confirm and create
+  return `You are the OpenACP Assistant. Help users manage their AI coding sessions and topics.
 
-Commands reference:
+## Current State
+- Active sessions: ${activeSessionCount} / ${totalSessionCount} total
+- Topics by status: ${topicBreakdown}
+- Available agents: ${agentNames}
+- Default agent: ${config.defaultAgent}
+- Workspace base: ${config.workspace.baseDir}
+
+## Session Management Commands
+These are Telegram bot commands (type directly in chat):
 - /new [agent] [workspace] — Create new session
 - /newchat — New chat with same agent & workspace
 - /cancel — Cancel current session
@@ -62,7 +87,33 @@ Commands reference:
 - /agents — List agents
 - /help — Show help
 
-Be concise and helpful. When the user confirms session creation, tell them you'll create it now.`;
+## Topic Management (via CLI)
+You have access to bash. Use these commands to manage topics:
+
+### List topics
+\`\`\`bash
+openacp runtime topics
+openacp runtime topics --status finished,error
+\`\`\`
+
+### Delete a specific topic
+\`\`\`bash
+openacp runtime delete-topic <session-id>
+openacp runtime delete-topic <session-id> --force  # for active sessions
+\`\`\`
+
+### Cleanup multiple topics
+\`\`\`bash
+openacp runtime cleanup
+openacp runtime cleanup --status finished,error
+\`\`\`
+
+## Guidelines
+- When a user asks about sessions or topics, run \`openacp runtime topics\` to get current data.
+- When deleting: if the session is active/initializing, warn the user first. Only use --force if they confirm.
+- Format responses nicely for Telegram (use bold, code blocks).
+- Be concise and helpful. Respond in the same language the user uses.
+- When creating sessions, guide through: agent selection → workspace → confirm.`
 }
 
 export async function handleAssistantMessage(

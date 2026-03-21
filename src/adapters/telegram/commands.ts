@@ -37,12 +37,9 @@ export function setupCommands(
 export function buildMenuKeyboard(): InlineKeyboard {
   return new InlineKeyboard()
     .text("🆕 New Session", "m:new")
-    .text("💬 New Chat", "m:newchat")
-    .row()
-    .text("⛔ Cancel", "m:cancel")
-    .text("📊 Status", "m:status")
-    .row()
     .text("📋 Sessions", "m:topics")
+    .row()
+    .text("📊 Status", "m:status")
     .text("🤖 Agents", "m:agents")
     .row()
     .text("🔗 Integrate", "m:integrate")
@@ -69,12 +66,6 @@ export function setupMenuCallbacks(
     switch (data) {
       case "m:new":
         await handleNew(ctx, core, chatId);
-        break;
-      case "m:newchat":
-        await handleNewChat(ctx, core, chatId);
-        break;
-      case "m:cancel":
-        await handleCancel(ctx, core);
         break;
       case "m:status":
         await handleStatus(ctx, core);
@@ -637,17 +628,26 @@ async function handleAgents(ctx: Context, core: OpenACPCore): Promise<void> {
 
 async function handleHelp(ctx: Context): Promise<void> {
   await ctx.reply(
-    `<b>OpenACP Commands:</b>\n\n` +
+    `📖 <b>OpenACP Help</b>\n\n` +
+      `🚀 <b>Getting Started</b>\n` +
+      `Tap 🆕 New Session to start coding with AI.\n` +
+      `Each session gets its own topic — chat there to work with the agent.\n\n` +
+      `💡 <b>Common Tasks</b>\n` +
       `/new [agent] [workspace] — Create new session\n` +
-      `/newchat — New chat, same agent &amp; workspace\n` +
-      `/cancel — Cancel current session\n` +
-      `/status — Show session/system status\n` +
-      `/agents — List available agents\n` +
-      `/menu — Show interactive menu\n` +
+      `/cancel — Cancel session (in session topic)\n` +
+      `/status — Show session or system status\n` +
+      `/sessions — List all sessions\n` +
+      `/agents — List available agents\n\n` +
+      `⚙️ <b>System</b>\n` +
       `/restart — Restart OpenACP\n` +
-      `/update — Update to latest version and restart\n` +
-      `/help — Show this help\n\n` +
-      `Or just chat in the 🤖 Assistant topic for help!`,
+      `/update — Update to latest version\n` +
+      `/integrate — Manage agent integrations\n` +
+      `/menu — Show action menu\n\n` +
+      `🔒 <b>Session Options</b>\n` +
+      `/enable_dangerous — Auto-approve permissions\n` +
+      `/disable_dangerous — Restore permission prompts\n` +
+      `/handoff — Continue session in terminal\n\n` +
+      `💬 Need help? Just ask me in this topic!`,
     { parse_mode: "HTML" },
   );
 }

@@ -24,6 +24,7 @@ import {
   setupIntegrateCallbacks,
   buildMenuKeyboard,
   buildSkillMessages,
+  handlePendingWorkspaceInput,
   STATIC_COMMANDS,
 } from "./commands.js";
 import { PermissionHandler } from "./permissions.js";
@@ -361,6 +362,11 @@ export class TelegramAdapter extends ChannelAdapter<OpenACPCore> {
   private setupRoutes(): void {
     this.bot.on("message:text", async (ctx) => {
       const threadId = ctx.message.message_thread_id;
+
+      // Check for pending workspace input from interactive /new flow
+      if (await handlePendingWorkspaceInput(ctx, this.telegramConfig.chatId)) {
+        return;
+      }
 
       // General topic or no thread → redirect to assistant
       if (!threadId) {

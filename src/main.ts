@@ -140,6 +140,7 @@ export async function startServer() {
         const child = spawnChild(process.execPath, [cliPath, '--daemon-child'], {
           detached: true,
           stdio: ['ignore', out, err],
+          env: { ...process.env, OPENACP_SKIP_UPDATE_CHECK: '1' },
         })
         fs.closeSync(out)
         fs.closeSync(err)
@@ -150,6 +151,7 @@ export async function startServer() {
         const { spawn: spawnChild } = await import('node:child_process')
         const child = spawnChild(process.execPath, process.argv.slice(1), {
           stdio: 'inherit',
+          env: { ...process.env, OPENACP_SKIP_UPDATE_CHECK: '1' },
         })
         await shutdownLogger()
         child.on('exit', (code) => process.exit(code ?? 0))

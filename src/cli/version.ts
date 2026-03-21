@@ -73,7 +73,7 @@ export async function runUpdate(): Promise<boolean> {
 }
 
 export async function checkAndPromptUpdate(): Promise<void> {
-  if (process.env.OPENACP_DEV_LOOP) return
+  if (process.env.OPENACP_DEV_LOOP || process.env.OPENACP_SKIP_UPDATE_CHECK) return
 
   const current = getCurrentVersion()
   if (current === '0.0.0-dev') return

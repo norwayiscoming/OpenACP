@@ -6,7 +6,7 @@
 
 One message, any channel, any agent.
 
-[![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Node.js >= 20](https://img.shields.io/badge/Node.js-%3E%3D%2020-green.svg)](https://nodejs.org/)
 [![ACP Protocol](https://img.shields.io/badge/Protocol-ACP-purple.svg)](https://agentclientprotocol.org/)
 
@@ -152,4 +152,4 @@ See [development guide](docs/guide/development.md).
 
 ## License
 
-[AGPL-3.0](LICENSE)
+[MIT](LICENSE)

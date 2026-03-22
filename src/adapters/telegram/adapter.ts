@@ -26,7 +26,7 @@ import {
   buildSkillMessages,
   handlePendingWorkspaceInput,
   STATIC_COMMANDS,
-} from "./commands.js";
+} from "./commands/index.js";
 import { PermissionHandler } from "./permissions.js";
 import {
   spawnAssistant,

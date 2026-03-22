@@ -32,10 +32,9 @@ Connect Telegram (and more) to 28+ AI coding agents via ACP protocol.
   openacp agents refresh               Force-refresh agent list from registry
 
   \x1b[2mExamples:\x1b[0m
-    openacp agents install gemini        Install Gemini CLI
-    openacp agents run gemini -- auth login   Login to Google
-    openacp agents run claude -- login        Login to Anthropic
-    openacp agents info cursor               See setup instructions
+    openacp agents install gemini           Install Gemini CLI
+    openacp agents run gemini               Login to Google (first run)
+    openacp agents info cursor              See setup instructions
 
 \x1b[1mConfiguration:\x1b[0m
   openacp config                       Interactive config editor
@@ -1278,10 +1277,9 @@ export async function cmdAgents(args: string[]): Promise<void> {
   -h, --help                           Show this help message
 
 \x1b[1mExamples:\x1b[0m
-  openacp agents install gemini        Install Gemini CLI
-  openacp agents run gemini -- auth login   Login to Google
-  openacp agents run claude -- login        Login to Anthropic
-  openacp agents info cursor                See setup instructions
+  openacp agents install gemini           Install Gemini CLI
+  openacp agents run gemini               Login to Google (first run)
+  openacp agents info cursor              See setup instructions
 
 \x1b[2mRun 'openacp agents <command> --help' for more info on a subcommand.\x1b[0m
 `)
@@ -1561,9 +1559,9 @@ Use \x1b[1m--\x1b[0m to separate OpenACP flags from agent arguments.
 ACP-specific flags are automatically stripped.
 
 \x1b[1mExamples:\x1b[0m
-  openacp agents run gemini -- auth login     Login to Google
-  openacp agents run copilot -- auth login    Login to GitHub Copilot
-  openacp agents run claude -- login          Login to Anthropic
+  openacp agents run gemini               Login to Google (first run)
+  openacp agents run copilot              Login to GitHub Copilot (first run)
+  openacp agents run cline                Setup API keys (first run)
 `)
     return;
   }

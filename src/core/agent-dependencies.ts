@@ -73,17 +73,17 @@ const AGENT_SETUP: Record<string, AgentSetupInfo> = {
   },
   "cline": {
     setupSteps: [
-      "Login: openacp agents run cline -- auth (guided API key setup)",
+      "Setup: openacp agents run cline (guided API key setup on first run)",
       "Supports: Anthropic, OpenAI, Gemini, AWS Bedrock, Azure, Ollama, and more",
       "Or set env: export ANTHROPIC_API_KEY=<key> (or OPENAI_API_KEY, etc.)",
     ],
-    loginCommand: "openacp agents run cline -- auth",
+    loginCommand: "openacp agents run cline",
   },
   "auggie": {
     setupSteps: [
-      "Login: openacp agents run auggie -- login (opens browser for Augment account)",
+      "Login: openacp agents run auggie (opens browser for Augment account on first run)",
     ],
-    loginCommand: "openacp agents run auggie -- login",
+    loginCommand: "openacp agents run auggie",
   },
   "qwen-code": {
     setupSteps: [

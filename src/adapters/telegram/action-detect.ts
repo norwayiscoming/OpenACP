@@ -2,7 +2,7 @@ import { nanoid } from "nanoid";
 import { InlineKeyboard } from "grammy";
 import type { Bot } from "grammy";
 import type { OpenACPCore } from "../../core/core.js";
-import { executeNewSession, executeCancelSession, startInteractiveNewSession } from "./commands.js";
+import { executeNewSession, executeCancelSession, startInteractiveNewSession } from "./commands/index.js";
 
 export interface DetectedAction {
   action: "new_session" | "cancel_session";

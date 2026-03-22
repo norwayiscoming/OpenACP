@@ -24,6 +24,7 @@ import {
   setupIntegrateCallbacks,
   buildMenuKeyboard,
   buildSkillMessages,
+  handlePendingWorkspaceInput,
   STATIC_COMMANDS,
 } from "./commands.js";
 import { PermissionHandler } from "./permissions.js";
@@ -31,6 +32,7 @@ import {
   spawnAssistant,
   handleAssistantMessage,
   redirectToAssistant,
+  buildWelcomeMessage,
   type SpawnAssistantResult,
 } from "./assistant.js";
 import {
@@ -235,6 +237,20 @@ export class TelegramAdapter extends ChannelAdapter<OpenACPCore> {
       {
         topicId: this.assistantTopicId,
         getSession: () => this.assistantSession,
+        respawn: async () => {
+          if (this.assistantSession) {
+            await this.assistantSession.destroy();
+            this.assistantSession = null;
+          }
+          const { session, ready } = await spawnAssistant(
+            this.core as OpenACPCore,
+            this,
+            this.assistantTopicId,
+          );
+          this.assistantSession = session;
+          this.assistantInitializing = true;
+          ready.then(() => { this.assistantInitializing = false; });
+        },
       },
     );
     this.permissionHandler.setupCallbackHandler();
@@ -304,19 +320,15 @@ export class TelegramAdapter extends ChannelAdapter<OpenACPCore> {
     try {
       const config = this.core.configManager.get();
       const agents = this.core.agentManager.getAvailableAgents();
-      const agentList = agents
-        .map((a) => `${escapeHtml(a.name)}${a.name === config.defaultAgent ? " (default)" : ""}`)
-        .join(", ");
-      const workspace = escapeHtml(config.workspace.baseDir);
       const allRecords = this.core.sessionManager.listRecords();
-      const activeCount = allRecords.filter(r => r.status === 'active' || r.status === 'initializing').length;
 
-      const welcomeText =
-        `👋 <b>OpenACP Assistant</b> is online.\n\n` +
-        `Available agents: ${agentList}\n` +
-        `Workspace: <code>${workspace}</code>\n` +
-        `Sessions: ${activeCount} active / ${allRecords.length} total\n\n` +
-        `<b>Select an action:</b>`;
+      const welcomeText = buildWelcomeMessage({
+        activeCount: allRecords.filter(r => r.status === 'active' || r.status === 'initializing').length,
+        errorCount: allRecords.filter(r => r.status === 'error').length,
+        totalCount: allRecords.length,
+        agents: agents.map(a => a.name),
+        defaultAgent: config.defaultAgent,
+      });
 
       await this.bot.api.sendMessage(this.telegramConfig.chatId, welcomeText, {
         message_thread_id: this.assistantTopicId,
@@ -364,6 +376,11 @@ export class TelegramAdapter extends ChannelAdapter<OpenACPCore> {
   private setupRoutes(): void {
     this.bot.on("message:text", async (ctx) => {
       const threadId = ctx.message.message_thread_id;
+
+      // Check for pending workspace input from interactive /new flow
+      if (await handlePendingWorkspaceInput(ctx, this.core, this.telegramConfig.chatId, this.assistantTopicId)) {
+        return;
+      }
 
       // General topic or no thread → redirect to assistant
       if (!threadId) {
@@ -427,6 +444,10 @@ export class TelegramAdapter extends ChannelAdapter<OpenACPCore> {
     );
     if (!session) return;
     const threadId = Number(session.threadId);
+    if (!threadId || isNaN(threadId)) {
+      log.warn({ sessionId, threadId: session.threadId }, "Session has no valid threadId, skipping message");
+      return;
+    }
 
     switch (content.type) {
       case "thought": {

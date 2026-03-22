@@ -11,6 +11,28 @@ const log = createChildLogger({ module: "telegram-commands" });
 interface AssistantContext {
   topicId: number;
   getSession: () => Session | null;
+  respawn: () => Promise<void>;
+}
+
+interface PendingNewSession {
+  agentName?: string;
+  workspace?: string;
+  step: "agent" | "workspace" | "workspace_input" | "confirm";
+  messageId: number;
+  threadId?: number;
+  timer: ReturnType<typeof setTimeout>;
+}
+
+const pendingNewSessions = new Map<number, PendingNewSession>();
+
+const PENDING_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+
+function cleanupPending(userId: number): void {
+  const pending = pendingNewSessions.get(userId);
+  if (pending) {
+    clearTimeout(pending.timer);
+    pendingNewSessions.delete(userId);
+  }
 }
 
 export function setupCommands(
@@ -32,17 +54,15 @@ export function setupCommands(
   bot.command("restart", (ctx) => handleRestart(ctx, core));
   bot.command("update", (ctx) => handleUpdate(ctx, core));
   bot.command("integrate", (ctx) => handleIntegrate(ctx, core));
+  bot.command("clear", (ctx) => handleClear(ctx, assistant));
 }
 
 export function buildMenuKeyboard(): InlineKeyboard {
   return new InlineKeyboard()
     .text("🆕 New Session", "m:new")
-    .text("💬 New Chat", "m:newchat")
-    .row()
-    .text("⛔ Cancel", "m:cancel")
-    .text("📊 Status", "m:status")
-    .row()
     .text("📋 Sessions", "m:topics")
+    .row()
+    .text("📊 Status", "m:status")
     .text("🤖 Agents", "m:agents")
     .row()
     .text("🔗 Integrate", "m:integrate")
@@ -66,15 +86,80 @@ export function setupMenuCallbacks(
       /* expired or network — ignore */
     }
 
+    // --- New session interactive flow (prefix-based) ---
+    if (data.startsWith("m:new:agent:")) {
+      const agentName = data.replace("m:new:agent:", "");
+      const userId = ctx.from?.id;
+      if (userId) await startWorkspaceStep(ctx, core, chatId, userId, agentName);
+      return;
+    }
+    if (data === "m:new:ws:default") {
+      const userId = ctx.from?.id;
+      if (!userId) return;
+      const pending = pendingNewSessions.get(userId);
+      if (!pending?.agentName) return;
+      const workspace = core.configManager.get().workspace.baseDir;
+      await startConfirmStep(ctx, chatId, userId, pending.agentName, workspace);
+      return;
+    }
+    if (data === "m:new:ws:custom") {
+      const userId = ctx.from?.id;
+      if (!userId) return;
+      const pending = pendingNewSessions.get(userId);
+      if (!pending?.agentName) return;
+      try {
+        await ctx.api.editMessageText(
+          chatId,
+          pending.messageId,
+          `✏️ <b>Enter your project path:</b>\n\n` +
+            `Full path like <code>~/code/my-project</code>\n` +
+            `Or just the folder name like <code>my-project</code> (will use ${core.configManager.get().workspace.baseDir}/)`,
+          { parse_mode: "HTML" },
+        );
+      } catch {
+        await ctx.reply(
+          `✏️ <b>Enter your project path:</b>`,
+          { parse_mode: "HTML" },
+        );
+      }
+      clearTimeout(pending.timer);
+      pending.step = "workspace_input";
+      pending.timer = setTimeout(() => pendingNewSessions.delete(userId), PENDING_TIMEOUT_MS);
+      return;
+    }
+    if (data === "m:new:confirm") {
+      const userId = ctx.from?.id;
+      if (!userId) return;
+      const pending = pendingNewSessions.get(userId);
+      if (!pending?.agentName || !pending?.workspace) return;
+      cleanupPending(userId);
+      const confirmMsgId = pending.messageId;
+      try {
+        await ctx.api.editMessageText(chatId, confirmMsgId, `⏳ Creating session...`, { parse_mode: "HTML" });
+      } catch { /* ignore */ }
+      const resultThreadId = await createSessionDirect(ctx, core, chatId, pending.agentName, pending.workspace);
+      try {
+        if (resultThreadId) {
+          const link = buildDeepLink(chatId, resultThreadId);
+          await ctx.api.editMessageText(chatId, confirmMsgId, `✅ Session created → <a href="${link}">Open topic</a>`, { parse_mode: "HTML" });
+        } else {
+          await ctx.api.editMessageText(chatId, confirmMsgId, `❌ Session creation failed.`, { parse_mode: "HTML" });
+        }
+      } catch { /* ignore */ }
+      return;
+    }
+    if (data === "m:new:cancel") {
+      const userId = ctx.from?.id;
+      if (userId) cleanupPending(userId);
+      try {
+        await ctx.editMessageText("❌ Session creation cancelled.", { parse_mode: "HTML" });
+      } catch { /* ignore */ }
+      return;
+    }
+
     switch (data) {
       case "m:new":
         await handleNew(ctx, core, chatId);
-        break;
-      case "m:newchat":
-        await handleNewChat(ctx, core, chatId);
-        break;
-      case "m:cancel":
-        await handleCancel(ctx, core);
         break;
       case "m:status":
         await handleStatus(ctx, core);
@@ -135,62 +220,186 @@ async function handleNew(
   const agentName = args[0];
   const workspace = args[1];
 
-  // In assistant topic: if missing params, forward to assistant for conversational gathering
+  // Full args → create directly
+  if (agentName && workspace) {
+    await createSessionDirect(ctx, core, chatId, agentName, workspace);
+    return;
+  }
+
+  // In assistant topic → forward to assistant for conversational handling
   const currentThreadId = ctx.message?.message_thread_id;
-  if (
-    assistant &&
-    currentThreadId === assistant.topicId &&
-    (!agentName || !workspace)
-  ) {
+  if (assistant && currentThreadId === assistant.topicId) {
     const assistantSession = assistant.getSession();
     if (assistantSession) {
       const prompt = agentName
-        ? `User wants to create a new session with agent "${agentName}" but didn't specify a workspace. Ask them which workspace to use.`
-        : `User wants to create a new session. Ask them which agent and workspace to use.`;
+        ? `User wants to create a new session with agent "${agentName}" but didn't specify a workspace. Ask them which project directory to use as workspace.`
+        : `User wants to create a new session. Guide them through choosing an agent and workspace (project directory).`;
       await assistantSession.enqueuePrompt(prompt);
       return;
     }
   }
 
-  log.info({ userId: ctx.from?.id, agentName }, "New session command");
+  // Outside assistant topic → interactive flow
+  const userId = ctx.from?.id;
+  if (!userId) return;
 
-  // Create topic first so threadId is ready before session events fire
+  const agents = core.agentManager.getAvailableAgents();
+  const config = core.configManager.get();
+
+  // If agent provided or only 1 agent → skip to workspace step
+  if (agentName || agents.length === 1) {
+    const selectedAgent = agentName || config.defaultAgent;
+    await startWorkspaceStep(ctx, core, chatId, userId, selectedAgent);
+    return;
+  }
+
+  // Multiple agents → show agent selection
+  const keyboard = new InlineKeyboard();
+  for (const agent of agents) {
+    const label = agent.name === config.defaultAgent
+      ? `${agent.name} (default)`
+      : agent.name;
+    keyboard.text(label, `m:new:agent:${agent.name}`).row();
+  }
+
+  const msg = await ctx.reply(
+    `🤖 <b>Choose an agent:</b>`,
+    { parse_mode: "HTML", reply_markup: keyboard },
+  );
+
+  cleanupPending(userId);
+  pendingNewSessions.set(userId, {
+    step: "agent",
+    messageId: msg.message_id,
+    threadId: currentThreadId,
+    timer: setTimeout(() => pendingNewSessions.delete(userId), PENDING_TIMEOUT_MS),
+  });
+}
+
+async function startWorkspaceStep(
+  ctx: Context,
+  core: OpenACPCore,
+  chatId: number,
+  userId: number,
+  agentName: string,
+): Promise<void> {
+  const config = core.configManager.get();
+  const baseDir = config.workspace.baseDir;
+
+  const keyboard = new InlineKeyboard()
+    .text(`📁 Use ${baseDir}`, "m:new:ws:default")
+    .row()
+    .text("✏️ Enter project path", "m:new:ws:custom");
+
+  const text =
+    `📁 <b>Where should ${escapeHtml(agentName)} work?</b>\n\n` +
+    `Enter the path to your project folder — the agent will read, write, and run code there.\n\n` +
+    `Or use the default directory below:`;
+
+  let msg;
+  try {
+    const pending = pendingNewSessions.get(userId);
+    if (pending?.messageId) {
+      await ctx.api.editMessageText(chatId, pending.messageId, text, {
+        parse_mode: "HTML",
+        reply_markup: keyboard,
+      });
+      msg = { message_id: pending.messageId };
+    } else {
+      msg = await ctx.reply(text, { parse_mode: "HTML", reply_markup: keyboard });
+    }
+  } catch {
+    msg = await ctx.reply(text, { parse_mode: "HTML", reply_markup: keyboard });
+  }
+
+  cleanupPending(userId);
+  pendingNewSessions.set(userId, {
+    agentName,
+    step: "workspace",
+    messageId: msg.message_id,
+    threadId: ctx.message?.message_thread_id ?? (ctx.callbackQuery as any)?.message?.message_thread_id,
+    timer: setTimeout(() => pendingNewSessions.delete(userId), PENDING_TIMEOUT_MS),
+  });
+}
+
+async function startConfirmStep(
+  ctx: Context,
+  chatId: number,
+  userId: number,
+  agentName: string,
+  workspace: string,
+): Promise<void> {
+  const keyboard = new InlineKeyboard()
+    .text("✅ Create", "m:new:confirm")
+    .text("❌ Cancel", "m:new:cancel");
+
+  const text =
+    `✅ <b>Ready to create session?</b>\n\n` +
+    `<b>Agent:</b> ${escapeHtml(agentName)}\n` +
+    `<b>Project:</b> <code>${escapeHtml(workspace)}</code>`;
+
+  let msg;
+  try {
+    const pending = pendingNewSessions.get(userId);
+    if (pending?.messageId) {
+      await ctx.api.editMessageText(chatId, pending.messageId, text, {
+        parse_mode: "HTML",
+        reply_markup: keyboard,
+      });
+      msg = { message_id: pending.messageId };
+    } else {
+      msg = await ctx.reply(text, { parse_mode: "HTML", reply_markup: keyboard });
+    }
+  } catch {
+    msg = await ctx.reply(text, { parse_mode: "HTML", reply_markup: keyboard });
+  }
+
+  cleanupPending(userId);
+  pendingNewSessions.set(userId, {
+    agentName,
+    workspace,
+    step: "confirm",
+    messageId: msg.message_id,
+    threadId: ctx.message?.message_thread_id ?? (ctx.callbackQuery as any)?.message?.message_thread_id,
+    timer: setTimeout(() => pendingNewSessions.delete(userId), PENDING_TIMEOUT_MS),
+  });
+}
+
+async function createSessionDirect(
+  ctx: Context,
+  core: OpenACPCore,
+  chatId: number,
+  agentName: string,
+  workspace: string,
+): Promise<number | null> {
+  log.info({ userId: ctx.from?.id, agentName, workspace }, "New session command (direct)");
+
   let threadId: number | undefined;
   try {
     const topicName = `🔄 New Session`;
     threadId = await createSessionTopic(botFromCtx(ctx), chatId, topicName);
 
-    // Let user know we're setting up (spawn + warm-up can take a while)
     await ctx.api.sendMessage(chatId, `⏳ Setting up session, please wait...`, {
       message_thread_id: threadId,
       parse_mode: "HTML",
     });
 
-    const session = await core.handleNewSession(
-      "telegram",
-      agentName,
-      workspace,
-    );
+    const session = await core.handleNewSession("telegram", agentName, workspace);
     session.threadId = String(threadId);
 
-    // Persist platform mapping
-    await core.sessionManager.updateSessionPlatform(session.id, {
-      topicId: threadId,
-    });
+    await core.sessionManager.updateSessionPlatform(session.id, { topicId: threadId });
 
-    // Rename topic with actual agent name
     const finalName = `🔄 ${session.agentName} — New Session`;
     try {
       await ctx.api.editForumTopic(chatId, threadId, { name: finalName });
-    } catch {
-      /* ignore rename failures */
-    }
+    } catch { /* ignore rename failures */ }
 
     await ctx.api.sendMessage(
       chatId,
-      `✅ Session started\n` +
+      `✅ <b>Session started</b>\n` +
         `<b>Agent:</b> ${escapeHtml(session.agentName)}\n` +
-        `<b>Workspace:</b> <code>${escapeHtml(session.workingDirectory)}</code>`,
+        `<b>Workspace:</b> <code>${escapeHtml(session.workingDirectory)}</code>\n\n` +
+        `This is your coding session — chat here to work with the agent.`,
       {
         message_thread_id: threadId,
         parse_mode: "HTML",
@@ -198,20 +407,16 @@ async function handleNew(
       },
     );
 
-    // Warm up model cache in background while user types
     session.warmup().catch((err) => log.error({ err }, "Warm-up error"));
+    return threadId ?? null;
   } catch (err) {
     log.error({ err }, "Session creation failed");
-    // Clean up orphaned topic if session creation failed
     if (threadId) {
-      try {
-        await ctx.api.deleteForumTopic(chatId, threadId);
-      } catch {
-        /* ignore cleanup failures */
-      }
+      try { await ctx.api.deleteForumTopic(chatId, threadId); } catch { /* ignore */ }
     }
     const message = err instanceof Error ? err.message : (typeof err === 'object' ? JSON.stringify(err) : String(err));
     await ctx.reply(`❌ ${escapeHtml(message)}`, { parse_mode: "HTML" });
+    return null;
   }
 }
 
@@ -637,19 +842,52 @@ async function handleAgents(ctx: Context, core: OpenACPCore): Promise<void> {
 
 async function handleHelp(ctx: Context): Promise<void> {
   await ctx.reply(
-    `<b>OpenACP Commands:</b>\n\n` +
+    `📖 <b>OpenACP Help</b>\n\n` +
+      `🚀 <b>Getting Started</b>\n` +
+      `Tap 🆕 New Session to start coding with AI.\n` +
+      `Each session gets its own topic — chat there to work with the agent.\n\n` +
+      `💡 <b>Common Tasks</b>\n` +
       `/new [agent] [workspace] — Create new session\n` +
-      `/newchat — New chat, same agent &amp; workspace\n` +
-      `/cancel — Cancel current session\n` +
-      `/status — Show session/system status\n` +
-      `/agents — List available agents\n` +
-      `/menu — Show interactive menu\n` +
+      `/cancel — Cancel session (in session topic)\n` +
+      `/status — Show session or system status\n` +
+      `/sessions — List all sessions\n` +
+      `/agents — List available agents\n\n` +
+      `⚙️ <b>System</b>\n` +
       `/restart — Restart OpenACP\n` +
-      `/update — Update to latest version and restart\n` +
-      `/help — Show this help\n\n` +
-      `Or just chat in the 🤖 Assistant topic for help!`,
+      `/update — Update to latest version\n` +
+      `/integrate — Manage agent integrations\n` +
+      `/menu — Show action menu\n\n` +
+      `🔒 <b>Session Options</b>\n` +
+      `/enable_dangerous — Auto-approve permissions\n` +
+      `/disable_dangerous — Restore permission prompts\n` +
+      `/handoff — Continue session in terminal\n` +
+      `/clear — Clear assistant history\n\n` +
+      `💬 Need help? Just ask me in this topic!`,
     { parse_mode: "HTML" },
   );
+}
+
+async function handleClear(ctx: Context, assistant?: AssistantContext): Promise<void> {
+  if (!assistant) {
+    await ctx.reply("⚠️ Assistant is not available.", { parse_mode: "HTML" });
+    return;
+  }
+
+  const threadId = ctx.message?.message_thread_id;
+  if (threadId !== assistant.topicId) {
+    await ctx.reply("ℹ️ /clear only works in the Assistant topic.", { parse_mode: "HTML" });
+    return;
+  }
+
+  await ctx.reply("🔄 Clearing assistant history...", { parse_mode: "HTML" });
+
+  try {
+    await assistant.respawn();
+    await ctx.reply("✅ Assistant history cleared.", { parse_mode: "HTML" });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    await ctx.reply(`❌ Failed to clear: <code>${message}</code>`, { parse_mode: "HTML" });
+  }
 }
 
 export function buildDangerousModeKeyboard(sessionId: string, enabled: boolean): InlineKeyboard {
@@ -1055,6 +1293,90 @@ export function setupIntegrateCallbacks(
   });
 }
 
+/**
+ * Check if a text message is a workspace path input for the interactive new session flow.
+ * Returns true if the message was handled (caller should not process further).
+ */
+export async function handlePendingWorkspaceInput(
+  ctx: Context,
+  core: OpenACPCore,
+  chatId: number,
+  assistantTopicId?: number,
+): Promise<boolean> {
+  const userId = ctx.from?.id;
+  if (!userId) return false;
+  const pending = pendingNewSessions.get(userId);
+  if (!pending || !ctx.message?.text) return false;
+  // Accept text input at both "workspace" step (user types directly instead of pressing buttons)
+  // and "workspace_input" step (user pressed "Custom path" button)
+  if (pending.step !== "workspace_input" && pending.step !== "workspace") return false;
+
+  // Only intercept in assistant topic (or no-thread/general) — never in session topics
+  const threadId = ctx.message.message_thread_id;
+  if (threadId && threadId !== assistantTopicId) return false;
+
+  let workspace = ctx.message.text.trim();
+  if (!workspace || !pending.agentName) {
+    await ctx.reply("⚠️ Please enter a valid directory path.", { parse_mode: "HTML" });
+    return true;
+  }
+
+  // Relative path (no / or ~ prefix) → resolve against baseDir
+  if (!workspace.startsWith("/") && !workspace.startsWith("~")) {
+    const baseDir = core.configManager.get().workspace.baseDir;
+    workspace = `${baseDir.replace(/\/$/, "")}/${workspace}`;
+  }
+
+  await startConfirmStep(ctx, chatId, userId, pending.agentName, workspace);
+  return true;
+}
+
+/**
+ * Start the interactive new session flow (agent → workspace → confirm).
+ * Used by action-detect when workspace is not provided.
+ */
+export async function startInteractiveNewSession(
+  ctx: Context,
+  core: OpenACPCore,
+  chatId: number,
+  agentName?: string,
+): Promise<void> {
+  const userId = ctx.from?.id;
+  if (!userId) return;
+
+  const agents = core.agentManager.getAvailableAgents();
+  const config = core.configManager.get();
+
+  // If agent provided or only 1 agent → skip to workspace step
+  if (agentName || agents.length === 1) {
+    const selectedAgent = agentName || config.defaultAgent;
+    await startWorkspaceStep(ctx, core, chatId, userId, selectedAgent);
+    return;
+  }
+
+  // Multiple agents → show agent selection
+  const keyboard = new InlineKeyboard();
+  for (const agent of agents) {
+    const label = agent.name === config.defaultAgent
+      ? `${agent.name} (default)`
+      : agent.name;
+    keyboard.text(label, `m:new:agent:${agent.name}`).row();
+  }
+
+  const msg = await ctx.reply(
+    `🤖 <b>Choose an agent:</b>`,
+    { parse_mode: "HTML", reply_markup: keyboard },
+  );
+
+  cleanupPending(userId);
+  pendingNewSessions.set(userId, {
+    step: "agent",
+    messageId: msg.message_id,
+    threadId: (ctx.callbackQuery as any)?.message?.message_thread_id,
+    timer: setTimeout(() => pendingNewSessions.delete(userId), PENDING_TIMEOUT_MS),
+  });
+}
+
 export const STATIC_COMMANDS = [
   { command: "new", description: "Create new session" },
   { command: "newchat", description: "New chat, same agent & workspace" },
@@ -1068,6 +1390,7 @@ export const STATIC_COMMANDS = [
   { command: "disable_dangerous", description: "Restore normal permission prompts (session only)" },
   { command: "integrate", description: "Manage agent integrations" },
   { command: "handoff", description: "Continue this session in your terminal" },
+  { command: "clear", description: "Clear assistant history" },
   { command: "restart", description: "Restart OpenACP" },
   { command: "update", description: "Update to latest version and restart" },
 ];

@@ -261,6 +261,7 @@ async function handleNew(
       : agent.name;
     keyboard.text(label, `m:new:agent:${agent.name}`).row();
   }
+  keyboard.text("❌ Cancel", "m:new:cancel");
 
   const msg = await ctx.reply(
     `🤖 <b>Choose an agent:</b>`,
@@ -289,7 +290,9 @@ async function startWorkspaceStep(
   const keyboard = new InlineKeyboard()
     .text(`📁 Use ${baseDir}`, "m:new:ws:default")
     .row()
-    .text("✏️ Enter project path", "m:new:ws:custom");
+    .text("✏️ Enter project path", "m:new:ws:custom")
+    .row()
+    .text("❌ Cancel", "m:new:cancel");
 
   const text =
     `📁 <b>Where should ${escapeHtml(agentName)} work?</b>\n\n` +
@@ -1362,6 +1365,7 @@ export async function startInteractiveNewSession(
       : agent.name;
     keyboard.text(label, `m:new:agent:${agent.name}`).row();
   }
+  keyboard.text("❌ Cancel", "m:new:cancel");
 
   const msg = await ctx.reply(
     `🤖 <b>Choose an agent:</b>`,

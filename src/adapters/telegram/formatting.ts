@@ -176,12 +176,20 @@ export function splitMessage(text: string, maxLength = 3800): string[] {
       chunks.push(remaining)
       break
     }
-    let splitAt = remaining.lastIndexOf('\n\n', maxLength)
-    if (splitAt === -1 || splitAt < maxLength * 0.2) {
-      splitAt = remaining.lastIndexOf('\n', maxLength)
+
+    // If only slightly over limit, split roughly in half for balanced chunks
+    // instead of creating a large chunk + tiny remainder
+    const wouldLeaveSmall = remaining.length < maxLength * 1.3
+    const searchLimit = wouldLeaveSmall
+      ? Math.floor(remaining.length / 2) + 300
+      : maxLength
+
+    let splitAt = remaining.lastIndexOf('\n\n', searchLimit)
+    if (splitAt === -1 || splitAt < searchLimit * 0.2) {
+      splitAt = remaining.lastIndexOf('\n', searchLimit)
     }
-    if (splitAt === -1 || splitAt < maxLength * 0.2) {
-      splitAt = maxLength
+    if (splitAt === -1 || splitAt < searchLimit * 0.2) {
+      splitAt = searchLimit
     }
 
     // Avoid splitting inside a fenced code block (odd number of ``` before split point)

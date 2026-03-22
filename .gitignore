@@ -5,3 +5,4 @@ dist/
 *.tsbuildinfo
 .env
 dist-publish/
+.worktrees/

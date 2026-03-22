@@ -543,9 +543,10 @@ export class TelegramAdapter extends ChannelAdapter<OpenACPCore> {
           if (viewerFilePath) toolState.viewerFilePath = viewerFilePath;
           if (meta.name) toolState.name = meta.name;
           if (meta.kind) toolState.kind = meta.kind;
-          // Edit on terminal status OR when viewer links are available (for permission review)
+          // Only edit on terminal status (completed/failed) — minimizes API calls to avoid rate limits.
+          // Viewer links are accumulated in toolState and included in the terminal edit.
           const isTerminal = meta.status === "completed" || meta.status === "failed";
-          if (!isTerminal && !meta.viewerLinks) break;
+          if (!isTerminal) break;
           await toolState.ready;
           log.debug(
             { toolId: meta.id, status: meta.status, hasViewerLinks: !!toolState.viewerLinks, viewerLinks: toolState.viewerLinks, name: toolState.name, msgId: toolState.msgId },

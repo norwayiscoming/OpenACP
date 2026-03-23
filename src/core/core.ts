@@ -365,7 +365,7 @@ export class OpenACPCore {
     // 7. Update store with adopt-specific fields
     await this.sessionManager.patchRecord(session.id, {
       originalAgentSessionId: agentSessionId,
-      platform: { topicId: Number(session.threadId) },
+      platform: { topicId: (() => { const n = Number(session.threadId); return Number.isNaN(n) ? session.threadId : n; })() },
     });
 
     return {

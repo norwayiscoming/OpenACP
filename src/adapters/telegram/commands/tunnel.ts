@@ -139,11 +139,18 @@ export function setupTunnelCallbacks(
         const port = parseInt(data.replace("tn:stop:", ""), 10);
         await core.tunnelService.stopTunnel(port);
         await ctx.answerCallbackQuery({ text: `Port ${port} stopped` });
-        // Refresh list
+        // Refresh list with keyboard
         const remaining = core.tunnelService.listTunnels();
         if (remaining.length === 0) {
           await ctx.editMessageText("🔌 All tunnels stopped.", { parse_mode: "HTML" });
         } else {
+          const kb = new InlineKeyboard();
+          for (const e of remaining) {
+            kb.text(`🔌 Stop ${e.port}${e.label ? ` (${e.label})` : ""}`, `tn:stop:${e.port}`).row();
+          }
+          if (remaining.length > 1) {
+            kb.text("🔌 Stop all", "tn:stop-all").row();
+          }
           await ctx.editMessageText(
             `<b>Active tunnels:</b>\n\n` +
             remaining.map(e => {
@@ -152,7 +159,7 @@ export function setupTunnelCallbacks(
               const url = e.publicUrl ? `\n  → <a href="${escapeHtml(e.publicUrl)}">${escapeHtml(e.publicUrl)}</a>` : "";
               return `${status} Port <b>${e.port}</b>${label}${url}`;
             }).join("\n\n"),
-            { parse_mode: "HTML" },
+            { parse_mode: "HTML", reply_markup: kb },
           );
         }
       }

@@ -18,7 +18,7 @@ export class TunnelService {
     this.config = config
     this.store = new ViewerStore(config.storeTtlMinutes)
     this.registry = new TunnelRegistry({
-      maxUserTunnels: (config as any).maxUserTunnels ?? 5,
+      maxUserTunnels: config.maxUserTunnels ?? 5,
       providerOptions: config.options,
     })
   }
@@ -79,7 +79,7 @@ export class TunnelService {
   }
 
   async stop(): Promise<void> {
-    await this.registry.stopAll()
+    await this.registry.shutdown()
     this.registry.flush()
     if (this.server) {
       this.server.close()
@@ -102,6 +102,10 @@ export class TunnelService {
 
   async stopTunnel(port: number): Promise<void> {
     return this.registry.stop(port)
+  }
+
+  async stopAllUser(): Promise<void> {
+    return this.registry.stopAllUser()
   }
 
   async stopBySession(sessionId: string): Promise<TunnelEntry[]> {

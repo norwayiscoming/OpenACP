@@ -139,7 +139,14 @@ export class TunnelRegistry {
     return stopped
   }
 
-  async stopAll(): Promise<void> {
+  async stopAllUser(): Promise<void> {
+    const userEntries = this.list(false)
+    for (const entry of userEntries) {
+      try { await this.stop(entry.port) } catch { /* ignore */ }
+    }
+  }
+
+  async shutdown(): Promise<void> {
     for (const [, live] of this.entries) {
       if (live.spawnPromise) {
         try { await live.spawnPromise } catch { /* ignore */ }
@@ -180,7 +187,9 @@ export class TunnelRegistry {
       const raw = JSON.parse(fs.readFileSync(REGISTRY_PATH, 'utf-8')) as PersistedEntry[]
       log.info({ count: raw.length }, 'Restoring tunnels')
 
-      for (const persisted of raw) {
+      // Only restore user tunnels — system tunnel is registered separately by TunnelService.start()
+      const userEntries = raw.filter(e => e.type === 'user')
+      for (const persisted of userEntries) {
         try {
           await this.add(persisted.port, {
             type: persisted.type,

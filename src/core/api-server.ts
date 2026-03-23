@@ -154,6 +154,8 @@ export class ApiServer {
       } else if (method === 'GET' && url === '/api/adapters') {
         await this.handleListAdapters(res)
       } else if (method === 'GET' && url === '/api/tunnel') {
+        await this.handleTunnelStatus(res)
+      } else if (method === 'GET' && url === '/api/tunnel/list') {
         await this.handleTunnelList(res)
       } else if (method === 'POST' && url === '/api/tunnel') {
         await this.handleTunnelAdd(req, res)
@@ -467,6 +469,15 @@ export class ApiServer {
     this.sendJson(res, 200, { adapters })
   }
 
+  private async handleTunnelStatus(res: http.ServerResponse): Promise<void> {
+    const tunnel = this.core.tunnelService
+    if (tunnel) {
+      this.sendJson(res, 200, { enabled: true, url: tunnel.getPublicUrl(), provider: this.core.configManager.get().tunnel.provider })
+    } else {
+      this.sendJson(res, 200, { enabled: false })
+    }
+  }
+
   private async handleTunnelList(res: http.ServerResponse): Promise<void> {
     const tunnel = this.core.tunnelService
     if (!tunnel) {
@@ -520,11 +531,9 @@ export class ApiServer {
       this.sendJson(res, 400, { error: 'Tunnel service is not enabled' })
       return
     }
-    const entries = tunnel.listTunnels()
-    for (const entry of entries) {
-      try { await tunnel.stopTunnel(entry.port) } catch { /* ignore system tunnels */ }
-    }
-    this.sendJson(res, 200, { ok: true, stopped: entries.length })
+    const count = tunnel.listTunnels().length
+    await tunnel.stopAllUser()
+    this.sendJson(res, 200, { ok: true, stopped: count })
   }
 
   private async handleNotify(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {

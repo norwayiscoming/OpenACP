@@ -878,7 +878,7 @@ export async function cmdTunnel(args: string[]): Promise<void> {
       console.log(`Tunnel active: port ${data.port} → ${data.publicUrl}`)
 
     } else if (subCmd === 'list') {
-      const res = await apiCall(port, '/api/tunnel')
+      const res = await apiCall(port, '/api/tunnel/list')
       const data = await res.json() as Array<Record<string, unknown>>
       if (data.length === 0) {
         console.log('No active tunnels.')

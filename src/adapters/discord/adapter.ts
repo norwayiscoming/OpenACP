@@ -1,4 +1,4 @@
-import { Client, GatewayIntentBits, type Guild, type ForumChannel, type TextChannel, type ThreadChannel } from 'discord.js'
+import { Client, GatewayIntentBits, MessageFlags, type Guild, type ForumChannel, type TextChannel, type ThreadChannel } from 'discord.js'
 import { ChannelAdapter } from '../../core/channel.js'
 import type { OutgoingMessage, PermissionRequest, NotificationMessage, AgentCommand, PlanEntry } from '../../core/types.js'
 import type { OpenACPCore } from '../../core/core.js'
@@ -27,8 +27,10 @@ import {
 import {
   spawnAssistant,
   buildWelcomeMessage,
-  handleAssistantMessage,
 } from './assistant.js'
+import type { Attachment } from '../../core/types.js'
+import type { FileService } from '../../core/file-service.js'
+import { buildFallbackText, downloadDiscordAttachment } from './media.js'
 
 export class DiscordAdapter extends ChannelAdapter<OpenACPCore> {
   private client: Client
@@ -44,6 +46,7 @@ export class DiscordAdapter extends ChannelAdapter<OpenACPCore> {
   private notificationChannel!: TextChannel
   private assistantSession: Session | null = null
   private assistantInitializing = false
+  private fileService: FileService
 
   constructor(core: OpenACPCore, config: DiscordChannelConfig) {
     super(core, config)
@@ -60,6 +63,7 @@ export class DiscordAdapter extends ChannelAdapter<OpenACPCore> {
     this.sendQueue = new DiscordSendQueue()
     this.toolTracker = new ToolCallTracker(this.sendQueue)
     this.draftManager = new DraftManager(this.sendQueue)
+    this.fileService = core.fileService
 
     // Wire discord.js rate limit events to send queue
     this.client.rest.on('rateLimited', (info) => {
@@ -193,14 +197,39 @@ export class DiscordAdapter extends ChannelAdapter<OpenACPCore> {
 
         const threadId = message.channel.id
         const userId = message.author.id
-        const text = message.content
+        let text = message.content
+
+        // Ignore messages with no text and no attachments
+        if (!text && message.attachments.size === 0) return
+
+        // Resolve sessionId for file storage (fallback to "unknown" for new sessions)
+        const sessionId =
+          this.core.sessionManager.getSessionByThread('discord', threadId)?.id ?? 'unknown'
+
+        // Process attachments
+        const attachments = await this.processIncomingAttachments(message, sessionId)
+
+        // Generate fallback text if message has attachments but no text
+        if (!text && attachments.length > 0) {
+          text = buildFallbackText(attachments)
+        }
+
+        // If all attachment downloads failed and no text, notify user
+        if (!text && attachments.length === 0 && message.attachments.size > 0) {
+          try {
+            await message.reply('Failed to process attachment(s)')
+          } catch { /* best effort */ }
+          return
+        }
 
         // Route assistant thread messages to assistant
         if (
           this.discordConfig.assistantThreadId &&
           threadId === this.discordConfig.assistantThreadId
         ) {
-          await handleAssistantMessage(this.assistantSession, text)
+          if (this.assistantSession && text) {
+            await this.assistantSession.enqueuePrompt(text, attachments.length > 0 ? attachments : undefined)
+          }
           return
         }
 
@@ -210,6 +239,7 @@ export class DiscordAdapter extends ChannelAdapter<OpenACPCore> {
           threadId,
           userId,
           text,
+          ...(attachments.length > 0 ? { attachments } : {}),
         })
       } catch (err) {
         log.error({ err }, '[DiscordAdapter] messageCreate handler error')
@@ -271,6 +301,49 @@ export class DiscordAdapter extends ChannelAdapter<OpenACPCore> {
       this.assistantSession = null
     }
     await this.setupAssistant()
+  }
+
+  // ─── Incoming media ──────────────────────────────────────────────────
+
+  private async processIncomingAttachments(
+    message: import('discord.js').Message,
+    sessionId: string,
+  ): Promise<Attachment[]> {
+    if (message.attachments.size === 0) return []
+
+    const isVoiceMessage = message.flags.has(MessageFlags.IsVoiceMessage)
+
+    const results = await Promise.allSettled(
+      message.attachments.map(async (discordAtt) => {
+        const buffer = await downloadDiscordAttachment(
+          discordAtt.url,
+          discordAtt.name ?? 'attachment',
+        )
+        if (!buffer) return null
+
+        let data = buffer
+        let fileName = discordAtt.name ?? 'attachment'
+        let mimeType = discordAtt.contentType ?? 'application/octet-stream'
+
+        // Convert voice messages from OGG Opus to WAV
+        if (isVoiceMessage && mimeType.includes('ogg')) {
+          try {
+            data = await this.fileService.convertOggToWav(buffer)
+            fileName = 'voice.wav'
+            mimeType = 'audio/wav'
+          } catch (err) {
+            log.warn({ err }, '[discord-media] OGG→WAV conversion failed, saving original')
+          }
+        }
+
+        return this.fileService.saveFile(sessionId, fileName, data, mimeType)
+      }),
+    )
+
+    return results
+      .filter((r): r is PromiseFulfilledResult<Attachment | null> => r.status === 'fulfilled')
+      .map((r) => r.value)
+      .filter((att): att is Attachment => att !== null)
   }
 
   // ─── Helper: resolve thread ───────────────────────────────────────────────

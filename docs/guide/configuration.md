@@ -147,7 +147,7 @@ Sessions are stored in `~/.openacp/sessions.json` with debounced writes (2s). En
 
 ## API
 
-Built-in HTTP API for programmatic session management. Used by `openacp runtime` commands.
+Built-in HTTP API for programmatic session management. Used by `openacp api` commands.
 
 | Field | Default | Description |
 |-------|---------|-------------|

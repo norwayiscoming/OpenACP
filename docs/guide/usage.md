@@ -27,29 +27,23 @@ openacp logs                         # Tail logs
 
 On macOS, auto-start is supported via LaunchAgent. Enable it in `openacp config` → Run Mode → Enable auto-start.
 
-## CLI Runtime Commands
+## CLI API Commands
 
-Control sessions from the terminal without Telegram. Requires a running daemon.
-
-```bash
-openacp runtime new claude ~/code/my-project   # Create session with agent + workspace
-openacp runtime new                            # Create session with defaults
-openacp runtime status                         # List active sessions
-openacp runtime cancel <session-id>            # Cancel a session
-openacp runtime agents                         # List available agents
-```
-
-Sessions created via CLI also appear as Telegram topics, so you can continue the conversation there.
-
-## Config Editor
-
-Interactive editor for all settings:
+Control sessions from the terminal. Requires a running daemon.
 
 ```bash
-openacp config
+openacp api new [agent] [workspace]      # Create a new session
+openacp api status                       # List active sessions
+openacp api session <id>                 # Show session details
+openacp api send <id> <prompt>           # Send prompt to session
+openacp api cancel <id>                  # Cancel a session
+openacp api agents                       # List available agents
+openacp api health                       # System health check
+openacp api config                       # Show runtime config
+openacp api restart                      # Restart daemon
 ```
 
-Sections: Telegram, Agent, Workspace, Security, Logging, Run Mode, API, Tunnel.
+Sessions created via CLI also appear as Telegram/Discord topics, so you can continue the conversation there.
 
 ## Telegram Commands
 

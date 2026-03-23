@@ -39,8 +39,9 @@ export function DashboardPage() {
     setRestarting(true);
     try {
       await api.post("/api/restart");
-    } catch {
+    } catch (err) {
       setRestarting(false);
+      setError(`Restart failed: ${(err as Error).message}`);
     }
   }, []);
 

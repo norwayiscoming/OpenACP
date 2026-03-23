@@ -22,6 +22,7 @@ import {
   cmdIntegrate,
   cmdDoctor,
   cmdAgents,
+  cmdTunnel,
 } from './cli/commands.js'
 
 const args = process.argv.slice(2);
@@ -47,6 +48,7 @@ const commands: Record<string, () => Promise<void>> = {
   'integrate': () => cmdIntegrate(args),
   'doctor': () => cmdDoctor(args),
   'agents': () => cmdAgents(args),
+  'tunnel': () => cmdTunnel(args),
   '--daemon-child': async () => {
     const { startServer } = await import('./main.js')
     await startServer()

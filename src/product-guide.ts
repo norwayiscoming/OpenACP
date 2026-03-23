@@ -285,6 +285,23 @@ When tunnel is enabled, file edits and diffs get "View" buttons that open in you
 Enable in config: set \`tunnel.enabled\` to \`true\`.
 Providers: Cloudflare (default, free), ngrok, bore, Tailscale Funnel.
 
+### Port Tunneling
+
+Expose any local port (dev servers, APIs, etc.) to the internet:
+
+**CLI commands** (agent can call these directly):
+- \`openacp tunnel add <port> --label <name>\` — Create tunnel to a local port
+- \`openacp tunnel list\` — List active tunnels
+- \`openacp tunnel stop <port>\` — Stop a tunnel
+- \`openacp tunnel stop-all\` — Stop all user tunnels
+
+**Telegram commands**:
+- \`/tunnel <port> [label]\` — Create tunnel
+- \`/tunnels\` — List active tunnels
+- \`/tunnel stop <port>\` — Stop tunnel
+
+Example: after starting a dev server on port 3000, run \`openacp tunnel add 3000 --label my-app\` to get a public URL.
+
 ---
 
 ## Configuration

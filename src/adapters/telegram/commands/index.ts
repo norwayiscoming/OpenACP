@@ -11,6 +11,7 @@ import { handleAgents, handleInstall, handleAgentCallback } from "./agents.js";
 import { handleIntegrate } from "./integrate.js";
 import { handleSettings, setupSettingsCallbacks } from "./settings.js";
 import { handleDoctor, setupDoctorCallbacks } from "./doctor.js";
+import { handleTunnel, handleTunnels, setupTunnelCallbacks } from "./tunnel.js";
 
 export function setupCommands(
   bot: Bot,
@@ -34,6 +35,8 @@ export function setupCommands(
   bot.command("integrate", (ctx) => handleIntegrate(ctx, core));
   bot.command("clear", (ctx) => handleClear(ctx, assistant));
   bot.command("doctor", (ctx) => handleDoctor(ctx));
+  bot.command("tunnel", (ctx) => handleTunnel(ctx, core));
+  bot.command("tunnels", (ctx) => handleTunnels(ctx, core));
 }
 
 export function setupAllCallbacks(
@@ -52,6 +55,9 @@ export function setupAllCallbacks(
 
   // Doctor handlers — must be before broad m: handler
   setupDoctorCallbacks(bot);
+
+  // Tunnel callbacks — must be before broad m: handler
+  setupTunnelCallbacks(bot, core);
 
   // Agent callbacks (install + pagination) — must be before broad m: handler
   bot.callbackQuery(/^ag:/, (ctx) => handleAgentCallback(ctx, core));
@@ -133,4 +139,6 @@ export const STATIC_COMMANDS = [
   { command: "restart", description: "Restart OpenACP" },
   { command: "update", description: "Update to latest version and restart" },
   { command: "doctor", description: "Run system diagnostics" },
+  { command: "tunnel", description: "Create/stop tunnel for a local port" },
+  { command: "tunnels", description: "List active tunnels" },
 ];

@@ -25,6 +25,11 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   });
 
   if (!res.ok) {
+    if (res.status === 401) {
+      sessionStorage.removeItem("openacp-token");
+      window.location.reload();
+      throw new ApiError(401, "Unauthorized");
+    }
     const body = await res.json().catch(() => ({ error: res.statusText }));
     throw new ApiError(
       res.status,

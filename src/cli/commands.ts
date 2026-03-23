@@ -488,7 +488,7 @@ export async function cmdStart(): Promise<void> {
 
 export async function cmdStop(): Promise<void> {
   const { stopDaemon } = await import('../core/daemon.js')
-  const result = stopDaemon()
+  const result = await stopDaemon()
   if (result.stopped) {
     console.log(`OpenACP daemon stopped (was PID ${result.pid})`)
   } else {

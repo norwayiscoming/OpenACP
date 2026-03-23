@@ -128,10 +128,11 @@ export class MessageDraft {
       return this.messageId
     }
 
-    // Try sending full buffer as a single message first (most common case).
+    // Try sending full buffer as a single message (most common case).
     // Only split if HTML exceeds Telegram's 4096 char limit.
     const fullHtml = markdownToTelegramHtml(this.buffer)
     if (fullHtml.length <= 4096) {
+      // Single enqueue — no ordering issue possible
       try {
         if (this.messageId) {
           await this.sendQueue.enqueue(
@@ -159,56 +160,54 @@ export class MessageDraft {
 
     // HTML > 4096 or single send failed — split markdown, convert each chunk separately.
     // This prevents breaking HTML tags (e.g. <pre><code>) at split boundaries.
+    //
+    // CRITICAL: Enqueue ALL chunks in a tight synchronous loop (no await between
+    // enqueues). This prevents concurrent event handlers (usage, session_end) from
+    // slipping their messages between our chunks in the sendQueue.
     const mdChunks = splitMessage(this.buffer)
+    const chunkPromises: Promise<void>[] = []
 
     for (let i = 0; i < mdChunks.length; i++) {
       const html = markdownToTelegramHtml(mdChunks[i])
-      try {
-        if (i === 0 && this.messageId) {
-          await this.sendQueue.enqueue(
-            () => this.bot.api.editMessageText(this.chatId, this.messageId!, html, {
-              parse_mode: 'HTML',
-            }),
-            { type: 'other' },
-          )
-        } else {
-          const msg = await this.sendQueue.enqueue(
-            () => this.bot.api.sendMessage(this.chatId, html, {
-              message_thread_id: this.threadId,
-              parse_mode: 'HTML',
-              disable_notification: true,
-            }),
-            { type: 'other' },
-          )
-          if (msg) {
-            this.messageId = msg.message_id
+      const isEdit = i === 0 && !!this.messageId
+      const chunkMd = mdChunks[i]
+
+      const fn = isEdit
+        ? () => this.bot.api.editMessageText(this.chatId, this.messageId!, html, { parse_mode: 'HTML' }) as Promise<unknown>
+        : () => this.bot.api.sendMessage(this.chatId, html, {
+            message_thread_id: this.threadId,
+            parse_mode: 'HTML',
+            disable_notification: true,
+          })
+      const promise = this.sendQueue.enqueue(fn, { type: 'other' })
+        .then((result) => {
+          if (!isEdit && result && typeof result === 'object' && 'message_id' in (result as Record<string, unknown>)) {
+            this.messageId = (result as { message_id: number }).message_id
           }
-        }
-      } catch {
-        // HTML failed for this chunk — try plain text fallback
-        try {
-          if (i === 0 && this.messageId) {
-            await this.sendQueue.enqueue(
-              () => this.bot.api.editMessageText(this.chatId, this.messageId!, mdChunks[i].slice(0, 4096)),
-              { type: 'other' },
-            )
-          } else {
-            const msg = await this.sendQueue.enqueue(
-              () => this.bot.api.sendMessage(this.chatId, mdChunks[i].slice(0, 4096), {
+        })
+        .catch(() => {
+          // HTML failed — enqueue plain text fallback (goes after all chunks, acceptable)
+          const fallbackFn = isEdit
+            ? () => this.bot.api.editMessageText(this.chatId, this.messageId!, chunkMd.slice(0, 4096)) as Promise<unknown>
+            : () => this.bot.api.sendMessage(this.chatId, chunkMd.slice(0, 4096), {
                 message_thread_id: this.threadId,
                 disable_notification: true,
-              }),
-              { type: 'other' },
-            )
-            if (msg) {
-              this.messageId = msg.message_id
-            }
-          }
-        } catch {
-          // Give up on this chunk
-        }
-      }
+              })
+          return this.sendQueue.enqueue(fallbackFn, { type: 'other' })
+            .then((result) => {
+              if (!isEdit && result && typeof result === 'object' && 'message_id' in (result as Record<string, unknown>)) {
+                this.messageId = (result as { message_id: number }).message_id
+              }
+            })
+            .catch(() => {})
+        })
+
+      chunkPromises.push(promise)
     }
+
+    // All chunks are now in the queue — any items enqueued by concurrent handlers
+    // (usage, session_end) will go AFTER our chunks. Safe to await.
+    await Promise.all(chunkPromises)
 
     return this.messageId
   }

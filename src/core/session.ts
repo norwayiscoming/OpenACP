@@ -1,6 +1,6 @@
 import { nanoid } from "nanoid";
 import type { AgentInstance } from "./agent-instance.js";
-import type { AgentEvent, PermissionRequest, SessionStatus } from "./types.js";
+import type { AgentEvent, Attachment, PermissionRequest, SessionStatus } from "./types.js";
 import { TypedEmitter } from "./typed-emitter.js";
 import { PromptQueue } from "./prompt-queue.js";
 import { PermissionGate } from "./permission-gate.js";
@@ -59,7 +59,7 @@ export class Session extends TypedEmitter<SessionEvents> {
     this.log.info({ agentName: this.agentName }, "Session created");
 
     this.queue = new PromptQueue(
-      (text) => this.processPrompt(text),
+      (text, attachments) => this.processPrompt(text, attachments),
       (err) => {
         this.fail("Prompt execution failed");
         this.log.error({ err }, "Prompt execution failed");
@@ -120,11 +120,11 @@ export class Session extends TypedEmitter<SessionEvents> {
 
   // --- Public API ---
 
-  async enqueuePrompt(text: string): Promise<void> {
-    await this.queue.enqueue(text);
+  async enqueuePrompt(text: string, attachments?: Attachment[]): Promise<void> {
+    await this.queue.enqueue(text, attachments);
   }
 
-  private async processPrompt(text: string): Promise<void> {
+  private async processPrompt(text: string, attachments?: Attachment[]): Promise<void> {
     // Handle warmup sentinel
     if (text === "\x00__warmup__") {
       await this.runWarmup();
@@ -137,7 +137,7 @@ export class Session extends TypedEmitter<SessionEvents> {
     const promptStart = Date.now();
     this.log.debug("Prompt execution started");
 
-    await this.agentInstance.prompt(text);
+    await this.agentInstance.prompt(text, attachments);
     this.log.info(
       { durationMs: Date.now() - promptStart },
       "Prompt execution completed",

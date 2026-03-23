@@ -1,28 +1,30 @@
+import type { Attachment } from './types.js'
+
 /**
  * Serial prompt queue — ensures prompts are processed one at a time.
  */
 export class PromptQueue {
-  private queue: Array<{ text: string; resolve: () => void }> = []
+  private queue: Array<{ text: string; attachments?: Attachment[]; resolve: () => void }> = []
   private processing = false
 
   constructor(
-    private processor: (text: string) => Promise<void>,
+    private processor: (text: string, attachments?: Attachment[]) => Promise<void>,
     private onError?: (err: unknown) => void,
   ) {}
 
-  async enqueue(text: string): Promise<void> {
+  async enqueue(text: string, attachments?: Attachment[]): Promise<void> {
     if (this.processing) {
       return new Promise<void>((resolve) => {
-        this.queue.push({ text, resolve })
+        this.queue.push({ text, attachments, resolve })
       })
     }
-    await this.process(text)
+    await this.process(text, attachments)
   }
 
-  private async process(text: string): Promise<void> {
+  private async process(text: string, attachments?: Attachment[]): Promise<void> {
     this.processing = true
     try {
-      await this.processor(text)
+      await this.processor(text, attachments)
     } catch (err) {
       this.onError?.(err)
     } finally {
@@ -34,7 +36,7 @@ export class PromptQueue {
   private drainNext(): void {
     const next = this.queue.shift()
     if (next) {
-      this.process(next.text).then(next.resolve)
+      this.process(next.text, next.attachments).then(next.resolve)
     }
   }
 

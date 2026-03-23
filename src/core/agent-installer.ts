@@ -58,16 +58,20 @@ export function buildInstalledAgent(
   binaryPath?: string,
 ): InstalledAgent {
   if (dist.type === "npx") {
+    // Use latest version: strip pinned version from package name (e.g. @google/gemini-cli@0.34.0 → @google/gemini-cli)
+    const npxPackage = stripPackageVersion(dist.package);
     return {
       registryId, name, version, distribution: "npx",
-      command: "npx", args: [dist.package, ...dist.args],
+      command: "npx", args: [npxPackage, ...dist.args],
       env: dist.env ?? {}, installedAt: new Date().toISOString(), binaryPath: null,
     };
   }
   if (dist.type === "uvx") {
+    // Strip pinned version: "fast-agent-acp==0.6.6" → "fast-agent-acp", "minion-code@0.1.44" → "minion-code"
+    const uvxPackage = stripPythonPackageVersion(dist.package);
     return {
       registryId, name, version, distribution: "uvx",
-      command: "uvx", args: [dist.package, ...dist.args],
+      command: "uvx", args: [uvxPackage, ...dist.args],
       env: dist.env ?? {}, installedAt: new Date().toISOString(), binaryPath: null,
     };
   }
@@ -78,6 +82,40 @@ export function buildInstalledAgent(
     command: absCmd, args: dist.args,
     env: dist.env ?? {}, installedAt: new Date().toISOString(), binaryPath: binaryPath!,
   };
+}
+
+/**
+ * Strip pinned version from npm package name so npx always uses latest.
+ * e.g. "@google/gemini-cli@0.34.0" → "@google/gemini-cli"
+ *      "cline@2.9.0" → "cline"
+ *      "@scope/pkg" → "@scope/pkg" (no version, unchanged)
+ */
+function stripPackageVersion(pkg: string): string {
+  // Scoped: @scope/name@version → find the second @
+  if (pkg.startsWith("@")) {
+    const afterScope = pkg.indexOf("/");
+    if (afterScope === -1) return pkg;
+    const versionAt = pkg.indexOf("@", afterScope + 1);
+    return versionAt === -1 ? pkg : pkg.slice(0, versionAt);
+  }
+  // Unscoped: name@version
+  const at = pkg.indexOf("@");
+  return at === -1 ? pkg : pkg.slice(0, at);
+}
+
+/**
+ * Strip pinned version from Python package name so uvx always uses latest.
+ * e.g. "fast-agent-acp==0.6.6" → "fast-agent-acp"
+ *      "minion-code@0.1.44" → "minion-code"
+ *      "crow-cli" → "crow-cli" (no version, unchanged)
+ */
+function stripPythonPackageVersion(pkg: string): string {
+  // Python-style: name==version or name>=version
+  const pyMatch = pkg.match(/^([^=@><!]+)/);
+  if (pyMatch && pkg.includes("==")) return pyMatch[1]!;
+  // npm-style @ used in some uvx packages
+  const at = pkg.indexOf("@");
+  return at === -1 ? pkg : pkg.slice(0, at);
 }
 
 export async function installAgent(

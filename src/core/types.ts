@@ -1,8 +1,17 @@
+export interface Attachment {
+  type: 'image' | 'audio' | 'file';
+  filePath: string;
+  fileName: string;
+  mimeType: string;
+  size: number;
+}
+
 export interface IncomingMessage {
   channelId: string;
   threadId: string;
   userId: string;
   text: string;
+  attachments?: Attachment[];
 }
 
 export interface OutgoingMessage {
@@ -14,9 +23,11 @@ export interface OutgoingMessage {
     | "plan"
     | "usage"
     | "session_end"
-    | "error";
+    | "error"
+    | "attachment";
   text: string;
   metadata?: Record<string, unknown>;
+  attachment?: Attachment;
 }
 
 export interface PermissionRequest {
@@ -78,6 +89,8 @@ export type AgentEvent =
       cost?: { amount: number; currency: string };
     }
   | { type: "commands_update"; commands: AgentCommand[] }
+  | { type: "image_content"; data: string; mimeType: string }
+  | { type: "audio_content"; data: string; mimeType: string }
   | { type: "session_end"; reason: string }
   | { type: "error"; message: string };
 

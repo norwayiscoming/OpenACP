@@ -14,9 +14,24 @@ export interface AgentSetupInfo {
   loginCommand?: string;
 }
 
+export interface AgentIntegrationSpec {
+  hookEvent: string;
+  settingsPath: string;
+  settingsFormat: "settings_json" | "hooks_json";
+  hooksDirPath: string;
+  outputFormat: "plaintext" | "json";
+  sessionIdField: string;
+  commandsPath?: string;
+  handoffCommandName?: string;
+  commandFormat?: "markdown" | "skill";
+  sessionIdVar?: string;
+  workingDirVar?: string;
+}
+
 export interface AgentCapability {
   supportsResume: boolean;
   resumeCommand?: (sessionId: string) => string;
+  integration?: AgentIntegrationSpec;
 }
 
 const AGENT_DEPENDENCIES: Record<string, AgentDependency[]> = {
@@ -73,17 +88,17 @@ const AGENT_SETUP: Record<string, AgentSetupInfo> = {
   },
   "cline": {
     setupSteps: [
-      "Login: openacp agents run cline -- auth (guided API key setup)",
+      "Setup: openacp agents run cline (guided API key setup on first run)",
       "Supports: Anthropic, OpenAI, Gemini, AWS Bedrock, Azure, Ollama, and more",
       "Or set env: export ANTHROPIC_API_KEY=<key> (or OPENAI_API_KEY, etc.)",
     ],
-    loginCommand: "openacp agents run cline -- auth",
+    loginCommand: "openacp agents run cline",
   },
   "auggie": {
     setupSteps: [
-      "Login: openacp agents run auggie -- login (opens browser for Augment account)",
+      "Login: openacp agents run auggie (opens browser for Augment account on first run)",
     ],
-    loginCommand: "openacp agents run auggie -- login",
+    loginCommand: "openacp agents run auggie",
   },
   "qwen-code": {
     setupSteps: [
@@ -172,6 +187,70 @@ const AGENT_CAPABILITIES: Record<string, AgentCapability> = {
   claude: {
     supportsResume: true,
     resumeCommand: (sid) => `claude --resume ${sid}`,
+    integration: {
+      hookEvent: "UserPromptSubmit",
+      settingsPath: "~/.claude/settings.json",
+      settingsFormat: "settings_json",
+      hooksDirPath: "~/.claude/hooks/",
+      outputFormat: "plaintext",
+      sessionIdField: ".session_id",
+      commandsPath: "~/.claude/commands/",
+      handoffCommandName: "openacp:handoff",
+      commandFormat: "markdown",
+      sessionIdVar: "CLAUDE_SESSION_ID",
+      workingDirVar: "CLAUDE_WORKING_DIR",
+    },
+  },
+  cursor: {
+    supportsResume: true,
+    resumeCommand: (sid) => `cursor --resume ${sid}`,
+    integration: {
+      hookEvent: "beforeSubmitPrompt",
+      settingsPath: "~/.cursor/hooks.json",
+      settingsFormat: "hooks_json",
+      hooksDirPath: "~/.cursor/hooks/",
+      outputFormat: "json",
+      sessionIdField: ".conversation_id",
+      commandsPath: "~/.cursor/skills/",
+      handoffCommandName: "openacp-handoff",
+      commandFormat: "skill",
+    },
+  },
+  gemini: {
+    supportsResume: true,
+    resumeCommand: (sid) => `gemini --resume ${sid}`,
+    integration: {
+      hookEvent: "BeforeAgent",
+      settingsPath: "~/.gemini/settings.json",
+      settingsFormat: "settings_json",
+      hooksDirPath: "~/.gemini/hooks/",
+      outputFormat: "json",
+      sessionIdField: ".session_id",
+    },
+  },
+  cline: {
+    supportsResume: true,
+    resumeCommand: () => `cline --continue`,
+    integration: {
+      hookEvent: "TaskStart",
+      settingsPath: "~/.cline/settings.json",
+      settingsFormat: "settings_json",
+      hooksDirPath: "~/.cline/hooks/",
+      outputFormat: "json",
+      sessionIdField: ".session_id",
+    },
+  },
+  codex: {
+    supportsResume: true,
+    resumeCommand: (sid) => `codex resume ${sid}`,
+  },
+  kilo: {
+    supportsResume: true,
+    resumeCommand: () => `kilo --continue`,
+  },
+  amp: {
+    supportsResume: true,
+    resumeCommand: (sid) => `amp threads continue ${sid}`,
   },
 };
 
@@ -197,6 +276,12 @@ export function getAgentDependencies(registryId: string): AgentDependency[] {
 
 export function getAgentCapabilities(agentName: string): AgentCapability {
   return AGENT_CAPABILITIES[agentName] ?? { supportsResume: false };
+}
+
+export function listAgentsWithIntegration(): string[] {
+  return Object.entries(AGENT_CAPABILITIES)
+    .filter(([, cap]) => cap.integration != null)
+    .map(([key]) => key);
 }
 
 export function commandExists(cmd: string): boolean {

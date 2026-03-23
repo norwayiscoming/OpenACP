@@ -8,7 +8,7 @@ describe('PromptQueue', () => {
 
     await queue.enqueue('hello')
 
-    expect(processor).toHaveBeenCalledWith('hello')
+    expect(processor).toHaveBeenCalledWith('hello', undefined)
     expect(queue.pending).toBe(0)
     expect(queue.isProcessing).toBe(false)
   })

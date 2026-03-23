@@ -4,6 +4,7 @@ import type { MessageTransformer } from "./message-transformer.js";
 import type { NotificationManager } from "./notification.js";
 import type { SessionManager } from "./session-manager.js";
 import type { AgentEvent, PermissionRequest, SessionStatus } from "./types.js";
+import { FileService } from "./file-service.js";
 import { createChildLogger } from "./log.js";
 
 const log = createChildLogger({ module: "session-bridge" });
@@ -12,6 +13,7 @@ export interface BridgeDeps {
   messageTransformer: MessageTransformer;
   notificationManager: NotificationManager;
   sessionManager: SessionManager;
+  fileService?: FileService;
 }
 
 export class SessionBridge {
@@ -111,6 +113,33 @@ export class SessionBridge {
             summary: event.message,
           });
           break;
+
+        case "image_content": {
+          if (this.deps.fileService) {
+            const fs = this.deps.fileService;
+            const sid = this.session.id;
+            const { data, mimeType } = event;
+            const buffer = Buffer.from(data, "base64");
+            const ext = FileService.extensionFromMime(mimeType);
+            fs.saveFile(sid, `agent-image${ext}`, buffer, mimeType).then((att) => {
+              this.adapter.sendMessage(sid, { type: "attachment", text: "", attachment: att });
+            }).catch((err) => log.error({ err }, "Failed to save agent image"));
+          }
+          break;
+        }
+        case "audio_content": {
+          if (this.deps.fileService) {
+            const fs = this.deps.fileService;
+            const sid = this.session.id;
+            const { data, mimeType } = event;
+            const buffer = Buffer.from(data, "base64");
+            const ext = FileService.extensionFromMime(mimeType);
+            fs.saveFile(sid, `agent-audio${ext}`, buffer, mimeType).then((att) => {
+              this.adapter.sendMessage(sid, { type: "attachment", text: "", attachment: att });
+            }).catch((err) => log.error({ err }, "Failed to save agent audio"));
+          }
+          break;
+        }
 
         case "commands_update":
           log.debug({ commands: event.commands }, "Commands available");

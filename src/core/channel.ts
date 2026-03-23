@@ -29,7 +29,7 @@ export interface IChannelAdapter {
  * Adapters can extend this or implement IChannelAdapter directly.
  */
 export abstract class ChannelAdapter<TCore = unknown> implements IChannelAdapter {
-  constructor(protected core: TCore, protected config: ChannelConfig) {}
+  constructor(public readonly core: TCore, protected config: ChannelConfig) {}
 
   abstract start(): Promise<void>
   abstract stop(): Promise<void>

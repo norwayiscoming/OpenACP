@@ -1,11 +1,10 @@
 import type { ChatInputCommandInteraction, ButtonInteraction } from 'discord.js'
 import { log } from '../../../core/log.js'
-
-// TODO: Replace `any` with DiscordAdapter once Task 12 is implemented
+import type { DiscordAdapter } from '../adapter.js'
 
 export async function handleSettings(
   interaction: ChatInputCommandInteraction,
-  adapter: any,
+  adapter: DiscordAdapter,
 ): Promise<void> {
   await interaction.deferReply({ ephemeral: true })
 
@@ -31,7 +30,7 @@ export async function handleSettings(
 
 export async function showSettingsInfo(
   interaction: ButtonInteraction,
-  adapter: any,
+  adapter: DiscordAdapter,
 ): Promise<void> {
   const config = adapter.core.configManager.get()
   const installedAgents = Object.keys(adapter.core.agentCatalog.getInstalledEntries())
@@ -53,7 +52,7 @@ export async function showSettingsInfo(
 
 export async function handleSettingsButton(
   interaction: ButtonInteraction,
-  adapter: any,
+  adapter: DiscordAdapter,
 ): Promise<void> {
   // Stub: settings button callbacks not yet implemented for Discord
   log.debug({ customId: interaction.customId }, '[discord-settings] Button stub called')

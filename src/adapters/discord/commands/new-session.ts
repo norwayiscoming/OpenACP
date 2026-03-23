@@ -7,12 +7,11 @@ import type { ChatInputCommandInteraction, ButtonInteraction } from 'discord.js'
 import { log } from '../../../core/log.js'
 import { buildDangerousModeKeyboard } from './admin.js'
 import { createSessionThread, deleteSessionThread } from '../forums.js'
-
-// TODO: Replace `any` with DiscordAdapter once Task 12 is implemented
+import type { DiscordAdapter } from '../adapter.js'
 
 export async function handleNew(
   interaction: ChatInputCommandInteraction,
-  adapter: any,
+  adapter: DiscordAdapter,
 ): Promise<void> {
   await interaction.deferReply({ ephemeral: true })
 
@@ -60,7 +59,7 @@ export async function handleNew(
 
 export async function handleNewChat(
   interaction: ChatInputCommandInteraction,
-  adapter: any,
+  adapter: DiscordAdapter,
 ): Promise<void> {
   await interaction.deferReply({ ephemeral: true })
 
@@ -89,7 +88,7 @@ export async function handleNewChat(
 
 export async function executeNewSession(
   interaction: ChatInputCommandInteraction | ButtonInteraction,
-  adapter: any,
+  adapter: DiscordAdapter,
   agentName?: string,
   workspace?: string,
 ): Promise<void> {
@@ -101,7 +100,7 @@ export async function executeNewSession(
   const forumChannel = adapter.getForumChannel()
   if (!forumChannel) {
     const msg = '❌ Forum channel not configured. Please run setup first.'
-    if ((interaction as any).deferred || (interaction as any).replied) {
+    if (interaction.deferred || interaction.replied) {
       await interaction.editReply(msg)
     } else {
       await (interaction as ChatInputCommandInteraction).reply({ content: msg, ephemeral: true })
@@ -137,7 +136,7 @@ export async function executeNewSession(
 
     // Reply to the interaction with a link to the thread
     const replyMsg = `✅ Session created → [Open thread](https://discord.com/channels/${adapter.getGuildId()}/${thread.id})`
-    if ((interaction as any).deferred || (interaction as any).replied) {
+    if (interaction.deferred || interaction.replied) {
       await interaction.editReply(replyMsg)
     } else {
       await (interaction as ChatInputCommandInteraction).reply({ content: replyMsg, ephemeral: true })
@@ -155,7 +154,7 @@ export async function executeNewSession(
 
     const errMsg = `❌ ${err instanceof Error ? err.message : String(err)}`
     try {
-      if ((interaction as any).deferred || (interaction as any).replied) {
+      if (interaction.deferred || interaction.replied) {
         await interaction.editReply(errMsg)
       } else {
         await (interaction as ChatInputCommandInteraction).reply({ content: errMsg, ephemeral: true })
@@ -166,7 +165,7 @@ export async function executeNewSession(
 
 export async function handleNewSessionButton(
   interaction: ButtonInteraction,
-  adapter: any,
+  adapter: DiscordAdapter,
 ): Promise<void> {
   const { customId } = interaction
 

@@ -7,8 +7,7 @@ import type { ChatInputCommandInteraction, ButtonInteraction } from 'discord.js'
 import type { Session } from '../../../core/session.js'
 import { log } from '../../../core/log.js'
 import { deleteSessionThread } from '../forums.js'
-
-// TODO: Replace `any` with DiscordAdapter once Task 12 is implemented
+import type { DiscordAdapter } from '../adapter.js'
 
 const STATUS_EMOJI: Record<string, string> = {
   active: '🟢',
@@ -28,7 +27,7 @@ const STATUS_ORDER: Record<string, number> = {
 
 export async function handleCancel(
   interaction: ChatInputCommandInteraction,
-  adapter: any,
+  adapter: DiscordAdapter,
 ): Promise<void> {
   await interaction.deferReply({ ephemeral: true })
 
@@ -56,7 +55,7 @@ export async function handleCancel(
 
 export async function handleStatus(
   interaction: ChatInputCommandInteraction,
-  adapter: any,
+  adapter: DiscordAdapter,
 ): Promise<void> {
   await interaction.deferReply({ ephemeral: true })
 
@@ -100,7 +99,7 @@ export async function handleStatus(
 
 export async function handleSessions(
   interaction: ChatInputCommandInteraction,
-  adapter: any,
+  adapter: DiscordAdapter,
 ): Promise<void> {
   await interaction.deferReply({ ephemeral: true })
 
@@ -191,7 +190,7 @@ export async function handleSessions(
 
 export async function handleHandoff(
   interaction: ChatInputCommandInteraction,
-  adapter: any,
+  adapter: DiscordAdapter,
 ): Promise<void> {
   await interaction.deferReply({ ephemeral: true })
 
@@ -219,7 +218,7 @@ export async function handleHandoff(
 
 export async function executeCancelSession(
   interaction: ButtonInteraction,
-  adapter: any,
+  adapter: DiscordAdapter,
 ): Promise<void> {
   const sessions: Session[] = adapter.core.sessionManager
     .listSessions('discord')
@@ -238,7 +237,7 @@ export async function executeCancelSession(
 
 export async function handleCleanupButton(
   interaction: ButtonInteraction,
-  adapter: any,
+  adapter: DiscordAdapter,
 ): Promise<void> {
   const { customId } = interaction
 
@@ -275,7 +274,7 @@ export async function handleCleanupButton(
 
 async function runCleanup(
   interaction: ButtonInteraction,
-  adapter: any,
+  adapter: DiscordAdapter,
   statuses: string[],
 ): Promise<void> {
   const allRecords = adapter.core.sessionManager.listRecords()

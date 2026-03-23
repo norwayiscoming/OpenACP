@@ -48,7 +48,9 @@ const TunnelSchema = z
   .object({
     enabled: z.boolean().default(false),
     port: z.number().default(3100),
-    provider: z.enum(["cloudflare", "ngrok", "bore", "tailscale"]).default("cloudflare"),
+    provider: z
+      .enum(["cloudflare", "ngrok", "bore", "tailscale"])
+      .default("cloudflare"),
     options: z.record(z.string(), z.unknown()).default({}),
     maxUserTunnels: z.number().default(5),
     storeTtlMinutes: z.number().default(60),
@@ -70,21 +72,30 @@ const UsageSchema = z
 
 export type UsageConfig = z.infer<typeof UsageSchema>;
 
-const SpeechProviderSchema = z.object({
-  apiKey: z.string().min(1),
-  model: z.string().optional(),
-}).passthrough();
+const SpeechProviderSchema = z
+  .object({
+    apiKey: z.string().min(1),
+    model: z.string().optional(),
+  })
+  .passthrough();
 
-const SpeechSchema = z.object({
-  stt: z.object({
-    provider: z.string().nullable().default(null),
-    providers: z.record(SpeechProviderSchema).default({}),
-  }).default({}),
-  tts: z.object({
-    provider: z.string().nullable().default(null),
-    providers: z.record(SpeechProviderSchema).default({}),
-  }).default({}),
-}).optional().default({});
+const SpeechSchema = z
+  .object({
+    stt: z
+      .object({
+        provider: z.string().nullable().default(null),
+        providers: z.record(SpeechProviderSchema).default({}),
+      })
+      .default({}),
+    tts: z
+      .object({
+        provider: z.string().nullable().default(null),
+        providers: z.record(SpeechProviderSchema).default({}),
+      })
+      .default({}),
+  })
+  .optional()
+  .default({});
 
 export const ConfigSchema = z.object({
   channels: z.record(z.string(), BaseChannelSchema),
@@ -103,12 +114,14 @@ export const ConfigSchema = z.object({
     })
     .default({}),
   logging: LoggingSchema,
-  runMode: z.enum(['foreground', 'daemon']).default('foreground'),
+  runMode: z.enum(["foreground", "daemon"]).default("foreground"),
   autoStart: z.boolean().default(false),
-  api: z.object({
-    port: z.number().default(21420),
-    host: z.string().default('127.0.0.1'),
-  }).default({}),
+  api: z
+    .object({
+      port: z.number().default(21420),
+      host: z.string().default("127.0.0.1"),
+    })
+    .default({}),
   sessionStore: z
     .object({
       ttlDays: z.number().default(30),
@@ -116,10 +129,15 @@ export const ConfigSchema = z.object({
     .default({}),
   tunnel: TunnelSchema,
   usage: UsageSchema,
-  integrations: z.record(z.string(), z.object({
-    installed: z.boolean(),
-    installedAt: z.string().optional(),
-  })).default({}),
+  integrations: z
+    .record(
+      z.string(),
+      z.object({
+        installed: z.boolean(),
+        installedAt: z.string().optional(),
+      }),
+    )
+    .default({}),
   speech: SpeechSchema,
 });
 
@@ -232,7 +250,10 @@ export class ConfigManager extends EventEmitter {
     return this.config;
   }
 
-  async save(updates: Record<string, unknown>, changePath?: string): Promise<void> {
+  async save(
+    updates: Record<string, unknown>,
+    changePath?: string,
+  ): Promise<void> {
     const oldConfig = this.config ? structuredClone(this.config) : undefined;
     // Read current file, merge updates, write back
     const raw = JSON.parse(fs.readFileSync(this.configPath, "utf-8"));
@@ -245,10 +266,12 @@ export class ConfigManager extends EventEmitter {
     }
     // Emit change event if path provided
     if (changePath) {
-      const { getConfigValue } = await import('./config-registry.js')
-      const value = getConfigValue(this.config, changePath)
-      const oldValue = oldConfig ? getConfigValue(oldConfig, changePath) : undefined
-      this.emit('config:changed', { path: changePath, value, oldValue })
+      const { getConfigValue } = await import("./config-registry.js");
+      const value = getConfigValue(this.config, changePath);
+      const oldValue = oldConfig
+        ? getConfigValue(oldConfig, changePath)
+        : undefined;
+      this.emit("config:changed", { path: changePath, value, oldValue });
     }
   }
 
@@ -304,7 +327,8 @@ export class ConfigManager extends EventEmitter {
         }
         const key = configPath[configPath.length - 1];
         // Convert numeric fields to number
-        target[key] = (key === "chatId" || key === "port") ? Number(value) : value;
+        target[key] =
+          key === "chatId" || key === "port" ? Number(value) : value;
       }
     }
 
@@ -355,7 +379,8 @@ export class ConfigManager extends EventEmitter {
       speech.stt = speech.stt || {};
       speech.stt.providers = speech.stt.providers || {};
       speech.stt.providers.groq = speech.stt.providers.groq || {};
-      speech.stt.providers.groq.apiKey = process.env.OPENACP_SPEECH_GROQ_API_KEY;
+      speech.stt.providers.groq.apiKey =
+        process.env.OPENACP_SPEECH_GROQ_API_KEY;
     }
   }
 

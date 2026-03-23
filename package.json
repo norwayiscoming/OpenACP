@@ -15,6 +15,7 @@
     "start": "node dist/cli.js",
     "test": "vitest run",
     "test:watch": "vitest",
+    "build:ui": "cd ui && pnpm install --frozen-lockfile && pnpm build",
     "prepare": "husky"
   },
   "homepage": "https://github.com/Open-ACP/OpenACP",

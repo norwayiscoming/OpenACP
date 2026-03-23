@@ -6,3 +6,5 @@ dist/
 .env
 dist-publish/
 .worktrees/
+ui/node_modules/
+ui/dist/

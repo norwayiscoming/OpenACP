@@ -1,63 +1,82 @@
-import * as http from 'node:http'
-import * as fs from 'node:fs'
-import * as path from 'node:path'
-import * as os from 'node:os'
-import * as crypto from 'node:crypto'
-import { fileURLToPath } from 'node:url'
-import type { OpenACPCore } from './core.js'
-import type { TopicManager } from './topic-manager.js'
-import { createChildLogger } from './log.js'
-import { getAgentCapabilities } from './agent-registry.js'
+import * as http from "node:http";
+import * as fs from "node:fs";
+import * as path from "node:path";
+import * as os from "node:os";
+import * as crypto from "node:crypto";
+import { fileURLToPath } from "node:url";
+import type { OpenACPCore } from "./core.js";
+import type { TopicManager } from "./topic-manager.js";
+import { createChildLogger } from "./log.js";
+import { getAgentCapabilities } from "./agent-registry.js";
+import { SSEManager } from "./sse-manager.js";
+import { StaticServer } from "./static-server.js";
 
-const log = createChildLogger({ module: 'api-server' })
+const log = createChildLogger({ module: "api-server" });
 
-const DEFAULT_PORT_FILE = path.join(os.homedir(), '.openacp', 'api.port')
+const DEFAULT_PORT_FILE = path.join(os.homedir(), ".openacp", "api.port");
 
-let cachedVersion: string | undefined
+let cachedVersion: string | undefined;
 
 function getVersion(): string {
-  if (cachedVersion) return cachedVersion
+  if (cachedVersion) return cachedVersion;
   try {
-    const __filename = fileURLToPath(import.meta.url)
-    const pkgPath = path.resolve(path.dirname(__filename), '../../package.json')
-    const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'))
-    cachedVersion = pkg.version ?? '0.0.0-dev'
+    const __filename = fileURLToPath(import.meta.url);
+    const pkgPath = path.resolve(
+      path.dirname(__filename),
+      "../../package.json",
+    );
+    const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf-8"));
+    cachedVersion = pkg.version ?? "0.0.0-dev";
   } catch {
-    cachedVersion = '0.0.0-dev'
+    cachedVersion = "0.0.0-dev";
   }
-  return cachedVersion!
+  return cachedVersion!;
 }
 
-const SENSITIVE_KEYS = ['botToken', 'token', 'apiKey', 'secret', 'password', 'webhookSecret']
+const SENSITIVE_KEYS = [
+  "botToken",
+  "token",
+  "apiKey",
+  "secret",
+  "password",
+  "webhookSecret",
+];
 
 function redactConfig(config: unknown): unknown {
-  const redacted = structuredClone(config)
-  redactDeep(redacted as Record<string, unknown>)
-  return redacted
+  const redacted = structuredClone(config);
+  redactDeep(redacted as Record<string, unknown>);
+  return redacted;
 }
 
 function redactDeep(obj: Record<string, unknown>): void {
   for (const [key, value] of Object.entries(obj)) {
-    if (SENSITIVE_KEYS.includes(key) && typeof value === 'string') {
-      obj[key] = '***'
-    } else if (value && typeof value === 'object' && !Array.isArray(value)) {
-      redactDeep(value as Record<string, unknown>)
+    if (SENSITIVE_KEYS.includes(key) && typeof value === "string") {
+      obj[key] = "***";
+    } else if (Array.isArray(value)) {
+      for (const item of value) {
+        if (item && typeof item === "object")
+          redactDeep(item as Record<string, unknown>);
+      }
+    } else if (value && typeof value === "object") {
+      redactDeep(value as Record<string, unknown>);
     }
   }
 }
 
 export interface ApiConfig {
-  port: number
-  host: string
+  port: number;
+  host: string;
 }
 
 export class ApiServer {
-  private server: http.Server | null = null
-  private actualPort: number = 0
-  private portFilePath: string
-  private startedAt = Date.now()
-  private secret: string = ''
-  private secretFilePath: string
+  private server: http.Server | null = null;
+  private actualPort: number = 0;
+  private portFilePath: string;
+  private startedAt = Date.now();
+  private secret: string = "";
+  private secretFilePath: string;
+  private sseManager: SSEManager;
+  private staticServer: StaticServer;
 
   constructor(
     private core: OpenACPCore,
@@ -65,208 +84,344 @@ export class ApiServer {
     portFilePath?: string,
     private topicManager?: TopicManager,
     secretFilePath?: string,
+    uiDir?: string,
   ) {
-    this.portFilePath = portFilePath ?? DEFAULT_PORT_FILE
-    this.secretFilePath = secretFilePath ?? path.join(os.homedir(), '.openacp', 'api-secret')
+    this.portFilePath = portFilePath ?? DEFAULT_PORT_FILE;
+    this.secretFilePath =
+      secretFilePath ?? path.join(os.homedir(), ".openacp", "api-secret");
+    this.staticServer = new StaticServer(uiDir);
+    this.sseManager = new SSEManager(
+      core.eventBus,
+      () => {
+        const sessions = this.core.sessionManager.listSessions();
+        return {
+          active: sessions.filter(
+            (s) => s.status === "active" || s.status === "initializing",
+          ).length,
+          total: sessions.length,
+        };
+      },
+      this.startedAt,
+    );
   }
 
   async start(): Promise<void> {
-    this.loadOrCreateSecret()
-    this.server = http.createServer((req, res) => this.handleRequest(req, res))
+    this.loadOrCreateSecret();
+    this.server = http.createServer((req, res) => this.handleRequest(req, res));
 
     await new Promise<void>((resolve, reject) => {
-      this.server!.on('error', (err: NodeJS.ErrnoException) => {
-        if (err.code === 'EADDRINUSE') {
-          log.warn({ port: this.config.port }, 'API port in use, continuing without API server')
-          this.server = null
+      this.server!.on("error", (err: NodeJS.ErrnoException) => {
+        if (err.code === "EADDRINUSE") {
+          log.warn(
+            { port: this.config.port },
+            "API port in use, continuing without API server",
+          );
+          this.server = null;
           // actualPort stays 0, port file not written
-          resolve()
+          resolve();
         } else {
-          reject(err)
+          reject(err);
         }
-      })
+      });
 
       this.server!.listen(this.config.port, this.config.host, () => {
-        const addr = this.server!.address()
-        if (addr && typeof addr === 'object') {
-          this.actualPort = addr.port
+        const addr = this.server!.address();
+        if (addr && typeof addr === "object") {
+          this.actualPort = addr.port;
         }
-        this.writePortFile()
-        log.info({ host: this.config.host, port: this.actualPort }, 'API server listening')
-        resolve()
-      })
-    })
+        this.writePortFile();
+        log.info(
+          { host: this.config.host, port: this.actualPort },
+          "API server listening",
+        );
+        this.sseManager.setup();
+
+        if (
+          this.config.host !== "127.0.0.1" &&
+          this.config.host !== "localhost"
+        ) {
+          log.warn(
+            "API server binding to non-localhost. Ensure api-secret file is secured.",
+          );
+        }
+
+        resolve();
+      });
+    });
   }
 
   async stop(): Promise<void> {
-    this.removePortFile()
+    this.sseManager.stop();
+    this.removePortFile();
     if (this.server) {
       await new Promise<void>((resolve) => {
-        this.server!.close(() => resolve())
-      })
-      this.server = null
+        this.server!.close(() => resolve());
+      });
+      this.server = null;
     }
   }
 
   getPort(): number {
-    return this.actualPort
+    return this.actualPort;
+  }
+
+  getSecret(): string {
+    return this.secret;
   }
 
   private writePortFile(): void {
-    const dir = path.dirname(this.portFilePath)
-    fs.mkdirSync(dir, { recursive: true })
-    fs.writeFileSync(this.portFilePath, String(this.actualPort))
+    const dir = path.dirname(this.portFilePath);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(this.portFilePath, String(this.actualPort));
   }
 
   private removePortFile(): void {
-    try { fs.unlinkSync(this.portFilePath) } catch { /* ignore */ }
+    try {
+      fs.unlinkSync(this.portFilePath);
+    } catch {
+      /* ignore */
+    }
   }
 
   private loadOrCreateSecret(): void {
-    const dir = path.dirname(this.secretFilePath)
-    fs.mkdirSync(dir, { recursive: true })
+    const dir = path.dirname(this.secretFilePath);
+    fs.mkdirSync(dir, { recursive: true });
 
     try {
-      this.secret = fs.readFileSync(this.secretFilePath, 'utf-8').trim()
+      this.secret = fs.readFileSync(this.secretFilePath, "utf-8").trim();
       if (this.secret) {
         // Warn if file permissions are too open (like SSH does for private keys)
         try {
-          const stat = fs.statSync(this.secretFilePath)
-          const mode = stat.mode & 0o777
+          const stat = fs.statSync(this.secretFilePath);
+          const mode = stat.mode & 0o777;
           if (mode & 0o077) {
-            log.warn({ path: this.secretFilePath, mode: '0' + mode.toString(8) }, 'API secret file has insecure permissions (should be 0600). Run: chmod 600 %s', this.secretFilePath)
+            log.warn(
+              { path: this.secretFilePath, mode: "0" + mode.toString(8) },
+              "API secret file has insecure permissions (should be 0600). Run: chmod 600 %s",
+              this.secretFilePath,
+            );
           }
-        } catch { /* stat failed, skip check */ }
-        return
+        } catch {
+          /* stat failed, skip check */
+        }
+        return;
       }
     } catch {
       // File doesn't exist, create it
     }
 
-    this.secret = crypto.randomBytes(32).toString('hex')
-    fs.writeFileSync(this.secretFilePath, this.secret, { mode: 0o600 })
+    this.secret = crypto.randomBytes(32).toString("hex");
+    fs.writeFileSync(this.secretFilePath, this.secret, { mode: 0o600 });
   }
 
-  private authenticate(req: http.IncomingMessage): boolean {
-    const authHeader = req.headers.authorization
-    if (!authHeader?.startsWith('Bearer ')) return false
-    const token = authHeader.slice(7)
-    if (token.length !== this.secret.length) return false
-    return crypto.timingSafeEqual(Buffer.from(token, 'utf-8'), Buffer.from(this.secret, 'utf-8'))
+  private authenticate(
+    req: http.IncomingMessage,
+    allowQueryParam = false,
+  ): boolean {
+    // Check Authorization header
+    const authHeader = req.headers.authorization;
+    if (authHeader?.startsWith("Bearer ")) {
+      const token = authHeader.slice(7);
+      if (
+        token.length === this.secret.length &&
+        crypto.timingSafeEqual(
+          Buffer.from(token, "utf-8"),
+          Buffer.from(this.secret, "utf-8"),
+        )
+      ) {
+        return true;
+      }
+    }
+    // Query param auth only for SSE (EventSource can't set headers)
+    if (allowQueryParam) {
+      const parsedUrl = new URL(req.url || "", "http://localhost");
+      const qToken = parsedUrl.searchParams.get("token");
+      if (
+        qToken &&
+        qToken.length === this.secret.length &&
+        crypto.timingSafeEqual(
+          Buffer.from(qToken, "utf-8"),
+          Buffer.from(this.secret, "utf-8"),
+        )
+      ) {
+        return true;
+      }
+    }
+    return false;
   }
 
-  private async handleRequest(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
-    const method = req.method?.toUpperCase()
-    const url = req.url || ''
+  private async handleRequest(
+    req: http.IncomingMessage,
+    res: http.ServerResponse,
+  ): Promise<void> {
+    const method = req.method?.toUpperCase();
+    const url = req.url || "";
 
-    const isExempt = (method === 'GET' && (url === '/api/health' || url === '/api/version'))
-    if (!isExempt && !this.authenticate(req)) {
-      this.sendJson(res, 401, { error: 'Unauthorized' })
-      return
+    // Auth check: exempt health/version, SSE (has own auth), and non-/api/ routes (static files)
+    if (url.startsWith("/api/")) {
+      const isExempt =
+        method === "GET" &&
+        (url === "/api/health" ||
+          url === "/api/version" ||
+          url.startsWith("/api/events"));
+      if (!isExempt && !this.authenticate(req)) {
+        this.sendJson(res, 401, { error: "Unauthorized" });
+        return;
+      }
     }
 
     try {
-      if (method === 'POST' && url === '/api/sessions/adopt') {
-        await this.handleAdoptSession(req, res)
-      } else if (method === 'POST' && url === '/api/sessions') {
-        await this.handleCreateSession(req, res)
-      } else if (method === 'POST' && url.match(/^\/api\/sessions\/([^/]+)\/prompt$/)) {
-        const sessionId = decodeURIComponent(url.match(/^\/api\/sessions\/([^/]+)\/prompt$/)![1])
-        await this.handleSendPrompt(sessionId, req, res)
-      } else if (method === 'PATCH' && url.match(/^\/api\/sessions\/([^/]+)\/dangerous$/)) {
-        const sessionId = decodeURIComponent(url.match(/^\/api\/sessions\/([^/]+)\/dangerous$/)![1])
-        await this.handleToggleDangerous(sessionId, req, res)
-      } else if (method === 'GET' && url.match(/^\/api\/sessions\/([^/]+)$/)) {
-        const sessionId = decodeURIComponent(url.match(/^\/api\/sessions\/([^/]+)$/)![1])
-        await this.handleGetSession(sessionId, res)
-      } else if (method === 'POST' && url.match(/^\/api\/sessions\/([^/]+)\/archive$/)) {
-        const sessionId = decodeURIComponent(url.match(/^\/api\/sessions\/([^/]+)\/archive$/)![1])
-        await this.handleArchiveSession(sessionId, res)
-      } else if (method === 'DELETE' && url.match(/^\/api\/sessions\/([^/]+)$/)) {
-        const sessionId = decodeURIComponent(url.match(/^\/api\/sessions\/([^/]+)$/)![1])
-        await this.handleCancelSession(sessionId, res)
-      } else if (method === 'GET' && url === '/api/sessions') {
-        await this.handleListSessions(res)
-      } else if (method === 'GET' && url === '/api/agents') {
-        await this.handleListAgents(res)
-      } else if (method === 'GET' && url === '/api/health') {
-        await this.handleHealth(res)
-      } else if (method === 'GET' && url === '/api/version') {
-        await this.handleVersion(res)
-      } else if (method === 'GET' && url === '/api/config/editable') {
-        await this.handleGetEditableConfig(res)
-      } else if (method === 'GET' && url === '/api/config') {
-        await this.handleGetConfig(res)
-      } else if (method === 'PATCH' && url === '/api/config') {
-        await this.handleUpdateConfig(req, res)
-      } else if (method === 'GET' && url === '/api/adapters') {
-        await this.handleListAdapters(res)
-      } else if (method === 'GET' && url === '/api/tunnel') {
-        await this.handleTunnelStatus(res)
-      } else if (method === 'GET' && url === '/api/tunnel/list') {
-        await this.handleTunnelList(res)
-      } else if (method === 'POST' && url === '/api/tunnel') {
-        await this.handleTunnelAdd(req, res)
-      } else if (method === 'DELETE' && url === '/api/tunnel') {
-        await this.handleTunnelStopAll(res)
-      } else if (method === 'DELETE' && url.match(/^\/api\/tunnel\/(\d+)$/)) {
-        const port = parseInt(url.match(/^\/api\/tunnel\/(\d+)$/)![1], 10)
-        await this.handleTunnelStop(port, res)
-      } else if (method === 'POST' && url === '/api/notify') {
-        await this.handleNotify(req, res)
-      } else if (method === 'POST' && url === '/api/restart') {
-        await this.handleRestart(res)
-      } else if (method === 'GET' && url.match(/^\/api\/topics(\?.*)?$/)) {
-        await this.handleListTopics(url, res)
-      } else if (method === 'POST' && url === '/api/topics/cleanup') {
-        await this.handleCleanupTopics(req, res)
-      } else if (method === 'DELETE' && url.match(/^\/api\/topics\/([^/?]+)/)) {
-        const match = url.match(/^\/api\/topics\/([^/?]+)/)!
-        await this.handleDeleteTopic(decodeURIComponent(match[1]), url, res)
+      if (method === "POST" && url === "/api/sessions/adopt") {
+        await this.handleAdoptSession(req, res);
+      } else if (method === "POST" && url === "/api/sessions") {
+        await this.handleCreateSession(req, res);
+      } else if (
+        method === "POST" &&
+        url.match(/^\/api\/sessions\/([^/]+)\/prompt$/)
+      ) {
+        const sessionId = decodeURIComponent(
+          url.match(/^\/api\/sessions\/([^/]+)\/prompt$/)![1],
+        );
+        await this.handleSendPrompt(sessionId, req, res);
+      } else if (
+        method === "POST" &&
+        url.match(/^\/api\/sessions\/([^/]+)\/permission$/)
+      ) {
+        const sessionId = decodeURIComponent(
+          url.match(/^\/api\/sessions\/([^/]+)\/permission$/)![1],
+        );
+        await this.handleResolvePermission(sessionId, req, res);
+      } else if (
+        method === "PATCH" &&
+        url.match(/^\/api\/sessions\/([^/]+)\/dangerous$/)
+      ) {
+        const sessionId = decodeURIComponent(
+          url.match(/^\/api\/sessions\/([^/]+)\/dangerous$/)![1],
+        );
+        await this.handleToggleDangerous(sessionId, req, res);
+      } else if (method === "GET" && url.match(/^\/api\/sessions\/([^/]+)$/)) {
+        const sessionId = decodeURIComponent(
+          url.match(/^\/api\/sessions\/([^/]+)$/)![1],
+        );
+        await this.handleGetSession(sessionId, res);
+      } else if (
+        method === "POST" &&
+        url.match(/^\/api\/sessions\/([^/]+)\/archive$/)
+      ) {
+        const sessionId = decodeURIComponent(
+          url.match(/^\/api\/sessions\/([^/]+)\/archive$/)![1],
+        );
+        await this.handleArchiveSession(sessionId, res);
+      } else if (
+        method === "DELETE" &&
+        url.match(/^\/api\/sessions\/([^/]+)$/)
+      ) {
+        const sessionId = decodeURIComponent(
+          url.match(/^\/api\/sessions\/([^/]+)$/)![1],
+        );
+        await this.handleCancelSession(sessionId, res);
+      } else if (method === "GET" && url === "/api/sessions") {
+        await this.handleListSessions(res);
+      } else if (method === "GET" && url === "/api/agents") {
+        await this.handleListAgents(res);
+      } else if (method === "GET" && url === "/api/health") {
+        await this.handleHealth(res);
+      } else if (method === "GET" && url === "/api/version") {
+        await this.handleVersion(res);
+      } else if (method === "GET" && url === "/api/config/editable") {
+        await this.handleGetEditableConfig(res);
+      } else if (method === "GET" && url === "/api/config") {
+        await this.handleGetConfig(res);
+      } else if (method === "PATCH" && url === "/api/config") {
+        await this.handleUpdateConfig(req, res);
+      } else if (method === "GET" && url === "/api/adapters") {
+        await this.handleListAdapters(res);
+      } else if (method === "GET" && url === "/api/tunnel") {
+        await this.handleTunnelStatus(res);
+      } else if (method === "GET" && url === "/api/tunnel/list") {
+        await this.handleTunnelList(res);
+      } else if (method === "POST" && url === "/api/tunnel") {
+        await this.handleTunnelAdd(req, res);
+      } else if (method === "DELETE" && url === "/api/tunnel") {
+        await this.handleTunnelStopAll(res);
+      } else if (method === "DELETE" && url.match(/^\/api\/tunnel\/(\d+)$/)) {
+        const port = parseInt(url.match(/^\/api\/tunnel\/(\d+)$/)![1], 10);
+        await this.handleTunnelStop(port, res);
+      } else if (method === "POST" && url === "/api/notify") {
+        await this.handleNotify(req, res);
+      } else if (method === "POST" && url === "/api/restart") {
+        await this.handleRestart(res);
+      } else if (method === "GET" && url.match(/^\/api\/topics(\?.*)?$/)) {
+        await this.handleListTopics(url, res);
+      } else if (method === "POST" && url === "/api/topics/cleanup") {
+        await this.handleCleanupTopics(req, res);
+      } else if (method === "DELETE" && url.match(/^\/api\/topics\/([^/?]+)/)) {
+        const match = url.match(/^\/api\/topics\/([^/?]+)/)!;
+        await this.handleDeleteTopic(decodeURIComponent(match[1]), url, res);
+      } else if (method === "GET" && url.startsWith("/api/events")) {
+        // SSE auth with query param support (EventSource can't set headers)
+        if (!this.authenticate(req, true)) {
+          this.sendJson(res, 401, { error: "Unauthorized" });
+          return;
+        }
+        this.sseManager.handleRequest(req, res);
+        return; // Don't end the response — SSE keeps it open
+      } else if (url.startsWith("/api/")) {
+        this.sendJson(res, 404, { error: "Not found" });
       } else {
-        this.sendJson(res, 404, { error: 'Not found' })
+        // Try static file serving (UI dashboard) for non-API routes
+        if (!this.staticServer.serve(req, res)) {
+          this.sendJson(res, 404, { error: "Not found" });
+        }
       }
     } catch (err) {
-      log.error({ err }, 'API request error')
-      this.sendJson(res, 500, { error: 'Internal server error' })
+      log.error({ err }, "API request error");
+      this.sendJson(res, 500, { error: "Internal server error" });
     }
   }
 
-  private async handleCreateSession(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
-    const body = await this.readBody(req)
-    let agent: string | undefined
-    let workspace: string | undefined
+  private async handleCreateSession(
+    req: http.IncomingMessage,
+    res: http.ServerResponse,
+  ): Promise<void> {
+    const body = await this.readBody(req);
+    let agent: string | undefined;
+    let workspace: string | undefined;
 
     if (body) {
       try {
-        const parsed = JSON.parse(body)
-        agent = parsed.agent
-        workspace = parsed.workspace
+        const parsed = JSON.parse(body);
+        agent = parsed.agent;
+        workspace = parsed.workspace;
       } catch {
-        this.sendJson(res, 400, { error: 'Invalid JSON body' })
-        return
+        this.sendJson(res, 400, { error: "Invalid JSON body" });
+        return;
       }
     }
 
     // Check max concurrent sessions
-    const config = this.core.configManager.get()
-    const activeSessions = this.core.sessionManager.listSessions()
-      .filter(s => s.status === 'active' || s.status === 'initializing')
+    const config = this.core.configManager.get();
+    const activeSessions = this.core.sessionManager
+      .listSessions()
+      .filter((s) => s.status === "active" || s.status === "initializing");
     if (activeSessions.length >= config.security.maxConcurrentSessions) {
       this.sendJson(res, 429, {
         error: `Max concurrent sessions (${config.security.maxConcurrentSessions}) reached. Cancel a session first.`,
-      })
-      return
+      });
+      return;
     }
 
     // Use the first registered adapter (e.g. Telegram) so API sessions appear in the channel
-    const [adapterId, adapter] = this.core.adapters.entries().next().value ?? [null, null]
-    const channelId = adapterId ?? 'api'
+    const [adapterId, adapter] = this.core.adapters.entries().next().value ?? [
+      null,
+      null,
+    ];
+    const channelId = adapterId ?? "api";
 
-    const resolvedAgent = agent || config.defaultAgent
+    const resolvedAgent = agent || config.defaultAgent;
     const resolvedWorkspace = this.core.configManager.resolveWorkspace(
       workspace || config.agents[resolvedAgent]?.workingDirectory,
-    )
+    );
 
     const session = await this.core.createSession({
       channelId,
@@ -274,66 +429,136 @@ export class ApiServer {
       workingDirectory: resolvedWorkspace,
       createThread: !!adapter,
       initialName: `🔄 ${resolvedAgent} — New Session`,
-    })
+    });
 
     // If no adapter wired events (headless), auto-approve permissions
     if (!adapter) {
       session.agentInstance.onPermissionRequest = async (request) => {
-        const allowOption = request.options.find(o => o.isAllow)
-        log.debug({ sessionId: session.id, permissionId: request.id, option: allowOption?.id }, 'Auto-approving permission for API session')
-        return allowOption?.id ?? request.options[0]?.id ?? ''
-      }
+        const allowOption = request.options.find((o) => o.isAllow);
+        log.debug(
+          {
+            sessionId: session.id,
+            permissionId: request.id,
+            option: allowOption?.id,
+          },
+          "Auto-approving permission for API session",
+        );
+        return allowOption?.id ?? request.options[0]?.id ?? "";
+      };
     }
 
     // Warmup in background so session moves from 'initializing' to 'active'
-    session.warmup().catch(err => log.warn({ err, sessionId: session.id }, 'API session warmup failed'))
+    session
+      .warmup()
+      .catch((err) =>
+        log.warn({ err, sessionId: session.id }, "API session warmup failed"),
+      );
 
     this.sendJson(res, 200, {
       sessionId: session.id,
       agent: session.agentName,
       status: session.status,
       workspace: session.workingDirectory,
-    })
+    });
   }
 
-  private async handleSendPrompt(sessionId: string, req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
-    const session = this.core.sessionManager.getSession(sessionId)
+  private async handleSendPrompt(
+    sessionId: string,
+    req: http.IncomingMessage,
+    res: http.ServerResponse,
+  ): Promise<void> {
+    const session = this.core.sessionManager.getSession(sessionId);
     if (!session) {
-      this.sendJson(res, 404, { error: `Session "${sessionId}" not found` })
-      return
+      this.sendJson(res, 404, { error: `Session "${sessionId}" not found` });
+      return;
     }
 
-    if (session.status === 'cancelled' || session.status === 'finished' || session.status === 'error') {
-      this.sendJson(res, 400, { error: `Session is ${session.status}` })
-      return
+    if (
+      session.status === "cancelled" ||
+      session.status === "finished" ||
+      session.status === "error"
+    ) {
+      this.sendJson(res, 400, { error: `Session is ${session.status}` });
+      return;
     }
 
-    const body = await this.readBody(req)
-    let prompt: string | undefined
+    const body = await this.readBody(req);
+    let prompt: string | undefined;
     if (body) {
       try {
-        const parsed = JSON.parse(body)
-        prompt = parsed.prompt
+        const parsed = JSON.parse(body);
+        prompt = parsed.prompt;
       } catch {
-        this.sendJson(res, 400, { error: 'Invalid JSON body' })
-        return
+        this.sendJson(res, 400, { error: "Invalid JSON body" });
+        return;
       }
     }
 
     if (!prompt) {
-      this.sendJson(res, 400, { error: 'Missing prompt' })
-      return
+      this.sendJson(res, 400, { error: "Missing prompt" });
+      return;
     }
 
-    session.enqueuePrompt(prompt).catch(() => {})
-    this.sendJson(res, 200, { ok: true, sessionId, queueDepth: session.queueDepth })
+    session.enqueuePrompt(prompt).catch(() => {});
+    this.sendJson(res, 200, {
+      ok: true,
+      sessionId,
+      queueDepth: session.queueDepth,
+    });
   }
 
-  private async handleGetSession(sessionId: string, res: http.ServerResponse): Promise<void> {
-    const session = this.core.sessionManager.getSession(sessionId)
+  private async handleResolvePermission(
+    sessionId: string,
+    req: http.IncomingMessage,
+    res: http.ServerResponse,
+  ): Promise<void> {
+    const session = this.core.sessionManager.getSession(sessionId);
     if (!session) {
-      this.sendJson(res, 404, { error: `Session "${sessionId}" not found` })
-      return
+      this.sendJson(res, 404, { error: `Session "${sessionId}" not found` });
+      return;
+    }
+
+    const body = await this.readBody(req);
+    let permissionId: string | undefined;
+    let optionId: string | undefined;
+    if (body) {
+      try {
+        const parsed = JSON.parse(body);
+        permissionId = parsed.permissionId;
+        optionId = parsed.optionId;
+      } catch {
+        this.sendJson(res, 400, { error: "Invalid JSON body" });
+        return;
+      }
+    }
+
+    if (!permissionId || !optionId) {
+      this.sendJson(res, 400, { error: "Missing permissionId or optionId" });
+      return;
+    }
+
+    if (
+      !session.permissionGate.isPending ||
+      session.permissionGate.requestId !== permissionId
+    ) {
+      this.sendJson(res, 400, {
+        error: "No matching pending permission request",
+      });
+      return;
+    }
+
+    session.permissionGate.resolve(optionId);
+    this.sendJson(res, 200, { ok: true });
+  }
+
+  private async handleGetSession(
+    sessionId: string,
+    res: http.ServerResponse,
+  ): Promise<void> {
+    const session = this.core.sessionManager.getSession(sessionId);
+    if (!session) {
+      this.sendJson(res, 404, { error: `Session "${sessionId}" not found` });
+      return;
     }
 
     this.sendJson(res, 200, {
@@ -351,46 +576,52 @@ export class ApiServer {
         channelId: session.channelId,
         agentSessionId: session.agentSessionId,
       },
-    })
+    });
   }
 
-  private async handleToggleDangerous(sessionId: string, req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
-    const session = this.core.sessionManager.getSession(sessionId)
+  private async handleToggleDangerous(
+    sessionId: string,
+    req: http.IncomingMessage,
+    res: http.ServerResponse,
+  ): Promise<void> {
+    const session = this.core.sessionManager.getSession(sessionId);
     if (!session) {
-      this.sendJson(res, 404, { error: `Session "${sessionId}" not found` })
-      return
+      this.sendJson(res, 404, { error: `Session "${sessionId}" not found` });
+      return;
     }
 
-    const body = await this.readBody(req)
-    let enabled: boolean | undefined
+    const body = await this.readBody(req);
+    let enabled: boolean | undefined;
     if (body) {
       try {
-        const parsed = JSON.parse(body)
-        enabled = parsed.enabled
+        const parsed = JSON.parse(body);
+        enabled = parsed.enabled;
       } catch {
-        this.sendJson(res, 400, { error: 'Invalid JSON body' })
-        return
+        this.sendJson(res, 400, { error: "Invalid JSON body" });
+        return;
       }
     }
 
-    if (typeof enabled !== 'boolean') {
-      this.sendJson(res, 400, { error: 'Missing enabled boolean' })
-      return
+    if (typeof enabled !== "boolean") {
+      this.sendJson(res, 400, { error: "Missing enabled boolean" });
+      return;
     }
 
-    session.dangerousMode = enabled
-    await this.core.sessionManager.patchRecord(sessionId, { dangerousMode: enabled })
-    this.sendJson(res, 200, { ok: true, dangerousMode: enabled })
+    session.dangerousMode = enabled;
+    await this.core.sessionManager.patchRecord(sessionId, {
+      dangerousMode: enabled,
+    });
+    this.sendJson(res, 200, { ok: true, dangerousMode: enabled });
   }
 
   private async handleHealth(res: http.ServerResponse): Promise<void> {
-    const activeSessions = this.core.sessionManager.listSessions()
-    const allRecords = this.core.sessionManager.listRecords()
-    const mem = process.memoryUsage()
-    const tunnel = this.core.tunnelService
+    const activeSessions = this.core.sessionManager.listSessions();
+    const allRecords = this.core.sessionManager.listRecords();
+    const mem = process.memoryUsage();
+    const tunnel = this.core.tunnelService;
 
     this.sendJson(res, 200, {
-      status: 'ok',
+      status: "ok",
       uptime: Date.now() - this.startedAt,
       version: getVersion(),
       memory: {
@@ -399,22 +630,29 @@ export class ApiServer {
         heapTotal: mem.heapTotal,
       },
       sessions: {
-        active: activeSessions.filter(s => s.status === 'active' || s.status === 'initializing').length,
+        active: activeSessions.filter(
+          (s) => s.status === "active" || s.status === "initializing",
+        ).length,
         total: allRecords.length,
       },
       adapters: Array.from(this.core.adapters.keys()),
-      tunnel: tunnel ? { enabled: true, url: tunnel.getPublicUrl() } : { enabled: false },
-    })
+      tunnel: tunnel
+        ? { enabled: true, url: tunnel.getPublicUrl() }
+        : { enabled: false },
+    });
   }
 
   private async handleVersion(res: http.ServerResponse): Promise<void> {
-    this.sendJson(res, 200, { version: getVersion() })
+    this.sendJson(res, 200, { version: getVersion() });
   }
 
-  private async handleGetEditableConfig(res: http.ServerResponse): Promise<void> {
-    const { getSafeFields, resolveOptions, getConfigValue } = await import('./config-registry.js')
-    const config = this.core.configManager.get()
-    const safeFields = getSafeFields()
+  private async handleGetEditableConfig(
+    res: http.ServerResponse,
+  ): Promise<void> {
+    const { getSafeFields, resolveOptions, getConfigValue } =
+      await import("./config-registry.js");
+    const config = this.core.configManager.get();
+    const safeFields = getSafeFields();
 
     const fields = safeFields.map((def) => ({
       path: def.path,
@@ -424,320 +662,454 @@ export class ApiServer {
       options: resolveOptions(def, config),
       value: getConfigValue(config, def.path),
       hotReload: def.hotReload,
-    }))
+    }));
 
-    this.sendJson(res, 200, { fields })
+    this.sendJson(res, 200, { fields });
   }
 
   private async handleGetConfig(res: http.ServerResponse): Promise<void> {
-    const config = this.core.configManager.get()
-    this.sendJson(res, 200, { config: redactConfig(config) })
+    const config = this.core.configManager.get();
+    this.sendJson(res, 200, { config: redactConfig(config) });
   }
 
-  private async handleUpdateConfig(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
-    const body = await this.readBody(req)
-    let configPath: string | undefined
-    let value: unknown
+  private async handleUpdateConfig(
+    req: http.IncomingMessage,
+    res: http.ServerResponse,
+  ): Promise<void> {
+    const body = await this.readBody(req);
+    let configPath: string | undefined;
+    let value: unknown;
 
     if (body) {
       try {
-        const parsed = JSON.parse(body)
-        configPath = parsed.path
-        value = parsed.value
+        const parsed = JSON.parse(body);
+        configPath = parsed.path;
+        value = parsed.value;
       } catch {
-        this.sendJson(res, 400, { error: 'Invalid JSON body' })
-        return
+        this.sendJson(res, 400, { error: "Invalid JSON body" });
+        return;
       }
     }
 
     if (!configPath) {
-      this.sendJson(res, 400, { error: 'Missing path' })
-      return
+      this.sendJson(res, 400, { error: "Missing path" });
+      return;
+    }
+
+    // Block prototype pollution
+    const BLOCKED_KEYS = new Set(["__proto__", "constructor", "prototype"]);
+    const parts = configPath.split(".");
+    if (parts.some((p) => BLOCKED_KEYS.has(p))) {
+      this.sendJson(res, 400, { error: "Invalid config path" });
+      return;
+    }
+
+    // Enforce safe-fields scope — only fields marked 'safe' can be modified via API
+    const { getFieldDef } = await import("./config-registry.js");
+    const fieldDef = getFieldDef(configPath);
+    if (!fieldDef || fieldDef.scope !== "safe") {
+      this.sendJson(res, 403, {
+        error: "This config field cannot be modified via the API",
+      });
+      return;
     }
 
     // Pre-validate by cloning config and applying the change
-    const currentConfig = this.core.configManager.get()
-    const cloned = structuredClone(currentConfig) as Record<string, unknown>
-    const parts = configPath.split('.')
-    let target: Record<string, unknown> = cloned
+    const currentConfig = this.core.configManager.get();
+    const cloned = structuredClone(currentConfig) as Record<string, unknown>;
+    let target: Record<string, unknown> = cloned;
     for (let i = 0; i < parts.length - 1; i++) {
-      const part = parts[i]
-      if (target[part] && typeof target[part] === 'object' && !Array.isArray(target[part])) {
-        target = target[part] as Record<string, unknown>
+      const part = parts[i];
+      if (
+        target[part] &&
+        typeof target[part] === "object" &&
+        !Array.isArray(target[part])
+      ) {
+        target = target[part] as Record<string, unknown>;
       } else if (target[part] === undefined || target[part] === null) {
         // Create intermediate objects for new paths (e.g. speech.stt.providers.groq.apiKey)
-        target[part] = {}
-        target = target[part] as Record<string, unknown>
+        target[part] = {};
+        target = target[part] as Record<string, unknown>;
       } else {
-        this.sendJson(res, 400, { error: 'Invalid config path' })
-        return
+        this.sendJson(res, 400, { error: "Invalid config path" });
+        return;
       }
     }
 
-    const lastKey = parts[parts.length - 1]
-    target[lastKey] = value
+    const lastKey = parts[parts.length - 1];
+    target[lastKey] = value;
 
     // Validate with Zod
-    const { ConfigSchema } = await import('./config.js')
-    const result = ConfigSchema.safeParse(cloned)
+    const { ConfigSchema } = await import("./config.js");
+    const result = ConfigSchema.safeParse(cloned);
     if (!result.success) {
       this.sendJson(res, 400, {
-        error: 'Validation failed',
-        details: result.error.issues.map(i => ({ path: i.path.join('.'), message: i.message })),
-      })
-      return
+        error: "Validation failed",
+        details: result.error.issues.map((i) => ({
+          path: i.path.join("."),
+          message: i.message,
+        })),
+      });
+      return;
     }
 
     // Convert dot-path to nested object for save
-    const updates: Record<string, unknown> = {}
-    let updateTarget = updates
+    const updates: Record<string, unknown> = {};
+    let updateTarget = updates;
     for (let i = 0; i < parts.length - 1; i++) {
-      updateTarget[parts[i]] = {}
-      updateTarget = updateTarget[parts[i]] as Record<string, unknown>
+      updateTarget[parts[i]] = {};
+      updateTarget = updateTarget[parts[i]] as Record<string, unknown>;
     }
-    updateTarget[lastKey] = value
+    updateTarget[lastKey] = value;
 
-    await this.core.configManager.save(updates, configPath)
+    await this.core.configManager.save(updates, configPath);
 
-    const { isHotReloadable } = await import('./config-registry.js')
-    const needsRestart = !isHotReloadable(configPath!)
+    const { isHotReloadable } = await import("./config-registry.js");
+    const needsRestart = !isHotReloadable(configPath!);
 
     this.sendJson(res, 200, {
       ok: true,
       needsRestart,
       config: redactConfig(this.core.configManager.get()),
-    })
+    });
   }
 
   private async handleListAdapters(res: http.ServerResponse): Promise<void> {
     const adapters = Array.from(this.core.adapters.entries()).map(([name]) => ({
       name,
-      type: 'built-in' as const,
-    }))
-    this.sendJson(res, 200, { adapters })
+      type: "built-in" as const,
+    }));
+    this.sendJson(res, 200, { adapters });
   }
 
   private async handleTunnelStatus(res: http.ServerResponse): Promise<void> {
-    const tunnel = this.core.tunnelService
+    const tunnel = this.core.tunnelService;
     if (tunnel) {
-      this.sendJson(res, 200, { enabled: true, url: tunnel.getPublicUrl(), provider: this.core.configManager.get().tunnel.provider })
+      this.sendJson(res, 200, {
+        enabled: true,
+        url: tunnel.getPublicUrl(),
+        provider: this.core.configManager.get().tunnel.provider,
+      });
     } else {
-      this.sendJson(res, 200, { enabled: false })
+      this.sendJson(res, 200, { enabled: false });
     }
   }
 
   private async handleTunnelList(res: http.ServerResponse): Promise<void> {
-    const tunnel = this.core.tunnelService
+    const tunnel = this.core.tunnelService;
     if (!tunnel) {
-      this.sendJson(res, 200, [])
-      return
+      this.sendJson(res, 200, []);
+      return;
     }
-    this.sendJson(res, 200, tunnel.listTunnels())
+    this.sendJson(res, 200, tunnel.listTunnels());
   }
 
-  private async handleTunnelAdd(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
-    const tunnel = this.core.tunnelService
+  private async handleTunnelAdd(
+    req: http.IncomingMessage,
+    res: http.ServerResponse,
+  ): Promise<void> {
+    const tunnel = this.core.tunnelService;
     if (!tunnel) {
-      this.sendJson(res, 400, { error: 'Tunnel service is not enabled' })
-      return
+      this.sendJson(res, 400, { error: "Tunnel service is not enabled" });
+      return;
     }
-    const body = await this.readBody(req)
+    const body = await this.readBody(req);
+    if (body === null) {
+      this.sendJson(res, 413, { error: "Request body too large" });
+      return;
+    }
     if (!body) {
-      this.sendJson(res, 400, { error: 'Missing request body' })
-      return
+      this.sendJson(res, 400, { error: "Missing request body" });
+      return;
     }
     try {
-      const { port, label, sessionId } = JSON.parse(body)
-      if (!port || typeof port !== 'number') {
-        this.sendJson(res, 400, { error: 'port is required and must be a number' })
-        return
+      const { port, label, sessionId } = JSON.parse(body);
+      if (!port || typeof port !== "number") {
+        this.sendJson(res, 400, {
+          error: "port is required and must be a number",
+        });
+        return;
       }
-      const entry = await tunnel.addTunnel(port, { label, sessionId })
-      this.sendJson(res, 200, entry)
+      const entry = await tunnel.addTunnel(port, { label, sessionId });
+      this.sendJson(res, 200, entry);
     } catch (err) {
-      this.sendJson(res, 400, { error: (err as Error).message })
+      this.sendJson(res, 400, { error: (err as Error).message });
     }
   }
 
-  private async handleTunnelStop(port: number, res: http.ServerResponse): Promise<void> {
-    const tunnel = this.core.tunnelService
+  private async handleTunnelStop(
+    port: number,
+    res: http.ServerResponse,
+  ): Promise<void> {
+    const tunnel = this.core.tunnelService;
     if (!tunnel) {
-      this.sendJson(res, 400, { error: 'Tunnel service is not enabled' })
-      return
+      this.sendJson(res, 400, { error: "Tunnel service is not enabled" });
+      return;
     }
     try {
-      await tunnel.stopTunnel(port)
-      this.sendJson(res, 200, { ok: true })
+      await tunnel.stopTunnel(port);
+      this.sendJson(res, 200, { ok: true });
     } catch (err) {
-      this.sendJson(res, 400, { error: (err as Error).message })
+      this.sendJson(res, 400, { error: (err as Error).message });
     }
   }
 
   private async handleTunnelStopAll(res: http.ServerResponse): Promise<void> {
-    const tunnel = this.core.tunnelService
+    const tunnel = this.core.tunnelService;
     if (!tunnel) {
-      this.sendJson(res, 400, { error: 'Tunnel service is not enabled' })
-      return
+      this.sendJson(res, 400, { error: "Tunnel service is not enabled" });
+      return;
     }
-    const count = tunnel.listTunnels().length
-    await tunnel.stopAllUser()
-    this.sendJson(res, 200, { ok: true, stopped: count })
+    const count = tunnel.listTunnels().length;
+    await tunnel.stopAllUser();
+    this.sendJson(res, 200, { ok: true, stopped: count });
   }
 
-  private async handleNotify(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
-    const body = await this.readBody(req)
-    let message: string | undefined
+  private async handleNotify(
+    req: http.IncomingMessage,
+    res: http.ServerResponse,
+  ): Promise<void> {
+    const body = await this.readBody(req);
+    let message: string | undefined;
     if (body) {
       try {
-        const parsed = JSON.parse(body)
-        message = parsed.message
+        const parsed = JSON.parse(body);
+        message = parsed.message;
       } catch {
-        this.sendJson(res, 400, { error: 'Invalid JSON body' })
-        return
+        this.sendJson(res, 400, { error: "Invalid JSON body" });
+        return;
       }
     }
 
     if (!message) {
-      this.sendJson(res, 400, { error: 'Missing message' })
-      return
+      this.sendJson(res, 400, { error: "Missing message" });
+      return;
     }
 
     await this.core.notificationManager.notifyAll({
-      sessionId: 'system',
-      type: 'completed',
+      sessionId: "system",
+      type: "completed",
       summary: message,
-    })
-    this.sendJson(res, 200, { ok: true })
+    });
+    this.sendJson(res, 200, { ok: true });
   }
 
   private async handleRestart(res: http.ServerResponse): Promise<void> {
     if (!this.core.requestRestart) {
-      this.sendJson(res, 501, { error: 'Restart not available' })
-      return
+      this.sendJson(res, 501, { error: "Restart not available" });
+      return;
     }
 
-    this.sendJson(res, 200, { ok: true, message: 'Restarting...' })
-    setImmediate(() => this.core.requestRestart!())
+    this.sendJson(res, 200, { ok: true, message: "Restarting..." });
+    setImmediate(() => this.core.requestRestart!());
   }
 
-  private async handleArchiveSession(sessionId: string, res: http.ServerResponse): Promise<void> {
-    const result = await this.core.archiveSession(sessionId)
+  private async handleArchiveSession(
+    sessionId: string,
+    res: http.ServerResponse,
+  ): Promise<void> {
+    const result = await this.core.archiveSession(sessionId);
     if (result.ok) {
-      this.sendJson(res, 200, result)
+      this.sendJson(res, 200, result);
     } else {
-      this.sendJson(res, 400, result)
+      this.sendJson(res, 400, result);
     }
   }
 
-  private async handleCancelSession(sessionId: string, res: http.ServerResponse): Promise<void> {
-    const session = this.core.sessionManager.getSession(sessionId)
+  private async handleCancelSession(
+    sessionId: string,
+    res: http.ServerResponse,
+  ): Promise<void> {
+    const session = this.core.sessionManager.getSession(sessionId);
     if (!session) {
-      this.sendJson(res, 404, { error: `Session "${sessionId}" not found` })
-      return
+      this.sendJson(res, 404, { error: `Session "${sessionId}" not found` });
+      return;
     }
-    await session.abortPrompt()
-    this.sendJson(res, 200, { ok: true })
+    await this.core.sessionManager.cancelSession(sessionId);
+    this.sendJson(res, 200, { ok: true });
   }
 
   private async handleListSessions(res: http.ServerResponse): Promise<void> {
-    const sessions = this.core.sessionManager.listSessions()
+    const sessions = this.core.sessionManager.listSessions();
     this.sendJson(res, 200, {
-      sessions: sessions.map(s => ({
+      sessions: sessions.map((s) => ({
         id: s.id,
         agent: s.agentName,
         status: s.status,
         name: s.name ?? null,
         workspace: s.workingDirectory,
+        createdAt: s.createdAt.toISOString(),
+        dangerousMode: s.dangerousMode,
+        queueDepth: s.queueDepth,
+        promptRunning: s.promptRunning,
+        lastActiveAt:
+          this.core.sessionManager.getSessionRecord(s.id)?.lastActiveAt ?? null,
       })),
-    })
+    });
   }
 
-  private async handleAdoptSession(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
-    const body = await this.readBody(req)
+  private async handleAdoptSession(
+    req: http.IncomingMessage,
+    res: http.ServerResponse,
+  ): Promise<void> {
+    const body = await this.readBody(req);
+    if (body === null) {
+      return this.sendJson(res, 413, { error: "Request body too large" });
+    }
     if (!body) {
-      return this.sendJson(res, 400, { error: 'bad_request', message: 'Empty request body' })
+      return this.sendJson(res, 400, {
+        error: "bad_request",
+        message: "Empty request body",
+      });
     }
 
-    let parsed: { agent?: string; agentSessionId?: string; cwd?: string }
+    let parsed: { agent?: string; agentSessionId?: string; cwd?: string };
     try {
-      parsed = JSON.parse(body)
+      parsed = JSON.parse(body);
     } catch {
-      return this.sendJson(res, 400, { error: 'bad_request', message: 'Invalid JSON' })
+      return this.sendJson(res, 400, {
+        error: "bad_request",
+        message: "Invalid JSON",
+      });
     }
 
-    const { agent, agentSessionId, cwd } = parsed
+    const { agent, agentSessionId, cwd } = parsed;
 
     if (!agent || !agentSessionId) {
-      return this.sendJson(res, 400, { error: 'bad_request', message: 'Missing required fields: agent, agentSessionId' })
+      return this.sendJson(res, 400, {
+        error: "bad_request",
+        message: "Missing required fields: agent, agentSessionId",
+      });
     }
 
-    const result = await this.core.adoptSession(agent, agentSessionId, cwd ?? process.cwd())
+    const result = await this.core.adoptSession(
+      agent,
+      agentSessionId,
+      cwd ?? process.cwd(),
+    );
 
     if (result.ok) {
-      return this.sendJson(res, 200, result)
+      return this.sendJson(res, 200, result);
     } else {
-      const status = result.error === 'session_limit' ? 429 : result.error === 'agent_not_supported' ? 400 : 500
-      return this.sendJson(res, status, result)
+      const status =
+        result.error === "session_limit"
+          ? 429
+          : result.error === "agent_not_supported"
+            ? 400
+            : 500;
+      return this.sendJson(res, status, result);
     }
   }
 
   private async handleListAgents(res: http.ServerResponse): Promise<void> {
-    const agents = this.core.agentManager.getAvailableAgents()
-    const defaultAgent = this.core.configManager.get().defaultAgent
+    const agents = this.core.agentManager.getAvailableAgents();
+    const defaultAgent = this.core.configManager.get().defaultAgent;
     const agentsWithCaps = agents.map((a) => ({
       ...a,
       capabilities: getAgentCapabilities(a.name),
-    }))
-    this.sendJson(res, 200, { agents: agentsWithCaps, default: defaultAgent })
+    }));
+    this.sendJson(res, 200, { agents: agentsWithCaps, default: defaultAgent });
   }
 
-  private sendJson(res: http.ServerResponse, status: number, data: unknown): void {
-    res.writeHead(status, { 'Content-Type': 'application/json' })
-    res.end(JSON.stringify(data))
+  private sendJson(
+    res: http.ServerResponse,
+    status: number,
+    data: unknown,
+  ): void {
+    res.writeHead(status, { "Content-Type": "application/json" });
+    res.end(JSON.stringify(data));
   }
 
-  private async handleListTopics(url: string, res: http.ServerResponse): Promise<void> {
-    if (!this.topicManager) { this.sendJson(res, 501, { error: 'Topic management not available' }); return }
-    const params = new URL(url, 'http://localhost').searchParams
-    const statusParam = params.get('status')
-    const filter = statusParam ? { statuses: statusParam.split(',') } : undefined
-    const topics = this.topicManager.listTopics(filter)
-    this.sendJson(res, 200, { topics })
+  private async handleListTopics(
+    url: string,
+    res: http.ServerResponse,
+  ): Promise<void> {
+    if (!this.topicManager) {
+      this.sendJson(res, 501, { error: "Topic management not available" });
+      return;
+    }
+    const params = new URL(url, "http://localhost").searchParams;
+    const statusParam = params.get("status");
+    const filter = statusParam
+      ? { statuses: statusParam.split(",") }
+      : undefined;
+    const topics = this.topicManager.listTopics(filter);
+    this.sendJson(res, 200, { topics });
   }
 
-  private async handleDeleteTopic(sessionId: string, url: string, res: http.ServerResponse): Promise<void> {
-    if (!this.topicManager) { this.sendJson(res, 501, { error: 'Topic management not available' }); return }
-    const params = new URL(url, 'http://localhost').searchParams
-    const force = params.get('force') === 'true'
-    const result = await this.topicManager.deleteTopic(sessionId, force ? { confirmed: true } : undefined)
+  private async handleDeleteTopic(
+    sessionId: string,
+    url: string,
+    res: http.ServerResponse,
+  ): Promise<void> {
+    if (!this.topicManager) {
+      this.sendJson(res, 501, { error: "Topic management not available" });
+      return;
+    }
+    const params = new URL(url, "http://localhost").searchParams;
+    const force = params.get("force") === "true";
+    const result = await this.topicManager.deleteTopic(
+      sessionId,
+      force ? { confirmed: true } : undefined,
+    );
     if (result.ok) {
-      this.sendJson(res, 200, result)
+      this.sendJson(res, 200, result);
     } else if (result.needsConfirmation) {
-      this.sendJson(res, 409, { error: 'Session is active', needsConfirmation: true, session: result.session })
-    } else if (result.error === 'Cannot delete system topic') {
-      this.sendJson(res, 403, { error: result.error })
+      this.sendJson(res, 409, {
+        error: "Session is active",
+        needsConfirmation: true,
+        session: result.session,
+      });
+    } else if (result.error === "Cannot delete system topic") {
+      this.sendJson(res, 403, { error: result.error });
     } else {
-      this.sendJson(res, 404, { error: result.error ?? 'Not found' })
+      this.sendJson(res, 404, { error: result.error ?? "Not found" });
     }
   }
 
-  private async handleCleanupTopics(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
-    if (!this.topicManager) { this.sendJson(res, 501, { error: 'Topic management not available' }); return }
-    const body = await this.readBody(req)
-    let statuses: string[] | undefined
+  private async handleCleanupTopics(
+    req: http.IncomingMessage,
+    res: http.ServerResponse,
+  ): Promise<void> {
+    if (!this.topicManager) {
+      this.sendJson(res, 501, { error: "Topic management not available" });
+      return;
+    }
+    const body = await this.readBody(req);
+    let statuses: string[] | undefined;
     if (body) {
-      try { statuses = JSON.parse(body).statuses } catch { /* use defaults */ }
+      try {
+        statuses = JSON.parse(body).statuses;
+      } catch {
+        /* use defaults */
+      }
     }
-    const result = await this.topicManager.cleanup(statuses)
-    this.sendJson(res, 200, result)
+    const result = await this.topicManager.cleanup(statuses);
+    this.sendJson(res, 200, result);
   }
 
-  private readBody(req: http.IncomingMessage): Promise<string> {
+  private readBody(req: http.IncomingMessage): Promise<string | null> {
+    const MAX_BODY_SIZE = 1024 * 1024; // 1MB
     return new Promise((resolve) => {
-      let data = ''
-      req.on('data', (chunk) => { data += chunk })
-      req.on('end', () => resolve(data))
-      req.on('error', () => resolve(''))
-    })
+      let data = "";
+      let size = 0;
+      let destroyed = false;
+      req.on("data", (chunk: Buffer) => {
+        size += chunk.length;
+        if (size > MAX_BODY_SIZE && !destroyed) {
+          destroyed = true;
+          req.destroy();
+          resolve(null);
+          return;
+        }
+        if (!destroyed) data += chunk;
+      });
+      req.on("end", () => {
+        if (!destroyed) resolve(data);
+      });
+      req.on("error", () => {
+        if (!destroyed) resolve("");
+      });
+    });
   }
 }

@@ -4,6 +4,7 @@ import type { MessageTransformer } from "./message-transformer.js";
 import type { NotificationManager } from "./notification.js";
 import type { SessionManager } from "./session-manager.js";
 import type { AgentEvent, PermissionRequest, SessionStatus } from "./types.js";
+import type { EventBus } from "./event-bus.js";
 import { FileService } from "./file-service.js";
 import { createChildLogger } from "./log.js";
 
@@ -13,13 +14,17 @@ export interface BridgeDeps {
   messageTransformer: MessageTransformer;
   notificationManager: NotificationManager;
   sessionManager: SessionManager;
+  eventBus?: EventBus;
   fileService?: FileService;
 }
 
 export class SessionBridge {
   private connected = false;
   private agentEventHandler?: (event: AgentEvent) => void;
-  private statusChangeHandler?: (from: SessionStatus, to: SessionStatus) => void;
+  private statusChangeHandler?: (
+    from: SessionStatus,
+    to: SessionStatus,
+  ) => void;
   private namedHandler?: (name: string) => void;
 
   constructor(
@@ -66,8 +71,12 @@ export class SessionBridge {
   private wireSessionToAdapter(): void {
     const session = this.session;
     const ctx = {
-      get id() { return session.id; },
-      get workingDirectory() { return session.workingDirectory; },
+      get id() {
+        return session.id;
+      },
+      get workingDirectory() {
+        return session.workingDirectory;
+      },
     };
 
     this.agentEventHandler = (event: AgentEvent) => {
@@ -121,9 +130,15 @@ export class SessionBridge {
             const { data, mimeType } = event;
             const buffer = Buffer.from(data, "base64");
             const ext = FileService.extensionFromMime(mimeType);
-            fs.saveFile(sid, `agent-image${ext}`, buffer, mimeType).then((att) => {
-              this.adapter.sendMessage(sid, { type: "attachment", text: "", attachment: att });
-            }).catch((err) => log.error({ err }, "Failed to save agent image"));
+            fs.saveFile(sid, `agent-image${ext}`, buffer, mimeType)
+              .then((att) => {
+                this.adapter.sendMessage(sid, {
+                  type: "attachment",
+                  text: "",
+                  attachment: att,
+                });
+              })
+              .catch((err) => log.error({ err }, "Failed to save agent image"));
           }
           break;
         }
@@ -134,9 +149,15 @@ export class SessionBridge {
             const { data, mimeType } = event;
             const buffer = Buffer.from(data, "base64");
             const ext = FileService.extensionFromMime(mimeType);
-            fs.saveFile(sid, `agent-audio${ext}`, buffer, mimeType).then((att) => {
-              this.adapter.sendMessage(sid, { type: "attachment", text: "", attachment: att });
-            }).catch((err) => log.error({ err }, "Failed to save agent audio"));
+            fs.saveFile(sid, `agent-audio${ext}`, buffer, mimeType)
+              .then((att) => {
+                this.adapter.sendMessage(sid, {
+                  type: "attachment",
+                  text: "",
+                  attachment: att,
+                });
+              })
+              .catch((err) => log.error({ err }, "Failed to save agent audio"));
           }
           break;
         }
@@ -153,6 +174,11 @@ export class SessionBridge {
           );
           break;
       }
+
+      this.deps.eventBus?.emit("agent:event", {
+        sessionId: this.session.id,
+        event,
+      });
     };
 
     this.session.on("agent_event", this.agentEventHandler);
@@ -163,6 +189,10 @@ export class SessionBridge {
       request: PermissionRequest,
     ) => {
       this.session.emit("permission_request", request);
+      this.deps.eventBus?.emit("permission:request", {
+        sessionId: this.session.id,
+        permission: request,
+      });
 
       // Set pending BEFORE sending UI to avoid race condition
       const promise = this.session.permissionGate.setPending(request);
@@ -182,6 +212,10 @@ export class SessionBridge {
         status: to,
         lastActiveAt: new Date().toISOString(),
       });
+      this.deps.eventBus?.emit("session:updated", {
+        sessionId: this.session.id,
+        status: to,
+      });
 
       // Auto-disconnect on terminal states
       if (to === "finished" || to === "cancelled") {
@@ -194,6 +228,10 @@ export class SessionBridge {
     // Persist and relay name changes
     this.namedHandler = (name: string) => {
       this.deps.sessionManager.patchRecord(this.session.id, { name });
+      this.deps.eventBus?.emit("session:updated", {
+        sessionId: this.session.id,
+        name,
+      });
       this.adapter.renameSessionThread(this.session.id, name);
     };
     this.session.on("named", this.namedHandler);

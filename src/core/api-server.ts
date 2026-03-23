@@ -157,6 +157,14 @@ export class ApiServer {
         );
         await this.handleSendPrompt(sessionId, req, res);
       } else if (
+        method === "POST" &&
+        url.match(/^\/api\/sessions\/([^/]+)\/permission$/)
+      ) {
+        const sessionId = decodeURIComponent(
+          url.match(/^\/api\/sessions\/([^/]+)\/permission$/)![1],
+        );
+        await this.handleResolvePermission(sessionId, req, res);
+      } else if (
         method === "PATCH" &&
         url.match(/^\/api\/sessions\/([^/]+)\/dangerous$/)
       ) {
@@ -340,6 +348,50 @@ export class ApiServer {
       sessionId,
       queueDepth: session.queueDepth,
     });
+  }
+
+  private async handleResolvePermission(
+    sessionId: string,
+    req: http.IncomingMessage,
+    res: http.ServerResponse,
+  ): Promise<void> {
+    const session = this.core.sessionManager.getSession(sessionId);
+    if (!session) {
+      this.sendJson(res, 404, { error: `Session "${sessionId}" not found` });
+      return;
+    }
+
+    const body = await this.readBody(req);
+    let permissionId: string | undefined;
+    let optionId: string | undefined;
+    if (body) {
+      try {
+        const parsed = JSON.parse(body);
+        permissionId = parsed.permissionId;
+        optionId = parsed.optionId;
+      } catch {
+        this.sendJson(res, 400, { error: "Invalid JSON body" });
+        return;
+      }
+    }
+
+    if (!permissionId || !optionId) {
+      this.sendJson(res, 400, { error: "Missing permissionId or optionId" });
+      return;
+    }
+
+    if (
+      !session.permissionGate.isPending ||
+      session.permissionGate.requestId !== permissionId
+    ) {
+      this.sendJson(res, 400, {
+        error: "No matching pending permission request",
+      });
+      return;
+    }
+
+    session.permissionGate.resolve(optionId);
+    this.sendJson(res, 200, { ok: true });
   }
 
   private async handleGetSession(

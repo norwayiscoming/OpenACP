@@ -822,6 +822,44 @@ describe("ApiServer", () => {
     expect(agentField.value).toBe("claude");
   });
 
+  it("POST /api/sessions/:id/permission resolves pending permission", async () => {
+    const mockGate = { isPending: true, requestId: "perm1", resolve: vi.fn() };
+    const mockSession = { id: "abc", permissionGate: mockGate };
+    mockCore.sessionManager.getSession.mockReturnValueOnce(mockSession);
+    const port = await startServer();
+
+    const res = await apiFetch(port, "/api/sessions/abc/permission", {
+      method: "POST",
+      body: JSON.stringify({ permissionId: "perm1", optionId: "allow" }),
+    });
+    expect(res.status).toBe(200);
+    expect(mockGate.resolve).toHaveBeenCalledWith("allow");
+  });
+
+  it("POST /api/sessions/:id/permission returns 404 for unknown session", async () => {
+    mockCore.sessionManager.getSession.mockReturnValueOnce(undefined);
+    const port = await startServer();
+
+    const res = await apiFetch(port, "/api/sessions/unknown/permission", {
+      method: "POST",
+      body: JSON.stringify({ permissionId: "p1", optionId: "allow" }),
+    });
+    expect(res.status).toBe(404);
+  });
+
+  it("POST /api/sessions/:id/permission returns 400 when no pending permission", async () => {
+    const mockGate = { isPending: false, requestId: undefined };
+    const mockSession = { id: "abc", permissionGate: mockGate };
+    mockCore.sessionManager.getSession.mockReturnValueOnce(mockSession);
+    const port = await startServer();
+
+    const res = await apiFetch(port, "/api/sessions/abc/permission", {
+      method: "POST",
+      body: JSON.stringify({ permissionId: "perm1", optionId: "allow" }),
+    });
+    expect(res.status).toBe(400);
+  });
+
   it("PATCH /api/config uses registry for needsRestart", async () => {
     const port = await startServer();
 

@@ -354,3 +354,85 @@ export function setupSessionCallbacks(
     }
   });
 }
+
+export async function handleArchive(
+  ctx: Context,
+  core: OpenACPCore,
+): Promise<void> {
+  const threadId = ctx.message?.message_thread_id;
+  if (!threadId) return;
+
+  const session = core.sessionManager.getSessionByThread("telegram", String(threadId));
+  if (!session) {
+    await ctx.reply(
+      "ℹ️ <b>/archive</b> works in session topics — it recreates the topic with a clean chat view while keeping your agent session alive.\n\nGo to the session topic you want to archive and type /archive there.",
+      { parse_mode: "HTML" },
+    );
+    return;
+  }
+
+  if (session.status === "initializing") {
+    await ctx.reply("⏳ Please wait for session to be ready.", { parse_mode: "HTML" });
+    return;
+  }
+
+  if (session.status !== "active") {
+    await ctx.reply(`⚠️ Cannot archive — session is ${session.status}.`, { parse_mode: "HTML" });
+    return;
+  }
+
+  await ctx.reply(
+    "⚠️ <b>Archive this session topic?</b>\n\n" +
+    "This will permanently delete all messages in this topic and create a fresh one.\n" +
+    "Your agent session will continue — only the chat view is reset.\n\n" +
+    "<i>Note: links to messages in this topic will stop working.</i>",
+    {
+      parse_mode: "HTML",
+      reply_markup: new InlineKeyboard()
+        .text("🗑 Yes, archive", `ar:yes:${session.id}`)
+        .text("❌ Cancel", `ar:no:${session.id}`),
+    },
+  );
+}
+
+export async function handleArchiveConfirm(
+  ctx: Context,
+  core: OpenACPCore,
+  chatId: number,
+): Promise<void> {
+  const data = ctx.callbackQuery?.data;
+  if (!data) return;
+
+  try {
+    await ctx.answerCallbackQuery();
+  } catch { /* expired */ }
+
+  const [, action, sessionId] = data.split(":");
+
+  if (action === "no") {
+    await ctx.editMessageText("Archive cancelled.", { parse_mode: "HTML" });
+    return;
+  }
+
+  // action === "yes"
+  await ctx.editMessageText("🔄 Archiving topic...", { parse_mode: "HTML" });
+
+  const result = await core.archiveSession(sessionId);
+  if (result.ok) {
+    const newTopicId = Number(result.newThreadId);
+    await ctx.api.sendMessage(chatId, "✅ Topic archived. Session continues.", {
+      message_thread_id: newTopicId,
+      parse_mode: "HTML",
+    });
+  } else {
+    try {
+      await ctx.editMessageText(`❌ Failed to archive: <code>${escapeHtml(result.error)}</code>`, { parse_mode: "HTML" });
+    } catch {
+      core.notificationManager.notifyAll({
+        sessionId,
+        type: "error",
+        summary: `Failed to recreate topic for session "${sessionId}": ${result.error}`,
+      });
+    }
+  }
+}

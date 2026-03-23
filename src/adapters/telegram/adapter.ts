@@ -17,6 +17,7 @@ import {
   ensureTopics,
   createSessionTopic,
   renameSessionTopic,
+  deleteSessionTopic,
 } from "./topics.js";
 import {
   setupCommands,
@@ -498,6 +499,9 @@ export class TelegramAdapter extends ChannelAdapter<OpenACPCore> {
 
     const session = this.core.sessionManager.getSession(sessionId);
     if (!session) return;
+
+    // Drop messages while topic is being recreated (archive in progress)
+    if (session.archiving) return;
     const threadId = Number(session.threadId);
     if (!threadId || isNaN(threadId)) {
       log.warn({ sessionId, threadId: session.threadId }, "Session has no valid threadId, skipping message");
@@ -887,5 +891,67 @@ export class TelegramAdapter extends ChannelAdapter<OpenACPCore> {
 
   async cleanupSkillCommands(sessionId: string): Promise<void> {
     await this.skillManager.cleanup(sessionId);
+  }
+
+  async archiveSessionTopic(sessionId: string): Promise<{ newThreadId: string } | null> {
+    const core = this.core as OpenACPCore;
+    const session = core.sessionManager.getSession(sessionId);
+    if (!session) return null;
+
+    const chatId = this.telegramConfig.chatId;
+    const oldTopicId = Number(session.threadId);
+    // Strip existing 🔄 prefix to avoid stacking on repeated archives
+    const rawName = (session.name || `Session ${session.id.slice(0, 6)}`).replace(/^🔄\s*/, "");
+
+    // 1. Set archiving flag — sendMessage will skip while this is true
+    session.archiving = true;
+
+    // 2. Finalize any pending draft
+    await this.draftManager.finalize(session.id, this.assistantSession?.id);
+
+    // 3. Cleanup all trackers for old topic
+    this.draftManager.cleanup(session.id);
+    this.toolTracker.cleanup(session.id);
+    await this.skillManager.cleanup(session.id);
+    const tracker = this.sessionTrackers.get(session.id);
+    if (tracker) {
+      tracker.destroy();
+      this.sessionTrackers.delete(session.id);
+    }
+
+    // 4. Delete old topic
+    await deleteSessionTopic(this.bot, chatId, oldTopicId);
+
+    // 5. Create new topic — wrapped in try/catch for orphan recovery
+    let newTopicId: number;
+    try {
+      newTopicId = await createSessionTopic(this.bot, chatId, `🔄 ${rawName}`);
+    } catch (createErr) {
+      // Critical: old topic deleted but new one failed — session is orphaned
+      session.archiving = false;
+      core.notificationManager.notifyAll({
+        sessionId: session.id,
+        sessionName: session.name,
+        type: "error",
+        summary: `Topic recreation failed for session "${rawName}". Session is orphaned. Error: ${(createErr as Error).message}`,
+      });
+      throw createErr;
+    }
+
+    // 6. Rewire session to new topic
+    session.threadId = String(newTopicId);
+
+    // 7. Persist via patchRecord — spread existing platform data, explicitly delete old skillMsgId
+    const existingRecord = core.sessionManager.getSessionRecord(session.id);
+    const existingPlatform = { ...(existingRecord?.platform ?? {}) };
+    delete (existingPlatform as Record<string, unknown>).skillMsgId;
+    await core.sessionManager.patchRecord(session.id, {
+      platform: { ...existingPlatform, topicId: newTopicId },
+    });
+
+    // 8. Clear archiving flag
+    session.archiving = false;
+
+    return { newThreadId: String(newTopicId) };
   }
 }

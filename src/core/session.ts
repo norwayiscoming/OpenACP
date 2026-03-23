@@ -37,6 +37,7 @@ export class Session extends TypedEmitter<SessionEvents> {
   name?: string;
   createdAt: Date = new Date();
   dangerousMode: boolean = false;
+  archiving: boolean = false;
   log: Logger;
 
   readonly permissionGate = new PermissionGate();

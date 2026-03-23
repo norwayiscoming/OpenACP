@@ -179,6 +179,9 @@ export class ApiServer {
       } else if (method === 'GET' && url.match(/^\/api\/sessions\/([^/]+)$/)) {
         const sessionId = decodeURIComponent(url.match(/^\/api\/sessions\/([^/]+)$/)![1])
         await this.handleGetSession(sessionId, res)
+      } else if (method === 'POST' && url.match(/^\/api\/sessions\/([^/]+)\/archive$/)) {
+        const sessionId = decodeURIComponent(url.match(/^\/api\/sessions\/([^/]+)\/archive$/)![1])
+        await this.handleArchiveSession(sessionId, res)
       } else if (method === 'DELETE' && url.match(/^\/api\/sessions\/([^/]+)$/)) {
         const sessionId = decodeURIComponent(url.match(/^\/api\/sessions\/([^/]+)$/)![1])
         await this.handleCancelSession(sessionId, res)
@@ -615,6 +618,15 @@ export class ApiServer {
 
     this.sendJson(res, 200, { ok: true, message: 'Restarting...' })
     setImmediate(() => this.core.requestRestart!())
+  }
+
+  private async handleArchiveSession(sessionId: string, res: http.ServerResponse): Promise<void> {
+    const result = await this.core.archiveSession(sessionId)
+    if (result.ok) {
+      this.sendJson(res, 200, result)
+    } else {
+      this.sendJson(res, 400, result)
+    }
   }
 
   private async handleCancelSession(sessionId: string, res: http.ServerResponse): Promise<void> {

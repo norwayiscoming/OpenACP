@@ -101,6 +101,26 @@ export class OpenACPCore {
     }
   }
 
+  // --- Archive ---
+
+  async archiveSession(sessionId: string): Promise<{ ok: true; newThreadId: string } | { ok: false; error: string }> {
+    const session = this.sessionManager.getSession(sessionId);
+    if (!session) return { ok: false, error: "Session not found" };
+    if (session.status === "initializing") return { ok: false, error: "Session is still initializing" };
+    if (session.status !== "active") return { ok: false, error: `Session is ${session.status}` };
+
+    const adapter = this.adapters.get(session.channelId);
+    if (!adapter) return { ok: false, error: "Adapter not found for session" };
+
+    try {
+      const result = await adapter.archiveSessionTopic(session.id);
+      if (!result) return { ok: false, error: "Adapter does not support archiving" };
+      return { ok: true, newThreadId: result.newThreadId };
+    } catch (err) {
+      return { ok: false, error: (err as Error).message };
+    }
+  }
+
   // --- Message Routing ---
 
   async handleMessage(message: IncomingMessage): Promise<void> {

@@ -1,14 +1,12 @@
 import { Routes, Route } from "react-router";
 import { Layout } from "./components/layout/Layout";
+import { DashboardPage } from "./pages/DashboardPage";
 
 export function App() {
   return (
     <Routes>
       <Route element={<Layout />}>
-        <Route
-          path="/"
-          element={<div className="text-xl">Dashboard — coming soon</div>}
-        />
+        <Route path="/" element={<DashboardPage />} />
         <Route
           path="/sessions"
           element={<div className="text-xl">Sessions — coming soon</div>}

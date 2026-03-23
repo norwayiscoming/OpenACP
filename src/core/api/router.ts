@@ -25,6 +25,9 @@ export class Router {
   put(path: string, handler: Handler): void {
     this.add("PUT", path, handler);
   }
+  patch(path: string, handler: Handler): void {
+    this.add("PATCH", path, handler);
+  }
   delete(path: string, handler: Handler): void {
     this.add("DELETE", path, handler);
   }

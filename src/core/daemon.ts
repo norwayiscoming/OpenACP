@@ -166,6 +166,8 @@ export async function stopDaemon(pidPath: string = DEFAULT_PID_PATH): Promise<{ 
     }
   }
 
+  // SIGKILL sent but process still alive after 1s — extremely rare (uninterruptible I/O).
+  // Clean up PID file anyway; the process will eventually exit.
   removePidFile(pidPath)
   return { stopped: true, pid }
 }

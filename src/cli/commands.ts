@@ -673,11 +673,12 @@ export async function cmdAdopt(args: string[]): Promise<void> {
   }
 
   try {
-    const res = await fetch(`http://127.0.0.1:${port}/api/sessions/adopt`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
+    const { apiCall } = await import('../core/api-client.js')
+    const res = await apiCall(port, '/api/sessions/adopt', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ agent, agentSessionId: sessionId, cwd }),
-    });
+    })
     const data = await res.json() as Record<string, unknown>;
 
     if (data.ok) {

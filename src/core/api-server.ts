@@ -155,6 +155,15 @@ export class ApiServer {
         await this.handleListAdapters(res)
       } else if (method === 'GET' && url === '/api/tunnel') {
         await this.handleTunnelStatus(res)
+      } else if (method === 'GET' && url === '/api/tunnel/list') {
+        await this.handleTunnelList(res)
+      } else if (method === 'POST' && url === '/api/tunnel') {
+        await this.handleTunnelAdd(req, res)
+      } else if (method === 'DELETE' && url === '/api/tunnel') {
+        await this.handleTunnelStopAll(res)
+      } else if (method === 'DELETE' && url.match(/^\/api\/tunnel\/(\d+)$/)) {
+        const port = parseInt(url.match(/^\/api\/tunnel\/(\d+)$/)![1], 10)
+        await this.handleTunnelStop(port, res)
       } else if (method === 'POST' && url === '/api/notify') {
         await this.handleNotify(req, res)
       } else if (method === 'POST' && url === '/api/restart') {
@@ -467,6 +476,64 @@ export class ApiServer {
     } else {
       this.sendJson(res, 200, { enabled: false })
     }
+  }
+
+  private async handleTunnelList(res: http.ServerResponse): Promise<void> {
+    const tunnel = this.core.tunnelService
+    if (!tunnel) {
+      this.sendJson(res, 200, [])
+      return
+    }
+    this.sendJson(res, 200, tunnel.listTunnels())
+  }
+
+  private async handleTunnelAdd(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+    const tunnel = this.core.tunnelService
+    if (!tunnel) {
+      this.sendJson(res, 400, { error: 'Tunnel service is not enabled' })
+      return
+    }
+    const body = await this.readBody(req)
+    if (!body) {
+      this.sendJson(res, 400, { error: 'Missing request body' })
+      return
+    }
+    try {
+      const { port, label, sessionId } = JSON.parse(body)
+      if (!port || typeof port !== 'number') {
+        this.sendJson(res, 400, { error: 'port is required and must be a number' })
+        return
+      }
+      const entry = await tunnel.addTunnel(port, { label, sessionId })
+      this.sendJson(res, 200, entry)
+    } catch (err) {
+      this.sendJson(res, 400, { error: (err as Error).message })
+    }
+  }
+
+  private async handleTunnelStop(port: number, res: http.ServerResponse): Promise<void> {
+    const tunnel = this.core.tunnelService
+    if (!tunnel) {
+      this.sendJson(res, 400, { error: 'Tunnel service is not enabled' })
+      return
+    }
+    try {
+      await tunnel.stopTunnel(port)
+      this.sendJson(res, 200, { ok: true })
+    } catch (err) {
+      this.sendJson(res, 400, { error: (err as Error).message })
+    }
+  }
+
+  private async handleTunnelStopAll(res: http.ServerResponse): Promise<void> {
+    const tunnel = this.core.tunnelService
+    if (!tunnel) {
+      this.sendJson(res, 400, { error: 'Tunnel service is not enabled' })
+      return
+    }
+    const count = tunnel.listTunnels().length
+    await tunnel.stopAllUser()
+    this.sendJson(res, 200, { ok: true, stopped: count })
   }
 
   private async handleNotify(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {

@@ -624,6 +624,7 @@ export async function runSetup(configManager: ConfigManager): Promise<boolean> {
         port: 3100,
         provider: "cloudflare",
         options: {},
+        maxUserTunnels: 5,
         storeTtlMinutes: 60,
         auth: { enabled: false },
       },

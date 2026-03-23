@@ -229,6 +229,22 @@ export class OpenACPCore {
       bridge.connect();
     }
 
+    // 5b. Clean up user tunnels when session ends
+    session.on("status_change", (_from, to) => {
+      if ((to === "finished" || to === "cancelled") && this._tunnelService) {
+        this._tunnelService.stopBySession(session.id).then(stopped => {
+          for (const entry of stopped) {
+            this.notificationManager.notifyAll({
+              sessionId: session.id,
+              sessionName: session.name,
+              type: "completed",
+              summary: `Tunnel stopped: port ${entry.port}${entry.label ? ` (${entry.label})` : ''} — session ended`,
+            }).catch(() => {});
+          }
+        }).catch(() => {});
+      }
+    });
+
     // 6. Persist initial record
     // Preserve existing platform data (e.g. topicId) when resuming an existing session
     const existingRecord = this.sessionStore?.get(session.id);

@@ -1,31 +1,30 @@
 import { serve } from '@hono/node-server'
 import type { TunnelConfig } from '../core/config.js'
 import { createChildLogger } from '../core/log.js'
-import type { TunnelProvider } from './provider.js'
-import { CloudflareTunnelProvider } from './providers/cloudflare.js'
-import { NgrokTunnelProvider } from './providers/ngrok.js'
-import { BoreTunnelProvider } from './providers/bore.js'
-import { TailscaleTunnelProvider } from './providers/tailscale.js'
+import { TunnelRegistry, type TunnelEntry } from './tunnel-registry.js'
 import { ViewerStore } from './viewer-store.js'
 import { createTunnelServer } from './server.js'
 
 const log = createChildLogger({ module: 'tunnel' })
 
 export class TunnelService {
-  private provider: TunnelProvider
+  private registry: TunnelRegistry
   private store: ViewerStore
   private server: ReturnType<typeof serve> | null = null
-  private publicUrl = ''
   private config: TunnelConfig
+  private systemPort = 0
 
   constructor(config: TunnelConfig) {
     this.config = config
     this.store = new ViewerStore(config.storeTtlMinutes)
-    this.provider = this.createProvider(config.provider, config.options)
+    this.registry = new TunnelRegistry({
+      maxUserTunnels: config.maxUserTunnels ?? 5,
+      providerOptions: config.options,
+    })
   }
 
   async start(): Promise<string> {
-    // 1. Start HTTP server — try configured port, then auto-increment up to 10 times
+    // 1. Start HTTP viewer server — try configured port, then auto-increment
     const authToken = this.config.auth.enabled ? this.config.auth.token : undefined
     const app = createTunnelServer(this.store, authToken)
 
@@ -56,24 +55,32 @@ export class TunnelService {
 
     if (!this.server) {
       log.warn({ port: this.config.port }, 'Could not find available port for tunnel HTTP server')
-      this.publicUrl = `http://localhost:${this.config.port}`
-      return this.publicUrl
+      return `http://localhost:${this.config.port}`
     }
 
-    // 2. Start tunnel provider
+    this.systemPort = actualPort
+
+    // 2. Register system tunnel (file viewer)
     try {
-      this.publicUrl = await this.provider.start(actualPort)
-      log.info({ url: this.publicUrl }, 'Tunnel public URL ready')
+      await this.registry.add(actualPort, {
+        type: 'system',
+        provider: this.config.provider,
+        label: 'File Viewer',
+      })
     } catch (err) {
-      log.warn({ err }, 'Tunnel provider failed to start, running without public URL')
-      this.publicUrl = `http://localhost:${actualPort}`
+      log.warn({ err: (err as Error).message }, 'System tunnel failed, running on localhost')
     }
 
-    return this.publicUrl
+    // 3. Restore persisted user tunnels
+    await this.registry.restore()
+
+    const systemEntry = this.registry.getSystemEntry()
+    return systemEntry?.publicUrl || `http://localhost:${actualPort}`
   }
 
   async stop(): Promise<void> {
-    await this.provider.stop()
+    await this.registry.shutdown()
+    this.registry.flush()
     if (this.server) {
       this.server.close()
       this.server = null
@@ -82,8 +89,42 @@ export class TunnelService {
     log.info('Tunnel service stopped')
   }
 
+  // --- User tunnel management ---
+
+  async addTunnel(port: number, opts?: { label?: string; sessionId?: string }): Promise<TunnelEntry> {
+    return this.registry.add(port, {
+      type: 'user',
+      provider: this.config.provider,
+      label: opts?.label,
+      sessionId: opts?.sessionId,
+    })
+  }
+
+  async stopTunnel(port: number): Promise<void> {
+    return this.registry.stop(port)
+  }
+
+  async stopAllUser(): Promise<void> {
+    return this.registry.stopAllUser()
+  }
+
+  async stopBySession(sessionId: string): Promise<TunnelEntry[]> {
+    return this.registry.stopBySession(sessionId)
+  }
+
+  listTunnels(): TunnelEntry[] {
+    return this.registry.list(false)  // user only
+  }
+
+  getTunnel(port: number): TunnelEntry | null {
+    return this.registry.get(port)
+  }
+
+  // --- Viewer (system tunnel) ---
+
   getPublicUrl(): string {
-    return this.publicUrl
+    const system = this.registry.getSystemEntry()
+    return system?.publicUrl || `http://localhost:${this.systemPort || this.config.port}`
   }
 
   getStore(): ViewerStore {
@@ -91,26 +132,10 @@ export class TunnelService {
   }
 
   fileUrl(entryId: string): string {
-    return `${this.publicUrl}/view/${entryId}`
+    return `${this.getPublicUrl()}/view/${entryId}`
   }
 
   diffUrl(entryId: string): string {
-    return `${this.publicUrl}/diff/${entryId}`
-  }
-
-  private createProvider(name: string, options: Record<string, unknown>): TunnelProvider {
-    switch (name) {
-      case 'cloudflare':
-        return new CloudflareTunnelProvider(options)
-      case 'ngrok':
-        return new NgrokTunnelProvider(options)
-      case 'bore':
-        return new BoreTunnelProvider(options)
-      case 'tailscale':
-        return new TailscaleTunnelProvider(options)
-      default:
-        log.warn({ provider: name }, 'Unknown tunnel provider, falling back to cloudflare')
-        return new CloudflareTunnelProvider(options)
-    }
+    return `${this.getPublicUrl()}/diff/${entryId}`
   }
 }

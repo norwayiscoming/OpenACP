@@ -13,8 +13,8 @@ import { JsonFileSessionStore, type SessionStore } from "./session-store.js";
 import { UsageStore } from "./usage-store.js";
 import { UsageBudget } from "./usage-budget.js";
 import { SecurityGuard } from "./security-guard.js";
-import type { IncomingMessage, UsageRecord } from "./types.js";
-import { nanoid } from "nanoid";
+import { SessionFactory } from "./session-factory.js";
+import type { IncomingMessage } from "./types.js";
 import type { TunnelService } from "../tunnel/tunnel-service.js";
 import { getAgentCapabilities } from "./agent-registry.js";
 import { AgentCatalog } from "./agent-catalog.js";
@@ -40,6 +40,7 @@ export class OpenACPCore {
   private sessionStore: SessionStore | null = null;
   private resumeLocks: Map<string, Promise<Session | null>> = new Map();
   eventBus: EventBus;
+  sessionFactory: SessionFactory;
   readonly usageStore: UsageStore | null = null;
   readonly usageBudget: UsageBudget | null = null;
 
@@ -88,6 +89,13 @@ export class OpenACPCore {
         new GroqSTT(groqConfig.apiKey, groqConfig.model),
       );
     }
+
+    this.sessionFactory = new SessionFactory(
+      this.agentManager,
+      this.sessionManager,
+      this.speechService,
+      this.eventBus,
+    );
 
     // Hot-reload: handle config changes that need side effects
     this.configManager.on(
@@ -258,39 +266,8 @@ export class OpenACPCore {
     createThread?: boolean;
     initialName?: string;
   }): Promise<Session> {
-    // 1. Spawn or resume agent
-    const agentInstance = params.resumeAgentSessionId
-      ? await this.agentManager.resume(
-          params.agentName,
-          params.workingDirectory,
-          params.resumeAgentSessionId,
-        )
-      : await this.agentManager.spawn(
-          params.agentName,
-          params.workingDirectory,
-        );
-
-    // 2. Create Session instance
-    const session = new Session({
-      id: params.existingSessionId,
-      channelId: params.channelId,
-      agentName: params.agentName,
-      workingDirectory: params.workingDirectory,
-      agentInstance,
-      speechService: this.speechService,
-    });
-    session.agentSessionId = agentInstance.sessionId;
-    if (params.initialName) {
-      session.name = params.initialName;
-    }
-
-    // 3. Register in SessionManager
-    this.sessionManager.registerSession(session);
-    this.eventBus.emit("session:created", {
-      sessionId: session.id,
-      agent: session.agentName,
-      status: session.status,
-    });
+    // 1-3. Spawn/resume agent, create Session, register in SessionManager
+    const session = await this.sessionFactory.create(params);
 
     // 4. Create thread if needed
     const adapter = this.adapters.get(params.channelId);
@@ -308,54 +285,12 @@ export class OpenACPCore {
       bridge.connect();
     }
 
-    // 5b. Wire usage tracking (independent of adapter)
-    if (this.usageStore) {
-      session.on("agent_event", (event: import("./types.js").AgentEvent) => {
-        if (event.type !== "usage") return;
-        const record: UsageRecord = {
-          id: nanoid(),
-          sessionId: session.id,
-          agentName: session.agentName,
-          tokensUsed: event.tokensUsed ?? 0,
-          contextSize: event.contextSize ?? 0,
-          cost: event.cost,
-          timestamp: new Date().toISOString(),
-        };
-        this.usageStore!.append(record);
-
-        if (this.usageBudget) {
-          const result = this.usageBudget.check();
-          if (result.message) {
-            this.notificationManager.notifyAll({
-              sessionId: session.id,
-              sessionName: session.name,
-              type: "budget_warning",
-              summary: result.message,
-            });
-          }
-        }
-      });
-    }
-
-    // 5c. Clean up user tunnels when session ends
-    session.on("status_change", (_from, to) => {
-      if ((to === "finished" || to === "cancelled") && this._tunnelService) {
-        this._tunnelService
-          .stopBySession(session.id)
-          .then((stopped) => {
-            for (const entry of stopped) {
-              this.notificationManager
-                .notifyAll({
-                  sessionId: session.id,
-                  sessionName: session.name,
-                  type: "completed",
-                  summary: `Tunnel stopped: port ${entry.port}${entry.label ? ` (${entry.label})` : ""} — session ended`,
-                })
-                .catch(() => {});
-            }
-          })
-          .catch(() => {});
-      }
+    // 5b-5c. Wire usage tracking and tunnel cleanup
+    this.sessionFactory.wireSideEffects(session, {
+      usageStore: this.usageStore,
+      usageBudget: this.usageBudget,
+      notificationManager: this.notificationManager,
+      tunnelService: this._tunnelService,
     });
 
     // 6. Persist initial record
@@ -373,7 +308,7 @@ export class OpenACPCore {
     }
     await this.sessionManager.patchRecord(session.id, {
       sessionId: session.id,
-      agentSessionId: agentInstance.sessionId,
+      agentSessionId: session.agentSessionId,
       agentName: params.agentName,
       workingDir: params.workingDirectory,
       channelId: params.channelId,

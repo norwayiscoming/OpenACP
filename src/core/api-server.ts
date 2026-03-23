@@ -266,8 +266,10 @@ export class ApiServer {
       } else if (method === "GET" && url.startsWith("/api/events")) {
         this.sseManager.handleRequest(req, res);
         return; // Don't end the response — SSE keeps it open
+      } else if (url.startsWith("/api/")) {
+        this.sendJson(res, 404, { error: "Not found" });
       } else {
-        // Try static file serving (UI dashboard)
+        // Try static file serving (UI dashboard) for non-API routes
         if (!this.staticServer.serve(req, res)) {
           this.sendJson(res, 404, { error: "Not found" });
         }

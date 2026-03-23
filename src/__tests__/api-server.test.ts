@@ -1060,7 +1060,17 @@ describe("ApiServer", () => {
     });
 
     it("returns 404 for non-API routes when UI not available", async () => {
-      const port = await startServer();
+      const { ApiServer } = await import("../core/api-server.js");
+      const nonExistentUiDir = path.join(tmpDir, "no-ui");
+      server = new ApiServer(
+        mockCore as any,
+        { port: 0, host: "127.0.0.1" },
+        portFilePath,
+        mockTopicManager as any,
+        nonExistentUiDir,
+      );
+      await server.start();
+      const port = server.getPort();
       const res = await apiFetch(port, "/nonexistent");
       expect(res.status).toBe(404);
     });

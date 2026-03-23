@@ -5,6 +5,7 @@ import { OpenACPCore } from './core/core.js'
 import { loadAdapterFactory } from './core/plugin-manager.js'
 import { initLogger, shutdownLogger, cleanupOldSessionLogs, log } from './core/log.js'
 import { TelegramAdapter } from './adapters/telegram/index.js'
+import { SlackAdapter } from './adapters/slack/adapter.js'
 import { ApiServer } from './core/api-server.js'
 import { TopicManager } from './core/topic-manager.js'
 
@@ -76,6 +77,9 @@ export async function startServer() {
     if (channelName === 'telegram') {
       core.registerAdapter('telegram', new TelegramAdapter(core, channelConfig as any))
       log.info({ adapter: 'telegram' }, 'Adapter registered')
+    } else if (channelName === 'slack') {
+      core.registerAdapter('slack', new SlackAdapter(core, channelConfig as any))
+      log.info({ adapter: 'slack' }, 'Adapter registered')
     } else if (channelConfig.adapter) {
       // Plugin adapter
       const factory = await loadAdapterFactory(channelConfig.adapter)

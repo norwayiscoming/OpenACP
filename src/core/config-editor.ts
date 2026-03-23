@@ -27,8 +27,10 @@ async function editTelegram(config: Config, updates: ConfigUpdates): Promise<voi
   const tg = (config.channels?.telegram ?? {}) as Record<string, unknown>
   const currentToken = (tg.botToken as string) ?? ''
   const currentChatId = (tg.chatId as number) ?? 0
+  const currentEnabled = (tg.enabled as boolean) ?? false
 
   console.log(header('Telegram'))
+  console.log(`  Enabled   : ${currentEnabled ? ok('yes') : dim('no')}`)
   const tokenDisplay = currentToken.length > 12
     ? currentToken.slice(0, 6) + '...' + currentToken.slice(-6)
     : currentToken || dim('(not set)')
@@ -36,10 +38,26 @@ async function editTelegram(config: Config, updates: ConfigUpdates): Promise<voi
   console.log(`  Chat ID   : ${currentChatId || dim('(not set)')}`)
   console.log('')
 
+  const ensureTelegramUpdates = () => {
+    if (!updates.channels) updates.channels = {}
+    if (!(updates.channels as Record<string, unknown>).telegram) {
+      (updates.channels as Record<string, unknown>).telegram = {}
+    }
+    return (updates.channels as Record<string, unknown>).telegram as Record<string, unknown>
+  }
+
   while (true) {
+    const isEnabled = (() => {
+      const ch = updates.channels as Record<string, unknown> | undefined
+      const tgUp = ch?.telegram as Record<string, unknown> | undefined
+      if (tgUp && 'enabled' in tgUp) return tgUp.enabled as boolean
+      return currentEnabled
+    })()
+
     const choice = await select({
       message: 'Telegram settings:',
       choices: [
+        { name: isEnabled ? 'Disable Telegram' : 'Enable Telegram', value: 'toggle' },
         { name: 'Change Bot Token', value: 'token' },
         { name: 'Change Chat ID', value: 'chatid' },
         { name: 'Back', value: 'back' },
@@ -47,6 +65,12 @@ async function editTelegram(config: Config, updates: ConfigUpdates): Promise<voi
     })
 
     if (choice === 'back') break
+
+    if (choice === 'toggle') {
+      const tgUp = ensureTelegramUpdates()
+      tgUp.enabled = !isEnabled
+      console.log(!isEnabled ? ok('Telegram enabled') : ok('Telegram disabled'))
+    }
 
     if (choice === 'token') {
       const token = await input({
@@ -62,11 +86,9 @@ async function editTelegram(config: Config, updates: ConfigUpdates): Promise<voi
         console.log(warn(`Validation failed: ${result.error} — saving anyway`))
       }
 
-      if (!updates.channels) updates.channels = {}
-      if (!(updates.channels as Record<string, unknown>).telegram) {
-        (updates.channels as Record<string, unknown>).telegram = {}
-      }
-      ;((updates.channels as Record<string, unknown>).telegram as Record<string, unknown>).botToken = token.trim()
+      const tgUp = ensureTelegramUpdates()
+      tgUp.botToken = token.trim()
+      tgUp.enabled = true
     }
 
     if (choice === 'chatid') {
@@ -84,13 +106,9 @@ async function editTelegram(config: Config, updates: ConfigUpdates): Promise<voi
 
       // Use the current (or already-updated) token for validation
       const tokenForValidation = (() => {
-        if (updates.channels) {
-          const ch = updates.channels as Record<string, unknown>
-          if (ch.telegram) {
-            const tgUp = ch.telegram as Record<string, unknown>
-            if (typeof tgUp.botToken === 'string') return tgUp.botToken
-          }
-        }
+        const ch = updates.channels as Record<string, unknown> | undefined
+        const tgUp = ch?.telegram as Record<string, unknown> | undefined
+        if (typeof tgUp?.botToken === 'string') return tgUp.botToken
         return currentToken
       })()
 
@@ -101,11 +119,8 @@ async function editTelegram(config: Config, updates: ConfigUpdates): Promise<voi
         console.log(warn(`Validation failed: ${result.error} — saving anyway`))
       }
 
-      if (!updates.channels) updates.channels = {}
-      if (!(updates.channels as Record<string, unknown>).telegram) {
-        (updates.channels as Record<string, unknown>).telegram = {}
-      }
-      ;((updates.channels as Record<string, unknown>).telegram as Record<string, unknown>).chatId = chatId
+      const tgUp = ensureTelegramUpdates()
+      tgUp.chatId = chatId
     }
   }
 }
@@ -116,8 +131,10 @@ async function editDiscord(config: Config, updates: ConfigUpdates): Promise<void
   const dc = (config.channels?.discord ?? {}) as Record<string, unknown>
   const currentToken = (dc.botToken as string) ?? ''
   const currentGuildId = (dc.guildId as string) ?? ''
+  const currentEnabled = (dc.enabled as boolean) ?? false
 
   console.log(header('Discord'))
+  console.log(`  Enabled   : ${currentEnabled ? ok('yes') : dim('no')}`)
   const tokenDisplay = currentToken.length > 12
     ? currentToken.slice(0, 6) + '...' + currentToken.slice(-6)
     : currentToken || dim('(not set)')
@@ -125,10 +142,27 @@ async function editDiscord(config: Config, updates: ConfigUpdates): Promise<void
   console.log(`  Guild ID  : ${currentGuildId || dim('(not set)')}`)
   console.log('')
 
+  // Helper to ensure discord updates object exists
+  const ensureDiscordUpdates = () => {
+    if (!updates.channels) updates.channels = {}
+    if (!(updates.channels as Record<string, unknown>).discord) {
+      (updates.channels as Record<string, unknown>).discord = {}
+    }
+    return (updates.channels as Record<string, unknown>).discord as Record<string, unknown>
+  }
+
   while (true) {
+    const isEnabled = (() => {
+      const ch = updates.channels as Record<string, unknown> | undefined
+      const dcUp = ch?.discord as Record<string, unknown> | undefined
+      if (dcUp && 'enabled' in dcUp) return dcUp.enabled as boolean
+      return currentEnabled
+    })()
+
     const choice = await select({
       message: 'Discord settings:',
       choices: [
+        { name: isEnabled ? 'Disable Discord' : 'Enable Discord', value: 'toggle' },
         { name: 'Change Bot Token', value: 'token' },
         { name: 'Change Guild ID', value: 'guildid' },
         { name: 'Back', value: 'back' },
@@ -136,6 +170,12 @@ async function editDiscord(config: Config, updates: ConfigUpdates): Promise<void
     })
 
     if (choice === 'back') break
+
+    if (choice === 'toggle') {
+      const dcUp = ensureDiscordUpdates()
+      dcUp.enabled = !isEnabled
+      console.log(!isEnabled ? ok('Discord enabled') : ok('Discord disabled'))
+    }
 
     if (choice === 'token') {
       const token = await input({
@@ -151,11 +191,10 @@ async function editDiscord(config: Config, updates: ConfigUpdates): Promise<void
         console.log(warn(`Validation failed: ${result.error} — saving anyway`))
       }
 
-      if (!updates.channels) updates.channels = {}
-      if (!(updates.channels as Record<string, unknown>).discord) {
-        (updates.channels as Record<string, unknown>).discord = {}
-      }
-      ;((updates.channels as Record<string, unknown>).discord as Record<string, unknown>).botToken = token.trim()
+      const dcUp = ensureDiscordUpdates()
+      dcUp.botToken = token.trim()
+      // Auto-enable when token is set
+      dcUp.enabled = true
     }
 
     if (choice === 'guildid') {
@@ -170,11 +209,8 @@ async function editDiscord(config: Config, updates: ConfigUpdates): Promise<void
         },
       })
 
-      if (!updates.channels) updates.channels = {}
-      if (!(updates.channels as Record<string, unknown>).discord) {
-        (updates.channels as Record<string, unknown>).discord = {}
-      }
-      ;((updates.channels as Record<string, unknown>).discord as Record<string, unknown>).guildId = guildIdStr.trim()
+      const dcUp = ensureDiscordUpdates()
+      dcUp.guildId = guildIdStr.trim()
       console.log(ok(`Guild ID set to ${guildIdStr.trim()}`))
     }
   }

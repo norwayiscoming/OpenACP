@@ -7,10 +7,8 @@ import type { OpenACPCore } from "./core.js";
 import type { TopicManager } from "./topic-manager.js";
 import { createChildLogger } from "./log.js";
 import { getAgentCapabilities } from "./agent-registry.js";
-
-interface SSEResponse extends http.ServerResponse {
-  sessionFilter?: string;
-}
+import { SSEManager } from "./sse-manager.js";
+import { StaticServer } from "./static-server.js";
 
 const log = createChildLogger({ module: "api-server" });
 
@@ -69,49 +67,31 @@ export class ApiServer {
   private actualPort: number = 0;
   private portFilePath: string;
   private startedAt = Date.now();
-  private sseConnections = new Set<http.ServerResponse>();
-  private sseCleanupHandlers = new Map<http.ServerResponse, () => void>();
-  private healthInterval?: ReturnType<typeof setInterval>;
-
-  private static MIME_TYPES: Record<string, string> = {
-    ".html": "text/html; charset=utf-8",
-    ".js": "application/javascript; charset=utf-8",
-    ".css": "text/css; charset=utf-8",
-    ".json": "application/json; charset=utf-8",
-    ".png": "image/png",
-    ".jpg": "image/jpeg",
-    ".svg": "image/svg+xml",
-    ".ico": "image/x-icon",
-    ".woff": "font/woff",
-    ".woff2": "font/woff2",
-  };
+  private sseManager: SSEManager;
+  private staticServer: StaticServer;
 
   constructor(
     private core: OpenACPCore,
     private config: ApiConfig,
     portFilePath?: string,
     private topicManager?: TopicManager,
-    private uiDir?: string,
+    uiDir?: string,
   ) {
     this.portFilePath = portFilePath ?? DEFAULT_PORT_FILE;
-    // Auto-detect UI directory if not provided
-    if (!this.uiDir) {
-      const __filename = fileURLToPath(import.meta.url);
-      const candidate = path.resolve(path.dirname(__filename), "../../ui/dist");
-      if (fs.existsSync(path.join(candidate, "index.html"))) {
-        this.uiDir = candidate;
-      }
-      // Also check dist-publish layout
-      if (!this.uiDir) {
-        const publishCandidate = path.resolve(
-          path.dirname(__filename),
-          "../ui",
-        );
-        if (fs.existsSync(path.join(publishCandidate, "index.html"))) {
-          this.uiDir = publishCandidate;
-        }
-      }
-    }
+    this.staticServer = new StaticServer(uiDir);
+    this.sseManager = new SSEManager(
+      core.eventBus,
+      () => {
+        const sessions = this.core.sessionManager.listSessions();
+        return {
+          active: sessions.filter(
+            (s) => s.status === "active" || s.status === "initializing",
+          ).length,
+          total: sessions.length,
+        };
+      },
+      this.startedAt,
+    );
   }
 
   async start(): Promise<void> {
@@ -142,18 +122,14 @@ export class ApiServer {
           { host: this.config.host, port: this.actualPort },
           "API server listening",
         );
-        this.setupSSE();
+        this.sseManager.setup();
         resolve();
       });
     });
   }
 
   async stop(): Promise<void> {
-    if (this.healthInterval) clearInterval(this.healthInterval);
-    for (const [res, cleanup] of this.sseCleanupHandlers) {
-      res.end();
-      cleanup();
-    }
+    this.sseManager.stop();
     this.removePortFile();
     if (this.server) {
       await new Promise<void>((resolve) => {
@@ -288,11 +264,11 @@ export class ApiServer {
         const match = url.match(/^\/api\/topics\/([^/?]+)/)!;
         await this.handleDeleteTopic(decodeURIComponent(match[1]), url, res);
       } else if (method === "GET" && url.startsWith("/api/events")) {
-        this.handleSSE(req, res);
+        this.sseManager.handleRequest(req, res);
         return; // Don't end the response — SSE keeps it open
       } else {
         // Try static file serving (UI dashboard)
-        if (!this.serveStatic(req, res)) {
+        if (!this.staticServer.serve(req, res)) {
           this.sendJson(res, 404, { error: "Not found" });
         }
       }
@@ -829,120 +805,6 @@ export class ApiServer {
       capabilities: getAgentCapabilities(a.name),
     }));
     this.sendJson(res, 200, { agents: agentsWithCaps, default: defaultAgent });
-  }
-
-  private setupSSE(): void {
-    const eventBus = this.core.eventBus;
-    if (!eventBus) return;
-
-    const events = [
-      "session:created",
-      "session:updated",
-      "session:deleted",
-      "agent:event",
-      "permission:request",
-    ] as const;
-
-    for (const eventName of events) {
-      eventBus.on(eventName, (data: unknown) => {
-        this.broadcastSSE(eventName, data);
-      });
-    }
-
-    // Health heartbeat every 30s
-    this.healthInterval = setInterval(() => {
-      const mem = process.memoryUsage();
-      const sessions = this.core.sessionManager.listSessions();
-      this.broadcastSSE("health", {
-        uptime: Date.now() - this.startedAt,
-        memory: {
-          rss: mem.rss,
-          heapUsed: mem.heapUsed,
-          heapTotal: mem.heapTotal,
-        },
-        sessions: {
-          active: sessions.filter(
-            (s) => s.status === "active" || s.status === "initializing",
-          ).length,
-          total: sessions.length,
-        },
-      });
-    }, 30_000);
-  }
-
-  private handleSSE(req: http.IncomingMessage, res: http.ServerResponse): void {
-    const parsedUrl = new URL(req.url || "", "http://localhost");
-    const sessionFilter = parsedUrl.searchParams.get("sessionId");
-
-    res.writeHead(200, {
-      "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache",
-      Connection: "keep-alive",
-    });
-    res.flushHeaders();
-
-    // Store filter metadata on the response for broadcastSSE
-    (res as SSEResponse).sessionFilter = sessionFilter ?? undefined;
-
-    this.sseConnections.add(res);
-
-    const cleanup = () => {
-      this.sseConnections.delete(res);
-      this.sseCleanupHandlers.delete(res);
-    };
-    this.sseCleanupHandlers.set(res, cleanup);
-    req.on("close", cleanup);
-  }
-
-  private broadcastSSE(event: string, data: unknown): void {
-    const payload = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
-    // Events that carry sessionId and should be filtered
-    const sessionEvents = [
-      "agent:event",
-      "permission:request",
-      "session:updated",
-    ];
-    for (const res of this.sseConnections) {
-      const filter = (res as SSEResponse).sessionFilter;
-      if (filter && sessionEvents.includes(event)) {
-        const eventData = data as { sessionId: string };
-        if (eventData.sessionId !== filter) continue;
-      }
-      res.write(payload);
-    }
-  }
-
-  private serveStatic(
-    req: http.IncomingMessage,
-    res: http.ServerResponse,
-  ): boolean {
-    if (!this.uiDir) return false;
-
-    const urlPath = (req.url || "/").split("?")[0];
-    const safePath = path.normalize(urlPath).replace(/^(\.\.[/\\])+/, "");
-
-    // Try exact file match
-    const filePath = path.join(this.uiDir, safePath);
-    if (!filePath.startsWith(this.uiDir)) return false; // path traversal guard
-
-    if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
-      const ext = path.extname(filePath);
-      const contentType =
-        ApiServer.MIME_TYPES[ext] ?? "application/octet-stream";
-      res.writeHead(200, { "Content-Type": contentType });
-      fs.createReadStream(filePath).pipe(res);
-      return true;
-    }
-
-    // SPA fallback — serve index.html
-    const indexPath = path.join(this.uiDir, "index.html");
-    if (fs.existsSync(indexPath)) {
-      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-      fs.createReadStream(indexPath).pipe(res);
-      return true;
-    }
-
-    return false;
   }
 
   private sendJson(

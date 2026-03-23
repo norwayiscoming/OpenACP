@@ -50,6 +50,8 @@ export {
 } from "./autostart.js";
 export { runConfigEditor } from "./config-editor.js";
 export { ApiServer, type ApiConfig } from "./api-server.js";
+export { SSEManager } from "./sse-manager.js";
+export { StaticServer } from "./static-server.js";
 export { EventBus, type EventBusEvents } from "./event-bus.js";
 export {
   TopicManager,

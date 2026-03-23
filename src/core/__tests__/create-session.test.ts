@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { Session } from "../session.js";
+import { EventBus } from "../event-bus.js";
 import type { AgentInstance } from "../agent-instance.js";
 import type { ChannelAdapter } from "../channel.js";
 
@@ -44,7 +45,9 @@ function createMockCore(): OpenACPCore {
   core.agentManager = {
     spawn: vi.fn().mockResolvedValue(mockAgent),
     resume: vi.fn().mockResolvedValue(mockAgent),
-    getAgent: vi.fn().mockReturnValue({ name: "claude", command: "claude", args: [] }),
+    getAgent: vi
+      .fn()
+      .mockReturnValue({ name: "claude", command: "claude", args: [] }),
     getAvailableAgents: vi.fn().mockReturnValue([]),
   } as any;
   core.sessionManager = {
@@ -60,6 +63,7 @@ function createMockCore(): OpenACPCore {
     notify: vi.fn().mockResolvedValue(undefined),
     notifyAll: vi.fn().mockResolvedValue(undefined),
   } as any;
+  core.eventBus = new EventBus();
 
   return core;
 }

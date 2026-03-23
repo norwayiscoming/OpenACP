@@ -13,6 +13,7 @@ import type { IncomingMessage } from "./types.js";
 import type { TunnelService } from "../tunnel/tunnel-service.js";
 import { getAgentCapabilities } from "./agent-registry.js";
 import { AgentCatalog } from "./agent-catalog.js";
+import { EventBus } from "./event-bus.js";
 import { createChildLogger } from "./log.js";
 const log = createChildLogger({ module: "core" });
 
@@ -29,6 +30,7 @@ export class OpenACPCore {
   private _tunnelService?: TunnelService;
   private sessionStore: SessionStore | null = null;
   private resumeLocks: Map<string, Promise<Session | null>> = new Map();
+  eventBus: EventBus;
 
   constructor(configManager: ConfigManager) {
     this.configManager = configManager;
@@ -44,15 +46,20 @@ export class OpenACPCore {
     this.sessionManager = new SessionManager(this.sessionStore);
     this.notificationManager = new NotificationManager(this.adapters);
     this.messageTransformer = new MessageTransformer();
+    this.eventBus = new EventBus();
+    this.sessionManager.setEventBus(this.eventBus);
 
     // Hot-reload: handle config changes that need side effects
-    this.configManager.on('config:changed', async ({ path: configPath, value }: { path: string; value: unknown }) => {
-      if (configPath === 'logging.level' && typeof value === 'string') {
-        const { setLogLevel } = await import('./log.js')
-        setLogLevel(value)
-        log.info({ level: value }, 'Log level changed at runtime')
-      }
-    })
+    this.configManager.on(
+      "config:changed",
+      async ({ path: configPath, value }: { path: string; value: unknown }) => {
+        if (configPath === "logging.level" && typeof value === "string") {
+          const { setLogLevel } = await import("./log.js");
+          setLogLevel(value);
+          log.info({ level: value }, "Log level changed at runtime");
+        }
+      },
+    );
   }
 
   get tunnelService(): TunnelService | undefined {
@@ -165,7 +172,9 @@ export class OpenACPCore {
     }
 
     // Update activity timestamp
-    this.sessionManager.patchRecord(session.id, { lastActiveAt: new Date().toISOString() });
+    this.sessionManager.patchRecord(session.id, {
+      lastActiveAt: new Date().toISOString(),
+    });
 
     // Forward to session
     await session.enqueuePrompt(message.text);
@@ -209,6 +218,11 @@ export class OpenACPCore {
 
     // 3. Register in SessionManager
     this.sessionManager.registerSession(session);
+    this.eventBus.emit("session:created", {
+      sessionId: session.id,
+      agent: session.agentName,
+      status: session.status,
+    });
 
     // 4. Create thread if needed
     const adapter = this.adapters.get(params.channelId);
@@ -280,36 +294,60 @@ export class OpenACPCore {
     agentSessionId: string,
     cwd: string,
   ): Promise<
-    | { ok: true; sessionId: string; threadId: string; status: "adopted" | "existing" }
+    | {
+        ok: true;
+        sessionId: string;
+        threadId: string;
+        status: "adopted" | "existing";
+      }
     | { ok: false; error: string; message: string }
   > {
     // 1. Validate agent supports resume
     const caps = getAgentCapabilities(agentName);
     if (!caps.supportsResume) {
-      return { ok: false, error: "agent_not_supported", message: `Agent '${agentName}' does not support session resume` };
+      return {
+        ok: false,
+        error: "agent_not_supported",
+        message: `Agent '${agentName}' does not support session resume`,
+      };
     }
 
     const agentDef = this.agentManager.getAgent(agentName);
     if (!agentDef) {
-      return { ok: false, error: "agent_not_supported", message: `Agent '${agentName}' not found` };
+      return {
+        ok: false,
+        error: "agent_not_supported",
+        message: `Agent '${agentName}' not found`,
+      };
     }
 
     // 2. Validate cwd
     const { existsSync } = await import("node:fs");
     if (!existsSync(cwd)) {
-      return { ok: false, error: "invalid_cwd", message: `Directory does not exist: ${cwd}` };
+      return {
+        ok: false,
+        error: "invalid_cwd",
+        message: `Directory does not exist: ${cwd}`,
+      };
     }
 
     // 3. Check session limit
     const maxSessions = this.configManager.get().security.maxConcurrentSessions;
     if (this.sessionManager.listSessions().length >= maxSessions) {
-      return { ok: false, error: "session_limit", message: "Maximum concurrent sessions reached" };
+      return {
+        ok: false,
+        error: "session_limit",
+        message: "Maximum concurrent sessions reached",
+      };
     }
 
     // 4. Check if session already exists
-    const existingRecord = this.sessionManager.getRecordByAgentSessionId(agentSessionId);
+    const existingRecord =
+      this.sessionManager.getRecordByAgentSessionId(agentSessionId);
     if (existingRecord) {
-      const platform = existingRecord.platform as { topicId?: number } | undefined;
+      const platform = existingRecord.platform as
+        | { topicId?: number }
+        | undefined;
       if (platform?.topicId) {
         const adapter = this.adapters.values().next().value;
         if (adapter) {
@@ -318,7 +356,9 @@ export class OpenACPCore {
               type: "text",
               text: "Session resumed from CLI.",
             });
-          } catch { /* Topic may be deleted */ }
+          } catch {
+            /* Topic may be deleted */
+          }
         }
         return {
           ok: true,
@@ -332,7 +372,11 @@ export class OpenACPCore {
     // 5. Find default adapter
     const firstEntry = this.adapters.entries().next().value;
     if (!firstEntry) {
-      return { ok: false, error: "no_adapter", message: "No channel adapter registered" };
+      return {
+        ok: false,
+        error: "no_adapter",
+        message: "No channel adapter registered",
+      };
     }
     const [adapterChannelId] = firstEntry;
 
@@ -387,8 +431,12 @@ export class OpenACPCore {
     }
 
     // Fallback: look up from store (e.g. after restart before lazy resume)
-    const record = this.sessionManager.getRecordByThread(channelId, currentThreadId);
-    if (!record || record.status === "cancelled" || record.status === "error") return null;
+    const record = this.sessionManager.getRecordByThread(
+      channelId,
+      currentThreadId,
+    );
+    if (!record || record.status === "cancelled" || record.status === "error")
+      return null;
 
     return this.handleNewSession(
       channelId,
@@ -424,14 +472,22 @@ export class OpenACPCore {
     // Don't resume cancelled/error sessions
     if (record.status === "cancelled" || record.status === "error") {
       log.debug(
-        { threadId: message.threadId, sessionId: record.sessionId, status: record.status },
+        {
+          threadId: message.threadId,
+          sessionId: record.sessionId,
+          status: record.status,
+        },
         "Skipping resume of cancelled/error session",
       );
       return null;
     }
 
     log.info(
-      { threadId: message.threadId, sessionId: record.sessionId, status: record.status },
+      {
+        threadId: message.threadId,
+        sessionId: record.sessionId,
+        status: record.status,
+      },
       "Lazy resume: found record, attempting resume",
     );
 
@@ -464,7 +520,9 @@ export class OpenACPCore {
               type: "error",
               text: `⚠️ Failed to resume session: ${err instanceof Error ? err.message : String(err)}`,
             });
-          } catch { /* best effort */ }
+          } catch {
+            /* best effort */
+          }
         }
         return null;
       } finally {
@@ -484,7 +542,7 @@ export class OpenACPCore {
       messageTransformer: this.messageTransformer,
       notificationManager: this.notificationManager,
       sessionManager: this.sessionManager,
+      eventBus: this.eventBus,
     });
   }
-
 }

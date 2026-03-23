@@ -16,7 +16,6 @@ const files = fs.readdirSync(distDir)
 for (const file of files) {
   const filePath = path.join(distDir, file)
   if (file.endsWith('.mjs') || file.endsWith('.d.mts')) {
-    // Update import references inside the file
     let content = fs.readFileSync(filePath, 'utf-8')
     content = content.replace(/\.mjs/g, '.js')
     content = content.replace(/\.d\.mts/g, '.d.ts')
@@ -29,7 +28,14 @@ for (const file of files) {
   }
 }
 
-// 3. Add shebang to cli.js
+// 3. Copy registry snapshot to dist-publish/dist/data/
+const snapshotSrc = path.join(root, 'src/data/registry-snapshot.json')
+const snapshotDataDir = path.join(distDir, 'data')
+fs.mkdirSync(snapshotDataDir, { recursive: true })
+fs.copyFileSync(snapshotSrc, path.join(snapshotDataDir, 'registry-snapshot.json'))
+console.log('Copied registry-snapshot.json to dist-publish/dist/data/')
+
+// 4. Add shebang to cli.js
 const cliPath = path.join(distDir, 'cli.js')
 const cliContent = fs.readFileSync(cliPath, 'utf-8')
 if (!cliContent.startsWith('#!/usr/bin/env node')) {
@@ -37,20 +43,8 @@ if (!cliContent.startsWith('#!/usr/bin/env node')) {
 }
 fs.chmodSync(cliPath, 0o755)
 
-// 3. Generate package.json
+// 5. Generate package.json
 const rootPkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf-8'))
-const corePkg = JSON.parse(fs.readFileSync(path.join(root, 'packages/core/package.json'), 'utf-8'))
-const telegramPkg = JSON.parse(fs.readFileSync(path.join(root, 'packages/adapters/telegram/package.json'), 'utf-8'))
-
-// Merge dependencies from core + telegram, excluding workspace refs
-const deps: Record<string, string> = {}
-for (const pkg of [corePkg, telegramPkg]) {
-  for (const [name, version] of Object.entries(pkg.dependencies || {})) {
-    if (typeof version === 'string' && !version.startsWith('workspace:')) {
-      deps[name] = version
-    }
-  }
-}
 
 const publishPkg = {
   name: '@openacp/cli',
@@ -68,13 +62,18 @@ const publishPkg = {
   },
   files: ['dist/', 'README.md'],
   engines: { node: '>=20' },
-  dependencies: deps,
+  dependencies: rootPkg.dependencies,
   repository: {
     type: 'git',
-    url: 'https://github.com/nicepkg/OpenACP',
+    url: 'https://github.com/Open-ACP/OpenACP',
+  },
+  homepage: 'https://github.com/Open-ACP/OpenACP',
+  author: {
+    name: 'OpenACP',
+    url: 'https://x.com/Open_ACP',
   },
   license: 'AGPL-3.0',
-  keywords: ['acp', 'ai', 'coding-agent', 'telegram', 'claude', 'codex'],
+  keywords: ['acp', 'ai', 'coding-agent', 'telegram', 'claude', 'codex', 'gemini', 'cursor', 'agent-client-protocol'],
 }
 
 fs.writeFileSync(
@@ -82,7 +81,7 @@ fs.writeFileSync(
   JSON.stringify(publishPkg, null, 2) + '\n'
 )
 
-// 4. Copy README
+// 5. Copy README
 fs.copyFileSync(
   path.join(root, 'README.md'),
   path.join(root, 'dist-publish/README.md')

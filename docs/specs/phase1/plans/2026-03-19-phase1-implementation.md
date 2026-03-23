@@ -45,7 +45,7 @@
 | `src/formatting.ts` | Markdown→HTML, escapeHtml, formatToolCall, formatPlan, splitMessage |
 | `src/streaming.ts` | MessageDraft class (accumulate text, throttled send/edit) |
 | `src/topics.ts` | Topic creation, renaming, ensure auto-created topics |
-| `src/commands.ts` | Bot command handlers (/new, /new_chat, /cancel, /status, /agents, /help) |
+| `src/commands.ts` | Bot command handlers (/new, /newchat, /cancel, /status, /agents, /help) |
 | `src/permissions.ts` | Permission request UI + callback query handling |
 | `src/assistant.ts` | Assistant topic: spawn agent, system prompt, message handling |
 | `src/adapter.ts` | TelegramAdapter extends ChannelAdapter (sendMessage, routing) |

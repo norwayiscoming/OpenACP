@@ -1,31 +1,31 @@
-# Agent Client Protocol (ACP) — Tài liệu tham khảo
+# Agent Client Protocol (ACP) — Reference Documentation
 
-> Phiên bản protocol: v0.11.3 (March 2026)
-> Nguồn: agentclientprotocol.com | GitHub: agentclientprotocol/agent-client-protocol
+> Protocol version: v0.11.3 (March 2026)
+> Source: agentclientprotocol.com | GitHub: agentclientprotocol/agent-client-protocol
 
 ---
 
-## 1. ACP là gì?
+## 1. What is ACP?
 
-Agent Client Protocol (ACP) là một giao thức chuẩn hoá giao tiếp giữa **code editor/IDE** (Client) và **AI coding agent** (Agent). Lấy cảm hứng từ Language Server Protocol (LSP) — cái đã chuẩn hoá autocomplete, go-to-definition, v.v. cho mọi editor — ACP làm điều tương tự cho AI coding agent.
+Agent Client Protocol (ACP) is a protocol that standardizes communication between **code editors/IDEs** (Client) and **AI coding agents** (Agent). Inspired by Language Server Protocol (LSP) — which standardized autocomplete, go-to-definition, etc. for all editors — ACP does the same for AI coding agents.
 
-**Trước ACP:** Mỗi cặp agent-editor cần custom integration riêng → N agents × M editors = N×M integration.
+**Before ACP:** Each agent-editor pair needed its own custom integration → N agents × M editors = N×M integrations.
 
-**Sau ACP:** Agent implement ACP một lần → chạy được trên mọi editor hỗ trợ ACP. Editor implement ACP một lần → dùng được mọi agent hỗ trợ ACP.
-
-
-## 2. Tại sao cần ACP?
-
-ACP giải quyết 3 vấn đề chính:
-
-- **Integration overhead**: Mỗi combo agent-editor mới đều cần custom work. Với ACP, implement 1 lần là xong.
-- **Limited compatibility**: Agent chỉ hoạt động trên vài editor nhất định. ACP phá bỏ giới hạn này.
-- **Developer lock-in**: Chọn agent A nghĩa là phải dùng editor X. ACP cho phép tự do kết hợp.
-
-**Mối quan hệ với MCP:** MCP (Model Context Protocol) xử lý **what** — agent truy cập data và tool gì. ACP xử lý **where** — agent sống ở đâu trong workflow của developer. Hai protocol bổ sung cho nhau.
+**After ACP:** An agent implements ACP once → works on every editor that supports ACP. An editor implements ACP once → works with every agent that supports ACP.
 
 
-## 3. Kiến trúc tổng quan
+## 2. Why is ACP needed?
+
+ACP solves 3 main problems:
+
+- **Integration overhead**: Each new agent-editor combo requires custom work. With ACP, implement once and you're done.
+- **Limited compatibility**: Agents only work on certain editors. ACP breaks this limitation.
+- **Developer lock-in**: Choosing agent A means being forced to use editor X. ACP allows free combination.
+
+**Relationship with MCP:** MCP (Model Context Protocol) handles **what** — what data and tools the agent accesses. ACP handles **where** — where the agent lives in the developer's workflow. The two protocols complement each other.
+
+
+## 3. Architecture Overview
 
 ```
 ┌─────────────────────────────────────────────────┐
@@ -35,21 +35,21 @@ ACP giải quyết 3 vấn đề chính:
 ┌──────────────────────▼──────────────────────────┐
 │              CLIENT (Code Editor/IDE)            │
 │                                                  │
-│  - Gửi prompt của user đến Agent                │
-│  - Render response (text, diff, tool calls)     │
-│  - Quản lý permission cho tool execution        │
-│  - Cung cấp filesystem access                   │
-│  - Expose MCP servers cho Agent                 │
+│  - Sends user prompts to the Agent              │
+│  - Renders responses (text, diff, tool calls)   │
+│  - Manages permissions for tool execution       │
+│  - Provides filesystem access                   │
+│  - Exposes MCP servers to the Agent             │
 └──────────────────────┬──────────────────────────┘
                        │  JSON-RPC
                        │  (stdio / HTTP / WebSocket)
 ┌──────────────────────▼──────────────────────────┐
 │                 AGENT (AI Coding Agent)           │
 │                                                  │
-│  - Nhận prompt, gọi LLM                        │
-│  - Thực thi tool calls (edit file, run cmd...)  │
-│  - Gửi update realtime về Client                │
-│  - Kết nối MCP servers để lấy context           │
+│  - Receives prompts, calls LLM                  │
+│  - Executes tool calls (edit file, run cmd...)  │
+│  - Sends realtime updates to Client             │
+│  - Connects to MCP servers for context          │
 └─────────────────────────────────────────────────┘
 ```
 
@@ -57,26 +57,26 @@ ACP giải quyết 3 vấn đề chính:
 
 | Mode | Transport | Use case |
 |------|-----------|----------|
-| **Local** | JSON-RPC over stdio | Agent chạy như subprocess của editor |
-| **Remote** | HTTP hoặc WebSocket | Agent chạy trên cloud/server riêng |
+| **Local** | JSON-RPC over stdio | Agent runs as a subprocess of the editor |
+| **Remote** | HTTP or WebSocket | Agent runs on a separate cloud/server |
 
-**Local mode** là phổ biến nhất hiện tại. Editor launch agent process, giao tiếp qua stdin/stdout. Một connection có thể quản lý nhiều session đồng thời.
+**Local mode** is the most common currently. The editor launches the agent process and communicates via stdin/stdout. A single connection can manage multiple sessions simultaneously.
 
-**Remote mode** đang được phát triển thêm, phù hợp cho enterprise deployment hoặc shared agent infrastructure.
+**Remote mode** is being further developed, suitable for enterprise deployment or shared agent infrastructure.
 
 ### 3.2 Trust Model
 
-ACP hoạt động tốt nhất khi editor giao tiếp với **trusted agent**. User vẫn giữ quyền kiểm soát:
+ACP works best when the editor communicates with a **trusted agent**. The user still retains control:
 - Approve/reject tool execution
-- Kiểm soát filesystem access
-- Quản lý MCP server configurations
+- Control filesystem access
+- Manage MCP server configurations
 
 
-## 4. Protocol Flow chi tiết
+## 4. Detailed Protocol Flow
 
 ### 4.1 Initialization (Handshake)
 
-Khi editor kết nối agent, quá trình khởi tạo diễn ra:
+When the editor connects to the agent, the initialization process occurs:
 
 ```
 Client                              Agent
@@ -99,23 +99,23 @@ Client                              Agent
   │                                   │
 ```
 
-**Client Capabilities (editor khai báo):**
-- `fileSystem.readTextFile` — cho phép agent đọc file
-- `fileSystem.writeTextFile` — cho phép agent ghi file
-- `terminal` — cho phép agent chạy shell command
+**Client Capabilities (declared by the editor):**
+- `fileSystem.readTextFile` — allows the agent to read files
+- `fileSystem.writeTextFile` — allows the agent to write files
+- `terminal` — allows the agent to run shell commands
 
-**Agent Capabilities (agent khai báo):**
-- `loadSession` — hỗ trợ load lại session cũ
-- `promptCapabilities` — loại content hỗ trợ: Image, Audio, embedded context
-- `mcp` — hỗ trợ HTTP/SSE transport cho MCP
-- Session methods — các operation hỗ trợ (list, fork, configure...)
+**Agent Capabilities (declared by the agent):**
+- `loadSession` — supports reloading previous sessions
+- `promptCapabilities` — supported content types: Image, Audio, embedded context
+- `mcp` — supports HTTP/SSE transport for MCP
+- Session methods — supported operations (list, fork, configure...)
 
-**Version Negotiation:** Protocol version là một integer (MAJOR version). Nếu không khớp, agent trả về version cao nhất mà nó hỗ trợ. Client nên đóng connection nếu incompatible.
+**Version Negotiation:** Protocol version is an integer (MAJOR version). If there's a mismatch, the agent returns the highest version it supports. The client should close the connection if incompatible.
 
 
-### 4.2 Prompt Turn (Vòng lặp chính)
+### 4.2 Prompt Turn (Main Loop)
 
-Đây là core interaction cycle. Mỗi prompt turn gồm 6 bước:
+This is the core interaction cycle. Each prompt turn consists of 6 steps:
 
 ```
 Client                              Agent                    LLM
@@ -129,7 +129,7 @@ Client                              Agent                    LLM
   │◄── session/update (notification)─│                       │
   │    { plan, text, tool calls }     │                       │
   │                                   │                       │
-  │    [Nếu có tool call]             │                       │
+  │    [If there's a tool call]       │                       │
   │◄── permission request ───────────│                       │
   │──── permission response ────────►│                       │
   │                                   │── execute tool ──────►│
@@ -143,59 +143,59 @@ Client                              Agent                    LLM
 ```
 
 **Stop Reasons:**
-- `end_turn` — Hoàn thành bình thường
-- `max_tokens` — Hết token limit
-- `max_turn_requests` — Vượt quá số lần gọi model
-- `refusal` — Agent từ chối tiếp tục
-- `cancelled` — Client huỷ turn
+- `end_turn` — Completed normally
+- `max_tokens` — Token limit reached
+- `max_turn_requests` — Exceeded maximum model call count
+- `refusal` — Agent refused to continue
+- `cancelled` — Client cancelled the turn
 
 ### 4.3 Session Management
 
 ```
-session/new        → Tạo session mới
-session/prompt     → Gửi prompt
-session/update     → Agent gửi update (notification)
-session/cancel     → Huỷ processing
-session/list       → Liệt kê sessions
-session/load       → Load lại session cũ
-session/fork       → Fork session (branching)
-session/configure  → Cấu hình session
+session/new        → Create a new session
+session/prompt     → Send a prompt
+session/update     → Agent sends update (notification)
+session/cancel     → Cancel processing
+session/list       → List sessions
+session/load       → Reload a previous session
+session/fork       → Fork a session (branching)
+session/configure  → Configure a session
 ```
 
 
 ## 5. MCP Integration
 
-ACP tích hợp chặt chẽ với MCP:
+ACP integrates tightly with MCP:
 
-- Editor truyền MCP server configs cho Agent trong quá trình initialize
-- Agent kết nối trực tiếp đến MCP servers
-- Khi editor expose tool qua MCP, nó deploy một **proxy tunnel** — route request ngược về editor
-- Hỗ trợ cả stdio-based và HTTP/SSE MCP transport
+- The editor passes MCP server configs to the Agent during initialization
+- The agent connects directly to MCP servers
+- When the editor exposes tools via MCP, it deploys a **proxy tunnel** — routing requests back to the editor
+- Supports both stdio-based and HTTP/SSE MCP transport
 
 ```
 Editor ──(ACP)──► Agent ──(MCP)──► MCP Server (DB, API, tools...)
   │                                      ▲
-  └──── proxy tunnel (cho editor tools)──┘
+  └──── proxy tunnel (for editor tools)──┘
 ```
 
 
-## 6. Ecosystem hiện tại
+## 6. Current Ecosystem
 
-### 6.1 Editors hỗ trợ ACP (Clients)
+### 6.1 Editors supporting ACP (Clients)
 - **Zed** — Native ACP support
-- **JetBrains IDEs** — Qua AI Assistant plugin
+- **JetBrains IDEs** — Via AI Assistant plugin
 - **Neovim** — Community plugin
 - **Marimo** — Notebook editor
-- **Cursor** — ACP documentation có sẵn
+- **Cursor** — ACP documentation available
 
-### 6.2 Agents hỗ trợ ACP (40+)
+### 6.2 Agents supporting ACP (40+)
 - **Claude Code** (Anthropic)
 - **Codex CLI** (OpenAI)
 - **Gemini** (Google)
 - **Goose** (Block)
-- **GitHub Copilot** (public preview từ Jan 2026)
+- **GitHub Copilot** (public preview since Jan 2026)
 - **Cline**, **OpenHands**, **Factory Droid**, **Docker cagent**
-- Và nhiều hơn nữa...
+- And many more...
 
 ### 6.3 Official SDKs
 | Language | Package | Registry |
@@ -207,71 +207,71 @@ Editor ──(ACP)──► Agent ──(MCP)──► MCP Server (DB, API, tool
 | Kotlin | `acp-kotlin` | Maven (JVM) |
 
 
-## 7. Các hướng áp dụng để build product
+## 7. Approaches for Building Products
 
-### 7.1 Build một Agent mới
+### 7.1 Build a New Agent
 
-Nếu bạn muốn tạo AI coding agent riêng:
+If you want to create your own AI coding agent:
 
-**Cách tiếp cận:**
-1. Chọn SDK phù hợp (TypeScript hoặc Python phổ biến nhất)
-2. Implement ACP protocol: initialize handshake, prompt turn loop, session management
-3. Kết nối LLM backend (OpenAI, Anthropic, local model...)
+**Approach:**
+1. Choose an appropriate SDK (TypeScript or Python are most common)
+2. Implement the ACP protocol: initialize handshake, prompt turn loop, session management
+3. Connect an LLM backend (OpenAI, Anthropic, local model...)
 4. Implement tool execution (file edit, terminal, search...)
-5. Agent tự động tương thích mọi editor hỗ trợ ACP
+5. The agent automatically becomes compatible with all ACP-supporting editors
 
-**Ví dụ use case:**
-- Agent chuyên cho một ngôn ngữ/framework cụ thể
-- Agent tích hợp company-specific tools (CI/CD, internal APIs)
-- Agent có specialized reasoning (security audit, performance optimization)
+**Example use cases:**
+- An agent specialized for a specific language/framework
+- An agent integrated with company-specific tools (CI/CD, internal APIs)
+- An agent with specialized reasoning (security audit, performance optimization)
 
-### 7.2 Build một Editor/Client mới
+### 7.2 Build a New Editor/Client
 
-Nếu bạn muốn tạo IDE hoặc coding tool:
+If you want to create an IDE or coding tool:
 
-**Cách tiếp cận:**
-1. Implement ACP client protocol
-2. Hỗ trợ local agent launch (subprocess + stdio)
+**Approach:**
+1. Implement the ACP client protocol
+2. Support local agent launch (subprocess + stdio)
 3. Render agent output (markdown text, diffs, tool status)
-4. Implement permission UI cho tool execution
-5. Tự động tương thích mọi ACP agent
+4. Implement permission UI for tool execution
+5. Automatically compatible with all ACP agents
 
-### 7.3 Build Agent Platform / Registry
+### 7.3 Build an Agent Platform / Registry
 
-**Ý tưởng:** Một marketplace hoặc registry nơi developers discover, install, và manage ACP agents.
+**Idea:** A marketplace or registry where developers discover, install, and manage ACP agents.
 
-**Tham khảo:** ACP đã có concept Registry — bạn có thể build trên đó hoặc tạo curated experience riêng.
+**Reference:** ACP already has a Registry concept — you can build on that or create your own curated experience.
 
 ### 7.4 Build Enterprise Agent Infrastructure
 
-**Ý tưởng:** Remote ACP agent hosting cho team/enterprise:
-- Shared agent instances trên server
+**Idea:** Remote ACP agent hosting for teams/enterprises:
+- Shared agent instances on a server
 - Centralized MCP server management
 - Usage tracking, audit logs
 - Custom tool permissions per team/role
 
-### 7.5 Build Agent Development Framework
+### 7.5 Build an Agent Development Framework
 
-**Ý tưởng:** Framework giúp developer dễ dàng build ACP agent:
+**Idea:** A framework that makes it easy for developers to build ACP agents:
 - Boilerplate handling (protocol, session management)
-- Plugin system cho tools
+- Plugin system for tools
 - Testing utilities
 - Deployment tools (local + remote)
 
-### 7.6 Bridge ACP với non-coding domains
+### 7.6 Bridge ACP with Non-Coding Domains
 
-ACP hiện focus vào coding, nhưng pattern này áp dụng được cho:
+ACP currently focuses on coding, but this pattern can be applied to:
 - Document editing agents
 - Design tool agents
 - Data analysis agents
 - DevOps/infrastructure agents
 
 
-## 8. Technical Notes khi implement
+## 8. Technical Notes for Implementation
 
 ### 8.1 JSON-RPC Basics
 
-ACP dùng JSON-RPC 2.0. Mỗi message có dạng:
+ACP uses JSON-RPC 2.0. Each message has the following format:
 
 ```json
 // Request
@@ -299,18 +299,18 @@ ACP dùng JSON-RPC 2.0. Mỗi message có dạng:
 
 ### 8.2 Content Types
 
-Text mặc định là **Markdown**. Hỗ trợ thêm:
+Text defaults to **Markdown**. Additionally supports:
 - Image content
 - Audio content
 - Embedded context (file references)
 
 ### 8.3 MCP Type Reuse
 
-ACP reuse JSON structures từ MCP khi có thể, nhưng thêm custom types cho coding-specific features như diff display.
+ACP reuses JSON structures from MCP when possible, but adds custom types for coding-specific features like diff display.
 
 ### 8.4 Feature Flags
 
-Protocol dùng feature flags để indicate các tính năng đang phát triển. Check agent capabilities trong initialize response.
+The protocol uses feature flags to indicate features under development. Check agent capabilities in the initialize response.
 
 
 ## 9. Resources
@@ -318,23 +318,23 @@ Protocol dùng feature flags để indicate các tính năng đang phát triển
 - **Specification:** https://agentclientprotocol.com
 - **GitHub:** https://github.com/agentclientprotocol/agent-client-protocol
 - **LLM-friendly docs:** https://agentclientprotocol.com/llms.txt
-- **OpenAPI spec:** Available trong repo
-- **SDKs:** Xem section 6.3
+- **OpenAPI spec:** Available in the repo
+- **SDKs:** See section 6.3
 - **License:** Apache 2.0
-- **RFDs (Requests for Dialog):** Process chính thức để propose protocol changes
+- **RFDs (Requests for Dialog):** Official process for proposing protocol changes
 
 
-## 10. Tóm tắt nhanh
+## 10. Quick Summary
 
-| Khái niệm | Giải thích |
-|-----------|-----------|
-| ACP | Protocol chuẩn hoá giao tiếp editor ↔ agent |
+| Concept | Explanation |
+|---------|-------------|
+| ACP | Protocol standardizing editor ↔ agent communication |
 | Client | Code editor/IDE (Zed, JetBrains, Neovim...) |
 | Agent | AI coding tool (Claude Code, Codex, Gemini...) |
-| Transport | stdio (local) hoặc HTTP/WebSocket (remote) |
+| Transport | stdio (local) or HTTP/WebSocket (remote) |
 | Protocol | JSON-RPC 2.0 |
-| Session | Một phiên làm việc giữa client và agent |
-| Prompt Turn | Một vòng request-response hoàn chỉnh |
-| MCP | Protocol bổ sung — cung cấp data/tools cho agent |
+| Session | A working session between client and agent |
+| Prompt Turn | A complete request-response cycle |
+| MCP | Complementary protocol — provides data/tools to the agent |
 | SDK | Rust, TypeScript, Python, Java, Kotlin |
 | License | Apache 2.0 |

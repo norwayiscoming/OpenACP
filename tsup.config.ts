@@ -2,28 +2,25 @@ import { defineConfig } from 'tsup'
 
 export default defineConfig({
   entry: {
-    cli: 'packages/core/src/cli.ts',
-    index: 'packages/core/src/index.ts',
-    'adapter-telegram': 'packages/adapters/telegram/src/index.ts',
+    cli: 'src/cli.ts',
+    index: 'src/index.ts',
   },
   format: ['esm'],
   target: 'node20',
   platform: 'node',
   splitting: true,
   sourcemap: true,
-  dts: {
-    tsconfig: 'tsconfig.publish.json',
-  },
+  dts: true,
   clean: true,
   outDir: 'dist-publish/dist',
-  // noExternal not needed — telegram adapter is a separate entry point
-  // All npm dependencies — not bundled, listed in published package.json
-  // Must include everything from core + telegram package.json deps (except workspace:*)
   external: [
     'grammy',
     'zod',
     'nanoid',
     '@agentclientprotocol/sdk',
     '@inquirer/prompts',
+    'pino',
+    'pino-pretty',
+    'pino-roll',
   ],
 })

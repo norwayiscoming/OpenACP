@@ -478,7 +478,7 @@ class OpenACPCore {
     return session
   }
 
-  // Handle /new_chat command (inherit from current session)
+  // Handle /newchat command (inherit from current session)
   async handleNewChat(
     channelId: string,
     currentThreadId: string,

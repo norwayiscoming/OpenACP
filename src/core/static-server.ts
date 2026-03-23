@@ -53,7 +53,8 @@ export class StaticServer {
 
     // Try exact file match
     const filePath = path.join(this.uiDir, safePath);
-    if (!filePath.startsWith(this.uiDir)) return false; // path traversal guard
+    if (!filePath.startsWith(this.uiDir + path.sep) && filePath !== this.uiDir)
+      return false; // path traversal guard
 
     if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
       const ext = path.extname(filePath);

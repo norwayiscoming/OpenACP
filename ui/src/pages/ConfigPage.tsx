@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { api } from "../api/client";
 import type { ConfigField } from "../api/types";
 import { Button } from "../components/shared/Button";
@@ -33,19 +33,22 @@ export function ConfigPage() {
   }, [toast]);
 
   // Group fields by group
-  const groups = new Map<string, ConfigField[]>();
-  for (const field of fields) {
-    const group = field.group || "General";
-    if (!groups.has(group)) groups.set(group, []);
-    groups.get(group)!.push(field);
-  }
+  const groups = useMemo(() => {
+    const map = new Map<string, ConfigField[]>();
+    for (const field of fields) {
+      const group = field.group || "General";
+      if (!map.has(group)) map.set(group, []);
+      map.get(group)!.push(field);
+    }
+    return map;
+  }, [fields]);
 
   // Set default active group if the current one is empty
   useEffect(() => {
     if (!loading && !groups.has(activeGroup) && groups.size > 0) {
       setActiveGroup(Array.from(groups.keys()).sort()[0]);
     }
-  }, [loading, groups, activeGroup]);
+  }, [loading, groups.size, activeGroup]);
 
   const handleSave = useCallback(async (path: string, value: unknown) => {
     setSaving(path);
@@ -97,11 +100,19 @@ export function ConfigPage() {
       {/* Page Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-6 mb-8 border-b border-zinc-200 dark:border-white/10 gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-100">Settings</h1>
-          <p className="text-zinc-500 dark:text-zinc-400 text-sm mt-1">Manage system configurations and agent properties.</p>
+          <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-100">
+            Settings
+          </h1>
+          <p className="text-zinc-500 dark:text-zinc-400 text-sm mt-1">
+            Manage system configurations and agent properties.
+          </p>
         </div>
         {needsRestart && (
-          <Button variant="danger" onClick={() => setShowRestartModal(true)} className="shrink-0 animate-in fade-in">
+          <Button
+            variant="danger"
+            onClick={() => setShowRestartModal(true)}
+            className="shrink-0 animate-in fade-in"
+          >
             Restart Required
           </Button>
         )}
@@ -169,10 +180,14 @@ export function ConfigPage() {
       >
         <div className="space-y-6">
           <p className="text-sm text-zinc-600 dark:text-zinc-300">
-            Applying these changes requires a server restart. Active sessions will be temporarily disconnected. Do you want to continue?
+            Applying these changes requires a server restart. Active sessions
+            will be temporarily disconnected. Do you want to continue?
           </p>
           <div className="flex justify-end gap-3 pt-2">
-            <Button variant="secondary" onClick={() => setShowRestartModal(false)}>
+            <Button
+              variant="secondary"
+              onClick={() => setShowRestartModal(false)}
+            >
               Cancel
             </Button>
             <Button variant="danger" onClick={handleRestart}>
@@ -201,7 +216,8 @@ function ConfigFieldRow({
     setLocalValue(field.value);
   }, [field.value]);
 
-  const inputClasses = "w-full sm:w-80 px-3 py-2 text-sm rounded-lg border border-zinc-300 dark:border-white/10 bg-white dark:bg-zinc-900 focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all font-mono";
+  const inputClasses =
+    "w-full sm:w-80 px-3 py-2 text-sm rounded-lg border border-zinc-300 dark:border-white/10 bg-white dark:bg-zinc-900 focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all font-mono";
 
   return (
     <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 py-5 border-b border-zinc-200 dark:border-white/5 last:border-0 hover:bg-zinc-50/50 dark:hover:bg-white/[0.02] transition-colors rounded-xl px-2 -mx-2">
@@ -242,7 +258,11 @@ function ConfigFieldRow({
               className={inputClasses}
             >
               {field.options.map((opt) => (
-                <option key={opt} value={opt} className="bg-white dark:bg-zinc-800">
+                <option
+                  key={opt}
+                  value={opt}
+                  className="bg-white dark:bg-zinc-800"
+                >
                   {opt}
                 </option>
               ))}

@@ -1,5 +1,5 @@
 import * as http from "node:http";
-import type { EventBus } from "./event-bus.js";
+import type { EventBus, EventBusEvents } from "./event-bus.js";
 
 interface SSEResponse extends http.ServerResponse {
   sessionFilter?: string;
@@ -14,6 +14,7 @@ export class SSEManager {
   private sseConnections = new Set<http.ServerResponse>();
   private sseCleanupHandlers = new Map<http.ServerResponse, () => void>();
   private healthInterval?: ReturnType<typeof setInterval>;
+  private boundEventNames: Array<keyof EventBusEvents> = [];
 
   constructor(
     private eventBus: EventBus | undefined,
@@ -33,9 +34,11 @@ export class SSEManager {
     ] as const;
 
     for (const eventName of events) {
-      this.eventBus.on(eventName, (data: unknown) => {
+      const handler = (data: unknown) => {
         this.broadcast(eventName, data);
-      });
+      };
+      this.eventBus.on(eventName, handler);
+      this.boundEventNames.push(eventName);
     }
 
     // Health heartbeat every 30s
@@ -98,7 +101,18 @@ export class SSEManager {
 
   stop(): void {
     if (this.healthInterval) clearInterval(this.healthInterval);
-    for (const [res, cleanup] of this.sseCleanupHandlers) {
+
+    // Remove event bus listeners
+    if (this.eventBus) {
+      for (const event of this.boundEventNames) {
+        this.eventBus.removeAllListeners(event);
+      }
+    }
+    this.boundEventNames = [];
+
+    // Copy to avoid modifying Map while iterating
+    const entries = [...this.sseCleanupHandlers];
+    for (const [res, cleanup] of entries) {
       res.end();
       cleanup();
     }

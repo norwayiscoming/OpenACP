@@ -123,6 +123,18 @@ export class ApiServer {
           "API server listening",
         );
         this.sseManager.setup();
+
+        const config = this.core.configManager.get();
+        if (
+          config.api.host !== "127.0.0.1" &&
+          config.api.host !== "localhost" &&
+          !config.api.token
+        ) {
+          log.warn(
+            "API server binding to non-localhost without authentication token. Set api.token in config for security.",
+          );
+        }
+
         resolve();
       });
     });
@@ -887,9 +899,17 @@ export class ApiServer {
   }
 
   private readBody(req: http.IncomingMessage): Promise<string> {
+    const MAX_BODY_SIZE = 1024 * 1024; // 1MB
     return new Promise((resolve) => {
       let data = "";
-      req.on("data", (chunk) => {
+      let size = 0;
+      req.on("data", (chunk: Buffer) => {
+        size += chunk.length;
+        if (size > MAX_BODY_SIZE) {
+          req.destroy();
+          resolve("");
+          return;
+        }
         data += chunk;
       });
       req.on("end", () => resolve(data));

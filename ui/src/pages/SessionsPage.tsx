@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { useNavigate } from "react-router";
 import { api } from "../api/client";
-import { useEventStream } from "../api/use-event-stream";
+import { useEventStream } from "../contexts/event-stream-context";
 import type { SessionSummary, SessionStatus } from "../api/types";
 import { StatusBadge } from "../components/shared/StatusBadge";
 import { Button } from "../components/shared/Button";
@@ -21,6 +21,7 @@ export function SessionsPage() {
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [filter, setFilter] = useState<SessionStatus | "all">("all");
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [agents, setAgents] = useState<Array<{ name: string }>>([]);
   const [selectedAgent, setSelectedAgent] = useState("");
@@ -32,6 +33,7 @@ export function SessionsPage() {
     api
       .get<{ sessions: SessionSummary[] }>("/api/sessions")
       .then((data) => setSessions(data.sessions))
+      .catch((err) => setError((err as Error).message))
       .finally(() => setLoading(false));
   }, []);
 
@@ -72,7 +74,11 @@ export function SessionsPage() {
   const handleCancel = useCallback(async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
     if (!confirm("Cancel this session?")) return;
-    await api.del(`/api/sessions/${encodeURIComponent(id)}`);
+    try {
+      await api.del(`/api/sessions/${encodeURIComponent(id)}`);
+    } catch (err) {
+      setError((err as Error).message);
+    }
   }, []);
 
   const handleCreate = useCallback(async () => {
@@ -82,6 +88,8 @@ export function SessionsPage() {
       await api.post("/api/sessions", body);
       setShowCreate(false);
       setSelectedAgent("");
+    } catch (err) {
+      setError((err as Error).message);
     } finally {
       setCreating(false);
     }
@@ -105,6 +113,7 @@ export function SessionsPage() {
     filter === "all" ? sessions : sessions.filter((s) => s.status === filter);
 
   if (loading) return <div className="text-zinc-500">Loading sessions...</div>;
+  if (error) return <div className="text-red-500">Error: {error}</div>;
 
   return (
     <div className="space-y-4">

@@ -43,13 +43,16 @@ export function TopicsPage() {
       if (isActive) {
         if (!confirm("This session is still active. Force delete the topic?"))
           return;
-        await api.del(
-          `/api/topics/${encodeURIComponent(sessionId)}?force=true`,
-        );
-      } else {
-        await api.del(`/api/topics/${encodeURIComponent(sessionId)}`);
       }
-      await fetchTopics();
+      try {
+        const url = isActive
+          ? `/api/topics/${encodeURIComponent(sessionId)}?force=true`
+          : `/api/topics/${encodeURIComponent(sessionId)}`;
+        await api.del(url);
+        await fetchTopics();
+      } catch (err) {
+        setError((err as Error).message);
+      }
     },
     [fetchTopics],
   );

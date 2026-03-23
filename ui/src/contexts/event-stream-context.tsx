@@ -1,21 +1,38 @@
-import { useEffect, useRef, useState, useCallback } from "react";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+  useCallback,
+  type ReactNode,
+} from "react";
 
 export type ConnectionStatus = "connected" | "connecting" | "disconnected";
-
 type EventHandler = (data: unknown) => void;
 
-export function useEventStream(sessionId?: string) {
+interface EventStreamContextValue {
+  status: ConnectionStatus;
+  subscribe: (event: string, handler: EventHandler) => () => void;
+}
+
+const EventStreamContext = createContext<EventStreamContextValue>({
+  status: "disconnected",
+  subscribe: () => () => {},
+});
+
+export function EventStreamProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<ConnectionStatus>("disconnected");
   const sourceRef = useRef<EventSource | null>(null);
   const handlersRef = useRef<Map<string, Set<EventHandler>>>(new Map());
   const retryRef = useRef(1000);
+  const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const subscribe = useCallback((event: string, handler: EventHandler) => {
     if (!handlersRef.current.has(event)) {
       handlersRef.current.set(event, new Set());
     }
     handlersRef.current.get(event)!.add(handler);
-
     return () => {
       handlersRef.current.get(event)?.delete(handler);
     };
@@ -26,10 +43,8 @@ export function useEventStream(sessionId?: string) {
 
     function connect() {
       if (cancelled) return;
-
       const token = sessionStorage.getItem("openacp-token");
       const params = new URLSearchParams();
-      if (sessionId) params.set("sessionId", sessionId);
       if (token) params.set("token", token);
       const qs = params.toString();
       const url = `/api/events${qs ? `?${qs}` : ""}`;
@@ -51,7 +66,7 @@ export function useEventStream(sessionId?: string) {
         setStatus("disconnected");
         const delay = Math.min(retryRef.current, 30000);
         retryRef.current = delay * 2;
-        setTimeout(connect, delay);
+        retryTimeoutRef.current = setTimeout(connect, delay);
       };
 
       const events = [
@@ -71,7 +86,7 @@ export function useEventStream(sessionId?: string) {
               for (const handler of handlers) handler(data);
             }
           } catch {
-            // ignore parse errors
+            /* ignore parse errors */
           }
         });
       }
@@ -81,10 +96,19 @@ export function useEventStream(sessionId?: string) {
 
     return () => {
       cancelled = true;
+      if (retryTimeoutRef.current) clearTimeout(retryTimeoutRef.current);
       sourceRef.current?.close();
       sourceRef.current = null;
     };
-  }, [sessionId]);
+  }, []);
 
-  return { status, subscribe };
+  return (
+    <EventStreamContext value={{ status, subscribe }}>
+      {children}
+    </EventStreamContext>
+  );
+}
+
+export function useEventStream() {
+  return useContext(EventStreamContext);
 }

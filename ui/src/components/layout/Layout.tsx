@@ -1,7 +1,7 @@
 import { Outlet } from "react-router";
 import { Sidebar } from "./Sidebar";
 import { Header } from "./Header";
-import { useEventStream } from "../../api/use-event-stream";
+import { useEventStream } from "../../contexts/event-stream-context";
 
 export function Layout() {
   const { status } = useEventStream();

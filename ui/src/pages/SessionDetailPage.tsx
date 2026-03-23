@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams, useNavigate } from "react-router";
 import { api } from "../api/client";
-import { useEventStream } from "../api/use-event-stream";
+import { useEventStream } from "../contexts/event-stream-context";
 import type { SessionDetail } from "../api/types";
 import { StatusBadge } from "../components/shared/StatusBadge";
 import { Button } from "../components/shared/Button";
@@ -25,7 +25,7 @@ interface PendingPermission {
   };
 }
 
-let eventCounter = 0;
+const MAX_EVENTS = 500;
 
 export function SessionDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -38,7 +38,8 @@ export function SessionDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [permission, setPermission] = useState<PendingPermission | null>(null);
   const eventsEndRef = useRef<HTMLDivElement>(null);
-  const { subscribe } = useEventStream(id);
+  const counterRef = useRef(0);
+  const { subscribe } = useEventStream();
 
   useEffect(() => {
     if (!id) return;
@@ -63,50 +64,56 @@ export function SessionDetailPage() {
           status?: string;
         };
       };
+      if (d.sessionId !== id) return;
       let content = "";
       switch (d.event.type) {
         case "text":
           content = d.event.content ?? "";
           break;
         case "thought":
-          content = `💭 ${d.event.content ?? ""}`;
+          content = `\u{1F4AD} ${d.event.content ?? ""}`;
           break;
         case "tool_call":
-          content = `🔧 ${d.event.name ?? "tool"} — ${d.event.status ?? ""}`;
+          content = `\u{1F527} ${d.event.name ?? "tool"} \u2014 ${d.event.status ?? ""}`;
           break;
         case "tool_update":
-          content = `🔧 ${d.event.name ?? "tool"} — ${d.event.status ?? ""}`;
+          content = `\u{1F527} ${d.event.name ?? "tool"} \u2014 ${d.event.status ?? ""}`;
           break;
         case "error":
-          content = `❌ ${d.event.message ?? ""}`;
+          content = `\u274C ${d.event.message ?? ""}`;
           break;
         case "session_end":
-          content = `✅ Session ended`;
+          content = `\u2705 Session ended`;
           break;
         case "usage":
-          content = `📊 Token usage updated`;
+          content = `\u{1F4CA} Token usage updated`;
           break;
         default:
           content = JSON.stringify(d.event);
       }
-      setEvents((prev) => [
-        ...prev,
-        {
-          id: ++eventCounter,
-          type: d.event.type,
-          content,
-          timestamp: new Date(),
-        },
-      ]);
+      counterRef.current += 1;
+      const newEntry: AgentEventEntry = {
+        id: counterRef.current,
+        type: d.event.type,
+        content,
+        timestamp: new Date(),
+      };
+      setEvents((prev) => {
+        const next = [...prev, newEntry];
+        return next.length > MAX_EVENTS ? next.slice(-MAX_EVENTS) : next;
+      });
     });
 
     const unsub2 = subscribe("session:updated", (data) => {
       const d = data as Partial<SessionDetail> & { sessionId: string };
+      if (d.sessionId !== id) return;
       setSession((prev) => (prev ? { ...prev, ...d } : prev));
     });
 
     const unsub3 = subscribe("permission:request", (data) => {
-      setPermission(data as PendingPermission);
+      const d = data as PendingPermission;
+      if (d.sessionId !== id) return;
+      setPermission(d);
     });
 
     return () => {
@@ -114,7 +121,7 @@ export function SessionDetailPage() {
       unsub2();
       unsub3();
     };
-  }, [subscribe]);
+  }, [subscribe, id]);
 
   useEffect(() => {
     eventsEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -135,16 +142,26 @@ export function SessionDetailPage() {
 
   const handleCancel = useCallback(async () => {
     if (!id || !confirm("Cancel this session?")) return;
-    await api.del(`/api/sessions/${encodeURIComponent(id)}`);
+    try {
+      await api.del(`/api/sessions/${encodeURIComponent(id)}`);
+    } catch (err) {
+      setError((err as Error).message);
+    }
   }, [id]);
 
   const handleToggleDangerous = useCallback(
     async (enabled: boolean) => {
       if (!id) return;
-      await api.patch(`/api/sessions/${encodeURIComponent(id)}/dangerous`, {
-        enabled,
-      });
-      setSession((prev) => (prev ? { ...prev, dangerousMode: enabled } : prev));
+      try {
+        await api.patch(`/api/sessions/${encodeURIComponent(id)}/dangerous`, {
+          enabled,
+        });
+        setSession((prev) =>
+          prev ? { ...prev, dangerousMode: enabled } : prev,
+        );
+      } catch (err) {
+        setError((err as Error).message);
+      }
     },
     [id],
   );
@@ -152,11 +169,15 @@ export function SessionDetailPage() {
   const handlePermissionResponse = useCallback(
     async (optionId: string) => {
       if (!id || !permission) return;
-      await api.post(`/api/sessions/${encodeURIComponent(id)}/permission`, {
-        permissionId: permission.permission.id,
-        optionId,
-      });
-      setPermission(null);
+      try {
+        await api.post(`/api/sessions/${encodeURIComponent(id)}/permission`, {
+          permissionId: permission.permission.id,
+          optionId,
+        });
+        setPermission(null);
+      } catch (err) {
+        setError((err as Error).message);
+      }
     },
     [id, permission],
   );
@@ -187,7 +208,7 @@ export function SessionDetailPage() {
             onClick={() => navigate("/sessions")}
             className="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200"
           >
-            ← Back
+            &larr; Back
           </button>
           <h1 className="text-xl font-semibold">
             {session.name ?? session.id.slice(0, 8)}
@@ -225,7 +246,7 @@ export function SessionDetailPage() {
         </span>
         <span>Created: {formatRelativeTime(session.createdAt)}</span>
         {session.promptRunning && (
-          <span className="text-yellow-500">⏳ Processing...</span>
+          <span className="text-yellow-500">Processing...</span>
         )}
         {session.queueDepth > 0 && <span>Queue: {session.queueDepth}</span>}
       </div>

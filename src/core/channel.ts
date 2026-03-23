@@ -47,4 +47,9 @@ export abstract class ChannelAdapter<TCore = unknown> implements IChannelAdapter
   // Skill commands — override in adapters that support dynamic commands
   async sendSkillCommands(_sessionId: string, _commands: AgentCommand[]): Promise<void> {}
   async cleanupSkillCommands(_sessionId: string): Promise<void> {}
+
+  // Archive — override in adapters that support topic archiving
+  async archiveSessionTopic(_sessionId: string): Promise<{ newThreadId: string } | null> {
+    return null;
+  }
 }

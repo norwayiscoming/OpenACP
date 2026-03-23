@@ -211,3 +211,8 @@ export interface TelegramPlatformData {
   topicId: number;
   skillMsgId?: number;
 }
+
+export interface DiscordPlatformData {
+  threadId: string;
+  skillMsgId?: string;
+}

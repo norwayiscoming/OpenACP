@@ -83,7 +83,6 @@ export const ConfigSchema = z.object({
     .object({
       port: z.number().default(21420),
       host: z.string().default("127.0.0.1"),
-      token: z.string().optional(),
     })
     .default({}),
   sessionStore: z
@@ -120,6 +119,14 @@ const DEFAULT_CONFIG = {
       chatId: 0,
       notificationTopicId: null,
       assistantTopicId: null,
+    },
+    discord: {
+      enabled: false,
+      botToken: "YOUR_DISCORD_BOT_TOKEN_HERE",
+      guildId: "",
+      forumChannelId: null,
+      notificationChannelId: null,
+      assistantThreadId: null,
     },
   },
   agents: {
@@ -167,7 +174,7 @@ export class ConfigManager extends EventEmitter {
       );
       log.info({ configPath: this.configPath }, "Config created");
       log.info(
-        "Please edit it with your Telegram bot token and chat ID, then restart.",
+        "Please edit it with your channel credentials (Telegram bot token, Discord bot token, etc.), then restart.",
       );
       process.exit(1);
     }
@@ -264,6 +271,8 @@ export class ConfigManager extends EventEmitter {
     const overrides: [string, string[]][] = [
       ["OPENACP_TELEGRAM_BOT_TOKEN", ["channels", "telegram", "botToken"]],
       ["OPENACP_TELEGRAM_CHAT_ID", ["channels", "telegram", "chatId"]],
+      ["OPENACP_DISCORD_BOT_TOKEN", ["channels", "discord", "botToken"]],
+      ["OPENACP_DISCORD_GUILD_ID", ["channels", "discord", "guildId"]],
       ["OPENACP_DEFAULT_AGENT", ["defaultAgent"]],
       ["OPENACP_RUN_MODE", ["runMode"]],
       ["OPENACP_API_PORT", ["api", "port"]],

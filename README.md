@@ -20,7 +20,7 @@ One message, any channel, any agent.
 
 ## What is OpenACP?
 
-OpenACP lets you control AI coding agents (Claude Code, Codex, ...) from messaging apps like Telegram. You send a message, the agent writes code, runs commands, and streams everything back — in real time.
+OpenACP lets you control AI coding agents (Claude Code, Codex, ...) from messaging apps like Telegram and Discord. You send a message, the agent writes code, runs commands, and streams everything back — in real time.
 
 It uses the [Agent Client Protocol (ACP)](https://agentclientprotocol.org/) to talk to agents. You host it on your own machine, so you own the data.
 
@@ -76,8 +76,13 @@ OpenACP follows the [Agent Client Protocol (ACP)](https://agentclientprotocol.co
 
 - **Multi-agent** — Claude Code, Codex, Gemini, Cursor, and [28+ ACP-compatible agents](#supported-agents)
 - **Telegram** — Forum topics, real-time streaming, permission buttons, skill commands
+- **Discord** — Forum/thread-based sessions, slash commands, button interactions
 - **Tunnel & file viewer** — Public file/diff viewer via Cloudflare, ngrok, bore, or Tailscale
 - **Session persistence** — Resume sessions across restarts
+- **Daemon mode** — Background service with auto-start on boot
+- **CLI API** — Create and manage sessions from the terminal
+- **Config editor** — Interactive `openacp config` for all settings
+- **Setup wizard** — Interactive first-run setup with bot validation and auto-detect
 - **Plugin system** — Install channel adapters as npm packages
 - **Structured logging** — Pino with rotation, per-session log files
 - **Self-hosted** — Your keys, your data, your machine
@@ -87,8 +92,9 @@ OpenACP follows the [Agent Client Protocol (ACP)](https://agentclientprotocol.co
 ### Prerequisites
 
 - **Node.js 20+**
-- **A Telegram bot** — Create one via [@BotFather](https://t.me/BotFather) and save the token
-- **A Telegram supergroup** with Topics enabled — Add your bot as admin
+- **A messaging platform** — Telegram, Discord, or both:
+  - **Telegram**: Create a bot via [@BotFather](https://t.me/BotFather), create a supergroup with Topics enabled, add bot as admin
+  - **Discord**: Create a bot at [Discord Developer Portal](https://discord.com/developers/applications), invite it to your server with Manage Channels + Send Messages permissions
 
 ### Install & first run
 
@@ -98,13 +104,13 @@ openacp
 ```
 
 > **Important: `openacp` is an interactive CLI.**
-> The first run launches a setup wizard that asks you questions in the terminal (bot token, group selection, workspace path, etc.).
+> The first run launches a setup wizard that asks you questions in the terminal (bot token, server selection, workspace path, etc.).
 > You **must run it yourself in a terminal** — it cannot be run by a script or an AI agent because it requires interactive input.
 
 The wizard will:
 
-1. **Ask for your Telegram bot token** — validates it against the Telegram API
-2. **Auto-detect your group** — send "hi" in the group and it picks it up, or enter the chat ID manually
+1. **Choose your channel(s)** — Telegram, Discord, or both
+2. **Configure bot credentials** — bot token and server/group ID, validated against the platform API
 3. **Set a workspace directory** — where agents will create project folders (default: `~/openacp-workspace`)
 4. **Detect installed agents** — finds Claude Code, Codex, etc.
 5. **Choose run mode** — foreground (in terminal) or background (daemon with auto-start)
@@ -134,8 +140,14 @@ openacp agents uninstall <name>   # Remove an installed agent
 openacp agents info <name>        # Show agent details & dependencies
 openacp agents refresh            # Force-refresh the registry
 
+# API (requires running daemon)
+openacp api new [agent] [workspace]      # Create a new session
+openacp api cancel <id>                  # Cancel a session
+openacp api status                       # Show active sessions
+openacp api agents                       # List available agents
+
 # System
-openacp config            # Show current config
+openacp config            # Interactive config editor
 openacp reset             # Re-run the setup wizard
 openacp update            # Update to latest version
 openacp install <plugin>  # Install a plugin (e.g. @openacp/adapter-discord)
@@ -145,7 +157,9 @@ openacp plugins           # List installed plugins
 
 ## Usage
 
-Once OpenACP is running, control it from Telegram:
+Once OpenACP is running, control it from Telegram or Discord:
+
+**Telegram** — Bot commands in your supergroup:
 
 | Command | Description |
 |---------|-------------|
@@ -156,13 +170,25 @@ Once OpenACP is running, control it from Telegram:
 | `/agents` | Browse & install agents from ACP Registry |
 | `/install <name>` | Install an agent directly |
 
-Each session gets its own forum topic. The agent streams responses in real time, shows tool calls, and asks for permission when needed.
+Each session gets its own forum topic.
+
+**Discord** — Slash commands in your server:
+
+| Command | Description |
+|---------|-------------|
+| `/new [agent] [workspace]` | Create a new session |
+| `/newchat` | New session, same agent & workspace |
+| `/cancel` | Cancel current session |
+| `/status` | Show session or system status |
+| `/menu` | Open the control panel |
+
+Each session gets its own thread in the sessions channel. The agent streams responses in real time, shows tool calls, and asks for permission when needed.
 
 ### Session Transfer
 
-Move sessions between your terminal and Telegram:
+Move sessions between your terminal and messaging platforms:
 
-**Terminal → Telegram:**
+**Terminal → Chat:**
 ```bash
 # Install integration (one-time)
 openacp integrate claude
@@ -172,8 +198,8 @@ openacp integrate claude
 openacp adopt claude <session_id> --cwd /path/to/project
 ```
 
-**Telegram → Terminal:**
-Type `/handoff` in any session topic. The bot replies with a command you can paste in your terminal to continue.
+**Chat → Terminal:**
+Type `/handoff` in any session topic/thread. The bot replies with a command you can paste in your terminal to continue.
 
 Sessions are not locked after transfer — you can continue from either side.
 
@@ -181,7 +207,7 @@ Sessions are not locked after transfer — you can continue from either side.
 
 - **Phase 1** — Core + Telegram + ACP agents
 - **Phase 2** — Tunnel/file viewer, session persistence, logging, plugin system
-- **Phase 3** — Agent skills as commands, Discord adapter, Web UI
+- **Phase 3** — Agent skills as commands, Discord adapter 🚧, Web UI
 - **Phase 4** — Voice control, file/image sharing
 - **Phase 5** — WhatsApp, agent chaining, plugin marketplace
 

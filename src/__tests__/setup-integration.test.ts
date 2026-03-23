@@ -151,7 +151,9 @@ describe('runSetup integration', () => {
     mockedConfirm.mockResolvedValueOnce(false as any)
 
     // Select call order:
-    // 1. setupRunMode: run mode selection
+    // 1. Channel selection: which platform
+    // 2. setupRunMode: run mode selection
+    mockedSelect.mockResolvedValueOnce('telegram' as any)
     mockedSelect.mockResolvedValueOnce('foreground' as any)
 
     const cm = new ConfigManager()

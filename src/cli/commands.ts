@@ -9,7 +9,7 @@ function wantsHelp(args: string[]): boolean {
 export function printHelp(): void {
   console.log(`
 \x1b[1mOpenACP\x1b[0m — Self-hosted bridge for AI coding agents
-Connect Telegram (and more) to 28+ AI coding agents via ACP protocol.
+Connect messaging platforms (Telegram, Discord) to 28+ AI coding agents via ACP protocol.
 
 \x1b[1mGetting Started:\x1b[0m
   openacp                              First run launches setup wizard
@@ -45,7 +45,7 @@ Connect Telegram (and more) to 28+ AI coding agents via ACP protocol.
   openacp doctor --dry-run             Check only, don't fix
 
 \x1b[1mPlugins:\x1b[0m
-  openacp install <package>            Install adapter (e.g. @openacp/adapter-discord)
+  openacp install <package>            Install adapter plugin
   openacp uninstall <package>          Remove adapter
   openacp plugins                      List installed plugins
 
@@ -796,7 +796,7 @@ Sends a stop signal to the running OpenACP daemon process.
     return
   }
   const { stopDaemon } = await import('../core/daemon.js')
-  const result = stopDaemon()
+  const result = await stopDaemon()
   if (result.stopped) {
     console.log(`OpenACP daemon stopped (was PID ${result.pid})`)
   } else {
@@ -1117,18 +1117,19 @@ as a Telegram topic. Requires a running daemon.
   }
 
   try {
-    const res = await fetch(`http://127.0.0.1:${port}/api/sessions/adopt`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
+    const { apiCall } = await import('../core/api-client.js')
+    const res = await apiCall(port, '/api/sessions/adopt', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ agent, agentSessionId: sessionId, cwd }),
-    });
+    })
     const data = await res.json() as Record<string, unknown>;
 
     if (data.ok) {
       if (data.status === "existing") {
-        console.log(`Session already on Telegram. Topic pinged.`);
+        console.log(`Session already active. Topic pinged.`);
       } else {
-        console.log(`Session transferred to Telegram.`);
+        console.log(`Session transferred to messaging platform.`);
       }
       console.log(`  Session ID: ${data.sessionId}`);
       console.log(`  Thread ID:  ${data.threadId}`);

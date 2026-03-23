@@ -2,6 +2,7 @@ import * as http from "node:http";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
+import * as crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
 import type { OpenACPCore } from "./core.js";
 import type { TopicManager } from "./topic-manager.js";
@@ -67,6 +68,8 @@ export class ApiServer {
   private actualPort: number = 0;
   private portFilePath: string;
   private startedAt = Date.now();
+  private secret: string = "";
+  private secretFilePath: string;
   private sseManager: SSEManager;
   private staticServer: StaticServer;
 
@@ -75,9 +78,12 @@ export class ApiServer {
     private config: ApiConfig,
     portFilePath?: string,
     private topicManager?: TopicManager,
+    secretFilePath?: string,
     uiDir?: string,
   ) {
     this.portFilePath = portFilePath ?? DEFAULT_PORT_FILE;
+    this.secretFilePath =
+      secretFilePath ?? path.join(os.homedir(), ".openacp", "api-secret");
     this.staticServer = new StaticServer(uiDir);
     this.sseManager = new SSEManager(
       core.eventBus,
@@ -95,6 +101,7 @@ export class ApiServer {
   }
 
   async start(): Promise<void> {
+    this.loadOrCreateSecret();
     this.server = http.createServer((req, res) => this.handleRequest(req, res));
 
     await new Promise<void>((resolve, reject) => {
@@ -124,14 +131,12 @@ export class ApiServer {
         );
         this.sseManager.setup();
 
-        const config = this.core.configManager.get();
         if (
-          config.api.host !== "127.0.0.1" &&
-          config.api.host !== "localhost" &&
-          !config.api.token
+          this.config.host !== "127.0.0.1" &&
+          this.config.host !== "localhost"
         ) {
           log.warn(
-            "API server binding to non-localhost without authentication token. Set api.token in config for security.",
+            "API server binding to non-localhost. Ensure api-secret file is secured.",
           );
         }
 
@@ -155,6 +160,10 @@ export class ApiServer {
     return this.actualPort;
   }
 
+  getSecret(): string {
+    return this.secret;
+  }
+
   private writePortFile(): void {
     const dir = path.dirname(this.portFilePath);
     fs.mkdirSync(dir, { recursive: true });
@@ -169,28 +178,65 @@ export class ApiServer {
     }
   }
 
-  private checkAuth(
-    req: http.IncomingMessage,
-    res: http.ServerResponse,
-    url: string,
-  ): boolean {
-    const config = this.core.configManager.get();
-    const token = config.api.token;
-    if (!token) return true; // No token configured — allow all
+  private loadOrCreateSecret(): void {
+    const dir = path.dirname(this.secretFilePath);
+    fs.mkdirSync(dir, { recursive: true });
 
-    // Localhost bypass
-    const host = config.api.host;
-    if (host === "127.0.0.1" || host === "localhost") return true;
+    try {
+      this.secret = fs.readFileSync(this.secretFilePath, "utf-8").trim();
+      if (this.secret) {
+        // Warn if file permissions are too open (like SSH does for private keys)
+        try {
+          const stat = fs.statSync(this.secretFilePath);
+          const mode = stat.mode & 0o777;
+          if (mode & 0o077) {
+            log.warn(
+              { path: this.secretFilePath, mode: "0" + mode.toString(8) },
+              "API secret file has insecure permissions (should be 0600). Run: chmod 600 %s",
+              this.secretFilePath,
+            );
+          }
+        } catch {
+          /* stat failed, skip check */
+        }
+        return;
+      }
+    } catch {
+      // File doesn't exist, create it
+    }
 
+    this.secret = crypto.randomBytes(32).toString("hex");
+    fs.writeFileSync(this.secretFilePath, this.secret, { mode: 0o600 });
+  }
+
+  private authenticate(req: http.IncomingMessage): boolean {
     // Check Authorization header
-    const authHeader = req.headers["authorization"];
-    if (authHeader === `Bearer ${token}`) return true;
-
+    const authHeader = req.headers.authorization;
+    if (authHeader?.startsWith("Bearer ")) {
+      const token = authHeader.slice(7);
+      if (
+        token.length === this.secret.length &&
+        crypto.timingSafeEqual(
+          Buffer.from(token, "utf-8"),
+          Buffer.from(this.secret, "utf-8"),
+        )
+      ) {
+        return true;
+      }
+    }
     // Check query param (for SSE EventSource which can't set headers)
-    const urlObj = new URL(url, "http://localhost");
-    if (urlObj.searchParams.get("token") === token) return true;
-
-    this.sendJson(res, 401, { error: "Unauthorized" });
+    const url = new URL(req.url || "", "http://localhost");
+    const qToken = url.searchParams.get("token");
+    if (
+      qToken &&
+      qToken.length === this.secret.length &&
+      crypto.timingSafeEqual(
+        Buffer.from(qToken, "utf-8"),
+        Buffer.from(this.secret, "utf-8"),
+      )
+    ) {
+      return true;
+    }
     return false;
   }
 
@@ -201,8 +247,15 @@ export class ApiServer {
     const method = req.method?.toUpperCase();
     const url = req.url || "";
 
-    // Auth check for /api/ routes only (static UI files bypass auth)
-    if (url.startsWith("/api/") && !this.checkAuth(req, res, url)) return;
+    // Auth check: exempt health/version + non-/api/ routes (static files)
+    if (url.startsWith("/api/")) {
+      const isExempt =
+        method === "GET" && (url === "/api/health" || url === "/api/version");
+      if (!isExempt && !this.authenticate(req)) {
+        this.sendJson(res, 401, { error: "Unauthorized" });
+        return;
+      }
+    }
 
     try {
       if (method === "POST" && url === "/api/sessions/adopt") {

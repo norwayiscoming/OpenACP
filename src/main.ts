@@ -76,6 +76,10 @@ export async function startServer() {
     if (channelName === 'telegram') {
       core.registerAdapter('telegram', new TelegramAdapter(core, channelConfig as any))
       log.info({ adapter: 'telegram' }, 'Adapter registered')
+    } else if (channelName === 'discord') {
+      const { DiscordAdapter } = await import('./adapters/discord/index.js')
+      core.registerAdapter('discord', new DiscordAdapter(core, channelConfig as any))
+      log.info({ adapter: 'discord' }, 'Adapter registered')
     } else if (channelConfig.adapter) {
       // Plugin adapter
       const factory = await loadAdapterFactory(channelConfig.adapter)
@@ -182,15 +186,18 @@ export async function startServer() {
 
   const updatedConfig = core.configManager.get()
   const telegramAdapter = core.adapters.get('telegram') ?? null
-  const telegramCfg = updatedConfig.channels?.telegram as any
-  const topicManager = new TopicManager(
-    core.sessionManager,
-    telegramAdapter,
-    {
-      notificationTopicId: telegramCfg?.notificationTopicId ?? null,
-      assistantTopicId: telegramCfg?.assistantTopicId ?? null,
-    },
-  )
+  let topicManager: TopicManager | undefined
+  if (telegramAdapter) {
+    const telegramCfg = updatedConfig.channels?.telegram as any
+    topicManager = new TopicManager(
+      core.sessionManager,
+      telegramAdapter,
+      {
+        notificationTopicId: telegramCfg?.notificationTopicId ?? null,
+        assistantTopicId: telegramCfg?.assistantTopicId ?? null,
+      },
+    )
+  }
 
   apiServer = new ApiServer(core, config.api, undefined, topicManager)
   await apiServer.start()

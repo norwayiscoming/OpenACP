@@ -33,6 +33,7 @@
     "@inquirer/prompts": "^8.3.2",
     "@zed-industries/claude-agent-acp": "^0.22.2",
     "diff": "^8.0.3",
+    "discord.js": "^14.25.1",
     "fastest-levenshtein": "^1.0.16",
     "grammy": "^1.41.1",
     "hono": "^4.12.8",

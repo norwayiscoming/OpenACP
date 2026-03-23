@@ -3,6 +3,7 @@ import { input, select } from "@inquirer/prompts";
 import type { Config, ConfigManager } from "./config.js";
 import { expandHome } from "./config.js";
 import { commandExists } from "./agent-dependencies.js";
+import type { DiscordChannelConfig } from "../adapters/discord/types.js";
 
 // --- ANSI colors ---
 
@@ -21,8 +22,8 @@ const ok = (msg: string) =>
   `${c.green}${c.bold}✓${c.reset} ${c.green}${msg}${c.reset}`;
 const warn = (msg: string) => `${c.yellow}⚠ ${msg}${c.reset}`;
 const fail = (msg: string) => `${c.red}✗ ${msg}${c.reset}`;
-const step = (n: number, title: string) =>
-  `\n${c.cyan}${c.bold}[${n}/3]${c.reset} ${c.bold}${title}${c.reset}\n`;
+const step = (n: number, total: number, title: string) =>
+  `\n${c.cyan}${c.bold}[${n}/${total}]${c.reset} ${c.bold}${title}${c.reset}\n`;
 const dim = (msg: string) => `${c.dim}${msg}${c.reset}`;
 
 // --- Telegram validation ---
@@ -321,8 +322,8 @@ export async function validateAgentCommand(command: string): Promise<boolean> {
 
 // --- Setup steps ---
 
-export async function setupTelegram(): Promise<Config["channels"][string]> {
-  console.log(step(1, "Telegram Bot"));
+export async function setupTelegram(stepNum = 1, totalSteps = 3): Promise<Config["channels"][string]> {
+  console.log(step(stepNum, totalSteps, "Telegram Bot"));
 
   let botToken = "";
 
@@ -396,6 +397,88 @@ export async function setupTelegram(): Promise<Config["channels"][string]> {
     chatId,
     notificationTopicId: null,
     assistantTopicId: null,
+  };
+}
+
+// --- Discord validation ---
+
+export async function validateDiscordToken(token: string): Promise<
+  | { ok: true; username: string; id: string }
+  | { ok: false; error: string }
+> {
+  try {
+    const res = await fetch("https://discord.com/api/v10/users/@me", {
+      headers: { Authorization: `Bot ${token}` },
+    });
+    if (res.status === 200) {
+      const data = (await res.json()) as { username: string; id: string };
+      return { ok: true, username: data.username, id: data.id };
+    }
+    if (res.status === 401) {
+      return { ok: false, error: "Token rejected by Discord (401 Unauthorized)" };
+    }
+    return { ok: false, error: `Discord API returned ${res.status}` };
+  } catch (err) {
+    return { ok: false, error: (err as Error).message };
+  }
+}
+
+export async function setupDiscord(): Promise<DiscordChannelConfig> {
+  console.log('\n📱 Discord Setup\n');
+
+  console.log(`  ${c.bold}Quick setup:${c.reset}`);
+  console.log(dim('  1. Create app at https://discord.com/developers/applications'));
+  console.log(dim('  2. Go to Bot → Reset Token → copy it'));
+  console.log(dim('  3. Enable Message Content Intent (Bot → Privileged Intents)'));
+  console.log(dim('  4. OAuth2 → URL Generator → scopes: bot + applications.commands'));
+  console.log(dim('  5. Bot Permissions: Manage Channels, Send Messages, Manage Threads, Attach Files'));
+  console.log(dim('  6. Open generated URL → invite bot to your server'));
+  console.log('');
+  console.log(dim(`  📖 Detailed guide: https://github.com/Open-ACP/OpenACP/blob/main/docs/guide/discord-setup.md`));
+  console.log('');
+
+  let botToken = '';
+
+  while (true) {
+    botToken = await input({
+      message: 'Bot token (from Discord Developer Portal):',
+      validate: (val) => val.trim().length > 0 || 'Token cannot be empty',
+    });
+    botToken = botToken.trim();
+
+    const result = await validateDiscordToken(botToken);
+    if (result.ok) {
+      console.log(ok(`Connected as @${result.username} (id: ${result.id})`));
+      break;
+    }
+    console.log(fail(result.error));
+    const action = await select({
+      message: 'What to do?',
+      choices: [
+        { name: 'Re-enter token', value: 'retry' },
+        { name: 'Use as-is (skip validation)', value: 'skip' },
+      ],
+    });
+    if (action === 'skip') break;
+  }
+
+  const guildId = await input({
+    message: 'Guild (server) ID:',
+    validate: (val) => {
+      const trimmed = val.trim();
+      if (!trimmed) return 'Guild ID cannot be empty';
+      if (!/^\d{17,20}$/.test(trimmed)) return 'Guild ID must be a numeric Discord snowflake (17-20 digits)';
+      return true;
+    },
+  });
+
+  return {
+    enabled: true,
+    botToken,
+    guildId: guildId.trim(),
+    forumChannelId: null,
+    notificationChannelId: null,
+    assistantThreadId: null,
   };
 }
 
@@ -494,8 +577,8 @@ export async function setupAgents(): Promise<{
   return { defaultAgent };
 }
 
-export async function setupWorkspace(): Promise<{ baseDir: string }> {
-  console.log(step(2, "Workspace"));
+export async function setupWorkspace(stepNum = 2, totalSteps = 3): Promise<{ baseDir: string }> {
+  console.log(step(stepNum, totalSteps, "Workspace"));
 
   const baseDir = await input({
     message: "Base directory for workspaces:",
@@ -506,8 +589,8 @@ export async function setupWorkspace(): Promise<{ baseDir: string }> {
   return { baseDir: baseDir.trim().replace(/^['"]|['"]$/g, "") };
 }
 
-export async function setupRunMode(): Promise<{ runMode: 'foreground' | 'daemon'; autoStart: boolean }> {
-  console.log(step(3, 'Run Mode'))
+export async function setupRunMode(stepNum = 3, totalSteps = 3): Promise<{ runMode: 'foreground' | 'daemon'; autoStart: boolean }> {
+  console.log(step(stepNum, totalSteps, 'Run Mode'))
 
   // Don't show daemon option on Windows
   if (process.platform === 'win32') {
@@ -562,7 +645,34 @@ export async function runSetup(configManager: ConfigManager): Promise<boolean> {
   printWelcomeBanner();
 
   try {
-    const telegram = await setupTelegram();
+    const { select: selectChannel } = await import("@inquirer/prompts");
+    const channelChoice = await selectChannel({
+      message: 'Which messaging platform do you want to use?',
+      choices: [
+        { name: 'Telegram', value: 'telegram' },
+        { name: 'Discord', value: 'discord' },
+        { name: 'Both', value: 'both' },
+      ],
+    });
+
+    let telegram: Config["channels"][string] | undefined;
+    let discord: DiscordChannelConfig | undefined;
+
+    // Calculate total steps dynamically: channel(s) + workspace + run mode
+    const channelSteps = channelChoice === 'both' ? 2 : 1;
+    const totalSteps = channelSteps + 2; // + workspace + run mode
+
+    let currentStep = 0;
+
+    if (channelChoice === 'telegram' || channelChoice === 'both') {
+      currentStep++;
+      telegram = await setupTelegram(currentStep, totalSteps);
+    }
+    if (channelChoice === 'discord' || channelChoice === 'both') {
+      currentStep++;
+      discord = await setupDiscord();
+    }
+
     const { defaultAgent } = await setupAgents();
 
     // Offer Claude CLI integration
@@ -591,16 +701,22 @@ export async function runSetup(configManager: ConfigManager): Promise<boolean> {
       }
     }
 
-    const workspace = await setupWorkspace();
-    const { runMode, autoStart } = await setupRunMode();
+    currentStep++;
+    const workspace = await setupWorkspace(currentStep, totalSteps);
+    currentStep++;
+    const { runMode, autoStart } = await setupRunMode(currentStep, totalSteps);
     const security = {
       allowedUserIds: [] as string[],
       maxConcurrentSessions: 20,
       sessionTimeoutMinutes: 60,
     };
 
+    const channels: Config["channels"] = {};
+    if (telegram) channels.telegram = telegram;
+    if (discord) channels.discord = discord as unknown as Config["channels"][string];
+
     const config: Config = {
-      channels: { telegram },
+      channels,
       agents: {},
       defaultAgent,
       workspace,

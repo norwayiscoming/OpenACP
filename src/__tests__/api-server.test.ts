@@ -8,6 +8,7 @@ import { EventBus } from "../core/event-bus.js";
 describe("ApiServer", () => {
   let tmpDir: string;
   let portFilePath: string;
+  let secretFilePath: string;
   let server: any;
 
   const mockTopicManager = {
@@ -84,6 +85,7 @@ describe("ApiServer", () => {
     vi.clearAllMocks();
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "openacp-api-test-"));
     portFilePath = path.join(tmpDir, "api.port");
+    secretFilePath = path.join(tmpDir, "api-secret");
   });
 
   afterEach(async () => {
@@ -101,13 +103,28 @@ describe("ApiServer", () => {
       { port: portOverride ?? 0, host: "127.0.0.1" },
       portFilePath,
       mockTopicManager as any,
+      secretFilePath,
     );
     await server.start();
     return server.getPort();
   }
 
+  function readTestSecret(): string {
+    return fs.readFileSync(secretFilePath, "utf-8").trim();
+  }
+
   function apiFetch(port: number, urlPath: string, options?: RequestInit) {
-    return globalThis.fetch(`http://127.0.0.1:${port}${urlPath}`, options);
+    const token = fs.existsSync(secretFilePath)
+      ? fs.readFileSync(secretFilePath, "utf-8").trim()
+      : "";
+    const headers = new Headers(options?.headers);
+    if (token && !headers.has("Authorization")) {
+      headers.set("Authorization", `Bearer ${token}`);
+    }
+    return globalThis.fetch(`http://127.0.0.1:${port}${urlPath}`, {
+      ...options,
+      headers,
+    });
   }
 
   it("starts and writes port file", async () => {
@@ -989,6 +1006,7 @@ describe("ApiServer", () => {
         { port: 0, host: "127.0.0.1" },
         portFilePath,
         mockTopicManager as any,
+        secretFilePath,
         uiDir,
       );
       await server.start();
@@ -1008,6 +1026,7 @@ describe("ApiServer", () => {
         { port: 0, host: "127.0.0.1" },
         portFilePath,
         mockTopicManager as any,
+        secretFilePath,
         uiDir,
       );
       await server.start();
@@ -1029,6 +1048,7 @@ describe("ApiServer", () => {
         { port: 0, host: "127.0.0.1" },
         portFilePath,
         mockTopicManager as any,
+        secretFilePath,
         uiDir,
       );
       await server.start();
@@ -1048,6 +1068,7 @@ describe("ApiServer", () => {
         { port: 0, host: "127.0.0.1" },
         portFilePath,
         mockTopicManager as any,
+        secretFilePath,
         uiDir,
       );
       await server.start();
@@ -1067,6 +1088,7 @@ describe("ApiServer", () => {
         { port: 0, host: "127.0.0.1" },
         portFilePath,
         mockTopicManager as any,
+        secretFilePath,
         nonExistentUiDir,
       );
       await server.start();
@@ -1076,98 +1098,98 @@ describe("ApiServer", () => {
     });
   });
 
-  describe("token auth", () => {
-    it("rejects requests without token when configured and host is not localhost", async () => {
-      mockCore.configManager.get.mockReturnValue({
-        ...mockCore.configManager.get(),
-        api: { port: 21420, host: "0.0.0.0", token: "secret123" },
-      });
+  describe("authentication", () => {
+    it("returns 401 for requests without auth token", async () => {
       const port = await startServer();
+      // Use raw fetch without auth
+      const res = await globalThis.fetch(
+        `http://127.0.0.1:${port}/api/sessions`,
+      );
+      expect(res.status).toBe(401);
+      const data = await res.json();
+      expect(data.error).toBe("Unauthorized");
+    });
 
-      const res = await apiFetch(port, "/api/health");
+    it("returns 401 for requests with wrong token", async () => {
+      const port = await startServer();
+      const res = await globalThis.fetch(
+        `http://127.0.0.1:${port}/api/sessions`,
+        {
+          headers: { Authorization: "Bearer wrong-token" },
+        },
+      );
       expect(res.status).toBe(401);
     });
 
-    it("accepts requests with valid Bearer token", async () => {
-      mockCore.configManager.get.mockReturnValue({
-        ...mockCore.configManager.get(),
-        api: { port: 21420, host: "0.0.0.0", token: "secret123" },
-      });
+    it("allows health endpoint without auth", async () => {
+      mockCore.sessionManager.listSessions.mockReturnValueOnce([]);
+      mockCore.sessionManager.listRecords.mockReturnValueOnce([]);
       const port = await startServer();
-
-      const res = await apiFetch(port, "/api/health", {
-        headers: { Authorization: "Bearer secret123" },
-      });
+      // Use raw fetch without auth
+      const res = await globalThis.fetch(`http://127.0.0.1:${port}/api/health`);
       expect(res.status).toBe(200);
     });
 
-    it("bypasses auth for localhost when host is 127.0.0.1", async () => {
-      mockCore.configManager.get.mockReturnValue({
-        ...mockCore.configManager.get(),
-        api: { port: 21420, host: "127.0.0.1", token: "secret123" },
-      });
+    it("allows version endpoint without auth", async () => {
       const port = await startServer();
+      const res = await globalThis.fetch(
+        `http://127.0.0.1:${port}/api/version`,
+      );
+      expect(res.status).toBe(200);
+    });
 
-      const res = await apiFetch(port, "/api/health");
+    it("accepts requests with valid auth token", async () => {
+      mockCore.sessionManager.listSessions.mockReturnValueOnce([]);
+      const port = await startServer();
+      const token = readTestSecret();
+      const res = await globalThis.fetch(
+        `http://127.0.0.1:${port}/api/sessions`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        },
+      );
       expect(res.status).toBe(200);
     });
 
     it("accepts SSE with token query param", async () => {
       mockCore.eventBus = new EventBus();
-      mockCore.configManager.get.mockReturnValue({
-        ...mockCore.configManager.get(),
-        api: { port: 21420, host: "0.0.0.0", token: "secret123" },
-      });
       const port = await startServer();
+      const token = readTestSecret();
 
       const controller = new AbortController();
-      const res = await apiFetch(port, "/api/events?token=secret123", {
-        signal: controller.signal,
-      });
+      const res = await globalThis.fetch(
+        `http://127.0.0.1:${port}/api/events?token=${token}`,
+        { signal: controller.signal },
+      );
       expect(res.status).toBe(200);
       controller.abort();
     });
 
-    it("allows all requests when no token configured", async () => {
-      // Reset to default mock (no token)
-      mockCore.configManager.get.mockReturnValue({
-        defaultAgent: "claude",
-        agents: {
-          claude: { command: "claude", args: [], workingDirectory: "/tmp/ws" },
-        },
-        security: {
-          maxConcurrentSessions: 5,
-          sessionTimeoutMinutes: 60,
-          allowedUserIds: [],
-        },
-        channels: {
-          telegram: { enabled: false, botToken: "secret-token", chatId: 0 },
-        },
-        workspace: { baseDir: "~/openacp-workspace" },
-        logging: {
-          level: "info",
-          logDir: "~/.openacp/logs",
-          maxFileSize: "10m",
-          maxFiles: 7,
-          sessionLogRetentionDays: 30,
-        },
-        tunnel: {
-          enabled: true,
-          port: 3100,
-          provider: "cloudflare",
-          options: {},
-          storeTtlMinutes: 60,
-          auth: { enabled: false },
-        },
-        sessionStore: { ttlDays: 30 },
-        runMode: "foreground",
-        autoStart: false,
-        api: { port: 21420, host: "127.0.0.1" },
-        integrations: {},
-      });
-      const port = await startServer();
-      const res = await apiFetch(port, "/api/health");
+    it("does not require auth for static file routes", async () => {
+      const uiDir = path.join(tmpDir, "ui-auth-test");
+      fs.mkdirSync(uiDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(uiDir, "index.html"),
+        "<html><body>Test</body></html>",
+      );
+
+      const { ApiServer } = await import("../core/api-server.js");
+      server = new ApiServer(
+        mockCore as any,
+        { port: 0, host: "127.0.0.1" },
+        portFilePath,
+        mockTopicManager as any,
+        secretFilePath,
+        uiDir,
+      );
+      await server.start();
+      const port = server.getPort();
+
+      // Raw fetch without auth — static routes should be accessible
+      const res = await globalThis.fetch(`http://127.0.0.1:${port}/`);
       expect(res.status).toBe(200);
+      const body = await res.text();
+      expect(body).toContain("Test");
     });
   });
 });

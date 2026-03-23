@@ -518,10 +518,13 @@ export class AgentInstance {
   async prompt(text: string, attachments?: Attachment[]): Promise<PromptResponse> {
     const contentBlocks: Array<Record<string, unknown>> = [{ type: "text", text }];
 
+    // MIME types supported by Claude API for base64 image content
+    const SUPPORTED_IMAGE_MIMES = new Set(["image/jpeg", "image/png", "image/gif", "image/webp"]);
+
     for (const att of attachments ?? []) {
       const tooLarge = att.size > 10 * 1024 * 1024; // 10MB base64 guard
 
-      if (att.type === "image" && this.promptCapabilities?.image && !tooLarge) {
+      if (att.type === "image" && this.promptCapabilities?.image && !tooLarge && SUPPORTED_IMAGE_MIMES.has(att.mimeType)) {
         const data = await fs.promises.readFile(att.filePath);
         contentBlocks.push({ type: "image", data: data.toString("base64"), mimeType: att.mimeType });
       } else if (att.type === "audio" && this.promptCapabilities?.audio && !tooLarge) {

@@ -69,6 +69,7 @@ const SlackChannelConfigSchema = z.object({
   notificationChannelId: z.string().optional(),
   allowedUserIds: z.array(z.string()).default([]),
   channelPrefix: z.string().default("openacp"),
+  autoCreateSession: z.boolean().default(true),
 });
 
 export type SlackChannelConfig = z.infer<typeof SlackChannelConfigSchema>;

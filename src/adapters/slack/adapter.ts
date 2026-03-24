@@ -122,8 +122,10 @@ export class SlackAdapter extends ChannelAdapter<OpenACPCore> {
     await this.app.start();
     log.info("Slack adapter started (Socket Mode)");
 
-    // Create the startup session + channel
-    await this._createStartupSession();
+    // Create startup session + channel (configurable — set autoCreateSession: false to skip)
+    if (this.slackConfig.autoCreateSession !== false) {
+      await this._createStartupSession();
+    }
   }
 
   private async _createStartupSession(): Promise<void> {

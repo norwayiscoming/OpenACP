@@ -922,18 +922,15 @@ export class TelegramAdapter extends ChannelAdapter<OpenACPCore> {
 
     const chatId = this.telegramConfig.chatId;
     const oldTopicId = Number(session.threadId);
-    // Strip existing 🔄 prefix to avoid stacking on repeated archives
-    const rawName = (session.name || `Session ${session.id.slice(0, 6)}`).replace(/^🔄\s*/, "");
 
     // 1. Set archiving flag — sendMessage will skip while this is true
     session.archiving = true;
-    let newTopicId: number = 0;
 
     try {
       // 2. Finalize any pending draft
       await this.draftManager.finalize(session.id, this.assistantSession?.id);
 
-      // 3. Cleanup all trackers for old topic
+      // 3. Cleanup all trackers
       this.draftManager.cleanup(session.id);
       this.toolTracker.cleanup(session.id);
       await this.skillManager.cleanup(session.id);
@@ -943,36 +940,12 @@ export class TelegramAdapter extends ChannelAdapter<OpenACPCore> {
         this.sessionTrackers.delete(session.id);
       }
 
-      // 4. Delete old topic
+      // 4. Delete topic (removes all messages)
       await deleteSessionTopic(this.bot, chatId, oldTopicId);
-
-      // 5. Create new topic — notify on failure (session is orphaned)
-      try {
-        newTopicId = await createSessionTopic(this.bot, chatId, `🔄 ${rawName}`);
-      } catch (createErr) {
-        core.notificationManager.notifyAll({
-          sessionId: session.id,
-          sessionName: session.name,
-          type: "error",
-          summary: `Topic recreation failed for session "${rawName}". Session is orphaned. Error: ${(createErr as Error).message}`,
-        });
-        throw createErr;
-      }
-
-      // 6. Rewire session to new topic
-      session.threadId = String(newTopicId);
-
-      // 7. Persist via patchRecord — spread existing platform data, explicitly delete old skillMsgId
-      const existingRecord = core.sessionManager.getSessionRecord(session.id);
-      const existingPlatform = { ...(existingRecord?.platform ?? {}) };
-      delete (existingPlatform as Record<string, unknown>).skillMsgId;
-      await core.sessionManager.patchRecord(session.id, {
-        platform: { ...existingPlatform, topicId: newTopicId },
-      });
     } finally {
       session.archiving = false;
     }
 
-    return { newThreadId: String(newTopicId) };
+    return { newThreadId: "" };
   }
 }

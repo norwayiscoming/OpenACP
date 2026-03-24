@@ -754,7 +754,7 @@ export async function runSetup(configManager: ConfigManager): Promise<boolean> {
       integrations: {},
       speech: {
         stt: { provider: null, providers: {} },
-        tts: { provider: null, providers: {} },
+        tts: { provider: null, providers: {}, voice: "en-US-AriaNeural" },
       },
     };
 

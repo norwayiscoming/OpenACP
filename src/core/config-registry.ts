@@ -98,6 +98,23 @@ export const CONFIG_REGISTRY: ConfigFieldDef[] = [
     scope: 'sensitive',
     hotReload: true,
   },
+  {
+    path: 'speech.tts.provider',
+    displayName: 'Text to Speech',
+    group: 'speech',
+    type: 'select',
+    options: ['edge-tts'],
+    scope: 'safe',
+    hotReload: true,
+  },
+  {
+    path: 'speech.tts.voice',
+    displayName: 'TTS Voice',
+    group: 'speech',
+    type: 'string',
+    scope: 'safe',
+    hotReload: true,
+  },
 ]
 
 export function getFieldDef(path: string): ConfigFieldDef | undefined {

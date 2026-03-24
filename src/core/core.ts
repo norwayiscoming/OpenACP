@@ -20,7 +20,7 @@ import { getAgentCapabilities } from "./agent-registry.js";
 import { AgentCatalog } from "./agent-catalog.js";
 import { EventBus } from "./event-bus.js";
 import { createChildLogger } from "./log.js";
-import { SpeechService, GroqSTT } from "./speech/index.js";
+import { SpeechService, GroqSTT, EdgeTTS } from "./speech/index.js";
 const log = createChildLogger({ module: "core" });
 
 export class OpenACPCore {
@@ -90,6 +90,13 @@ export class OpenACPCore {
       );
     }
 
+    // Register built-in TTS providers
+    if (speechConfig.tts?.provider === "edge-tts") {
+      const edgeConfig = speechConfig.tts.providers?.["edge-tts"];
+      const voice = (edgeConfig?.voice as string) || speechConfig.tts.voice;
+      this.speechService.registerTTSProvider("edge-tts", new EdgeTTS(voice));
+    }
+
     this.sessionFactory = new SessionFactory(
       this.agentManager,
       this.sessionManager,
@@ -119,6 +126,13 @@ export class OpenACPCore {
               "groq",
               new GroqSTT(groqCfg.apiKey, groqCfg.model),
             );
+          }
+          // Re-register TTS providers on config change
+          const ttsCfg = newSpeechConfig.tts;
+          if (ttsCfg?.provider === "edge-tts") {
+            const edgeConfig = ttsCfg.providers?.["edge-tts"];
+            const voice = (edgeConfig?.voice as string) || ttsCfg.voice;
+            this.speechService.registerTTSProvider("edge-tts", new EdgeTTS(voice));
           }
           log.info("Speech service config updated at runtime");
         }

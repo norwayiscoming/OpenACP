@@ -70,7 +70,7 @@ describe("ApiServer", () => {
         integrations: {},
         speech: {
           stt: { provider: null, providers: {} },
-          tts: { provider: null, providers: {} },
+          tts: { provider: null, providers: {}, voice: "en-US-AriaNeural" },
         },
       })),
       save: vi.fn(),
@@ -792,7 +792,7 @@ describe("ApiServer", () => {
       },
       speech: {
         stt: { provider: null, providers: {} },
-        tts: { provider: null, providers: {} },
+        tts: { provider: null, providers: {}, voice: "en-US-AriaNeural" },
       },
     };
     mockCore.configManager.get.mockReturnValue(fullConfig);

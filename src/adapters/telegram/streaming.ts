@@ -215,4 +215,28 @@ export class MessageDraft {
   getMessageId(): number | undefined {
     return this.messageId
   }
+
+  async stripPattern(pattern: RegExp): Promise<void> {
+    if (!this.messageId || !this.buffer) return
+
+    const stripped = this.buffer.replace(pattern, '').trim()
+    if (stripped === this.buffer.trim()) return
+
+    this.buffer = stripped
+    this.lastSentBuffer = stripped
+
+    const html = markdownToTelegramHtml(stripped)
+    if (!html) return
+
+    try {
+      await this.sendQueue.enqueue(
+        () => this.bot.api.editMessageText(this.chatId, this.messageId!, html, {
+          parse_mode: 'HTML',
+        }),
+        { type: 'other' },
+      )
+    } catch {
+      // Best effort — non-critical edit
+    }
+  }
 }

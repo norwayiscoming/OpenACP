@@ -626,6 +626,11 @@ export class TelegramAdapter extends ChannelAdapter<OpenACPCore> {
               message_thread_id: ctx.threadId,
             }),
           );
+          // Strip [TTS]...[/TTS] block from the text message after voice is sent
+          const draft = this.draftManager.getDraft(ctx.sessionId);
+          if (draft) {
+            draft.stripPattern(/\[TTS\][\s\S]*?\[\/TTS\]/g).catch(() => {});
+          }
         } else {
           await this.sendQueue.enqueue(() =>
             this.bot.api.sendDocument(this.telegramConfig.chatId, inputFile, {

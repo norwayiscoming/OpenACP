@@ -399,13 +399,14 @@ export class OpenACPCore {
       };
     }
 
-    // 4. Check if session already exists
+    // 4. Check if session already exists on the same channel
     const existingRecord =
       this.sessionManager.getRecordByAgentSessionId(agentSessionId);
     if (existingRecord) {
+      const sameChannel = !channelId || existingRecord.channelId === channelId;
       const platform = existingRecord.platform as { topicId?: number; threadId?: string } | undefined;
       const existingThreadId = platform?.topicId ? String(platform.topicId) : platform?.threadId;
-      if (existingThreadId) {
+      if (existingThreadId && sameChannel) {
         const adapter = this.adapters.get(existingRecord.channelId) ?? this.adapters.values().next().value;
         if (adapter) {
           try {

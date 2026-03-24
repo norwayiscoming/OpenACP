@@ -17,7 +17,7 @@ export function registerSessionRoutes(router: Router, deps: RouteDeps): void {
       });
     }
 
-    let parsed: { agent?: string; agentSessionId?: string; cwd?: string };
+    let parsed: { agent?: string; agentSessionId?: string; cwd?: string; channel?: string };
     try {
       parsed = JSON.parse(body);
     } catch {
@@ -27,7 +27,7 @@ export function registerSessionRoutes(router: Router, deps: RouteDeps): void {
       });
     }
 
-    const { agent, agentSessionId, cwd } = parsed;
+    const { agent, agentSessionId, cwd, channel } = parsed;
 
     if (!agent || !agentSessionId) {
       return deps.sendJson(res, 400, {
@@ -40,6 +40,7 @@ export function registerSessionRoutes(router: Router, deps: RouteDeps): void {
       agent,
       agentSessionId,
       cwd ?? process.cwd(),
+      channel,
     );
 
     if (result.ok) {

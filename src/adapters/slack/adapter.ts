@@ -194,25 +194,69 @@ export class SlackAdapter extends ChannelAdapter<OpenACPCore> {
 
   private async _createStartupSession(): Promise<void> {
     try {
-      const session = await this.core.handleNewSession("slack", undefined, undefined, { createThread: true });
-      if (!session.threadId) {
-        log.error({ sessionId: session.id }, "Startup session created without threadId");
-        return;
-      }
-      log.info({ sessionId: session.id, threadId: session.threadId }, "Slack startup session ready");
+      let reuseChannelId = this.slackConfig.startupChannelId;
 
-      // Notify the notification channel so the user knows which channel to use
-      if (this.slackConfig.notificationChannelId) {
+      // Try to reuse existing startup channel (Telegram ensureTopics pattern)
+      if (reuseChannelId) {
+        try {
+          const info = await this.queue.enqueue<{ channel: { is_archived: boolean } }>(
+            "conversations.info", { channel: reuseChannelId },
+          );
+          if (info.channel.is_archived) {
+            await this.queue.enqueue("conversations.unarchive", { channel: reuseChannelId });
+            log.info({ channelId: reuseChannelId }, "Unarchived startup channel for reuse");
+          }
+        } catch {
+          // Channel deleted or inaccessible — will create new
+          reuseChannelId = undefined;
+        }
+      }
+
+      if (reuseChannelId) {
+        // Reuse existing channel — create session pointing to it
+        let hasSession = false;
+        for (const m of this.sessions.values()) {
+          if (m.channelId === reuseChannelId) { hasSession = true; break; }
+        }
+        if (!hasSession) {
+          const session = await this.core.handleNewSession("slack", undefined, undefined, { createThread: false });
+          const slug = `startup-${session.id.slice(0, 8)}`;
+          this.sessions.set(session.id, { channelId: reuseChannelId, channelSlug: slug });
+          session.threadId = slug;
+          log.info({ sessionId: session.id, channelId: reuseChannelId }, "Reused startup channel");
+        }
+      } else {
+        // Create new channel + session
+        const session = await this.core.handleNewSession("slack", undefined, undefined, { createThread: true });
+        if (!session.threadId) {
+          log.error({ sessionId: session.id }, "Startup session created without threadId");
+          return;
+        }
+
+        // Persist channel ID to config for reuse on next restart
         const meta = this.sessions.get(session.id);
         if (meta) {
+          await this.core.configManager.save(
+            { channels: { slack: { startupChannelId: meta.channelId } } },
+          );
+          log.info({ sessionId: session.id, channelId: meta.channelId }, "Saved startup channel to config");
+        }
+      }
+
+      // Notify
+      if (this.slackConfig.notificationChannelId) {
+        const startupMeta = [...this.sessions.values()].find(m =>
+          m.channelId === (reuseChannelId ?? this.slackConfig.startupChannelId)
+        );
+        if (startupMeta) {
           await this.queue.enqueue("chat.postMessage", {
             channel: this.slackConfig.notificationChannelId,
-            text: `✅ OpenACP ready — chat with the agent in <#${meta.channelId}>`,
+            text: `✅ OpenACP ready — chat with the agent in <#${startupMeta.channelId}>`,
           });
         }
       }
     } catch (err) {
-      log.error({ err }, "Failed to create Slack startup session");
+      log.error({ err }, "Failed to create/reuse Slack startup session");
     }
   }
 

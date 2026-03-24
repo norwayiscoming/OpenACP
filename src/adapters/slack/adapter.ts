@@ -262,6 +262,12 @@ export class SlackAdapter extends ChannelAdapter<OpenACPCore> {
     if (!meta) return;
 
     try {
+      await this.permissionHandler.cleanupSession(meta.channelId);
+    } catch (err) {
+      log.warn({ err, sessionId }, "Failed to clean up permission buttons");
+    }
+
+    try {
       await this.channelManager.archiveChannel(meta.channelId);
       log.info({ sessionId, channelId: meta.channelId }, "Session channel archived");
     } catch (err) {
@@ -350,11 +356,15 @@ export class SlackAdapter extends ChannelAdapter<OpenACPCore> {
     const blocks = this.formatter.formatPermissionRequest(request);
 
     try {
-      await this.queue.enqueue("chat.postMessage", {
+      const result = await this.queue.enqueue("chat.postMessage", {
         channel: meta.channelId,
         text: `Permission request: ${request.description}`,
         blocks,
       });
+      const ts = (result as { ts?: string })?.ts;
+      if (ts) {
+        this.permissionHandler.trackPendingMessage(request.id, meta.channelId, ts);
+      }
     } catch (err) {
       log.error({ err, sessionId }, "Failed to post Slack permission request");
     }

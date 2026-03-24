@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { SlackPermissionHandler } from "./permission-handler.js";
+import type { ISlackSendQueue } from "./send-queue.js";
 
 function createMockApp() {
   let actionHandler: Function | undefined;
@@ -75,6 +76,23 @@ describe("SlackPermissionHandler", () => {
     expect(queue.enqueue).toHaveBeenCalledWith("chat.update", expect.objectContaining({
       channel: "C456",
       ts: "9876543210.654321",
+    }));
+  });
+
+  it("cleanupSession edits pending permission messages to remove buttons", async () => {
+    const mockQueue: ISlackSendQueue = {
+      enqueue: vi.fn().mockResolvedValue({ ts: "msg-ts-1" }),
+    };
+    const handler = new SlackPermissionHandler(mockQueue, vi.fn());
+
+    handler.trackPendingMessage("req-1", "C123", "msg-ts-1");
+
+    await handler.cleanupSession("C123");
+
+    expect(mockQueue.enqueue).toHaveBeenCalledWith("chat.update", expect.objectContaining({
+      channel: "C123",
+      ts: "msg-ts-1",
+      blocks: [],
     }));
   });
 

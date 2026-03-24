@@ -57,7 +57,7 @@ export class SlackTextBuffer {
           blocks: [{ type: "section", text: { type: "mrkdwn", text: chunk } }],
         });
         // Track last posted message for potential TTS block editing
-        this.lastMessageTs = (result as any).ts;
+        this.lastMessageTs = (result as { ts?: string } | undefined)?.ts;
         this.lastPostedText = chunk;
       }
     } finally {
@@ -76,10 +76,8 @@ export class SlackTextBuffer {
 
   /** Remove [TTS]...[/TTS] blocks — from buffer if unflushed, or edit posted message */
   async stripTtsBlock(): Promise<void> {
-    const ttsPattern = /\[TTS\][\s\S]*?\[\/TTS\]/g;
-
     // Case 1: TTS block still in unflushed buffer
-    if (ttsPattern.test(this.buffer)) {
+    if (/\[TTS\][\s\S]*?\[\/TTS\]/.test(this.buffer)) {
       this.buffer = this.buffer.replace(/\[TTS\][\s\S]*?\[\/TTS\]/g, "").replace(/\s{2,}/g, " ").trim();
       return;
     }

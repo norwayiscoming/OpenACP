@@ -320,10 +320,10 @@ export class ConfigManager extends EventEmitter {
     for (const [envVar, configPath] of overrides) {
       const value = process.env[envVar];
       if (value !== undefined) {
-        let target = raw as Record<string, any>;
+        let target: Record<string, unknown> = raw;
         for (let i = 0; i < configPath.length - 1; i++) {
           if (!target[configPath[i]]) target[configPath[i]] = {};
-          target = target[configPath[i]];
+          target = target[configPath[i]] as Record<string, unknown>;
         }
         const key = configPath[configPath.length - 1];
         // Convert numeric fields to number
@@ -369,35 +369,41 @@ export class ConfigManager extends EventEmitter {
     // Speech env var overrides
     if (process.env.OPENACP_SPEECH_STT_PROVIDER) {
       raw.speech = raw.speech || {};
-      const speech = raw.speech as Record<string, any>;
+      const speech = raw.speech as Record<string, unknown>;
       speech.stt = speech.stt || {};
-      speech.stt.provider = process.env.OPENACP_SPEECH_STT_PROVIDER;
+      (speech.stt as Record<string, unknown>).provider = process.env.OPENACP_SPEECH_STT_PROVIDER;
     }
     if (process.env.OPENACP_SPEECH_GROQ_API_KEY) {
       raw.speech = raw.speech || {};
-      const speech = raw.speech as Record<string, any>;
+      const speech = raw.speech as Record<string, unknown>;
       speech.stt = speech.stt || {};
-      speech.stt.providers = speech.stt.providers || {};
-      speech.stt.providers.groq = speech.stt.providers.groq || {};
-      speech.stt.providers.groq.apiKey =
+      const stt = speech.stt as Record<string, unknown>;
+      stt.providers = stt.providers || {};
+      const providers = stt.providers as Record<string, unknown>;
+      providers.groq = providers.groq || {};
+      (providers.groq as Record<string, unknown>).apiKey =
         process.env.OPENACP_SPEECH_GROQ_API_KEY;
     }
   }
 
   private deepMerge(
-    target: Record<string, any>,
-    source: Record<string, any>,
+    target: Record<string, unknown>,
+    source: Record<string, unknown>,
   ): void {
     for (const key of Object.keys(source)) {
+      const val = source[key];
       if (
-        source[key] &&
-        typeof source[key] === "object" &&
-        !Array.isArray(source[key])
+        val &&
+        typeof val === "object" &&
+        !Array.isArray(val)
       ) {
         if (!target[key]) target[key] = {};
-        this.deepMerge(target[key], source[key]);
+        this.deepMerge(
+          target[key] as Record<string, unknown>,
+          val as Record<string, unknown>,
+        );
       } else {
-        target[key] = source[key];
+        target[key] = val;
       }
     }
   }

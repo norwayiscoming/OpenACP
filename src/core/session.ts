@@ -218,13 +218,18 @@ export class Session extends TypedEmitter<SessionEvents> {
   private async autoName(): Promise<void> {
     let title = "";
 
-    // Intercept at the source — capture text before it reaches the emitter,
-    // so adapter listeners never see auto-name output.
-    const originalHandler = this.agentInstance.onSessionUpdate;
-    this.agentInstance.onSessionUpdate = (event: AgentEvent) => {
+    // Temporarily remove all agent_event listeners so auto-name output
+    // is not forwarded to the adapter. Add a capture-only listener instead.
+    const captureHandler = (event: AgentEvent) => {
       if (event.type === "text") title += event.content;
-      // Swallow all events from auto-name prompt
+      // Swallow all other events from auto-name prompt
     };
+
+    // Pause the session emitter so agent_event emissions from SessionBridge
+    // don't reach the adapter during auto-name. The AgentInstance emitter
+    // stays active — we just intercept with our capture handler.
+    this.pause((event) => event !== "agent_event");
+    this.agentInstance.on("agent_event", captureHandler);
 
     try {
       await this.agentInstance.prompt(
@@ -238,7 +243,10 @@ export class Session extends TypedEmitter<SessionEvents> {
     } catch {
       this.name = `Session ${this.id.slice(0, 6)}`;
     } finally {
-      this.agentInstance.onSessionUpdate = originalHandler;
+      this.agentInstance.off("agent_event", captureHandler);
+      // Discard buffered auto-name agent_events, then resume normal delivery
+      this.clearBuffer();
+      this.resume();
     }
   }
 

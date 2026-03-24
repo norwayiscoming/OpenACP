@@ -6,8 +6,7 @@ import {
 import type { ChatInputCommandInteraction, ButtonInteraction } from 'discord.js'
 import { log } from '../../../core/log.js'
 import type { InstallProgress } from '../../../core/types.js'
-
-// TODO: Replace `any` with DiscordAdapter once Task 12 is implemented
+import type { DiscordAdapter } from '../adapter.js'
 
 const AGENTS_PER_PAGE = 5
 
@@ -24,7 +23,7 @@ function truncate(text: string, maxLen: number): string {
 
 export async function handleAgents(
   interaction: ChatInputCommandInteraction,
-  adapter: any,
+  adapter: DiscordAdapter,
   page = 0,
 ): Promise<void> {
   await interaction.deferReply({ ephemeral: true })
@@ -34,7 +33,7 @@ export async function handleAgents(
 
 export async function showAgentsList(
   interaction: ButtonInteraction,
-  adapter: any,
+  adapter: DiscordAdapter,
   page = 0,
 ): Promise<void> {
   const { content, components } = buildAgentsContent(adapter, page)
@@ -42,7 +41,7 @@ export async function showAgentsList(
 }
 
 function buildAgentsContent(
-  adapter: any,
+  adapter: DiscordAdapter,
   page: number,
 ): { content: string; components: ActionRowBuilder<ButtonBuilder>[] } {
   const catalog = adapter.core.agentCatalog
@@ -130,7 +129,7 @@ function buildAgentsContent(
 
 export async function handleInstall(
   interaction: ChatInputCommandInteraction,
-  adapter: any,
+  adapter: DiscordAdapter,
 ): Promise<void> {
   await interaction.deferReply({ ephemeral: true })
 
@@ -140,7 +139,7 @@ export async function handleInstall(
 
 export async function handleAgentButton(
   interaction: ButtonInteraction,
-  adapter: any,
+  adapter: DiscordAdapter,
 ): Promise<void> {
   const { customId } = interaction
 
@@ -164,7 +163,7 @@ export async function handleAgentButton(
 
 async function installAgentWithProgress(
   interaction: ChatInputCommandInteraction | ButtonInteraction,
-  adapter: any,
+  adapter: DiscordAdapter,
   nameOrId: string,
 ): Promise<void> {
   const catalog = adapter.core.agentCatalog
@@ -180,7 +179,7 @@ async function installAgentWithProgress(
       lastEdit = now
       statusText = text
       try {
-        if ((interaction as any).deferred || (interaction as any).replied) {
+        if (interaction.deferred || interaction.replied) {
           await interaction.editReply(text)
         }
       } catch { /* rate limit or unchanged */ }
@@ -191,7 +190,7 @@ async function installAgentWithProgress(
 
   // Set initial message
   try {
-    if ((interaction as any).deferred || (interaction as any).replied) {
+    if (interaction.deferred || interaction.replied) {
       await interaction.editReply(statusText)
     }
   } catch { /* ignore */ }
@@ -211,7 +210,7 @@ async function installAgentWithProgress(
           .setStyle(ButtonStyle.Primary),
       )
       try {
-        if ((interaction as any).deferred || (interaction as any).replied) {
+        if (interaction.deferred || interaction.replied) {
           await interaction.editReply({
             content: `✅ **${name}** installed!`,
             components: [row],
@@ -221,7 +220,7 @@ async function installAgentWithProgress(
     },
     async onError(error) {
       try {
-        if ((interaction as any).deferred || (interaction as any).replied) {
+        if (interaction.deferred || interaction.replied) {
           await interaction.editReply(`❌ ${error}`)
         }
       } catch { /* ignore */ }

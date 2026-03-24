@@ -7,8 +7,7 @@ import type { ChatInputCommandInteraction, ButtonInteraction } from 'discord.js'
 import { DoctorEngine } from '../../../core/doctor/index.js'
 import type { DoctorReport, PendingFix } from '../../../core/doctor/types.js'
 import { log } from '../../../core/log.js'
-
-// TODO: Replace `any` with DiscordAdapter once Task 12 is implemented
+import type { DiscordAdapter } from '../adapter.js'
 
 // In-memory store of pending fixes keyed by "guildId:channelId:messageId"
 const pendingFixesStore = new Map<string, PendingFix[]>()
@@ -52,7 +51,7 @@ function renderReport(report: DoctorReport): {
 
 export async function handleDoctor(
   interaction: ChatInputCommandInteraction,
-  _adapter: any,
+  _adapter: DiscordAdapter,
 ): Promise<void> {
   await interaction.deferReply({ ephemeral: true })
 
@@ -78,7 +77,7 @@ export async function handleDoctor(
 
 export async function runDoctorInline(
   interaction: ButtonInteraction,
-  _adapter: any,
+  _adapter: DiscordAdapter,
 ): Promise<void> {
   try {
     const engine = new DoctorEngine()
@@ -102,7 +101,7 @@ export async function runDoctorInline(
 
 export async function handleDoctorButton(
   interaction: ButtonInteraction,
-  _adapter: any,
+  _adapter: DiscordAdapter,
 ): Promise<void> {
   const { customId } = interaction
 

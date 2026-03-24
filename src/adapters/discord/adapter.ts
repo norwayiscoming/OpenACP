@@ -4,6 +4,7 @@ import type { OutgoingMessage, PermissionRequest, NotificationMessage, AgentComm
 import type { OpenACPCore } from '../../core/core.js'
 import type { Session } from '../../core/session.js'
 import { log } from '../../core/log.js'
+import { dispatchMessage, type MessageHandlers } from '../shared/message-dispatcher.js'
 import type { DiscordChannelConfig } from './types.js'
 import { DiscordSendQueue } from './send-queue.js'
 import { ToolCallTracker } from './tool-call-tracker.js'
@@ -31,6 +32,12 @@ import {
 import type { Attachment } from '../../core/types.js'
 import type { FileService } from '../../core/file-service.js'
 import { buildFallbackText, downloadDiscordAttachment, isAttachmentTooLarge } from './media.js'
+
+interface DiscordMessageCtx {
+  sessionId: string
+  thread: ThreadChannel
+  isAssistant: boolean
+}
 
 export class DiscordAdapter extends ChannelAdapter<OpenACPCore> {
   private client: Client
@@ -391,6 +398,152 @@ export class DiscordAdapter extends ChannelAdapter<OpenACPCore> {
     }
   }
 
+  // ─── Helper: get or create activity tracker ──────────────────────────────
+
+  private getOrCreateTracker(sessionId: string, thread: ThreadChannel): ActivityTracker {
+    if (!this.sessionTrackers.has(sessionId)) {
+      this.sessionTrackers.set(sessionId, new ActivityTracker(thread, this.sendQueue))
+    }
+    return this.sessionTrackers.get(sessionId)!
+  }
+
+  // --- MessageHandlers for dispatchMessage ---
+
+  private messageHandlers: MessageHandlers<DiscordMessageCtx> = {
+    onThought: async (ctx, _content) => {
+      const tracker = this.getOrCreateTracker(ctx.sessionId, ctx.thread)
+      await tracker.onThought()
+    },
+
+    onText: async (ctx, content) => {
+      const tracker = this.getOrCreateTracker(ctx.sessionId, ctx.thread)
+      await tracker.onTextStart()
+      const draft = this.draftManager.getOrCreate(ctx.sessionId, ctx.thread)
+      draft.append(content.text)
+      this.draftManager.appendText(ctx.sessionId, content.text)
+    },
+
+    onToolCall: async (ctx, content) => {
+      const tracker = this.getOrCreateTracker(ctx.sessionId, ctx.thread)
+      await tracker.onToolCall()
+      await this.draftManager.finalize(ctx.sessionId, ctx.thread, ctx.isAssistant)
+      const meta = content.metadata ?? {}
+      await this.toolTracker.trackNewCall(ctx.sessionId, ctx.thread, {
+        id: String(meta.id ?? ''),
+        name: content.text || String(meta.name ?? 'Tool'),
+        kind: meta.kind as string | undefined,
+        status: String(meta.status ?? 'running'),
+        content: meta.content,
+        viewerLinks: meta.viewerLinks as { file?: string; diff?: string } | undefined,
+        viewerFilePath: meta.viewerFilePath as string | undefined,
+      })
+    },
+
+    onToolUpdate: async (ctx, content) => {
+      const meta = content.metadata ?? {}
+      await this.toolTracker.updateCall(ctx.sessionId, {
+        id: String(meta.id ?? ''),
+        name: content.text || String(meta.name ?? ''),
+        kind: meta.kind as string | undefined,
+        status: String(meta.status ?? 'completed'),
+        content: meta.content,
+        viewerLinks: meta.viewerLinks as { file?: string; diff?: string } | undefined,
+        viewerFilePath: meta.viewerFilePath as string | undefined,
+      })
+    },
+
+    onPlan: async (ctx, content) => {
+      const entries = (content.metadata?.entries ?? []) as PlanEntry[]
+      const tracker = this.getOrCreateTracker(ctx.sessionId, ctx.thread)
+      await tracker.onPlan(entries)
+    },
+
+    onUsage: async (ctx, content) => {
+      await this.draftManager.finalize(ctx.sessionId, ctx.thread, ctx.isAssistant)
+      const meta = content.metadata ?? {}
+      const tracker = this.getOrCreateTracker(ctx.sessionId, ctx.thread)
+      await tracker.sendUsage({
+        tokensUsed: meta.tokensUsed as number | undefined,
+        contextSize: meta.contextSize as number | undefined,
+      })
+      // Send usage notification to notification channel
+      try {
+        const deepLink = buildDeepLink(this.guild.id, ctx.thread.id)
+        await this.sendNotification({
+          sessionId: ctx.sessionId,
+          type: 'completed',
+          summary: content.text || 'Session completed',
+          deepLink,
+        })
+      } catch { /* best effort */ }
+    },
+
+    onSessionEnd: async (ctx, _content) => {
+      await this.draftManager.finalize(ctx.sessionId, ctx.thread, ctx.isAssistant)
+      const tracker = this.getOrCreateTracker(ctx.sessionId, ctx.thread)
+      await tracker.cleanup()
+      this.toolTracker.cleanup(ctx.sessionId)
+      this.sessionTrackers.delete(ctx.sessionId)
+      await this.skillManager.cleanup(ctx.sessionId)
+      try {
+        await this.sendQueue.enqueue(
+          () => ctx.thread.send({ content: '✅ Done' }),
+          { type: 'other' },
+        )
+      } catch { /* best effort */ }
+    },
+
+    onError: async (ctx, content) => {
+      await this.draftManager.finalize(ctx.sessionId, ctx.thread, ctx.isAssistant)
+      const tracker = this.getOrCreateTracker(ctx.sessionId, ctx.thread)
+      await tracker.cleanup()
+      this.toolTracker.cleanup(ctx.sessionId)
+      this.sessionTrackers.delete(ctx.sessionId)
+      try {
+        await this.sendQueue.enqueue(
+          () => ctx.thread.send({ content: `❌ Error: ${content.text}` }),
+          { type: 'other' },
+        )
+      } catch { /* best effort */ }
+    },
+
+    onAttachment: async (ctx, content) => {
+      if (!content.attachment) return
+      const { attachment } = content
+      await this.draftManager.finalize(ctx.sessionId, ctx.thread, ctx.isAssistant)
+
+      // Discord free tier limit: 25MB
+      if (isAttachmentTooLarge(attachment.size)) {
+        log.warn({ sessionId: ctx.sessionId, fileName: attachment.fileName, size: attachment.size }, '[discord-media] File too large (>25MB)')
+        try {
+          await this.sendQueue.enqueue(
+            () => ctx.thread.send({ content: `⚠️ File too large to send (${Math.round(attachment.size / 1024 / 1024)}MB): ${attachment.fileName}` }),
+            { type: 'other' },
+          )
+        } catch { /* best effort */ }
+        return
+      }
+
+      try {
+        await this.sendQueue.enqueue(
+          () => ctx.thread.send({ files: [{ attachment: attachment.filePath, name: attachment.fileName }] }),
+          { type: 'other' },
+        )
+      } catch (err) {
+        log.error({ err, sessionId: ctx.sessionId, fileName: attachment.fileName }, '[discord-media] Failed to send attachment')
+      }
+    },
+
+    onSystemMessage: async (ctx, content) => {
+      try {
+        await this.sendQueue.enqueue(
+          () => ctx.thread.send({ content: content.text }),
+          { type: 'other' },
+        )
+      } catch { /* best effort */ }
+    },
+  }
+
   // ─── sendMessage ──────────────────────────────────────────────────────────
 
   async sendMessage(sessionId: string, content: OutgoingMessage): Promise<void> {
@@ -411,149 +564,8 @@ export class DiscordAdapter extends ChannelAdapter<OpenACPCore> {
     const isAssistant =
       this.assistantSession != null && sessionId === this.assistantSession.id
 
-    // Get or create activity tracker for this session
-    if (!this.sessionTrackers.has(sessionId)) {
-      this.sessionTrackers.set(sessionId, new ActivityTracker(thread, this.sendQueue))
-    }
-    const tracker = this.sessionTrackers.get(sessionId)!
-
-    switch (content.type) {
-      case 'thought': {
-        await tracker.onThought()
-        break
-      }
-
-      case 'text': {
-        await tracker.onTextStart()
-        const draft = this.draftManager.getOrCreate(sessionId, thread)
-        draft.append(content.text)
-        this.draftManager.appendText(sessionId, content.text)
-        break
-      }
-
-      case 'tool_call': {
-        await tracker.onToolCall()
-        await this.draftManager.finalize(sessionId, thread, isAssistant)
-        const meta = content.metadata ?? {}
-        await this.toolTracker.trackNewCall(sessionId, thread, {
-          id: String(meta.id ?? ''),
-          name: content.text || String(meta.name ?? 'Tool'),
-          kind: meta.kind as string | undefined,
-          status: String(meta.status ?? 'running'),
-          content: meta.content,
-          viewerLinks: meta.viewerLinks as { file?: string; diff?: string } | undefined,
-          viewerFilePath: meta.viewerFilePath as string | undefined,
-        })
-        break
-      }
-
-      case 'tool_update': {
-        const meta = content.metadata ?? {}
-        await this.toolTracker.updateCall(sessionId, {
-          id: String(meta.id ?? ''),
-          name: content.text || String(meta.name ?? ''),
-          kind: meta.kind as string | undefined,
-          status: String(meta.status ?? 'completed'),
-          content: meta.content,
-          viewerLinks: meta.viewerLinks as { file?: string; diff?: string } | undefined,
-          viewerFilePath: meta.viewerFilePath as string | undefined,
-        })
-        break
-      }
-
-      case 'plan': {
-        const entries = (content.metadata?.entries ?? []) as PlanEntry[]
-        await tracker.onPlan(entries)
-        break
-      }
-
-      case 'usage': {
-        await this.draftManager.finalize(sessionId, thread, isAssistant)
-        const meta = content.metadata ?? {}
-        await tracker.sendUsage({
-          tokensUsed: meta.tokensUsed as number | undefined,
-          contextSize: meta.contextSize as number | undefined,
-        })
-        // Send usage notification to notification channel
-        try {
-          const deepLink = buildDeepLink(this.guild.id, thread.id)
-          await this.sendNotification({
-            sessionId,
-            type: 'completed',
-            summary: content.text || 'Session completed',
-            deepLink,
-          })
-        } catch { /* best effort */ }
-        break
-      }
-
-      case 'session_end': {
-        await this.draftManager.finalize(sessionId, thread, isAssistant)
-        await tracker.cleanup()
-        this.toolTracker.cleanup(sessionId)
-        this.sessionTrackers.delete(sessionId)
-        await this.skillManager.cleanup(sessionId)
-        try {
-          await this.sendQueue.enqueue(
-            () => thread.send({ content: '✅ Done' }),
-            { type: 'other' },
-          )
-        } catch { /* best effort */ }
-        break
-      }
-
-      case 'error': {
-        await this.draftManager.finalize(sessionId, thread, isAssistant)
-        await tracker.cleanup()
-        this.toolTracker.cleanup(sessionId)
-        this.sessionTrackers.delete(sessionId)
-        try {
-          await this.sendQueue.enqueue(
-            () => thread.send({ content: `❌ Error: ${content.text}` }),
-            { type: 'other' },
-          )
-        } catch { /* best effort */ }
-        break
-      }
-
-      case 'attachment': {
-        if (!content.attachment) break
-        const { attachment } = content
-        await this.draftManager.finalize(sessionId, thread, isAssistant)
-
-        // Discord free tier limit: 25MB
-        if (isAttachmentTooLarge(attachment.size)) {
-          log.warn({ sessionId, fileName: attachment.fileName, size: attachment.size }, '[discord-media] File too large (>25MB)')
-          try {
-            await this.sendQueue.enqueue(
-              () => thread.send({ content: `⚠️ File too large to send (${Math.round(attachment.size / 1024 / 1024)}MB): ${attachment.fileName}` }),
-              { type: 'other' },
-            )
-          } catch { /* best effort */ }
-          break
-        }
-
-        try {
-          await this.sendQueue.enqueue(
-            () => thread.send({ files: [{ attachment: attachment.filePath, name: attachment.fileName }] }),
-            { type: 'other' },
-          )
-        } catch (err) {
-          log.error({ err, sessionId, fileName: attachment.fileName }, '[discord-media] Failed to send attachment')
-        }
-        break
-      }
-
-      case 'system_message': {
-        try {
-          await this.sendQueue.enqueue(
-            () => thread.send({ content: content.text }),
-            { type: 'other' },
-          )
-        } catch { /* best effort */ }
-        break
-      }
-    }
+    const ctx: DiscordMessageCtx = { sessionId, thread, isAssistant }
+    await dispatchMessage(this.messageHandlers, ctx, content)
   }
 
   // ─── sendPermissionRequest ────────────────────────────────────────────────
@@ -562,19 +574,6 @@ export class DiscordAdapter extends ChannelAdapter<OpenACPCore> {
     const session = this.core.sessionManager.getSession(sessionId)
     if (!session) {
       log.warn({ sessionId }, '[DiscordAdapter] sendPermissionRequest: session not found')
-      return
-    }
-
-    // Auto-approve if request is from openacp internals or dangerous mode is enabled
-    const autoApprove =
-      request.description.toLowerCase().includes('openacp') ||
-      session.dangerousMode
-
-    if (autoApprove) {
-      const allowOption = request.options.find((o) => o.isAllow)
-      if (allowOption && session.permissionGate.requestId === request.id) {
-        session.permissionGate.resolve(allowOption.id)
-      }
       return
     }
 

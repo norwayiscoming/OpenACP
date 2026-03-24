@@ -5,8 +5,7 @@ import {
 } from 'discord.js'
 import type { ChatInputCommandInteraction, ButtonInteraction } from 'discord.js'
 import { log } from '../../../core/log.js'
-
-// TODO: Replace `any` with DiscordAdapter once Task 12 is implemented
+import type { DiscordAdapter } from '../adapter.js'
 
 export function buildDangerousModeKeyboard(
   sessionId: string,
@@ -22,7 +21,7 @@ export function buildDangerousModeKeyboard(
 
 export async function handleDangerous(
   interaction: ChatInputCommandInteraction,
-  adapter: any,
+  adapter: DiscordAdapter,
 ): Promise<void> {
   await interaction.deferReply({ ephemeral: true })
 
@@ -60,7 +59,7 @@ export async function handleDangerous(
 
 export async function handleDangerousButton(
   interaction: ButtonInteraction,
-  adapter: any,
+  adapter: DiscordAdapter,
 ): Promise<void> {
   const sessionId = interaction.customId.slice(2) // strip 'd:'
   const session = adapter.core.sessionManager.getSession(sessionId)
@@ -111,7 +110,7 @@ export async function handleDangerousButton(
 
 export async function handleRestart(
   interaction: ChatInputCommandInteraction,
-  adapter: any,
+  adapter: DiscordAdapter,
 ): Promise<void> {
   await interaction.deferReply({ ephemeral: true })
 
@@ -127,7 +126,7 @@ export async function handleRestart(
 
 export async function handleUpdate(
   interaction: ChatInputCommandInteraction,
-  adapter: any,
+  adapter: DiscordAdapter,
 ): Promise<void> {
   await interaction.deferReply({ ephemeral: true })
   // Stub: not implemented yet

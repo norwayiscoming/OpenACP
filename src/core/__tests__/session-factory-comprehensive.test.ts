@@ -1,0 +1,439 @@
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { SessionFactory } from "../session-factory.js";
+import { Session } from "../session.js";
+import { TypedEmitter } from "../typed-emitter.js";
+import type { AgentEvent } from "../types.js";
+
+function mockAgentInstance(sessionId = "agent-sess-1") {
+  const emitter = new TypedEmitter<{
+    agent_event: (event: AgentEvent) => void;
+  }>();
+  return Object.assign(emitter, {
+    sessionId,
+    prompt: vi.fn().mockResolvedValue(undefined),
+    cancel: vi.fn().mockResolvedValue(undefined),
+    destroy: vi.fn().mockResolvedValue(undefined),
+    onPermissionRequest: vi.fn(),
+  }) as any;
+}
+
+function createMockAgentManager() {
+  return {
+    spawn: vi.fn().mockResolvedValue(mockAgentInstance()),
+    resume: vi.fn().mockResolvedValue(mockAgentInstance("resumed-agent-sess")),
+    getAgent: vi.fn().mockReturnValue({ name: "claude", command: "claude" }),
+    getAvailableAgents: vi.fn().mockReturnValue([]),
+  } as any;
+}
+
+function createMockSessionManager() {
+  return {
+    registerSession: vi.fn(),
+    patchRecord: vi.fn(),
+  } as any;
+}
+
+function createMockSpeechService() {
+  return {} as any;
+}
+
+function createMockEventBus() {
+  return {
+    emit: vi.fn(),
+  } as any;
+}
+
+describe("SessionFactory — Comprehensive Tests", () => {
+  let agentManager: ReturnType<typeof createMockAgentManager>;
+  let sessionManager: ReturnType<typeof createMockSessionManager>;
+  let speechService: any;
+  let eventBus: ReturnType<typeof createMockEventBus>;
+  let factory: SessionFactory;
+
+  beforeEach(() => {
+    agentManager = createMockAgentManager();
+    sessionManager = createMockSessionManager();
+    speechService = createMockSpeechService();
+    eventBus = createMockEventBus();
+    factory = new SessionFactory(
+      agentManager,
+      sessionManager,
+      speechService,
+      eventBus,
+    );
+  });
+
+  describe("create()", () => {
+    it("spawns agent when no resumeAgentSessionId", async () => {
+      const session = await factory.create({
+        channelId: "telegram",
+        agentName: "claude",
+        workingDirectory: "/workspace",
+      });
+
+      expect(agentManager.spawn).toHaveBeenCalledWith("claude", "/workspace");
+      expect(agentManager.resume).not.toHaveBeenCalled();
+      expect(session).toBeInstanceOf(Session);
+    });
+
+    it("resumes agent when resumeAgentSessionId provided", async () => {
+      const session = await factory.create({
+        channelId: "telegram",
+        agentName: "claude",
+        workingDirectory: "/workspace",
+        resumeAgentSessionId: "old-agent-sess",
+      });
+
+      expect(agentManager.resume).toHaveBeenCalledWith(
+        "claude",
+        "/workspace",
+        "old-agent-sess",
+      );
+      expect(agentManager.spawn).not.toHaveBeenCalled();
+    });
+
+    it("uses existingSessionId when provided", async () => {
+      const session = await factory.create({
+        channelId: "telegram",
+        agentName: "claude",
+        workingDirectory: "/workspace",
+        existingSessionId: "my-custom-id",
+      });
+
+      expect(session.id).toBe("my-custom-id");
+    });
+
+    it("generates new id when no existingSessionId", async () => {
+      const session = await factory.create({
+        channelId: "telegram",
+        agentName: "claude",
+        workingDirectory: "/workspace",
+      });
+
+      expect(session.id).toBeTruthy();
+      expect(session.id.length).toBeGreaterThan(0);
+    });
+
+    it("sets initialName when provided", async () => {
+      const session = await factory.create({
+        channelId: "telegram",
+        agentName: "claude",
+        workingDirectory: "/workspace",
+        initialName: "My Session",
+      });
+
+      expect(session.name).toBe("My Session");
+    });
+
+    it("does not set name when initialName not provided", async () => {
+      const session = await factory.create({
+        channelId: "telegram",
+        agentName: "claude",
+        workingDirectory: "/workspace",
+      });
+
+      expect(session.name).toBeUndefined();
+    });
+
+    it("registers session in SessionManager", async () => {
+      const session = await factory.create({
+        channelId: "telegram",
+        agentName: "claude",
+        workingDirectory: "/workspace",
+      });
+
+      expect(sessionManager.registerSession).toHaveBeenCalledWith(session);
+    });
+
+    it("emits session:created event", async () => {
+      const session = await factory.create({
+        channelId: "telegram",
+        agentName: "claude",
+        workingDirectory: "/workspace",
+      });
+
+      expect(eventBus.emit).toHaveBeenCalledWith("session:created", {
+        sessionId: session.id,
+        agent: "claude",
+        status: "initializing",
+      });
+    });
+
+    it("sets agentSessionId from agentInstance", async () => {
+      const session = await factory.create({
+        channelId: "telegram",
+        agentName: "claude",
+        workingDirectory: "/workspace",
+      });
+
+      expect(session.agentSessionId).toBe("agent-sess-1");
+    });
+
+    it("throws when spawn fails", async () => {
+      agentManager.spawn.mockRejectedValue(new Error("spawn failed"));
+
+      await expect(
+        factory.create({
+          channelId: "telegram",
+          agentName: "unknown-agent",
+          workingDirectory: "/workspace",
+        }),
+      ).rejects.toThrow("spawn failed");
+    });
+
+    it("throws when resume fails", async () => {
+      agentManager.resume.mockRejectedValue(new Error("resume failed"));
+
+      await expect(
+        factory.create({
+          channelId: "telegram",
+          agentName: "claude",
+          workingDirectory: "/workspace",
+          resumeAgentSessionId: "bad-id",
+        }),
+      ).rejects.toThrow("resume failed");
+    });
+  });
+
+  describe("wireSideEffects()", () => {
+    describe("usage tracking", () => {
+      it("records usage events to usageStore", async () => {
+        const session = await factory.create({
+          channelId: "telegram",
+          agentName: "claude",
+          workingDirectory: "/workspace",
+        });
+
+        const usageStore = { append: vi.fn() } as any;
+        const notificationManager = { notifyAll: vi.fn() } as any;
+
+        factory.wireSideEffects(session, {
+          usageStore,
+          notificationManager,
+        });
+
+        session.emit("agent_event", {
+          type: "usage",
+          tokensUsed: 1000,
+          contextSize: 5000,
+          cost: { amount: 0.05, currency: "USD" },
+        });
+
+        expect(usageStore.append).toHaveBeenCalledWith(
+          expect.objectContaining({
+            sessionId: session.id,
+            agentName: "claude",
+            tokensUsed: 1000,
+            contextSize: 5000,
+            cost: { amount: 0.05, currency: "USD" },
+          }),
+        );
+      });
+
+      it("ignores non-usage events", async () => {
+        const session = await factory.create({
+          channelId: "telegram",
+          agentName: "claude",
+          workingDirectory: "/workspace",
+        });
+
+        const usageStore = { append: vi.fn() } as any;
+        const notificationManager = { notifyAll: vi.fn() } as any;
+
+        factory.wireSideEffects(session, {
+          usageStore,
+          notificationManager,
+        });
+
+        session.emit("agent_event", { type: "text", content: "hello" });
+        session.emit("agent_event", { type: "thought", content: "thinking" });
+
+        expect(usageStore.append).not.toHaveBeenCalled();
+      });
+
+      it("skips usage tracking when usageStore is null", async () => {
+        const session = await factory.create({
+          channelId: "telegram",
+          agentName: "claude",
+          workingDirectory: "/workspace",
+        });
+
+        const notificationManager = { notifyAll: vi.fn() } as any;
+
+        // Should not throw
+        expect(() =>
+          factory.wireSideEffects(session, {
+            usageStore: null,
+            notificationManager,
+          }),
+        ).not.toThrow();
+
+        // Emitting usage event should not cause error
+        session.emit("agent_event", { type: "usage", tokensUsed: 100 });
+      });
+    });
+
+    describe("budget warnings", () => {
+      it("sends budget warning notification when budget check returns message", async () => {
+        const session = await factory.create({
+          channelId: "telegram",
+          agentName: "claude",
+          workingDirectory: "/workspace",
+        });
+
+        const usageStore = { append: vi.fn() } as any;
+        const usageBudget = {
+          check: vi.fn().mockReturnValue({
+            status: "warning",
+            message: "Budget warning: 85%",
+          }),
+        } as any;
+        const notificationManager = {
+          notifyAll: vi.fn().mockResolvedValue(undefined),
+        } as any;
+
+        factory.wireSideEffects(session, {
+          usageStore,
+          usageBudget,
+          notificationManager,
+        });
+
+        session.emit("agent_event", { type: "usage", tokensUsed: 100 });
+
+        expect(usageBudget.check).toHaveBeenCalled();
+        expect(notificationManager.notifyAll).toHaveBeenCalledWith(
+          expect.objectContaining({
+            type: "budget_warning",
+            summary: "Budget warning: 85%",
+          }),
+        );
+      });
+
+      it("does not send notification when budget check returns no message", async () => {
+        const session = await factory.create({
+          channelId: "telegram",
+          agentName: "claude",
+          workingDirectory: "/workspace",
+        });
+
+        const usageStore = { append: vi.fn() } as any;
+        const usageBudget = {
+          check: vi.fn().mockReturnValue({ status: "ok" }),
+        } as any;
+        const notificationManager = { notifyAll: vi.fn() } as any;
+
+        factory.wireSideEffects(session, {
+          usageStore,
+          usageBudget,
+          notificationManager,
+        });
+
+        session.emit("agent_event", { type: "usage", tokensUsed: 100 });
+
+        expect(notificationManager.notifyAll).not.toHaveBeenCalled();
+      });
+    });
+
+    describe("tunnel cleanup on session end", () => {
+      it("stops tunnels when session finishes", async () => {
+        const session = await factory.create({
+          channelId: "telegram",
+          agentName: "claude",
+          workingDirectory: "/workspace",
+        });
+
+        const tunnelService = {
+          stopBySession: vi.fn().mockResolvedValue([
+            { port: 3000, label: "dev server" },
+          ]),
+        } as any;
+        const notificationManager = {
+          notifyAll: vi.fn().mockResolvedValue(undefined),
+        } as any;
+
+        factory.wireSideEffects(session, {
+          notificationManager,
+          tunnelService,
+        });
+
+        session.activate();
+        session.finish("done");
+
+        // Wait for async
+        await new Promise((r) => setTimeout(r, 50));
+
+        expect(tunnelService.stopBySession).toHaveBeenCalledWith(session.id);
+        expect(notificationManager.notifyAll).toHaveBeenCalledWith(
+          expect.objectContaining({
+            summary: expect.stringContaining("port 3000"),
+          }),
+        );
+      });
+
+      it("stops tunnels when session is cancelled", async () => {
+        const session = await factory.create({
+          channelId: "telegram",
+          agentName: "claude",
+          workingDirectory: "/workspace",
+        });
+
+        const tunnelService = {
+          stopBySession: vi.fn().mockResolvedValue([]),
+        } as any;
+        const notificationManager = { notifyAll: vi.fn() } as any;
+
+        factory.wireSideEffects(session, {
+          notificationManager,
+          tunnelService,
+        });
+
+        session.activate();
+        session.markCancelled();
+
+        await new Promise((r) => setTimeout(r, 50));
+
+        expect(tunnelService.stopBySession).toHaveBeenCalledWith(session.id);
+      });
+
+      it("does not stop tunnels on error (recoverable)", async () => {
+        const session = await factory.create({
+          channelId: "telegram",
+          agentName: "claude",
+          workingDirectory: "/workspace",
+        });
+
+        const tunnelService = { stopBySession: vi.fn() } as any;
+        const notificationManager = { notifyAll: vi.fn() } as any;
+
+        factory.wireSideEffects(session, {
+          notificationManager,
+          tunnelService,
+        });
+
+        session.fail("oops");
+
+        await new Promise((r) => setTimeout(r, 50));
+
+        expect(tunnelService.stopBySession).not.toHaveBeenCalled();
+      });
+
+      it("handles missing tunnelService gracefully", async () => {
+        const session = await factory.create({
+          channelId: "telegram",
+          agentName: "claude",
+          workingDirectory: "/workspace",
+        });
+
+        const notificationManager = { notifyAll: vi.fn() } as any;
+
+        factory.wireSideEffects(session, {
+          notificationManager,
+        });
+
+        session.activate();
+        // Should not throw
+        session.finish("done");
+      });
+    });
+  });
+});

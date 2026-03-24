@@ -493,7 +493,8 @@ Shows the version of the currently running daemon process.
       const res = await apiCall(port, `/api/topics/${encodeURIComponent(sessionId)}${query}`, { method: 'DELETE' })
       const data = await res.json() as Record<string, unknown>
       if (res.status === 409) {
-        console.error(`Session "${sessionId}" is active (${(data.session as any)?.status}). Use --force to delete.`)
+        const session = data.session as Record<string, unknown> | undefined
+        console.error(`Session "${sessionId}" is active (${session?.status}). Use --force to delete.`)
         process.exit(1)
       }
       if (!res.ok) {
@@ -674,7 +675,7 @@ Shows the version of the currently running daemon process.
       const res = await apiCall(port, '/api/adapters')
       const data = await res.json() as { adapters: Array<{ name: string; type: string }> }
       if (!res.ok) {
-        console.error(`Error: ${(data as any).error}`)
+        console.error(`Error: ${(data as Record<string, unknown>).error}`)
         process.exit(1)
       }
       console.log('Registered adapters:')
@@ -737,7 +738,7 @@ Shows the version of the currently running daemon process.
       process.exit(1)
     }
   } catch (err) {
-    if (err instanceof TypeError && (err as any).cause?.code === 'ECONNREFUSED') {
+    if (err instanceof TypeError && (err.cause as Record<string, unknown> | undefined)?.code === 'ECONNREFUSED') {
       console.error('OpenACP is not running (stale port file)')
       removeStalePortFile()
       process.exit(1)

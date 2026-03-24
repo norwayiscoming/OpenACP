@@ -713,7 +713,8 @@ export async function runSetup(configManager: ConfigManager): Promise<boolean> {
 
     const channels: Config["channels"] = {};
     if (telegram) channels.telegram = telegram;
-    if (discord) channels.discord = discord as unknown as Config["channels"][string];
+    // DiscordChannelConfig is structurally compatible with the base channel schema
+    if (discord) channels.discord = discord as Config["channels"][string];
 
     const config: Config = {
       channels,

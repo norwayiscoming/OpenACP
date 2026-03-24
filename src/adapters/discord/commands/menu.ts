@@ -5,8 +5,7 @@ import {
 } from 'discord.js'
 import type { ChatInputCommandInteraction, ButtonInteraction } from 'discord.js'
 import { log } from '../../../core/log.js'
-
-// TODO: Replace `any` with DiscordAdapter once Task 12 is implemented
+import type { DiscordAdapter } from '../adapter.js'
 
 export function buildMenuKeyboard(): ActionRowBuilder<ButtonBuilder>[] {
   const row1 = new ActionRowBuilder<ButtonBuilder>().addComponents(
@@ -30,7 +29,7 @@ export function buildMenuKeyboard(): ActionRowBuilder<ButtonBuilder>[] {
 
 export async function handleMenu(
   interaction: ChatInputCommandInteraction,
-  _adapter: any,
+  _adapter: DiscordAdapter,
 ): Promise<void> {
   await interaction.reply({
     content: '**OpenACP Menu**\nChoose an action:',
@@ -41,7 +40,7 @@ export async function handleMenu(
 
 export async function handleHelp(
   interaction: ChatInputCommandInteraction,
-  _adapter: any,
+  _adapter: DiscordAdapter,
 ): Promise<void> {
   await interaction.reply({
     content:
@@ -75,17 +74,17 @@ export async function handleHelp(
 
 export async function handleClear(
   interaction: ChatInputCommandInteraction,
-  adapter: any,
+  adapter: DiscordAdapter,
 ): Promise<void> {
   await interaction.deferReply({ ephemeral: true })
 
-  if (!adapter.assistant) {
+  if (!adapter.getAssistantSessionId()) {
     await interaction.editReply('⚠️ Assistant is not available.')
     return
   }
 
   try {
-    await adapter.assistant.respawn()
+    await adapter.respawnAssistant()
     await interaction.editReply('✅ Assistant history cleared.')
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
@@ -95,7 +94,7 @@ export async function handleClear(
 
 export async function handleMenuButton(
   interaction: ButtonInteraction,
-  adapter: any,
+  adapter: DiscordAdapter,
 ): Promise<void> {
   const { customId } = interaction
 
@@ -172,7 +171,7 @@ export async function handleMenuButton(
   }
 }
 
-async function showGlobalStatus(interaction: ButtonInteraction, adapter: any): Promise<void> {
+async function showGlobalStatus(interaction: ButtonInteraction, adapter: DiscordAdapter): Promise<void> {
   const sessions = adapter.core.sessionManager.listSessions('discord')
   const active = sessions.filter((s: any) => s.status === 'active' || s.status === 'initializing')
   await interaction.followUp({
@@ -184,7 +183,7 @@ async function showGlobalStatus(interaction: ButtonInteraction, adapter: any): P
   })
 }
 
-async function showSessionsList(interaction: ButtonInteraction, adapter: any): Promise<void> {
+async function showSessionsList(interaction: ButtonInteraction, adapter: DiscordAdapter): Promise<void> {
   const allRecords = adapter.core.sessionManager.listRecords()
   if (allRecords.length === 0) {
     await interaction.followUp({ content: 'No sessions found.', ephemeral: true })

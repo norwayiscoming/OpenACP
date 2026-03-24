@@ -1,7 +1,7 @@
 import type { ChatInputCommandInteraction, ButtonInteraction } from 'discord.js'
 import { log } from '../../../core/log.js'
+import type { DiscordAdapter } from '../adapter.js'
 
-// TODO: Replace `any` with DiscordAdapter once Task 12 is implemented
 import { handleNew, handleNewChat, handleNewSessionButton } from './new-session.js'
 import { handleCancel, handleStatus, handleSessions, handleHandoff, handleCleanupButton } from './session.js'
 import { handleDangerous, handleDangerousButton, handleRestart, handleUpdate } from './admin.js'
@@ -13,7 +13,7 @@ import { handleSettings, handleSettingsButton } from './settings.js'
 
 export async function handleSlashCommand(
   interaction: ChatInputCommandInteraction,
-  adapter: any, // TODO: replace with DiscordAdapter once Task 12 is complete
+  adapter: DiscordAdapter,
 ): Promise<void> {
   const { commandName } = interaction
 
@@ -91,7 +91,7 @@ export async function handleSlashCommand(
 
 export async function setupButtonCallbacks(
   interaction: ButtonInteraction,
-  adapter: any, // TODO: replace with DiscordAdapter once Task 12 is complete
+  adapter: DiscordAdapter,
 ): Promise<void> {
   const { customId } = interaction
 
@@ -187,7 +187,7 @@ export async function setupButtonCallbacks(
 // Helper: execute new session from button interaction
 async function executeNewSession(
   interaction: ButtonInteraction,
-  adapter: any,
+  adapter: DiscordAdapter,
   agentName?: string,
   workspace?: string,
 ): Promise<void> {
@@ -198,7 +198,7 @@ async function executeNewSession(
 // Helper: execute cancel session from button interaction
 async function executeCancelSession(
   interaction: ButtonInteraction,
-  adapter: any,
+  adapter: DiscordAdapter,
 ): Promise<void> {
   const { executeCancelSession: doCancel } = await import('./session.js')
   await doCancel(interaction, adapter)

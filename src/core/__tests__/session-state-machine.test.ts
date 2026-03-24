@@ -1,18 +1,19 @@
 import { describe, it, expect, vi } from "vitest";
 import { Session } from "../session.js";
 import type { AgentInstance } from "../agent-instance.js";
-import type { SessionStatus } from "../types.js";
+import type { AgentEvent, SessionStatus } from "../types.js";
+import { TypedEmitter } from "../typed-emitter.js";
 
 function createMockAgentInstance(): AgentInstance {
-  return {
+  const emitter = new TypedEmitter<{ agent_event: (event: AgentEvent) => void }>();
+  return Object.assign(emitter, {
     sessionId: "agent-session-1",
     agentName: "test-agent",
     prompt: vi.fn().mockResolvedValue({}),
     cancel: vi.fn().mockResolvedValue(undefined),
     destroy: vi.fn().mockResolvedValue(undefined),
-    onSessionUpdate: vi.fn(),
     onPermissionRequest: vi.fn(),
-  } as unknown as AgentInstance;
+  }) as unknown as AgentInstance;
 }
 
 function createSession(

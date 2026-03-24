@@ -5,6 +5,7 @@ import { OpenACPCore } from './core/core.js'
 import { loadAdapterFactory } from './core/plugin-manager.js'
 import { initLogger, shutdownLogger, cleanupOldSessionLogs, log } from './core/log.js'
 import { TelegramAdapter } from './adapters/telegram/index.js'
+import type { TelegramChannelConfig } from './adapters/telegram/index.js'
 import { ApiServer } from './core/api-server.js'
 import { TopicManager } from './core/topic-manager.js'
 
@@ -74,11 +75,12 @@ export async function startServer() {
     if (!channelConfig.enabled) continue
 
     if (channelName === 'telegram') {
-      core.registerAdapter('telegram', new TelegramAdapter(core, channelConfig as any))
+      core.registerAdapter('telegram', new TelegramAdapter(core, channelConfig as TelegramChannelConfig))
       log.info({ adapter: 'telegram' }, 'Adapter registered')
     } else if (channelName === 'discord') {
       const { DiscordAdapter } = await import('./adapters/discord/index.js')
-      core.registerAdapter('discord', new DiscordAdapter(core, channelConfig as any))
+      const discordConfig = channelConfig as import('./adapters/discord/types.js').DiscordChannelConfig
+      core.registerAdapter('discord', new DiscordAdapter(core, discordConfig))
       log.info({ adapter: 'discord' }, 'Adapter registered')
     } else if (channelConfig.adapter) {
       // Plugin adapter
@@ -188,7 +190,7 @@ export async function startServer() {
   const telegramAdapter = core.adapters.get('telegram') ?? null
   let topicManager: TopicManager | undefined
   if (telegramAdapter) {
-    const telegramCfg = updatedConfig.channels?.telegram as any
+    const telegramCfg = updatedConfig.channels?.telegram as TelegramChannelConfig | undefined
     topicManager = new TopicManager(
       core.sessionManager,
       telegramAdapter,

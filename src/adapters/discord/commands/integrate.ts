@@ -1,11 +1,10 @@
 import type { ChatInputCommandInteraction, ButtonInteraction } from 'discord.js'
 import { log } from '../../../core/log.js'
-
-// TODO: Replace `any` with DiscordAdapter once Task 12 is implemented
+import type { DiscordAdapter } from '../adapter.js'
 
 export async function handleIntegrate(
   interaction: ChatInputCommandInteraction,
-  _adapter: any,
+  _adapter: DiscordAdapter,
 ): Promise<void> {
   await interaction.deferReply({ ephemeral: true })
   // Stub: integration management not yet implemented for Discord
@@ -16,7 +15,7 @@ export async function handleIntegrate(
 
 export async function handleIntegrateButton(
   interaction: ButtonInteraction,
-  _adapter: any,
+  _adapter: DiscordAdapter,
 ): Promise<void> {
   // Stub: integration button callbacks not yet implemented for Discord
   log.debug({ customId: interaction.customId }, '[discord-integrate] Button stub called')

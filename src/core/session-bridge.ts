@@ -21,6 +21,7 @@ export interface BridgeDeps {
 export class SessionBridge {
   private connected = false;
   private agentEventHandler?: (event: AgentEvent) => void;
+  private sessionEventHandler?: (event: AgentEvent) => void;
   private statusChangeHandler?: (
     from: SessionStatus,
     to: SessionStatus,
@@ -48,7 +49,10 @@ export class SessionBridge {
     this.connected = false;
 
     if (this.agentEventHandler) {
-      this.session.off("agent_event", this.agentEventHandler);
+      this.session.agentInstance.off("agent_event", this.agentEventHandler);
+    }
+    if (this.sessionEventHandler) {
+      this.session.off("agent_event", this.sessionEventHandler);
     }
     if (this.statusChangeHandler) {
       this.session.off("status_change", this.statusChangeHandler);
@@ -58,14 +62,14 @@ export class SessionBridge {
     }
 
     // Reset agent callbacks to no-op
-    this.session.agentInstance.onSessionUpdate = () => {};
     this.session.agentInstance.onPermissionRequest = async () => "";
   }
 
   private wireAgentToSession(): void {
-    this.session.agentInstance.onSessionUpdate = (event: AgentEvent) => {
+    this.agentEventHandler = (event: AgentEvent) => {
       this.session.emit("agent_event", event);
     };
+    this.session.agentInstance.on("agent_event", this.agentEventHandler);
   }
 
   private wireSessionToAdapter(): void {
@@ -79,7 +83,7 @@ export class SessionBridge {
       },
     };
 
-    this.agentEventHandler = (event: AgentEvent) => {
+    this.sessionEventHandler = (event: AgentEvent) => {
       switch (event.type) {
         case "text":
         case "thought":
@@ -181,7 +185,7 @@ export class SessionBridge {
       });
     };
 
-    this.session.on("agent_event", this.agentEventHandler);
+    this.session.on("agent_event", this.sessionEventHandler);
   }
 
   private wirePermissions(): void {
@@ -193,6 +197,30 @@ export class SessionBridge {
         sessionId: this.session.id,
         permission: request,
       });
+
+      // Auto-approve openacp CLI commands
+      if (request.description.toLowerCase().includes("openacp")) {
+        const allowOption = request.options.find((o) => o.isAllow);
+        if (allowOption) {
+          log.info(
+            { sessionId: this.session.id, requestId: request.id },
+            "Auto-approving openacp command",
+          );
+          return allowOption.id;
+        }
+      }
+
+      // Dangerous mode: auto-approve all permissions
+      if (this.session.dangerousMode) {
+        const allowOption = request.options.find((o) => o.isAllow);
+        if (allowOption) {
+          log.info(
+            { sessionId: this.session.id, requestId: request.id, optionId: allowOption.id },
+            "Dangerous mode: auto-approving permission",
+          );
+          return allowOption.id;
+        }
+      }
 
       // Set pending BEFORE sending UI to avoid race condition
       const promise = this.session.permissionGate.setPending(request);

@@ -220,6 +220,10 @@ export class SlackAdapter extends ChannelAdapter<OpenACPCore> {
           const slug = `startup-${session.id.slice(0, 8)}`;
           this.sessions.set(session.id, { channelId: reuseChannelId, channelSlug: slug });
           session.threadId = slug;
+          // Persist slug to session store so session resume after restart can find it
+          await this.core.sessionManager.patchRecord(session.id, {
+            platform: { topicId: slug },
+          });
           log.info({ sessionId: session.id, channelId: reuseChannelId }, "Reused startup channel");
         }
       } else {

@@ -31,6 +31,9 @@
 | `src/core/core.ts`                         | **No change** |                                                    |
 | `src/core/session.ts`                      | **No change** |                                                    |
 | `src/core/channel.ts`                      | **No change** |                                                    |
+| `src/adapters/slack/__tests__/event-router.test.ts` | **New (R2)** | EventRouter unit tests              |
+| `src/adapters/slack/__tests__/permission-handler.test.ts` | **New (R2)** | PermissionHandler unit tests   |
+| `src/adapters/slack/__tests__/channel-manager.test.ts` | **New (R2)** | ChannelManager retry test        |
 
 
 ---
@@ -1863,3 +1866,654 @@ git diff origin/main -- src/core/core.ts
 ```
 
 Expected: Only the `Number(session.threadId)` → `session.threadId` change.
+
+---
+
+## Task 13: Fix code review issues — Review Round 2 (PR #42)
+
+Issues identified by @0xmrpeter in second review (2026-03-24). See spec section "Post-Implementation Issues — Review Round 2" for full context.
+
+**Files:**
+
+- Modify: `src/adapters/slack/event-router.ts`
+- Modify: `src/adapters/slack/utils.ts`
+- Modify: `src/adapters/slack/adapter.ts`
+- Modify: `src/adapters/slack/channel-manager.ts`
+- Modify: `src/core/config.ts`
+- Modify: `src/main.ts`
+- New: `src/adapters/slack/__tests__/event-router.test.ts`
+- New: `src/adapters/slack/__tests__/permission-handler.test.ts`
+
+---
+
+### Fix R2-1: Make `config` required in `SlackEventRouter`
+
+**File:** `src/adapters/slack/event-router.ts`
+
+- [ ] **Step 1: Change `config?` to `config` in constructor**
+
+In `event-router.ts`, line 28, change:
+
+```typescript
+private config?: SlackChannelConfig,
+```
+
+to:
+
+```typescript
+private config: SlackChannelConfig,
+```
+
+- [ ] **Step 2: Remove optional chaining in `isAllowedUser`**
+
+Change:
+
+```typescript
+const allowed = this.config?.allowedUserIds ?? [];
+```
+
+to:
+
+```typescript
+const allowed = this.config.allowedUserIds ?? [];
+```
+
+- [ ] **Step 3: Build**
+
+```bash
+pnpm build
+```
+
+Expected: Compiles — the adapter already passes `this.slackConfig` as last arg.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add src/adapters/slack/event-router.ts
+git commit -m "fix(slack): make config required in SlackEventRouter to prevent security bypass"
+```
+
+---
+
+### Fix R2-2: Fix `splitSafe` docstring
+
+**File:** `src/adapters/slack/utils.ts`
+
+- [ ] **Step 1: Update docstring**
+
+Change:
+
+```typescript
+/**
+ * Split text at `limit` boundary, never inside a fenced code block.
+ * Used by SlackFormatter and SlackTextBuffer to avoid exceeding Slack's
+ * 3000-char section limit.
+ */
+```
+
+to:
+
+```typescript
+/**
+ * Split text at nearest newline boundary before `limit`.
+ * Does NOT track code fence state — a triple-backtick block straddling
+ * the boundary will be split mid-block.
+ * Used by SlackFormatter and SlackTextBuffer to avoid exceeding Slack's
+ * 3000-char section limit.
+ */
+```
+
+- [ ] **Step 2: Commit**
+
+```bash
+git add src/adapters/slack/utils.ts
+git commit -m "fix(slack): correct splitSafe docstring — does not protect code blocks"
+```
+
+---
+
+### Fix R2-3: Document async permission flow in adapter.ts
+
+**File:** `src/adapters/slack/adapter.ts`
+
+- [ ] **Step 1: Add comment above `sendPermissionRequest`**
+
+Before the `sendPermissionRequest` method, add:
+
+```typescript
+  // NOTE: Async flow — different from Telegram adapter.
+  // Telegram: sendPermissionRequest awaits user response inline.
+  // Slack: posts interactive buttons and returns immediately.
+  // Resolution happens asynchronously via the Bolt action handler in
+  // SlackPermissionHandler, which calls the PermissionResponseCallback
+  // passed during construction. The callback iterates sessions to find
+  // the matching permissionGate and resolves it.
+```
+
+- [ ] **Step 2: Commit**
+
+```bash
+git add src/adapters/slack/adapter.ts
+git commit -m "docs(slack): document async permission flow difference from Telegram"
+```
+
+---
+
+### Fix R2-4: Make `_createStartupSession` configurable
+
+**Files:** `src/core/config.ts`, `src/adapters/slack/adapter.ts`
+
+- [ ] **Step 1: Add `autoCreateSession` to SlackChannelConfigSchema**
+
+In `src/core/config.ts`, find the `SlackChannelConfigSchema` and add:
+
+```typescript
+autoCreateSession: z.boolean().default(true),
+```
+
+After `channelPrefix`.
+
+- [ ] **Step 2: Guard `_createStartupSession` with config check**
+
+In `adapter.ts`, find `start()` where `_createStartupSession` is called:
+
+```typescript
+    // Create the startup session + channel
+    await this._createStartupSession();
+```
+
+Replace with:
+
+```typescript
+    // Create startup session + channel (configurable — set autoCreateSession: false to skip)
+    if (this.slackConfig.autoCreateSession !== false) {
+      await this._createStartupSession();
+    }
+```
+
+- [ ] **Step 3: Build**
+
+```bash
+pnpm build
+```
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add src/core/config.ts src/adapters/slack/adapter.ts
+git commit -m "feat(slack): make startup session creation configurable via autoCreateSession"
+```
+
+---
+
+### Fix R2-5: Fix `channelConfig as any` cast in main.ts
+
+**File:** `src/main.ts`
+
+- [ ] **Step 1: Replace `as any` with proper type**
+
+In `main.ts`, find:
+
+```typescript
+core.registerAdapter('slack', new SlackAdapter(core, channelConfig as any))
+```
+
+Replace with:
+
+```typescript
+core.registerAdapter('slack', new SlackAdapter(core, channelConfig as SlackChannelConfig))
+```
+
+Ensure `SlackChannelConfig` is imported. If it's not already, add to the imports at top:
+
+```typescript
+import type { SlackChannelConfig } from "./adapters/slack/types.js";
+```
+
+- [ ] **Step 2: Build**
+
+```bash
+pnpm build
+```
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add src/main.ts
+git commit -m "fix(slack): replace 'as any' with proper SlackChannelConfig type in main.ts"
+```
+
+---
+
+### Fix R2-6: Tighten auto-approve match in sendPermissionRequest
+
+**File:** `src/adapters/slack/adapter.ts`
+
+- [ ] **Step 1: Replace broad string match with specific check**
+
+In `adapter.ts`, find:
+
+```typescript
+    // Auto-approve openacp CLI commands
+    if (request.description.includes("openacp")) {
+```
+
+Replace with a more specific check. The auto-approve is meant for OpenACP's own internal commands (like openacp CLI subcommands). Use the command/tool metadata instead of description:
+
+```typescript
+    // Auto-approve openacp's own internal CLI commands (e.g., openacp install, openacp setup)
+    const toolName = (request as any).metadata?.name ?? "";
+    const isOpenacpInternal = toolName === "openacp" || toolName.startsWith("openacp ");
+    if (isOpenacpInternal) {
+```
+
+If `request.metadata` is not available, fallback to checking if the description starts with "Run `openacp " (prefix match, not substring):
+
+```typescript
+    // Auto-approve openacp's own internal CLI commands
+    const isOpenacpInternal =
+      request.description.startsWith("Run `openacp ") ||
+      request.description.startsWith("Execute `openacp ");
+    if (isOpenacpInternal) {
+```
+
+Verify which approach fits by checking the actual PermissionRequest shape from `core/types.ts`.
+
+- [ ] **Step 2: Build**
+
+```bash
+pnpm build
+```
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add src/adapters/slack/adapter.ts
+git commit -m "fix(slack): tighten auto-approve match to prevent unintended approvals"
+```
+
+---
+
+### Fix R2-7: Add `name_taken` retry in channel-manager.ts
+
+**File:** `src/adapters/slack/channel-manager.ts`
+
+- [ ] **Step 1: Add retry logic on `name_taken` error**
+
+In `channel-manager.ts`, wrap the `conversations.create` call with a try/catch:
+
+```typescript
+  async createChannel(sessionId: string, sessionName: string): Promise<SlackSessionMeta> {
+    let finalSlug = toSlug(sessionName, this.config.channelPrefix ?? "openacp");
+
+    let channelId: string;
+    try {
+      const res = await this.queue.enqueue<{ channel: { id: string } }>(
+        "conversations.create",
+        { name: finalSlug, is_private: true }
+      );
+      channelId = res.channel.id;
+    } catch (err: any) {
+      // Retry once with regenerated suffix on name collision
+      if (err?.data?.error === "name_taken") {
+        finalSlug = toSlug(sessionName, this.config.channelPrefix ?? "openacp");
+        const res = await this.queue.enqueue<{ channel: { id: string } }>(
+          "conversations.create",
+          { name: finalSlug, is_private: true }
+        );
+        channelId = res.channel.id;
+      } else {
+        throw err;
+      }
+    }
+
+    // Invite configured users
+    const userIds = this.config.allowedUserIds ?? [];
+    if (userIds.length > 0) {
+      await this.queue.enqueue("conversations.invite", {
+        channel: channelId,
+        users: userIds.join(","),
+      });
+    }
+
+    return { channelId, channelSlug: finalSlug };
+  }
+```
+
+Note: `toSlug()` generates a fresh nanoid suffix each call, so the retry slug will differ.
+
+- [ ] **Step 2: Build**
+
+```bash
+pnpm build
+```
+
+- [ ] **Step 3: Add test for name_taken retry**
+
+Create or update `src/adapters/slack/__tests__/channel-manager.test.ts`:
+
+```typescript
+// src/adapters/slack/__tests__/channel-manager.test.ts
+import { describe, it, expect, vi } from "vitest";
+import { SlackChannelManager } from "../channel-manager.js";
+
+function createConfig(overrides = {}) {
+  return {
+    enabled: true,
+    botToken: "xoxb-test",
+    appToken: "xapp-test",
+    signingSecret: "secret",
+    allowedUserIds: [],
+    channelPrefix: "openacp",
+    autoCreateSession: true,
+    ...overrides,
+  };
+}
+
+describe("SlackChannelManager", () => {
+  it("retries with new slug on name_taken error", async () => {
+    const mockQueue = {
+      enqueue: vi.fn()
+        .mockRejectedValueOnce({ data: { error: "name_taken" } })
+        .mockResolvedValueOnce({ channel: { id: "C_RETRY" } })
+        .mockResolvedValue({}),  // for invite
+    } as any;
+
+    const manager = new SlackChannelManager(mockQueue, createConfig() as any);
+    const result = await manager.createChannel("sess1", "test session");
+
+    expect(result.channelId).toBe("C_RETRY");
+    expect(mockQueue.enqueue).toHaveBeenCalledTimes(2); // create failed + create retry (no invite since allowedUserIds empty)
+  });
+
+  it("throws non-name_taken errors", async () => {
+    const mockQueue = {
+      enqueue: vi.fn().mockRejectedValue({ data: { error: "other_error" } }),
+    } as any;
+
+    const manager = new SlackChannelManager(mockQueue, createConfig() as any);
+    await expect(manager.createChannel("sess1", "test")).rejects.toEqual(
+      { data: { error: "other_error" } },
+    );
+  });
+});
+```
+
+- [ ] **Step 4: Run test**
+
+```bash
+pnpm test channel-manager
+```
+
+Expected: Both tests pass.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src/adapters/slack/channel-manager.ts src/adapters/slack/__tests__/channel-manager.test.ts
+git commit -m "fix(slack): add name_taken retry with regenerated suffix in channel creation"
+```
+
+---
+
+### Fix R2-8: Add tests for EventRouter and PermissionHandler
+
+**Files:** `src/adapters/slack/__tests__/event-router.test.ts`, `src/adapters/slack/__tests__/permission-handler.test.ts`
+
+- [ ] **Step 1: Create EventRouter test**
+
+```typescript
+// src/adapters/slack/__tests__/event-router.test.ts
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { SlackEventRouter } from "../event-router.js";
+
+function createMockApp() {
+  const handlers: Record<string, Function> = {};
+  const commands: Record<string, Function> = {};
+  return {
+    message: vi.fn((handler: Function) => { handlers.message = handler; }),
+    command: vi.fn((name: string, handler: Function) => { commands[name] = handler; }),
+    _trigger: (event: string, payload: any) => handlers[event]?.(payload),
+    _triggerCommand: (name: string, payload: any) => commands[name]?.(payload),
+    handlers,
+    commands,
+  };
+}
+
+function createConfig(overrides = {}) {
+  return {
+    enabled: true,
+    botToken: "xoxb-test",
+    appToken: "xapp-test",
+    signingSecret: "secret",
+    allowedUserIds: [],
+    channelPrefix: "openacp",
+    autoCreateSession: true,
+    ...overrides,
+  };
+}
+
+describe("SlackEventRouter", () => {
+  let sessionLookup: ReturnType<typeof vi.fn>;
+  let onIncoming: ReturnType<typeof vi.fn>;
+  let onNewSession: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    sessionLookup = vi.fn();
+    onIncoming = vi.fn();
+    onNewSession = vi.fn();
+  });
+
+  it("rejects messages from non-allowed users", async () => {
+    const config = createConfig({ allowedUserIds: ["U_ALLOWED"] });
+    const router = new SlackEventRouter(
+      sessionLookup, onIncoming, "BOT_ID", undefined, onNewSession, config,
+    );
+    const app = createMockApp();
+    router.register(app as any);
+
+    // Simulate message from unauthorized user
+    await app._trigger("message", {
+      message: {
+        channel: "C123",
+        user: "U_NOT_ALLOWED",
+        text: "hello",
+        channel_type: "group",
+      },
+    });
+
+    expect(onIncoming).not.toHaveBeenCalled();
+  });
+
+  it("allows messages when allowedUserIds is empty (open access)", async () => {
+    const config = createConfig({ allowedUserIds: [] });
+    const router = new SlackEventRouter(
+      sessionLookup, onIncoming, "BOT_ID", undefined, onNewSession, config,
+    );
+    const app = createMockApp();
+    router.register(app as any);
+
+    sessionLookup.mockReturnValue({ channelSlug: "test-session" });
+
+    await app._trigger("message", {
+      message: {
+        channel: "C123",
+        user: "U_ANYONE",
+        text: "hello",
+        channel_type: "group",
+      },
+    });
+
+    expect(onIncoming).toHaveBeenCalledWith("test-session", "hello", "U_ANYONE");
+  });
+
+  it("ignores bot messages", async () => {
+    const config = createConfig();
+    const router = new SlackEventRouter(
+      sessionLookup, onIncoming, "BOT_ID", undefined, onNewSession, config,
+    );
+    const app = createMockApp();
+    router.register(app as any);
+
+    await app._trigger("message", {
+      message: {
+        channel: "C123",
+        user: "BOT_ID",
+        text: "echo",
+        channel_type: "group",
+      },
+    });
+
+    expect(onIncoming).not.toHaveBeenCalled();
+  });
+
+  it("ignores messages with bot_id", async () => {
+    const config = createConfig();
+    const router = new SlackEventRouter(
+      sessionLookup, onIncoming, "BOT_ID", undefined, onNewSession, config,
+    );
+    const app = createMockApp();
+    router.register(app as any);
+
+    await app._trigger("message", {
+      message: {
+        channel: "C123",
+        user: "U_OTHER",
+        text: "hello",
+        bot_id: "B123",
+        channel_type: "group",
+      },
+    });
+
+    expect(onIncoming).not.toHaveBeenCalled();
+  });
+
+  it("rejects slash commands from non-allowed users", async () => {
+    const config = createConfig({ allowedUserIds: ["U_ALLOWED"] });
+    const router = new SlackEventRouter(
+      sessionLookup, onIncoming, "BOT_ID", undefined, onNewSession, config,
+    );
+    const app = createMockApp();
+    router.register(app as any);
+
+    const respond = vi.fn();
+    await app._triggerCommand("/openacp-new", {
+      ack: vi.fn(),
+      body: { user_id: "U_NOT_ALLOWED", channel_id: "C123" },
+      respond,
+    });
+
+    expect(respond).toHaveBeenCalledWith(
+      expect.objectContaining({ text: expect.stringContaining("not authorized") }),
+    );
+    // /openacp-new routes through onNewSession, not onIncoming — verify neither is called
+    expect(onNewSession).not.toHaveBeenCalled();
+    expect(onIncoming).not.toHaveBeenCalled();
+  });
+});
+```
+
+- [ ] **Step 2: Create PermissionHandler test**
+
+```typescript
+// src/adapters/slack/__tests__/permission-handler.test.ts
+import { describe, it, expect, vi } from "vitest";
+import { SlackPermissionHandler } from "../permission-handler.js";
+
+describe("SlackPermissionHandler", () => {
+  it("resolves callback when button is clicked", async () => {
+    const mockQueue = { enqueue: vi.fn().mockResolvedValue({}) } as any;
+    const onResponse = vi.fn();
+    const handler = new SlackPermissionHandler(mockQueue, onResponse);
+
+    // Register with mock app
+    let actionHandler: Function;
+    const mockApp = {
+      action: vi.fn((_pattern: any, handler: Function) => { actionHandler = handler; }),
+    };
+    handler.register(mockApp as any);
+
+    // Simulate button click
+    await actionHandler!({
+      action: { value: "req123:allow", text: { text: "Allow" } },
+      ack: vi.fn(),
+      body: { message: { blocks: [], ts: "123.456" }, channel: { id: "C123" } },
+      client: { chat: { update: vi.fn().mockResolvedValue({}) } },
+    });
+
+    expect(onResponse).toHaveBeenCalledWith("req123", "allow");
+  });
+
+  it("ignores unknown request IDs", async () => {
+    const mockQueue = { enqueue: vi.fn().mockResolvedValue({}) } as any;
+    const onResponse = vi.fn();
+    const handler = new SlackPermissionHandler(mockQueue, onResponse);
+
+    let actionHandler: Function;
+    const mockApp = {
+      action: vi.fn((_pattern: any, handler: Function) => { actionHandler = handler; }),
+    };
+    handler.register(mockApp as any);
+
+    // Click for a request that was never registered
+    await actionHandler!({
+      action: { value: "unknown:allow", text: { text: "Allow" } },
+      ack: vi.fn(),
+      body: {},
+      client: { chat: { update: vi.fn() } },
+    });
+
+    // Should not throw, just log warning
+    expect(onResponse).not.toHaveBeenCalled();
+  });
+});
+```
+
+- [ ] **Step 3: Run tests**
+
+```bash
+pnpm test event-router permission-handler
+```
+
+Expected: All tests pass.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add src/adapters/slack/__tests__/event-router.test.ts src/adapters/slack/__tests__/permission-handler.test.ts
+git commit -m "test(slack): add unit tests for EventRouter and PermissionHandler"
+```
+
+---
+
+### Final verification for Task 13
+
+- [ ] **Step 1: Full build**
+
+```bash
+pnpm build
+```
+
+Expected: Zero errors.
+
+- [ ] **Step 2: Full test suite**
+
+```bash
+pnpm test
+```
+
+Expected: All tests pass (new + existing).
+
+- [ ] **Step 3: Verify config backward compat**
+
+Ensure `autoCreateSession` has `.default(true)` — existing configs without this field should parse without error and keep the current behavior.
+
+```bash
+pnpm build && node -e "
+const { ConfigSchema } = require('./dist/core/config.js');
+const result = ConfigSchema.safeParse({ channels: { slack: { enabled: true, botToken: 'xoxb-test', appToken: 'xapp-test', signingSecret: 'x' } }, defaultAgent: 'test' });
+console.log('autoCreateSession:', result.data?.channels?.slack?.autoCreateSession);
+"
+```
+
+Expected: `autoCreateSession: true` (default applied).

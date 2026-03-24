@@ -469,6 +469,9 @@ const SlackChannelConfigSchema = z.object({
 
   // Channel naming prefix
   channelPrefix: z.string().default('openacp'),      // e.g. "openacp-fix-auth-bug-a3k9"
+
+  // Startup behavior
+  autoCreateSession: z.boolean().default(true),       // create a session channel on adapter start
 });
 ```
 
@@ -629,6 +632,62 @@ async flush(): Promise<void> {
 - **`splitSafe` duplicated:** Exists in both `formatter.ts` and `text-buffer.ts` — extract to a shared `utils.ts`
 - **Missing `index.ts` barrel export** — add to match Telegram adapter pattern
 - **Missing tests** for `markdownToMrkdwn` regex and `SlackTextBuffer` concurrent flush
+
+### Post-Implementation Issues — Review Round 2 (2026-03-24)
+
+Issues identified by @0xmrpeter after round 1 fixes were applied. PR #42 review ID: 3997306232.
+
+#### Issue R2-1: `config` param optional in `SlackEventRouter` — security footgun
+
+**Location:** `event-router.ts:28`
+**Problem:** `private config?: SlackChannelConfig` is optional. If caller forgets to pass it, `isAllowedUser()` silently allows everyone via `this.config?.allowedUserIds ?? []` fallback.
+**Fix:** Make `config` a required parameter (non-optional). The adapter always has config available — no valid reason for it to be optional.
+
+#### Issue R2-2: `splitSafe` docstring lies about code block protection
+
+**Location:** `utils.ts:7`
+**Problem:** Docstring says "never inside a fenced code block" but implementation only finds `lastIndexOf("\n")`. Code blocks straddling the 3000-char boundary will be split mid-block.
+**Fix:** Update docstring to be honest: "splits at nearest newline boundary" — tracking fence state is overkill for current use case.
+
+#### Issue R2-3: `sendPermissionRequest` async flow undocumented
+
+**Location:** `adapter.ts:256-298`
+**Problem:** Unlike Telegram adapter where `sendPermissionRequest` awaits the response, Slack posts buttons and returns immediately. Resolution happens async via Bolt action handler. Flow is correct but confusing without explanation.
+**Fix:** Add inline comment explaining the async flow difference from Telegram.
+
+#### Issue R2-4: `_createStartupSession` auto-creates on every restart
+
+**Location:** `adapter.ts:129-151`
+**Problem:** Every restart creates a new channel. Over time this accumulates abandoned channels. If `maxConcurrentSessions=1`, user is blocked from creating new sessions.
+**Fix:** Add `autoCreateSession: boolean` config option (default `true` for backward compat). When `false`, skip `_createStartupSession()`. Document the behavior.
+
+#### Issue R2-5: `channelConfig as any` type cast in main.ts
+
+**Location:** `main.ts:96`
+**Problem:** `channelConfig as any` bypasses type checking. Should use proper type.
+**Fix:** Change to `channelConfig as SlackChannelConfig` with proper import.
+
+#### Issue R2-6: Auto-approve `"openacp"` string match too broad
+
+**Location:** `adapter.ts:267`
+**Problem:** `request.description.includes("openacp")` matches any description containing the word "openacp" anywhere. Could auto-approve unintended requests.
+**Fix:** Check the tool/command name from metadata instead of matching against the description string. Use `request.metadata?.command?.startsWith("openacp")` or equivalent specific check.
+
+#### Issue R2-7: No retry on `name_taken` in channel-manager.ts
+
+**Location:** `channel-manager.ts:22-26`
+**Problem:** Spec mentions retry on `name_taken` but implementation doesn't have it. Simultaneous session starts with similar names will fail.
+**Fix:** Catch `name_taken` error, regenerate nanoid suffix, retry once.
+
+#### Issue R2-8: Missing tests for EventRouter and PermissionHandler
+
+**Location:** N/A
+**Problem:** Critical routing/security logic (allowedUserIds enforcement, bot message filtering, permission button routing) has no test coverage.
+**Fix:** Add unit tests for `SlackEventRouter` (allowedUser filtering, bot message rejection, session lookup routing) and `SlackPermissionHandler` (button click → resolve, unknown request handling).
+
+#### Minor — already addressed (no action needed)
+
+- **Issue R2-6 (reviewer):** `core.ts` adoptSession IIFE — already replaced with clean if/else branching in current code.
 
 ---
 

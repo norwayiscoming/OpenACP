@@ -4,7 +4,9 @@
 const SECTION_LIMIT = 3000;
 
 /**
- * Split text at `limit` boundary, never inside a fenced code block.
+ * Split text at nearest newline boundary before `limit`.
+ * Does NOT track code fence state — a triple-backtick block straddling
+ * the boundary will be split mid-block.
  * Used by SlackFormatter and SlackTextBuffer to avoid exceeding Slack's
  * 3000-char section limit.
  */

@@ -37,6 +37,7 @@
     "fastest-levenshtein": "^1.0.16",
     "grammy": "^1.41.1",
     "hono": "^4.12.8",
+    "msedge-tts": "^2.0.4",
     "nanoid": "^5.0.0",
     "node-wav": "^0.0.2",
     "ogg-opus-decoder": "^1.7.3",

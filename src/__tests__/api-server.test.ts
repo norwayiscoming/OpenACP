@@ -792,7 +792,7 @@ describe("ApiServer", () => {
       },
       speech: {
         stt: { provider: null, providers: {} },
-        tts: { provider: null, providers: {} },
+        tts: { provider: null, providers: { "edge-tts": { voice: "en-US-AriaNeural" } } },
       },
     };
     mockCore.configManager.get.mockReturnValue(fullConfig);

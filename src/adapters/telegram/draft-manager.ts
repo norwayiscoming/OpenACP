@@ -36,6 +36,10 @@ export class DraftManager {
     return this.drafts.has(sessionId);
   }
 
+  getDraft(sessionId: string): MessageDraft | undefined {
+    return this.drafts.get(sessionId);
+  }
+
   appendText(sessionId: string, text: string): void {
     this.textBuffers.set(
       sessionId,

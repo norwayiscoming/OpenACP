@@ -20,8 +20,8 @@ export class SpeechService {
   }
 
   isTTSAvailable(): boolean {
-    const { provider, providers } = this.config.tts;
-    return provider !== null && providers[provider]?.apiKey !== undefined;
+    const provider = this.config.tts.provider;
+    return provider !== null && this.ttsProviders.has(provider);
   }
 
   async transcribe(audioBuffer: Buffer, mimeType: string, options?: STTOptions): Promise<STTResult> {
@@ -38,8 +38,8 @@ export class SpeechService {
 
   async synthesize(text: string, options?: TTSOptions): Promise<TTSResult> {
     const providerName = this.config.tts.provider;
-    if (!providerName || !this.config.tts.providers[providerName]?.apiKey) {
-      throw new Error("TTS not configured. Set speech.tts.provider and API key in config.");
+    if (!providerName) {
+      throw new Error("TTS not configured. Set speech.tts.provider in config.");
     }
     const provider = this.ttsProviders.get(providerName);
     if (!provider) {

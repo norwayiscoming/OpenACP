@@ -31,7 +31,7 @@ export interface TTSProvider {
 }
 
 export interface SpeechProviderConfig {
-  apiKey: string;
+  apiKey?: string;
   model?: string;
   [key: string]: unknown;
 }

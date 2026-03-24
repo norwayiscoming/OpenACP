@@ -98,6 +98,34 @@ export const CONFIG_REGISTRY: ConfigFieldDef[] = [
     scope: 'sensitive',
     hotReload: true,
   },
+  {
+    path: 'speech.tts.provider',
+    displayName: 'Text to Speech',
+    group: 'speech',
+    type: 'select',
+    options: ['edge-tts'],
+    scope: 'safe',
+    hotReload: true,
+  },
+  {
+    path: 'speech.tts.providers.edge-tts.voice',
+    displayName: 'Edge TTS Voice',
+    group: 'speech',
+    type: 'select',
+    options: [
+      'en-US-AriaNeural', 'en-US-GuyNeural', 'en-US-JennyNeural',
+      'en-GB-SoniaNeural', 'en-AU-NatashaNeural',
+      'vi-VN-HoaiMyNeural', 'vi-VN-NamMinhNeural',
+      'zh-CN-XiaoxiaoNeural', 'zh-CN-YunxiNeural',
+      'ja-JP-NanamiNeural', 'ja-JP-KeitaNeural',
+      'ko-KR-SunHiNeural', 'ko-KR-InJoonNeural',
+      'es-ES-ElviraNeural', 'fr-FR-DeniseNeural',
+      'de-DE-KatjaNeural', 'pt-BR-FranciscaNeural',
+      'hi-IN-SwaraNeural', 'ar-SA-ZariyahNeural',
+    ],
+    scope: 'safe',
+    hotReload: true,
+  },
 ]
 
 export function getFieldDef(path: string): ConfigFieldDef | undefined {

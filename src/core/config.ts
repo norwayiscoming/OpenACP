@@ -74,7 +74,7 @@ export type UsageConfig = z.infer<typeof UsageSchema>;
 
 const SpeechProviderSchema = z
   .object({
-    apiKey: z.string().min(1),
+    apiKey: z.string().min(1).optional(),
     model: z.string().optional(),
   })
   .passthrough();

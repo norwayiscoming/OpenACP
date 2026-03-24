@@ -23,6 +23,7 @@ import {
   setupCommands,
   setupMenuCallbacks,
   setupDangerousModeCallbacks,
+  setupTTSCallbacks,
   setupIntegrateCallbacks,
   buildMenuKeyboard,
   handlePendingWorkspaceInput,
@@ -138,7 +139,12 @@ export class TelegramAdapter extends ChannelAdapter<OpenACPCore> {
   }
 
   async start(): Promise<void> {
-    this.bot = new Bot(this.telegramConfig.botToken, { client: { fetch: patchedFetch } });
+    this.bot = new Bot(this.telegramConfig.botToken, {
+      client: {
+        baseFetchConfig: { duplex: "half" } as RequestInit,
+        fetch: patchedFetch,
+      },
+    });
     this.fileService = this.core.fileService;
 
     // Initialize extracted managers
@@ -234,6 +240,7 @@ export class TelegramAdapter extends ChannelAdapter<OpenACPCore> {
 
     // Callback registration order matters!
     setupDangerousModeCallbacks(this.bot, this.core as OpenACPCore);
+    setupTTSCallbacks(this.bot, this.core as OpenACPCore);
     setupActionCallbacks(
       this.bot,
       this.core as OpenACPCore,
@@ -624,6 +631,11 @@ export class TelegramAdapter extends ChannelAdapter<OpenACPCore> {
               message_thread_id: ctx.threadId,
             }),
           );
+          // Strip [TTS]...[/TTS] block from the text message after voice is sent
+          const draft = this.draftManager.getDraft(ctx.sessionId);
+          if (draft) {
+            draft.stripPattern(/\[TTS\][\s\S]*?\[\/TTS\]/g).catch(() => {});
+          }
         } else {
           await this.sendQueue.enqueue(() =>
             this.bot.api.sendDocument(this.telegramConfig.chatId, inputFile, {

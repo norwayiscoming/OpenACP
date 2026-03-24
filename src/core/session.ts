@@ -9,6 +9,12 @@ import type { SpeechService } from "./speech/index.js";
 import * as fs from "node:fs";
 const moduleLog = createChildLogger({ module: "session" });
 
+// TTS constants
+export const TTS_PROMPT_INSTRUCTION = `\n\nAdditionally, include a [TTS]...[/TTS] block with a spoken-friendly summary of your response. Focus on key information, decisions the user needs to make, or actions required. The agent decides what to say and how long. Respond in the same language the user is using. This instruction applies to this message only.`;
+export const TTS_BLOCK_REGEX = /\[TTS\]([\s\S]*?)\[\/TTS\]/;
+export const TTS_MAX_LENGTH = 5000;
+export const TTS_TIMEOUT_MS = 30_000;
+
 // Valid state transitions: from → Set<to>
 const VALID_TRANSITIONS: Record<SessionStatus, Set<SessionStatus>> = {
   initializing: new Set(["active", "error"]),
@@ -38,6 +44,7 @@ export class Session extends TypedEmitter<SessionEvents> {
   private _status: SessionStatus = "initializing";
   name?: string;
   createdAt: Date = new Date();
+  voiceMode: "off" | "next" | "on" = "off";
   dangerousMode: boolean = false;
   archiving: boolean = false;
   log: Logger;
@@ -124,6 +131,13 @@ export class Session extends TypedEmitter<SessionEvents> {
     return this.queue.isProcessing;
   }
 
+  // --- Voice Mode ---
+
+  setVoiceMode(mode: "off" | "next" | "on"): void {
+    this.voiceMode = mode;
+    this.log.info({ voiceMode: mode }, "TTS mode changed");
+  }
+
   // --- Public API ---
 
   async enqueuePrompt(text: string, attachments?: Attachment[]): Promise<void> {
@@ -145,11 +159,52 @@ export class Session extends TypedEmitter<SessionEvents> {
     // STT: transcribe audio attachments if agent doesn't support audio
     const processed = await this.maybeTranscribeAudio(text, attachments);
 
-    await this.agentInstance.prompt(processed.text, processed.attachments);
+    // TTS: determine if TTS is active for this prompt
+    const ttsActive =
+      this.voiceMode !== "off" &&
+      !!this.speechService?.isTTSAvailable();
+
+    // TTS: inject prompt instruction
+    if (ttsActive) {
+      processed.text += TTS_PROMPT_INSTRUCTION;
+      if (this.voiceMode === "next") {
+        this.voiceMode = "off";
+      }
+    }
+
+    // TTS: set up text accumulator before prompting
+    let accumulatedText = "";
+    const accumulatorListener = ttsActive
+      ? (event: AgentEvent) => {
+          if (event.type === "text") {
+            accumulatedText += event.content;
+          }
+        }
+      : null;
+
+    if (accumulatorListener) {
+      this.on("agent_event", accumulatorListener);
+    }
+
+    try {
+      await this.agentInstance.prompt(processed.text, processed.attachments);
+    } finally {
+      if (accumulatorListener) {
+        this.off("agent_event", accumulatorListener);
+      }
+    }
+
     this.log.info(
       { durationMs: Date.now() - promptStart },
       "Prompt execution completed",
     );
+
+    // TTS: fire-and-forget post-response synthesis
+    if (ttsActive && accumulatedText) {
+      this.processTTSResponse(accumulatedText).catch((err) => {
+        this.log.warn({ err }, "TTS post-processing failed");
+      });
+    }
 
     if (!this.name) {
       await this.autoName();
@@ -212,6 +267,40 @@ export class Session extends TypedEmitter<SessionEvents> {
       text: transcribedText,
       attachments: remainingAttachments.length > 0 ? remainingAttachments : undefined,
     };
+  }
+
+  private async processTTSResponse(responseText: string): Promise<void> {
+    const match = TTS_BLOCK_REGEX.exec(responseText);
+    if (!match?.[1]) {
+      this.log.debug("No [TTS] block found in response, skipping synthesis");
+      return;
+    }
+
+    let ttsText = match[1].trim();
+    if (!ttsText) return;
+
+    if (ttsText.length > TTS_MAX_LENGTH) {
+      ttsText = ttsText.slice(0, TTS_MAX_LENGTH);
+    }
+
+    try {
+      const timeoutPromise = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("TTS synthesis timed out")), TTS_TIMEOUT_MS),
+      );
+      const result = await Promise.race([
+        this.speechService!.synthesize(ttsText),
+        timeoutPromise,
+      ]);
+      const base64 = result.audioBuffer.toString("base64");
+      this.emit("agent_event", {
+        type: "audio_content",
+        data: base64,
+        mimeType: result.mimeType,
+      });
+      this.log.info("TTS synthesis completed");
+    } catch (err) {
+      this.log.warn({ err }, "TTS synthesis failed, skipping");
+    }
   }
 
   // NOTE: This injects a summary prompt into the agent's conversation history.

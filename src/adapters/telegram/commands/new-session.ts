@@ -5,7 +5,7 @@ import type { Session } from "../../../core/session.js";
 import { escapeHtml } from "../formatting.js";
 import { createSessionTopic, renameSessionTopic, buildDeepLink } from "../topics.js";
 import { createChildLogger } from "../../../core/log.js";
-import { buildDangerousModeKeyboard } from "./admin.js";
+import { buildSessionControlKeyboard } from "./admin.js";
 import type { CommandsAssistantContext } from "../types.js";
 const log = createChildLogger({ module: "telegram-cmd-new-session" });
 
@@ -197,7 +197,7 @@ export async function createSessionDirect(
       {
         message_thread_id: threadId,
         parse_mode: "HTML",
-        reply_markup: buildDangerousModeKeyboard(session.id, false),
+        reply_markup: buildSessionControlKeyboard(session.id, false, false),
       },
     );
 
@@ -293,7 +293,7 @@ export async function handleNewChat(
       {
         message_thread_id: newThreadId,
         parse_mode: "HTML",
-        reply_markup: buildDangerousModeKeyboard(session.id, false),
+        reply_markup: buildSessionControlKeyboard(session.id, false, false),
       },
     );
 

@@ -9,7 +9,7 @@ function wantsHelp(args: string[]): boolean {
 export function printHelp(): void {
   console.log(`
 \x1b[1mOpenACP\x1b[0m — Self-hosted bridge for AI coding agents
-Connect Telegram (and more) to 28+ AI coding agents via ACP protocol.
+Connect messaging platforms (Telegram, Discord) to 28+ AI coding agents via ACP protocol.
 
 \x1b[1mGetting Started:\x1b[0m
   openacp                              First run launches setup wizard
@@ -45,7 +45,7 @@ Connect Telegram (and more) to 28+ AI coding agents via ACP protocol.
   openacp doctor --dry-run             Check only, don't fix
 
 \x1b[1mPlugins:\x1b[0m
-  openacp install <package>            Install adapter (e.g. @openacp/adapter-discord)
+  openacp install <package>            Install adapter plugin
   openacp uninstall <package>          Remove adapter
   openacp plugins                      List installed plugins
 
@@ -53,6 +53,12 @@ Connect Telegram (and more) to 28+ AI coding agents via ACP protocol.
   openacp integrate <agent>            Install handoff integration
   openacp integrate <agent> --uninstall
   openacp adopt <agent> <id>           Adopt an external session
+
+\x1b[1mTunnels:\x1b[0m
+  openacp tunnel add <port> [--label name]  Create tunnel to local port
+  openacp tunnel list                       List active tunnels
+  openacp tunnel stop <port>                Stop a tunnel
+  openacp tunnel stop-all                   Stop all user tunnels
 
 \x1b[1mDaemon API:\x1b[0m \x1b[2m(requires running daemon)\x1b[0m
   openacp api status                   Active sessions
@@ -487,7 +493,8 @@ Shows the version of the currently running daemon process.
       const res = await apiCall(port, `/api/topics/${encodeURIComponent(sessionId)}${query}`, { method: 'DELETE' })
       const data = await res.json() as Record<string, unknown>
       if (res.status === 409) {
-        console.error(`Session "${sessionId}" is active (${(data.session as any)?.status}). Use --force to delete.`)
+        const session = data.session as Record<string, unknown> | undefined
+        console.error(`Session "${sessionId}" is active (${session?.status}). Use --force to delete.`)
         process.exit(1)
       }
       if (!res.ok) {
@@ -668,7 +675,7 @@ Shows the version of the currently running daemon process.
       const res = await apiCall(port, '/api/adapters')
       const data = await res.json() as { adapters: Array<{ name: string; type: string }> }
       if (!res.ok) {
-        console.error(`Error: ${(data as any).error}`)
+        console.error(`Error: ${(data as Record<string, unknown>).error}`)
         process.exit(1)
       }
       console.log('Registered adapters:')
@@ -731,7 +738,7 @@ Shows the version of the currently running daemon process.
       process.exit(1)
     }
   } catch (err) {
-    if (err instanceof TypeError && (err as any).cause?.code === 'ECONNREFUSED') {
+    if (err instanceof TypeError && (err.cause as Record<string, unknown> | undefined)?.code === 'ECONNREFUSED') {
       console.error('OpenACP is not running (stale port file)')
       removeStalePortFile()
       process.exit(1)
@@ -790,7 +797,7 @@ Sends a stop signal to the running OpenACP daemon process.
     return
   }
   const { stopDaemon } = await import('../core/daemon.js')
-  const result = stopDaemon()
+  const result = await stopDaemon()
   if (result.stopped) {
     console.log(`OpenACP daemon stopped (was PID ${result.pid})`)
   } else {
@@ -1111,18 +1118,19 @@ as a Telegram topic. Requires a running daemon.
   }
 
   try {
-    const res = await fetch(`http://127.0.0.1:${port}/api/sessions/adopt`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
+    const { apiCall } = await import('../core/api-client.js')
+    const res = await apiCall(port, '/api/sessions/adopt', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ agent, agentSessionId: sessionId, cwd }),
-    });
+    })
     const data = await res.json() as Record<string, unknown>;
 
     if (data.ok) {
       if (data.status === "existing") {
-        console.log(`Session already on Telegram. Topic pinged.`);
+        console.log(`Session already active. Topic pinged.`);
       } else {
-        console.log(`Session transferred to Telegram.`);
+        console.log(`Session transferred to messaging platform.`);
       }
       console.log(`  Session ID: ${data.sessionId}`);
       console.log(`  Thread ID:  ${data.threadId}`);
@@ -1294,6 +1302,95 @@ Fixable issues can be auto-repaired when not using --dry-run.
 
   if (failed > 0) {
     process.exit(1);
+  }
+}
+
+export async function cmdTunnel(args: string[]): Promise<void> {
+  const subCmd = args[1]
+  const port = readApiPort()
+  if (port === null) {
+    console.error('OpenACP is not running. Start with `openacp start`')
+    process.exit(1)
+  }
+
+  try {
+    if (subCmd === 'add') {
+      const tunnelPort = args[2]
+      if (!tunnelPort) {
+        console.error('Usage: openacp tunnel add <port> [--label name] [--session id]')
+        process.exit(1)
+      }
+      const labelIdx = args.indexOf('--label')
+      const label = labelIdx !== -1 ? args[labelIdx + 1] : undefined
+      const sessionIdx = args.indexOf('--session')
+      const sessionId = sessionIdx !== -1 ? args[sessionIdx + 1] : undefined
+
+      const body: Record<string, unknown> = { port: parseInt(tunnelPort, 10) }
+      if (label) body.label = label
+      if (sessionId) body.sessionId = sessionId
+
+      const res = await apiCall(port, '/api/tunnel', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      const data = await res.json() as Record<string, unknown>
+      if (!res.ok) {
+        console.error(`Error: ${data.error}`)
+        process.exit(1)
+      }
+      console.log(`Tunnel active: port ${data.port} → ${data.publicUrl}`)
+
+    } else if (subCmd === 'list') {
+      const res = await apiCall(port, '/api/tunnel/list')
+      const data = await res.json() as Array<Record<string, unknown>>
+      if (data.length === 0) {
+        console.log('No active tunnels.')
+        return
+      }
+      console.log('Active tunnels:\n')
+      for (const t of data) {
+        const label = t.label ? ` (${t.label})` : ''
+        const status = t.status === 'active' ? '✅' : t.status === 'starting' ? '⏳' : '❌'
+        console.log(`  ${status} Port ${t.port}${label}`)
+        if (t.publicUrl) console.log(`     → ${t.publicUrl}`)
+      }
+
+    } else if (subCmd === 'stop') {
+      const tunnelPort = args[2]
+      if (!tunnelPort) {
+        console.error('Usage: openacp tunnel stop <port>')
+        process.exit(1)
+      }
+      const res = await apiCall(port, `/api/tunnel/${tunnelPort}`, { method: 'DELETE' })
+      if (!res.ok) {
+        const data = await res.json() as Record<string, unknown>
+        console.error(`Error: ${data.error}`)
+        process.exit(1)
+      }
+      console.log(`Tunnel stopped: port ${tunnelPort}`)
+
+    } else if (subCmd === 'stop-all') {
+      const res = await apiCall(port, '/api/tunnel', { method: 'DELETE' })
+      if (!res.ok) {
+        const data = await res.json() as Record<string, unknown>
+        console.error(`Error: ${data.error}`)
+        process.exit(1)
+      }
+      console.log('All user tunnels stopped.')
+
+    } else {
+      console.log(`
+Tunnel Management:
+  openacp tunnel add <port> [--label name] [--session id]
+  openacp tunnel list
+  openacp tunnel stop <port>
+  openacp tunnel stop-all
+`)
+    }
+  } catch (err) {
+    console.error(`Failed to connect to daemon: ${(err as Error).message}`)
+    process.exit(1)
   }
 }
 

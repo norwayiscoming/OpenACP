@@ -1,15 +1,17 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { Session } from '../session.js'
+import { TypedEmitter } from '../typed-emitter.js'
+import type { AgentEvent } from '../types.js'
 
 function mockAgentInstance() {
-  return {
+  const emitter = new TypedEmitter<{ agent_event: (event: AgentEvent) => void }>()
+  return Object.assign(emitter, {
     sessionId: 'agent-sess-1',
     prompt: vi.fn().mockResolvedValue(undefined),
     cancel: vi.fn().mockResolvedValue(undefined),
     destroy: vi.fn().mockResolvedValue(undefined),
-    onSessionUpdate: vi.fn(),
     onPermissionRequest: vi.fn(),
-  } as any
+  }) as any
 }
 
 function createTestSession(agentInstance?: any) {
@@ -82,9 +84,8 @@ describe('Session - Lifecycle & Prompt Processing', () => {
       // Simulate agent responding with title during auto-name prompt
       agent.prompt.mockImplementation(async (text: string) => {
         if (text.includes('Summarize')) {
-          // Simulate the onSessionUpdate being intercepted
-          // The auto-name intercepts onSessionUpdate, so we need to call it
-          agent.onSessionUpdate({ type: 'text', content: 'Test Title' })
+          // Simulate agent emitting a text event during auto-name prompt
+          agent.emit('agent_event', { type: 'text', content: 'Test Title' })
         }
       })
 
@@ -264,7 +265,7 @@ describe('Session - Lifecycle & Prompt Processing', () => {
       const longTitle = 'A'.repeat(100)
       agent.prompt.mockImplementation(async (text: string) => {
         if (text.includes('Summarize')) {
-          agent.onSessionUpdate({ type: 'text', content: longTitle })
+          agent.emit('agent_event', { type: 'text', content: longTitle })
         }
       })
 
@@ -288,15 +289,14 @@ describe('Session - Lifecycle & Prompt Processing', () => {
       expect(session.name).toContain('Session')
     })
 
-    it('restores original onSessionUpdate after auto-name', async () => {
+    it('cleans up capture listener after auto-name', async () => {
       const agent = mockAgentInstance()
-      const originalHandler = agent.onSessionUpdate
       const session = createTestSession(agent)
-      session.name = 'skip' // skip auto-name on first call
 
-      // After processing, the handler should be the original
+      // After auto-name, the agent emitter should not be paused
+      // and no lingering capture listeners should remain
       await session.enqueuePrompt('hello')
-      expect(agent.onSessionUpdate).toBe(originalHandler)
+      expect(agent.isPaused).toBe(false)
     })
   })
 })

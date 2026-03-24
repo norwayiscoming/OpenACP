@@ -5,6 +5,7 @@ import { OpenACPCore } from './core/core.js'
 import { loadAdapterFactory } from './core/plugin-manager.js'
 import { initLogger, shutdownLogger, cleanupOldSessionLogs, log } from './core/log.js'
 import { TelegramAdapter } from './adapters/telegram/index.js'
+import type { TelegramChannelConfig } from './adapters/telegram/index.js'
 import { SlackAdapter } from './adapters/slack/adapter.js'
 import { ApiServer } from './core/api-server.js'
 import { TopicManager } from './core/topic-manager.js'
@@ -75,11 +76,16 @@ export async function startServer() {
     if (!channelConfig.enabled) continue
 
     if (channelName === 'telegram') {
-      core.registerAdapter('telegram', new TelegramAdapter(core, channelConfig as any))
+      core.registerAdapter('telegram', new TelegramAdapter(core, channelConfig as TelegramChannelConfig))
       log.info({ adapter: 'telegram' }, 'Adapter registered')
     } else if (channelName === 'slack') {
       core.registerAdapter('slack', new SlackAdapter(core, channelConfig as any))
       log.info({ adapter: 'slack' }, 'Adapter registered')
+    } else if (channelName === 'discord') {
+      const { DiscordAdapter } = await import('./adapters/discord/index.js')
+      const discordConfig = channelConfig as import('./adapters/discord/types.js').DiscordChannelConfig
+      core.registerAdapter('discord', new DiscordAdapter(core, discordConfig))
+      log.info({ adapter: 'discord' }, 'Adapter registered')
     } else if (channelConfig.adapter) {
       // Plugin adapter
       const factory = await loadAdapterFactory(channelConfig.adapter)
@@ -186,15 +192,18 @@ export async function startServer() {
 
   const updatedConfig = core.configManager.get()
   const telegramAdapter = core.adapters.get('telegram') ?? null
-  const telegramCfg = updatedConfig.channels?.telegram as any
-  const topicManager = new TopicManager(
-    core.sessionManager,
-    telegramAdapter,
-    {
-      notificationTopicId: telegramCfg?.notificationTopicId ?? null,
-      assistantTopicId: telegramCfg?.assistantTopicId ?? null,
-    },
-  )
+  let topicManager: TopicManager | undefined
+  if (telegramAdapter) {
+    const telegramCfg = updatedConfig.channels?.telegram as TelegramChannelConfig | undefined
+    topicManager = new TopicManager(
+      core.sessionManager,
+      telegramAdapter,
+      {
+        notificationTopicId: telegramCfg?.notificationTopicId ?? null,
+        assistantTopicId: telegramCfg?.assistantTopicId ?? null,
+      },
+    )
+  }
 
   apiServer = new ApiServer(core, config.api, undefined, topicManager)
   await apiServer.start()

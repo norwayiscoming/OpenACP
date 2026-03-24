@@ -81,6 +81,23 @@ export const CONFIG_REGISTRY: ConfigFieldDef[] = [
     scope: 'safe',
     hotReload: true,
   },
+  {
+    path: 'speech.stt.provider',
+    displayName: 'Speech to Text',
+    group: 'speech',
+    type: 'select',
+    options: ['groq'],
+    scope: 'safe',
+    hotReload: true,
+  },
+  {
+    path: 'speech.stt.apiKey',
+    displayName: 'STT API Key',
+    group: 'speech',
+    type: 'string',
+    scope: 'sensitive',
+    hotReload: true,
+  },
 ]
 
 export function getFieldDef(path: string): ConfigFieldDef | undefined {

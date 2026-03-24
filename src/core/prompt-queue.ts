@@ -6,6 +6,7 @@ import type { Attachment } from './types.js'
 export class PromptQueue {
   private queue: Array<{ text: string; attachments?: Attachment[]; resolve: () => void }> = []
   private processing = false
+  private abortController: AbortController | null = null
 
   constructor(
     private processor: (text: string, attachments?: Attachment[]) => Promise<void>,
@@ -23,11 +24,22 @@ export class PromptQueue {
 
   private async process(text: string, attachments?: Attachment[]): Promise<void> {
     this.processing = true
+    this.abortController = new AbortController()
+    const { signal } = this.abortController
     try {
-      await this.processor(text, attachments)
+      await Promise.race([
+        this.processor(text, attachments),
+        new Promise<never>((_, reject) => {
+          signal.addEventListener('abort', () => reject(new Error('Prompt aborted')), { once: true })
+        }),
+      ])
     } catch (err) {
-      this.onError?.(err)
+      // Only forward non-abort errors to onError handler
+      if (!(err instanceof Error && err.message === 'Prompt aborted')) {
+        this.onError?.(err)
+      }
     } finally {
+      this.abortController = null
       this.processing = false
       this.drainNext()
     }
@@ -41,6 +53,10 @@ export class PromptQueue {
   }
 
   clear(): void {
+    // Abort the currently running prompt so the queue can drain
+    if (this.abortController) {
+      this.abortController.abort()
+    }
     // Resolve pending promises so callers don't hang
     for (const item of this.queue) {
       item.resolve()

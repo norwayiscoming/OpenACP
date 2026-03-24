@@ -50,6 +50,15 @@ export async function renameSessionTopic(
   }
 }
 
+// Delete a forum topic and all its messages
+export async function deleteSessionTopic(
+  bot: Bot,
+  chatId: number,
+  threadId: number,
+): Promise<void> {
+  await bot.api.deleteForumTopic(chatId, threadId);
+}
+
 // Build a Telegram deep link to a specific message
 export function buildDeepLink(chatId: number, messageId: number): string {
   // chatId for supergroups starts with -100, need to strip it for the link

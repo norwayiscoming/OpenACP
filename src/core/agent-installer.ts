@@ -238,7 +238,9 @@ function validateExtractedPaths(destDir: string): void {
   const realDest = fs.realpathSync(destDir);
   const entries = fs.readdirSync(destDir, { recursive: true, withFileTypes: true });
   for (const entry of entries) {
-    const parentPath = (entry as unknown as { parentPath?: string; path?: string }).parentPath ?? (entry as unknown as { path: string }).path;
+    // Node <20.12 uses `path`, >=20.12 uses `parentPath` on Dirent with recursive readdir
+    const dirent = entry as fs.Dirent & { parentPath?: string; path?: string };
+    const parentPath = dirent.parentPath ?? dirent.path ?? destDir;
     const fullPath = path.join(parentPath, entry.name);
     let realPath: string;
     try {

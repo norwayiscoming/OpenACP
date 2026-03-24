@@ -72,6 +72,54 @@ Published as `@openacp/cli` on npm. Users install with `npm install -g @openacp/
 - ESM-only (`"type": "module"`), all imports use `.js` extension
 - TypeScript strict mode, target ES2022, NodeNext module resolution
 
+## Testing Conventions
+
+### General Principles
+
+- **Test framework**: Vitest. Test files live in `src/**/__tests__/*.test.ts` or `src/**/*.test.ts`.
+- **Objective tests**: Tests must be objective — verify behavior against specifications and expected outcomes, not against current implementation details. The source code is for understanding, but tests should validate what the code *should* do.
+- **Test flows, not internals**: Focus on testing user-facing flows and integration between components rather than individual private methods. Test the public API surface.
+- **Edge cases matter**: Always test boundary conditions, error paths, and state machine transitions. These are where bugs hide.
+
+### What to Test
+
+1. **State machines**: Test ALL valid transitions AND all invalid transitions. Verify events emitted on each transition.
+2. **Flow tests**: Test complete user flows end-to-end (e.g., message → session lookup → prompt → response → notification).
+3. **Error recovery**: Test that errors don't leave the system in a broken state. After an error, the system should be usable again.
+4. **Concurrency**: Test serial processing guarantees, queue ordering, lock behavior, and race conditions.
+5. **Boundary values**: Test exact boundaries (e.g., `maxConcurrentSessions` at exactly the limit, budget at exactly the threshold).
+6. **Cleanup**: Test that resources (timers, listeners, files) are cleaned up properly.
+7. **Idempotency**: Test double-calls (double connect, double disconnect, double resolve) are safe.
+
+### How to Write Tests
+
+```typescript
+// Use vi.fn() for mocks, TypedEmitter for event-based mocks
+function mockAgentInstance() {
+  const emitter = new TypedEmitter<{ agent_event: (event: AgentEvent) => void }>();
+  return Object.assign(emitter, {
+    sessionId: "agent-sess-1",
+    prompt: vi.fn().mockResolvedValue(undefined),
+    cancel: vi.fn().mockResolvedValue(undefined),
+    destroy: vi.fn().mockResolvedValue(undefined),
+    onPermissionRequest: vi.fn(),
+  }) as any;
+}
+```
+
+- **Mock at boundaries**: Mock AgentInstance, ChannelAdapter, SessionStore — not internal classes.
+- **Use `vi.waitFor()`** for async assertions on fire-and-forget operations.
+- **Use `vi.useFakeTimers()`** for timeout-based tests (e.g., PermissionGate timeout).
+- **Cleanup in afterEach**: Always destroy stores, clear timers, remove temp files.
+- **No sleep/polling**: Use `await Promise.resolve()` for microtask timing, `vi.waitFor()` for async ops.
+
+### Test Organization
+
+- `src/core/__tests__/` — Core module tests (session, bridge, queue, permissions, store, etc.)
+- `src/__tests__/` — Integration tests and adapter-level tests
+- `src/adapters/*/` — Adapter-specific unit tests (formatting, streaming, etc.)
+- Name files descriptively: `session-lifecycle.test.ts`, `session-bridge-autoapprove.test.ts`
+
 ## Backward Compatibility
 
 Users đã cài và chạy các version cũ sẽ có config, data, storage ở trạng thái cũ. Khi thêm hoặc thay đổi bất kỳ thứ gì liên quan, **phải đảm bảo tương thích ngược**:

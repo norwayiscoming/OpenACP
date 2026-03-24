@@ -1,18 +1,21 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { Session } from "../session.js";
+import { EventBus } from "../event-bus.js";
 import type { AgentInstance } from "../agent-instance.js";
 import type { ChannelAdapter } from "../channel.js";
+import { TypedEmitter } from "../typed-emitter.js";
+import type { AgentEvent } from "../types.js";
 
 function createMockAgentInstance(sessionId = "agent-session-1"): AgentInstance {
-  return {
+  const emitter = new TypedEmitter<{ agent_event: (event: AgentEvent) => void }>();
+  return Object.assign(emitter, {
     sessionId,
     agentName: "test-agent",
     prompt: vi.fn().mockResolvedValue({}),
     cancel: vi.fn().mockResolvedValue(undefined),
     destroy: vi.fn().mockResolvedValue(undefined),
-    onSessionUpdate: vi.fn(),
     onPermissionRequest: vi.fn(),
-  } as unknown as AgentInstance;
+  }) as unknown as AgentInstance;
 }
 
 function createMockAdapter(): ChannelAdapter {
@@ -32,6 +35,7 @@ function createMockAdapter(): ChannelAdapter {
 
 // Test createSession by constructing a minimal OpenACPCore with mocked dependencies
 import { OpenACPCore } from "../core.js";
+import { SessionFactory } from "../session-factory.js";
 
 function createMockCore(): OpenACPCore {
   const mockAgent = createMockAgentInstance();
@@ -44,7 +48,9 @@ function createMockCore(): OpenACPCore {
   core.agentManager = {
     spawn: vi.fn().mockResolvedValue(mockAgent),
     resume: vi.fn().mockResolvedValue(mockAgent),
-    getAgent: vi.fn().mockReturnValue({ name: "claude", command: "claude", args: [] }),
+    getAgent: vi
+      .fn()
+      .mockReturnValue({ name: "claude", command: "claude", args: [] }),
     getAvailableAgents: vi.fn().mockReturnValue([]),
   } as any;
   core.sessionManager = {
@@ -60,6 +66,13 @@ function createMockCore(): OpenACPCore {
     notify: vi.fn().mockResolvedValue(undefined),
     notifyAll: vi.fn().mockResolvedValue(undefined),
   } as any;
+  core.eventBus = new EventBus();
+  core.sessionFactory = new SessionFactory(
+    core.agentManager,
+    core.sessionManager,
+    {} as any,
+    core.eventBus,
+  );
 
   return core;
 }
@@ -148,9 +161,9 @@ describe("OpenACPCore.createSession", () => {
       workingDirectory: "/tmp/test",
     });
 
-    // Bridge wired onSessionUpdate → triggers sendMessage
+    // Bridge wired agent_event emitter → triggers sendMessage
     const textEvent = { type: "text" as const, content: "hello" };
-    session.agentInstance.onSessionUpdate(textEvent);
+    session.agentInstance.emit('agent_event', textEvent);
 
     expect(adapter.sendMessage).toHaveBeenCalled();
   });

@@ -4,6 +4,7 @@ export interface Attachment {
   fileName: string;
   mimeType: string;
   size: number;
+  originalFilePath?: string;
 }
 
 export interface IncomingMessage {
@@ -24,7 +25,8 @@ export interface OutgoingMessage {
     | "usage"
     | "session_end"
     | "error"
-    | "attachment";
+    | "attachment"
+    | "system_message";
   text: string;
   metadata?: Record<string, unknown>;
   attachment?: Attachment;
@@ -45,7 +47,7 @@ export interface PermissionOption {
 export interface NotificationMessage {
   sessionId: string;
   sessionName?: string;
-  type: "completed" | "error" | "permission" | "input_required";
+  type: "completed" | "error" | "permission" | "input_required" | "budget_warning";
   summary: string;
   deepLink?: string;
 }
@@ -92,7 +94,8 @@ export type AgentEvent =
   | { type: "image_content"; data: string; mimeType: string }
   | { type: "audio_content"; data: string; mimeType: string }
   | { type: "session_end"; reason: string }
-  | { type: "error"; message: string };
+  | { type: "error"; message: string }
+  | { type: "system_message"; message: string };
 
 export interface PlanEntry {
   content: string;
@@ -210,4 +213,28 @@ export interface SessionRecord<P = Record<string, unknown>> {
 export interface TelegramPlatformData {
   topicId: number;
   skillMsgId?: number;
+}
+
+export interface UsageRecord {
+  id: string;
+  sessionId: string;
+  agentName: string;
+  tokensUsed: number;
+  contextSize: number;
+  cost?: { amount: number; currency: string };
+  timestamp: string;
+}
+
+export interface UsageSummary {
+  period: "today" | "week" | "month" | "all";
+  totalTokens: number;
+  totalCost: number;
+  currency: string;
+  sessionCount: number;
+  recordCount: number;
+}
+
+export interface DiscordPlatformData {
+  threadId: string;
+  skillMsgId?: string;
 }

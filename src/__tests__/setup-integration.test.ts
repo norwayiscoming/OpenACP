@@ -57,6 +57,11 @@ vi.mock('../core/agent-store.js', () => {
   }
 })
 
+// Mock cloudflared download to avoid real network calls
+vi.mock('../tunnel/providers/install-cloudflared.js', () => ({
+  ensureCloudflared: vi.fn(() => Promise.resolve('/usr/local/bin/cloudflared')),
+}))
+
 import { input, select, confirm } from '@inquirer/prompts'
 import { runSetup } from '../core/setup.js'
 
@@ -133,7 +138,7 @@ describe('runSetup integration', () => {
     vi.restoreAllMocks()
   })
 
-  it('creates valid config file and auto-starts', async () => {
+  it('creates valid config file and auto-starts', { timeout: 15000 }, async () => {
     // Input call order:
     // 1. setupTelegram: bot token
     // 2. setupWorkspace: workspace base dir
@@ -151,7 +156,9 @@ describe('runSetup integration', () => {
     mockedConfirm.mockResolvedValueOnce(false as any)
 
     // Select call order:
-    // 1. setupRunMode: run mode selection
+    // 1. Channel selection: which platform
+    // 2. setupRunMode: run mode selection
+    mockedSelect.mockResolvedValueOnce('telegram' as any)
     mockedSelect.mockResolvedValueOnce('foreground' as any)
 
     const cm = new ConfigManager()

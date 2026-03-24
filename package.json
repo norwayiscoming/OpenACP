@@ -1,6 +1,6 @@
 {
   "name": "openacp",
-  "version": "0.5.2",
+  "version": "0.6.1",
   "private": true,
   "license": "MIT",
   "type": "module",
@@ -16,6 +16,7 @@
     "debug": "OPENACP_DEBUG=true pnpm start 2>&1 | pino-pretty",
     "test": "vitest run",
     "test:watch": "vitest",
+    "build:ui": "cd ui && pnpm install --frozen-lockfile && pnpm build",
     "prepare": "husky"
   },
   "homepage": "https://github.com/Open-ACP/OpenACP",
@@ -34,6 +35,7 @@
     "@slack/web-api": "7.15.0",
     "@zed-industries/claude-agent-acp": "^0.22.2",
     "diff": "^8.0.3",
+    "discord.js": "^14.25.1",
     "fastest-levenshtein": "^1.0.16",
     "@slack/bolt": "^4.6.0",
     "grammy": "^1.41.1",

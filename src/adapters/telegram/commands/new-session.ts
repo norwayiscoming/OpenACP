@@ -111,7 +111,7 @@ async function startWorkspaceStep(
     agentName,
     step: "workspace",
     messageId: msg.message_id,
-    threadId: ctx.message?.message_thread_id ?? (ctx.callbackQuery as any)?.message?.message_thread_id,
+    threadId: ctx.message?.message_thread_id ?? (ctx.callbackQuery?.message as { message_thread_id?: number } | undefined)?.message_thread_id,
     timer: setTimeout(() => pendingNewSessions.delete(userId), PENDING_TIMEOUT_MS),
   });
 }
@@ -154,7 +154,7 @@ async function startConfirmStep(
     workspace,
     step: "confirm",
     messageId: msg.message_id,
-    threadId: ctx.message?.message_thread_id ?? (ctx.callbackQuery as any)?.message?.message_thread_id,
+    threadId: ctx.message?.message_thread_id ?? (ctx.callbackQuery?.message as { message_thread_id?: number } | undefined)?.message_thread_id,
     timer: setTimeout(() => pendingNewSessions.delete(userId), PENDING_TIMEOUT_MS),
   });
 }
@@ -453,7 +453,7 @@ async function showAgentPicker(
 
   cleanupPending(userId);
   const threadId = ctx.message?.message_thread_id
-    ?? (ctx.callbackQuery as any)?.message?.message_thread_id;
+    ?? (ctx.callbackQuery?.message as { message_thread_id?: number } | undefined)?.message_thread_id;
   pendingNewSessions.set(userId, {
     step: "agent",
     messageId: msg.message_id,

@@ -2,7 +2,7 @@ import type { Bot, Context } from "grammy";
 import { InlineKeyboard } from "grammy";
 import type { OpenACPCore } from "../../../core/index.js";
 import type { Session } from "../../../core/session.js";
-import { escapeHtml } from "../formatting.js";
+import { escapeHtml, formatUsageReport } from "../formatting.js";
 import { createChildLogger } from "../../../core/log.js";
 import type { CommandsAssistantContext } from "../types.js";
 const log = createChildLogger({ module: "telegram-cmd-session" });
@@ -31,18 +31,18 @@ export async function handleCancel(
     String(threadId),
   );
   if (session) {
-    log.info({ sessionId: session.id }, "Cancel session command");
+    log.info({ sessionId: session.id }, "Abort prompt command");
     await session.abortPrompt();
-    await ctx.reply("⛔ Session cancelled.", { parse_mode: "HTML" });
+    await ctx.reply("⛔ Prompt aborted. Session is still active — send a new message to continue.", { parse_mode: "HTML" });
     return;
   }
 
-  // Fallback: cancel from store when session not in memory (e.g. after restart)
+  // Fallback: session not in memory — nothing to abort, but session can
+  // still be resumed when the user sends a new message.
   const record = core.sessionManager.getRecordByThread("telegram", String(threadId));
-  if (record && record.status !== "cancelled" && record.status !== "error") {
-    log.info({ sessionId: record.sessionId }, "Cancel session command (from store)");
-    await core.sessionManager.cancelSession(record.sessionId);
-    await ctx.reply("⛔ Session cancelled.", { parse_mode: "HTML" });
+  if (record && record.status !== "error") {
+    log.info({ sessionId: record.sessionId, status: record.status }, "Cancel command — no active prompt to abort");
+    await ctx.reply("ℹ️ No active prompt to cancel. Send a new message to resume the session.", { parse_mode: "HTML" });
   }
 }
 
@@ -353,4 +353,115 @@ export function setupSessionCallbacks(
         break;
     }
   });
+}
+
+export async function handleUsage(ctx: Context, core: OpenACPCore): Promise<void> {
+  if (!core.usageStore) {
+    await ctx.reply("📊 Usage tracking is disabled.", { parse_mode: "HTML" });
+    return;
+  }
+
+  const rawMatch = (ctx as Context & { match: unknown }).match;
+  const period = typeof rawMatch === "string" ? rawMatch.trim().toLowerCase() : "";
+
+  let summaries: ReturnType<typeof core.usageStore.query>[];
+
+  if (period === "today" || period === "week" || period === "month") {
+    summaries = [core.usageStore.query(period)];
+  } else {
+    summaries = [
+      core.usageStore.query("month"),
+      core.usageStore.query("week"),
+      core.usageStore.query("today"),
+    ];
+  }
+
+  const budgetStatus = core.usageBudget
+    ? core.usageBudget.getStatus()
+    : { status: "ok" as const, used: 0, budget: 0, percent: 0 };
+
+  const text = formatUsageReport(summaries, budgetStatus);
+  await ctx.reply(text, { parse_mode: "HTML" });
+}
+
+export async function handleArchive(
+  ctx: Context,
+  core: OpenACPCore,
+): Promise<void> {
+  const threadId = ctx.message?.message_thread_id;
+  if (!threadId) return;
+
+  const session = core.sessionManager.getSessionByThread("telegram", String(threadId));
+  if (!session) {
+    await ctx.reply(
+      "ℹ️ <b>/archive</b> works in session topics — it recreates the topic with a clean chat view while keeping your agent session alive.\n\nGo to the session topic you want to archive and type /archive there.",
+      { parse_mode: "HTML" },
+    );
+    return;
+  }
+
+  if (session.status === "initializing") {
+    await ctx.reply("⏳ Please wait for session to be ready.", { parse_mode: "HTML" });
+    return;
+  }
+
+  if (session.status !== "active") {
+    await ctx.reply(`⚠️ Cannot archive — session is ${session.status}.`, { parse_mode: "HTML" });
+    return;
+  }
+
+  await ctx.reply(
+    "⚠️ <b>Archive this session topic?</b>\n\n" +
+    "This will permanently delete all messages in this topic and create a fresh one.\n" +
+    "Your agent session will continue — only the chat view is reset.\n\n" +
+    "<i>Note: links to messages in this topic will stop working.</i>",
+    {
+      parse_mode: "HTML",
+      reply_markup: new InlineKeyboard()
+        .text("🗑 Yes, archive", `ar:yes:${session.id}`)
+        .text("❌ Cancel", `ar:no:${session.id}`),
+    },
+  );
+}
+
+export async function handleArchiveConfirm(
+  ctx: Context,
+  core: OpenACPCore,
+  chatId: number,
+): Promise<void> {
+  const data = ctx.callbackQuery?.data;
+  if (!data) return;
+
+  try {
+    await ctx.answerCallbackQuery();
+  } catch { /* expired */ }
+
+  const [, action, sessionId] = data.split(":");
+
+  if (action === "no") {
+    await ctx.editMessageText("Archive cancelled.", { parse_mode: "HTML" });
+    return;
+  }
+
+  // action === "yes"
+  await ctx.editMessageText("🔄 Archiving topic...", { parse_mode: "HTML" });
+
+  const result = await core.archiveSession(sessionId);
+  if (result.ok) {
+    const newTopicId = Number(result.newThreadId);
+    await ctx.api.sendMessage(chatId, "✅ Topic archived. Session continues.", {
+      message_thread_id: newTopicId,
+      parse_mode: "HTML",
+    });
+  } else {
+    try {
+      await ctx.editMessageText(`❌ Failed to archive: <code>${escapeHtml(result.error)}</code>`, { parse_mode: "HTML" });
+    } catch {
+      core.notificationManager.notifyAll({
+        sessionId,
+        type: "error",
+        summary: `Failed to recreate topic for session "${sessionId}": ${result.error}`,
+      });
+    }
+  }
 }

@@ -12,6 +12,7 @@ import type {
 } from "@agentclientprotocol/sdk";
 import { nodeToWebWritable, nodeToWebReadable } from "./streams.js";
 import { StderrCapture } from "./stderr-capture.js";
+import { TypedEmitter } from "./typed-emitter.js";
 import type {
   AgentDefinition,
   AgentEvent,
@@ -100,7 +101,11 @@ interface TerminalState {
   exitStatus: { exitCode: number | null; signal: string | null } | null;
 }
 
-export class AgentInstance {
+export interface AgentInstanceEvents {
+  agent_event: (event: AgentEvent) => void;
+}
+
+export class AgentInstance extends TypedEmitter<AgentInstanceEvents> {
   private connection!: ClientSideConnection;
   private child!: ChildProcess;
   private stderrCapture!: StderrCapture;
@@ -110,12 +115,12 @@ export class AgentInstance {
   agentName: string;
   promptCapabilities?: { image?: boolean; audio?: boolean };
 
-  // Callbacks — set by core when wiring events
-  onSessionUpdate: (event: AgentEvent) => void = () => {};
+  // Callback — set by core when wiring events
   onPermissionRequest: (request: PermissionRequest) => Promise<string> =
     async () => "";
 
   private constructor(agentName: string) {
+    super();
     this.agentName = agentName;
   }
 
@@ -217,7 +222,7 @@ export class AgentInstance {
       );
       if (code !== 0 && code !== null) {
         const stderr = this.stderrCapture.getLastLines();
-        this.onSessionUpdate({
+        this.emit('agent_event', {
           type: "error",
           message: `Agent crashed (exit code ${code})\n${stderr}`,
         });
@@ -317,9 +322,11 @@ export class AgentInstance {
             if (update.content.type === "text") {
               event = { type: "text", content: update.content.text };
             } else if (update.content.type === "image") {
+              // ACP SDK types don't expose data/mimeType fields for image content
               const c = update.content as unknown as { data: string; mimeType: string };
               event = { type: "image_content", data: c.data, mimeType: c.mimeType };
             } else if (update.content.type === "audio") {
+              // ACP SDK types don't expose data/mimeType fields for audio content
               const c = update.content as unknown as { data: string; mimeType: string };
               event = { type: "audio_content", data: c.data, mimeType: c.mimeType };
             }
@@ -376,7 +383,7 @@ export class AgentInstance {
         }
 
         if (event !== null) {
-          self.onSessionUpdate(event);
+          self.emit('agent_event', event);
         }
       },
 
@@ -518,10 +525,13 @@ export class AgentInstance {
   async prompt(text: string, attachments?: Attachment[]): Promise<PromptResponse> {
     const contentBlocks: Array<Record<string, unknown>> = [{ type: "text", text }];
 
+    // MIME types supported by Claude API for base64 image content
+    const SUPPORTED_IMAGE_MIMES = new Set(["image/jpeg", "image/png", "image/gif", "image/webp"]);
+
     for (const att of attachments ?? []) {
       const tooLarge = att.size > 10 * 1024 * 1024; // 10MB base64 guard
 
-      if (att.type === "image" && this.promptCapabilities?.image && !tooLarge) {
+      if (att.type === "image" && this.promptCapabilities?.image && !tooLarge && SUPPORTED_IMAGE_MIMES.has(att.mimeType)) {
         const data = await fs.promises.readFile(att.filePath);
         contentBlocks.push({ type: "image", data: data.toString("base64"), mimeType: att.mimeType });
       } else if (att.type === "audio" && this.promptCapabilities?.audio && !tooLarge) {

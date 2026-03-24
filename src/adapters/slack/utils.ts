@@ -1,6 +1,14 @@
 // src/adapters/slack/utils.ts
 // Shared utilities for Slack adapter modules.
 
+import type { SlackFileInfo } from "./types.js";
+
+/** Detect Slack audio clips — MIME type or filename pattern */
+export function isAudioClip(file: SlackFileInfo): boolean {
+  return (file.mimetype === "video/mp4" && file.name?.startsWith("audio_message")) ||
+         file.mimetype?.startsWith("audio/");
+}
+
 const SECTION_LIMIT = 3000;
 
 /**

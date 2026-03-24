@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { SlackTextBuffer } from "./text-buffer.js";
 import type { ISlackSendQueue } from "./send-queue.js";
+import { isAudioClip } from "./utils.js";
 
 function createMockQueue(): ISlackSendQueue {
   return {
@@ -85,30 +86,27 @@ describe("SlackTextBuffer.stripTtsBlock", () => {
 });
 
 describe("isAudioClip detection", () => {
-  // We test the logic inline since isAudioClip is a private method on SlackAdapter.
-  // Replicate the detection logic here to test it in isolation.
-  function isAudioClip(file: { mimetype: string; name: string }): boolean {
-    return (file.mimetype === "video/mp4" && file.name?.startsWith("audio_message")) ||
-           file.mimetype?.startsWith("audio/");
+  function makeFile(mimetype: string, name: string) {
+    return { id: "F1", name, mimetype, size: 0, url_private: "https://files.slack.com/x" };
   }
 
   it("detects video/mp4 with audio_message filename as audio", () => {
-    expect(isAudioClip({ mimetype: "video/mp4", name: "audio_message_abc.mp4" })).toBe(true);
+    expect(isAudioClip(makeFile("video/mp4", "audio_message_abc.mp4"))).toBe(true);
   });
 
   it("detects audio/* MIME types as audio", () => {
-    expect(isAudioClip({ mimetype: "audio/ogg", name: "recording.ogg" })).toBe(true);
-    expect(isAudioClip({ mimetype: "audio/mp4", name: "voice.m4a" })).toBe(true);
-    expect(isAudioClip({ mimetype: "audio/mpeg", name: "file.mp3" })).toBe(true);
+    expect(isAudioClip(makeFile("audio/ogg", "recording.ogg"))).toBe(true);
+    expect(isAudioClip(makeFile("audio/mp4", "voice.m4a"))).toBe(true);
+    expect(isAudioClip(makeFile("audio/mpeg", "file.mp3"))).toBe(true);
   });
 
   it("rejects non-audio video/mp4 files", () => {
-    expect(isAudioClip({ mimetype: "video/mp4", name: "screen_recording.mp4" })).toBe(false);
+    expect(isAudioClip(makeFile("video/mp4", "screen_recording.mp4"))).toBe(false);
   });
 
   it("rejects non-audio files", () => {
-    expect(isAudioClip({ mimetype: "image/png", name: "screenshot.png" })).toBe(false);
-    expect(isAudioClip({ mimetype: "application/pdf", name: "doc.pdf" })).toBe(false);
-    expect(isAudioClip({ mimetype: "text/plain", name: "notes.txt" })).toBe(false);
+    expect(isAudioClip(makeFile("image/png", "screenshot.png"))).toBe(false);
+    expect(isAudioClip(makeFile("application/pdf", "doc.pdf"))).toBe(false);
+    expect(isAudioClip(makeFile("text/plain", "notes.txt"))).toBe(false);
   });
 });

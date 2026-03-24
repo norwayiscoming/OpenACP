@@ -24,6 +24,7 @@ import { SlackPermissionHandler } from "./permission-handler.js";
 import { SlackEventRouter } from "./event-router.js";
 import { SlackTextBuffer } from "./text-buffer.js";
 import { toSlug } from "./slug.js";
+import { isAudioClip } from "./utils.js";
 
 export class SlackAdapter extends ChannelAdapter<OpenACPCore> {
   private app!: App;
@@ -101,7 +102,7 @@ export class SlackAdapter extends ChannelAdapter<OpenACPCore> {
       (sessionChannelSlug, text, userId, files) => {
         const processFiles = async (): Promise<Attachment[] | undefined> => {
           if (!files?.length) return undefined;
-          const audioFiles = files.filter((f) => this.isAudioClip(f));
+          const audioFiles = files.filter((f) => isAudioClip(f));
           if (!audioFiles.length) return undefined;
 
           const attachments: Attachment[] = [];
@@ -154,11 +155,6 @@ export class SlackAdapter extends ChannelAdapter<OpenACPCore> {
     if (this.slackConfig.autoCreateSession !== false) {
       await this._createStartupSession();
     }
-  }
-
-  private isAudioClip(file: SlackFileInfo): boolean {
-    return (file.mimetype === "video/mp4" && file.name?.startsWith("audio_message")) ||
-           file.mimetype?.startsWith("audio/");
   }
 
   private async downloadSlackFile(url: string): Promise<Buffer | null> {

@@ -11,18 +11,23 @@ on:
     workflows: ["Publish to npm"]
     types: [completed]
 
+env:
+  TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+  TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+  TELEGRAM_TOPIC_ID: ${{ secrets.TELEGRAM_TOPIC_ID }}
+
 jobs:
   notify-push:
     name: Push
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
-      - name: Build commit list
-        id: commits
+      - name: Build and send notification
         env:
           COMMITS_JSON: ${{ toJSON(github.event.commits) }}
+          BRANCH: ${{ github.ref_name }}
+          COMPARE_URL: ${{ github.event.compare }}
         run: |
-          DELIMITER=$(openssl rand -hex 16)
           COMMITS=""
           for row in $(echo "$COMMITS_JSON" | jq -r '.[] | @base64'); do
             MSG=$(echo "$row" | base64 -d | jq -r '.message' | head -1)
@@ -30,69 +35,56 @@ jobs:
             SHORT=$(echo "$row" | base64 -d | jq -r '.id' | cut -c1-7)
             COMMITS="${COMMITS}• <code>${SHORT}</code> ${MSG} — ${AUTHOR}"$'\n'
           done
-          {
-            echo "list<<${DELIMITER}"
-            echo "$COMMITS"
-            echo "${DELIMITER}"
-          } >> "$GITHUB_OUTPUT"
 
-          if [ -z "$COMMITS" ]; then
-            echo "empty=true" >> "$GITHUB_OUTPUT"
-          fi
+          [ -z "$COMMITS" ] && exit 0
 
-      - name: Send notification
-        if: steps.commits.outputs.empty != 'true'
-        uses: appleboy/telegram-action@master
-        with:
-          to: ${{ secrets.TELEGRAM_CHAT_ID }}
-          token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          message_thread_id: ${{ secrets.TELEGRAM_TOPIC_ID }}
-          format: html
-          disable_web_page_preview: true
-          message: |
-            🔀 <b>Push to ${{ github.ref_name }}</b>
+          TEXT="🔀 <b>Push to ${BRANCH}</b>
 
-            ${{ steps.commits.outputs.list }}
-            <a href="${{ github.event.compare }}">View changes</a>
+          ${COMMITS}
+          <a href=\"${COMPARE_URL}\">View changes</a>"
+
+          curl -sf -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -d chat_id="${TELEGRAM_CHAT_ID}" \
+            -d message_thread_id="${TELEGRAM_TOPIC_ID}" \
+            -d parse_mode=HTML \
+            -d disable_web_page_preview=true \
+            --data-urlencode "text=${TEXT}"
 
   notify-pr:
     name: Pull Request
     if: github.event_name == 'pull_request_target'
     runs-on: ubuntu-latest
     steps:
-      - name: Set PR status
-        id: status
+      - name: Send notification
         env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          PR_NUM: ${{ github.event.pull_request.number }}
+          AUTHOR: ${{ github.event.pull_request.user.login }}
           ACTION: ${{ github.event.action }}
           MERGED: ${{ github.event.pull_request.merged }}
         run: |
           if [ "$ACTION" = "closed" ] && [ "$MERGED" = "true" ]; then
-            echo "emoji=✅" >> "$GITHUB_OUTPUT"
-            echo "text=merged" >> "$GITHUB_OUTPUT"
+            EMOJI="✅"; STATUS="merged"
           elif [ "$ACTION" = "closed" ]; then
-            echo "emoji=❌" >> "$GITHUB_OUTPUT"
-            echo "text=closed" >> "$GITHUB_OUTPUT"
+            EMOJI="❌"; STATUS="closed"
           elif [ "$ACTION" = "reopened" ]; then
-            echo "emoji=🔄" >> "$GITHUB_OUTPUT"
-            echo "text=reopened" >> "$GITHUB_OUTPUT"
+            EMOJI="🔄"; STATUS="reopened"
           else
-            echo "emoji=📬" >> "$GITHUB_OUTPUT"
-            echo "text=opened" >> "$GITHUB_OUTPUT"
+            EMOJI="📬"; STATUS="opened"
           fi
 
-      - name: Send notification
-        uses: appleboy/telegram-action@master
-        with:
-          to: ${{ secrets.TELEGRAM_CHAT_ID }}
-          token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          message_thread_id: ${{ secrets.TELEGRAM_TOPIC_ID }}
-          format: html
-          disable_web_page_preview: true
-          message: |
-            ${{ steps.status.outputs.emoji }} <b>PR #${{ github.event.pull_request.number }} ${{ steps.status.outputs.text }}</b>
+          TEXT="${EMOJI} <b>PR #${PR_NUM} ${STATUS}</b>
 
-            <a href="${{ github.event.pull_request.html_url }}">${{ github.event.pull_request.title }}</a>
-            by ${{ github.event.pull_request.user.login }}
+          <a href=\"${PR_URL}\">${PR_TITLE}</a>
+          by ${AUTHOR}"
+
+          curl -sf -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -d chat_id="${TELEGRAM_CHAT_ID}" \
+            -d message_thread_id="${TELEGRAM_TOPIC_ID}" \
+            -d parse_mode=HTML \
+            -d disable_web_page_preview=true \
+            --data-urlencode "text=${TEXT}"
 
   notify-release:
     name: Release published
@@ -100,19 +92,23 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Send notification
-        uses: appleboy/telegram-action@master
-        with:
-          to: ${{ secrets.TELEGRAM_CHAT_ID }}
-          token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          message_thread_id: ${{ secrets.TELEGRAM_TOPIC_ID }}
-          format: html
-          disable_web_page_preview: true
-          message: |
-            🚀 <b>Release ${{ github.event.release.tag_name }}</b>
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+          RELEASE_NAME: ${{ github.event.release.name }}
+          RELEASE_URL: ${{ github.event.release.html_url }}
+        run: |
+          TEXT="🚀 <b>Release ${TAG}</b>
 
-            ${{ github.event.release.name }}
+          ${RELEASE_NAME}
 
-            <a href="${{ github.event.release.html_url }}">View release</a>
+          <a href=\"${RELEASE_URL}\">View release</a>"
+
+          curl -sf -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -d chat_id="${TELEGRAM_CHAT_ID}" \
+            -d message_thread_id="${TELEGRAM_TOPIC_ID}" \
+            -d parse_mode=HTML \
+            -d disable_web_page_preview=true \
+            --data-urlencode "text=${TEXT}"
 
   notify-ci-failure:
     name: CI failure
@@ -120,17 +116,22 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Send notification
-        uses: appleboy/telegram-action@master
-        with:
-          to: ${{ secrets.TELEGRAM_CHAT_ID }}
-          token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          message_thread_id: ${{ secrets.TELEGRAM_TOPIC_ID }}
-          format: html
-          disable_web_page_preview: true
-          message: |
-            🔴 <b>CI Failed: ${{ github.event.workflow_run.name }}</b>
+        env:
+          WORKFLOW: ${{ github.event.workflow_run.name }}
+          RUN_URL: ${{ github.event.workflow_run.html_url }}
+          BRANCH: ${{ github.event.workflow_run.head_branch }}
+          AUTHOR: ${{ github.event.workflow_run.actor.login }}
+        run: |
+          TEXT="🔴 <b>CI Failed: ${WORKFLOW}</b>
 
-            Branch: <code>${{ github.event.workflow_run.head_branch }}</code>
-            Triggered by: ${{ github.event.workflow_run.actor.login }}
+          Branch: <code>${BRANCH}</code>
+          Triggered by: ${AUTHOR}
 
-            <a href="${{ github.event.workflow_run.html_url }}">View run</a>
+          <a href=\"${RUN_URL}\">View run</a>"
+
+          curl -sf -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -d chat_id="${TELEGRAM_CHAT_ID}" \
+            -d message_thread_id="${TELEGRAM_TOPIC_ID}" \
+            -d parse_mode=HTML \
+            -d disable_web_page_preview=true \
+            --data-urlencode "text=${TEXT}"

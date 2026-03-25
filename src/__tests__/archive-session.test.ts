@@ -9,72 +9,67 @@ function mockCtx(threadId?: number) {
 }
 
 describe("handleArchive", () => {
-  it("shows guidance when no session found in topic", async () => {
-    const ctx = mockCtx(999);
-    const core = {
-      sessionManager: {
-        getSessionByThread: vi.fn(() => undefined),
-      },
-    } as any;
-
-    await handleArchive(ctx, core);
-    expect(ctx.reply).toHaveBeenCalledWith(
-      expect.stringContaining("/archive"),
-      expect.any(Object),
-    );
-  });
-
-  it("shows confirmation prompt when session exists", async () => {
+  it("shows confirmation for active session", async () => {
     const ctx = mockCtx(456);
     const core = {
       sessionManager: {
-        getSessionByThread: vi.fn(() => ({
-          id: "sess-1",
-          status: "active",
-        })),
+        getSessionByThread: vi.fn(() => ({ id: "sess-1", status: "active" })),
+        getRecordByThread: vi.fn(),
       },
     } as any;
 
     await handleArchive(ctx, core);
     expect(ctx.reply).toHaveBeenCalledWith(
-      expect.stringContaining("Archive this session topic"),
+      expect.stringContaining("Archive this session"),
       expect.objectContaining({ reply_markup: expect.any(Object) }),
     );
   });
 
-  it("rejects if session is initializing", async () => {
+  it("shows confirmation for initializing session", async () => {
     const ctx = mockCtx(456);
     const core = {
       sessionManager: {
-        getSessionByThread: vi.fn(() => ({
-          id: "sess-1",
-          status: "initializing",
-        })),
+        getSessionByThread: vi.fn(() => ({ id: "sess-1", status: "initializing" })),
+        getRecordByThread: vi.fn(),
       },
     } as any;
 
     await handleArchive(ctx, core);
     expect(ctx.reply).toHaveBeenCalledWith(
-      expect.stringContaining("wait for session"),
-      expect.any(Object),
+      expect.stringContaining("Archive this session"),
+      expect.objectContaining({ reply_markup: expect.any(Object) }),
     );
   });
 
-  it("rejects finished session with specific message", async () => {
-    const ctx = mockCtx(456);
+  it("shows confirmation for orphan topic (no session, no record)", async () => {
+    const ctx = mockCtx(999);
     const core = {
       sessionManager: {
-        getSessionByThread: vi.fn(() => ({
-          id: "sess-1",
-          status: "finished",
-        })),
+        getSessionByThread: vi.fn(() => undefined),
+        getRecordByThread: vi.fn(() => undefined),
       },
     } as any;
 
     await handleArchive(ctx, core);
     expect(ctx.reply).toHaveBeenCalledWith(
-      expect.stringContaining("session is finished"),
-      expect.any(Object),
+      expect.stringContaining("Archive this session"),
+      expect.objectContaining({ reply_markup: expect.any(Object) }),
+    );
+  });
+
+  it("shows confirmation for stored record (after restart)", async () => {
+    const ctx = mockCtx(456);
+    const core = {
+      sessionManager: {
+        getSessionByThread: vi.fn(() => undefined),
+        getRecordByThread: vi.fn(() => ({ sessionId: "stored-1" })),
+      },
+    } as any;
+
+    await handleArchive(ctx, core);
+    expect(ctx.reply).toHaveBeenCalledWith(
+      expect.stringContaining("Archive this session"),
+      expect.objectContaining({ reply_markup: expect.any(Object) }),
     );
   });
 
@@ -102,23 +97,24 @@ describe("handleArchiveConfirm", () => {
     );
   });
 
-  it("calls core.archiveSession on confirm and sends to new topic", async () => {
+  it("calls core.archiveSession on confirm and notifies", async () => {
     const core = {
-      archiveSession: vi.fn(() => Promise.resolve({ ok: true, newThreadId: "789" })),
+      archiveSession: vi.fn(() => Promise.resolve({ ok: true })),
+      notificationManager: { notifyAll: vi.fn(() => Promise.resolve()) },
     } as any;
     const ctx = {
       callbackQuery: { data: "ar:yes:sess-1" },
       answerCallbackQuery: vi.fn(() => Promise.resolve()),
       editMessageText: vi.fn(() => Promise.resolve()),
-      api: { sendMessage: vi.fn(() => Promise.resolve()) },
     } as any;
 
     await handleArchiveConfirm(ctx, core, 123);
     expect(core.archiveSession).toHaveBeenCalledWith("sess-1");
-    expect(ctx.api.sendMessage).toHaveBeenCalledWith(
-      123,
-      expect.stringContaining("archived"),
-      expect.objectContaining({ message_thread_id: 789 }),
+    expect(core.notificationManager.notifyAll).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sessionId: "sess-1",
+        type: "completed",
+      }),
     );
   });
 
@@ -139,79 +135,46 @@ describe("handleArchiveConfirm", () => {
     );
   });
 
-  it("notifies when both edit and topic are gone", async () => {
+  it("handles orphan topic deletion", async () => {
     const core = {
-      archiveSession: vi.fn(() => Promise.resolve({ ok: false, error: "Create failed" })),
-      notificationManager: {
-        notifyAll: vi.fn(() => Promise.resolve()),
-      },
+      notificationManager: { notifyAll: vi.fn(() => Promise.resolve()) },
     } as any;
-    let editCallCount = 0;
     const ctx = {
-      callbackQuery: { data: "ar:yes:sess-1" },
+      callbackQuery: { data: "ar:yes:topic:999" },
       answerCallbackQuery: vi.fn(() => Promise.resolve()),
-      editMessageText: vi.fn(() => {
-        editCallCount++;
-        // First call ("Archiving...") succeeds, second call (error) fails
-        if (editCallCount <= 1) return Promise.resolve();
-        return Promise.reject(new Error("topic deleted"));
+      editMessageText: vi.fn(() => Promise.resolve()),
+      api: { deleteForumTopic: vi.fn(() => Promise.resolve()) },
+    } as any;
+
+    await handleArchiveConfirm(ctx, core, 123);
+    expect(ctx.api.deleteForumTopic).toHaveBeenCalledWith(123, 999);
+    expect(core.notificationManager.notifyAll).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sessionId: "system",
+        sessionName: "Orphan topic #999",
+        type: "completed",
       }),
+    );
+  });
+
+  it("notifies on orphan topic delete failure", async () => {
+    const core = {
+      notificationManager: { notifyAll: vi.fn(() => Promise.resolve()) },
+    } as any;
+    const ctx = {
+      callbackQuery: { data: "ar:yes:topic:999" },
+      answerCallbackQuery: vi.fn(() => Promise.resolve()),
+      editMessageText: vi.fn(() => Promise.resolve()),
+      api: { deleteForumTopic: vi.fn(() => Promise.reject(new Error("forbidden"))) },
     } as any;
 
     await handleArchiveConfirm(ctx, core, 123);
     expect(core.notificationManager.notifyAll).toHaveBeenCalledWith(
       expect.objectContaining({
-        sessionId: "sess-1",
+        sessionId: "system",
         type: "error",
+        summary: expect.stringContaining("forbidden"),
       }),
     );
-  });
-});
-
-describe("archiveSession (core integration)", () => {
-  function makeCoreArchive(session: any, adapter: any) {
-    return async (sessionId: string) => {
-      if (!session) return { ok: false as const, error: "Session not found" };
-      if (session.status === "initializing") return { ok: false as const, error: "Session is still initializing" };
-      if (session.status !== "active") return { ok: false as const, error: `Session is ${session.status}` };
-      if (!adapter) return { ok: false as const, error: "Adapter not found for session" };
-      try {
-        const result = await adapter.archiveSessionTopic(sessionId);
-        if (!result) return { ok: false as const, error: "Adapter does not support archiving" };
-        return { ok: true as const, newThreadId: result.newThreadId };
-      } catch (err: any) {
-        return { ok: false as const, error: err.message };
-      }
-    };
-  }
-
-  it("returns error for non-existent session", async () => {
-    const archive = makeCoreArchive(null, null);
-    expect(await archive("x")).toEqual({ ok: false, error: "Session not found" });
-  });
-
-  it("returns error for initializing session", async () => {
-    const archive = makeCoreArchive({ status: "initializing" }, {});
-    expect(await archive("x")).toEqual({ ok: false, error: "Session is still initializing" });
-  });
-
-  it("delegates to adapter on success", async () => {
-    const adapter = { archiveSessionTopic: vi.fn(() => Promise.resolve({ newThreadId: "999" })) };
-    const archive = makeCoreArchive({ status: "active" }, adapter);
-    const result = await archive("s1");
-    expect(result).toEqual({ ok: true, newThreadId: "999" });
-    expect(adapter.archiveSessionTopic).toHaveBeenCalledWith("s1");
-  });
-
-  it("returns error when adapter throws", async () => {
-    const adapter = { archiveSessionTopic: vi.fn(() => Promise.reject(new Error("Telegram 403"))) };
-    const archive = makeCoreArchive({ status: "active" }, adapter);
-    expect(await archive("s1")).toEqual({ ok: false, error: "Telegram 403" });
-  });
-
-  it("returns error when adapter returns null", async () => {
-    const adapter = { archiveSessionTopic: vi.fn(() => Promise.resolve(null)) };
-    const archive = makeCoreArchive({ status: "active" }, adapter);
-    expect(await archive("s1")).toEqual({ ok: false, error: "Adapter does not support archiving" });
   });
 });

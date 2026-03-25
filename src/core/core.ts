@@ -197,6 +197,61 @@ export class OpenACPCore {
     }
   }
 
+  // --- Summary ---
+
+  async summarizeSession(sessionId: string): Promise<{ ok: true; summary: string } | { ok: false; error: string }> {
+    // Active session — summarize directly
+    const session = this.sessionManager.getSession(sessionId);
+    if (session && session.status === "active") {
+      try {
+        const summary = await session.generateSummary();
+        if (!summary) return { ok: false, error: "Agent could not generate summary" };
+        return { ok: true, summary };
+      } catch (err) {
+        return { ok: false, error: (err as Error).message };
+      }
+    }
+
+    // Ended session — respawn agent temporarily with conversation history
+    const record = this.sessionManager.getSessionRecord(sessionId);
+    if (!record?.agentSessionId) {
+      return { ok: false, error: "Session not found or has no agent history" };
+    }
+
+    const caps = getAgentCapabilities(record.agentName);
+    if (!caps.supportsResume) {
+      return { ok: false, error: `Agent "${record.agentName}" does not support resume — cannot summarize ended session` };
+    }
+
+    let tempSession: Session | undefined;
+    try {
+      const agentInstance = await this.agentManager.resume(
+        record.agentName,
+        record.workingDir,
+        record.agentSessionId,
+      );
+
+      tempSession = new Session({
+        id: `summary-${sessionId}`,
+        channelId: record.channelId,
+        agentName: record.agentName,
+        workingDirectory: record.workingDir,
+        agentInstance,
+      });
+      tempSession.activate();
+
+      const summary = await tempSession.generateSummary();
+      if (!summary) return { ok: false, error: "Agent could not generate summary" };
+      return { ok: true, summary };
+    } catch (err) {
+      return { ok: false, error: (err as Error).message };
+    } finally {
+      if (tempSession) {
+        try { await tempSession.destroy(); } catch { /* best effort */ }
+      }
+    }
+  }
+
   // --- Archive ---
 
   async archiveSession(sessionId: string): Promise<{ ok: true } | { ok: false; error: string }> {

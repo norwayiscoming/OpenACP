@@ -937,11 +937,18 @@ export class TelegramAdapter extends ChannelAdapter<OpenACPCore> {
     if (deepLink) {
       text += `\n\n<a href="${deepLink}">→ Go to topic</a>`;
     }
+
+    // Add Summary button for completed sessions
+    const replyMarkup = notification.type === "completed"
+      ? { inline_keyboard: [[{ text: "📋 Summary", callback_data: `sm:summary:${notification.sessionId}` }]] }
+      : undefined;
+
     await this.sendQueue.enqueue(() =>
       this.bot.api.sendMessage(this.telegramConfig.chatId, text, {
         message_thread_id: this.notificationTopicId,
         parse_mode: "HTML",
         disable_notification: false,
+        reply_markup: replyMarkup,
       }),
     );
   }

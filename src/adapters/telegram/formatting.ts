@@ -209,6 +209,13 @@ export function formatUsageReport(
   return lines.join("\n");
 }
 
+export function formatSummary(summary: string, sessionName?: string): string {
+  const header = sessionName
+    ? `📋 <b>Summary — ${escapeHtml(sessionName)}</b>`
+    : '📋 <b>Session Summary</b>'
+  return `${header}\n\n${escapeHtml(summary)}`
+}
+
 export function splitMessage(text: string, maxLength = 3800): string[] {
   return sharedSplitMessage(text, maxLength);
 }

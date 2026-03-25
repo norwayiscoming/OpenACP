@@ -21,6 +21,9 @@ import { AgentCatalog } from "./agent-catalog.js";
 import { EventBus } from "./event-bus.js";
 import { createChildLogger } from "./log.js";
 import { SpeechService, GroqSTT, EdgeTTS } from "./speech/index.js";
+import { ContextManager } from "./context/context-manager.js";
+import { EntireProvider } from "./context/entire/entire-provider.js";
+import type { ContextQuery, ContextOptions, ContextResult } from "./context/context-provider.js";
 const log = createChildLogger({ module: "core" });
 
 export class OpenACPCore {
@@ -43,6 +46,7 @@ export class OpenACPCore {
   sessionFactory: SessionFactory;
   readonly usageStore: UsageStore | null = null;
   readonly usageBudget: UsageBudget | null = null;
+  readonly contextManager: ContextManager;
 
   constructor(configManager: ConfigManager) {
     this.configManager = configManager;
@@ -70,6 +74,8 @@ export class OpenACPCore {
     this.messageTransformer = new MessageTransformer();
     this.eventBus = new EventBus();
     this.sessionManager.setEventBus(this.eventBus);
+    this.contextManager = new ContextManager();
+    this.contextManager.register(new EntireProvider());
     this.fileService = new FileService(
       path.join(os.homedir(), ".openacp", "files"),
     );
@@ -529,6 +535,38 @@ export class OpenACPCore {
       record.agentName,
       record.workingDir,
     );
+  }
+
+  async createSessionWithContext(params: {
+    channelId: string;
+    agentName: string;
+    workingDirectory: string;
+    contextQuery: ContextQuery;
+    contextOptions?: ContextOptions;
+    createThread?: boolean;
+  }): Promise<{ session: Session; contextResult: ContextResult | null }> {
+    let contextResult: ContextResult | null = null;
+    try {
+      contextResult = await this.contextManager.buildContext(
+        params.contextQuery,
+        params.contextOptions,
+      );
+    } catch (err) {
+      log.warn({ err }, "Context building failed, proceeding without context");
+    }
+
+    const session = await this.createSession({
+      channelId: params.channelId,
+      agentName: params.agentName,
+      workingDirectory: params.workingDirectory,
+      createThread: params.createThread,
+    });
+
+    if (contextResult) {
+      session.setContext(contextResult.markdown);
+    }
+
+    return { session, contextResult };
   }
 
   // --- Lazy Resume ---

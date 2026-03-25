@@ -89,3 +89,6 @@ export type {
   SpeechServiceConfig,
   SpeechProviderConfig,
 } from "./speech/index.js";
+export type { ContextProvider, ContextQuery, ContextOptions, ContextResult, SessionInfo as ContextSessionInfo, SessionListResult } from "./context/context-provider.js";
+export { ContextManager } from "./context/context-manager.js";
+export { EntireProvider } from "./context/entire/entire-provider.js";

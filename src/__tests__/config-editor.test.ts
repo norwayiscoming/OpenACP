@@ -98,6 +98,10 @@ describe('config-editor', () => {
     vi.mocked(clack.isCancel).mockReturnValueOnce(true)
     vi.mocked(clack.select).mockResolvedValueOnce(Symbol('cancel'))
 
+    // Mock process.exit to throw so execution stops (like real exit would)
+    const exitError = new Error('process.exit')
+    const mockExit = vi.spyOn(process, 'exit').mockImplementation(() => { throw exitError })
+
     const mockConfigManager = {
       load: vi.fn(),
       get: vi.fn(() => ({
@@ -111,7 +115,9 @@ describe('config-editor', () => {
       getConfigPath: vi.fn(() => '/tmp/config.json'),
     }
 
-    await runConfigEditor(mockConfigManager as any)
+    await expect(runConfigEditor(mockConfigManager as any)).rejects.toThrow('process.exit')
     expect(mockConfigManager.save).not.toHaveBeenCalled()
+    expect(mockExit).toHaveBeenCalledWith(0)
+    mockExit.mockRestore()
   })
 })

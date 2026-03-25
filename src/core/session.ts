@@ -52,6 +52,7 @@ export class Session extends TypedEmitter<SessionEvents> {
   readonly permissionGate = new PermissionGate();
   private readonly queue: PromptQueue;
   private speechService?: SpeechService;
+  private pendingContext: string | null = null;
 
   constructor(opts: {
     id?: string;
@@ -131,6 +132,12 @@ export class Session extends TypedEmitter<SessionEvents> {
     return this.queue.isProcessing;
   }
 
+  // --- Context Injection ---
+
+  setContext(markdown: string): void {
+    this.pendingContext = markdown;
+  }
+
   // --- Voice Mode ---
 
   setVoiceMode(mode: "off" | "next" | "on"): void {
@@ -155,6 +162,13 @@ export class Session extends TypedEmitter<SessionEvents> {
     }
     const promptStart = Date.now();
     this.log.debug("Prompt execution started");
+
+    // Context injection: prepend on first real prompt only
+    if (this.pendingContext) {
+      text = `[CONVERSATION HISTORY - This is context from previous sessions, not current conversation]\n\n${this.pendingContext}\n\n[END CONVERSATION HISTORY]\n\n${text}`;
+      this.pendingContext = null;
+      this.log.debug("Context injected into prompt");
+    }
 
     // STT: transcribe audio attachments if agent doesn't support audio
     const processed = await this.maybeTranscribeAudio(text, attachments);

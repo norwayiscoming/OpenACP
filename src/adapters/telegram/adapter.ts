@@ -24,6 +24,7 @@ import {
   setupMenuCallbacks,
   setupDangerousModeCallbacks,
   setupTTSCallbacks,
+  setupVerbosityCallbacks,
   setupIntegrateCallbacks,
   buildMenuKeyboard,
   handlePendingWorkspaceInput,
@@ -110,7 +111,12 @@ export class TelegramAdapter extends ChannelAdapter<OpenACPCore> {
   private sessionTrackers: Map<string, ActivityTracker> = new Map();
 
   private get verbosity(): DisplayVerbosity {
-    const v = (this.telegramConfig as Record<string, unknown>).displayVerbosity;
+    const live = this.core.configManager.get().channels?.telegram as
+      | Record<string, unknown>
+      | undefined;
+    const v =
+      live?.displayVerbosity ??
+      (this.telegramConfig as Record<string, unknown>).displayVerbosity;
     if (v === "low" || v === "high") return v;
     return "medium";
   }
@@ -251,6 +257,7 @@ export class TelegramAdapter extends ChannelAdapter<OpenACPCore> {
     // Callback registration order matters!
     setupDangerousModeCallbacks(this.bot, this.core as OpenACPCore);
     setupTTSCallbacks(this.bot, this.core as OpenACPCore);
+    setupVerbosityCallbacks(this.bot, this.core as OpenACPCore);
     setupActionCallbacks(
       this.bot,
       this.core as OpenACPCore,

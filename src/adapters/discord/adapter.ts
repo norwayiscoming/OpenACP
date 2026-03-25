@@ -69,7 +69,12 @@ export class DiscordAdapter extends ChannelAdapter<OpenACPCore> {
   private sessionTrackers: Map<string, ActivityTracker> = new Map();
 
   private get verbosity(): DisplayVerbosity {
-    const v = (this.discordConfig as Record<string, unknown>).displayVerbosity;
+    const live = this.core.configManager.get().channels?.discord as
+      | Record<string, unknown>
+      | undefined;
+    const v =
+      live?.displayVerbosity ??
+      (this.discordConfig as Record<string, unknown>).displayVerbosity;
     if (v === "low" || v === "high") return v;
     return "medium";
   }

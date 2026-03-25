@@ -792,7 +792,10 @@ describe("ApiServer", () => {
       },
       speech: {
         stt: { provider: null, providers: {} },
-        tts: { provider: null, providers: { "edge-tts": { voice: "en-US-AriaNeural" } } },
+        tts: {
+          provider: null,
+          providers: { "edge-tts": { voice: "en-US-AriaNeural" } },
+        },
       },
     };
     mockCore.configManager.get.mockReturnValue(fullConfig);
@@ -839,7 +842,10 @@ describe("ApiServer", () => {
       expect(field.path).toBeTruthy();
       expect(field.displayName).toBeTruthy();
       expect(field.type).toBeTruthy();
-      expect(field.value).toBeDefined();
+      // Channel-specific fields may be undefined if the channel is not configured
+      if (!field.path.startsWith("channels.")) {
+        expect(field.value).toBeDefined();
+      }
     }
 
     const agentField = data.fields.find((f: any) => f.path === "defaultAgent");

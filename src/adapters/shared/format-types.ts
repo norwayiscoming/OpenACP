@@ -92,14 +92,3 @@ export interface ToolCallMeta {
 export interface ToolUpdateMeta extends ToolCallMeta {
   status: string;
 }
-
-export const MESSAGE_ICONS: Record<string, string> = {
-  thought: "💭",
-  plan: "📋",
-  usage: "📊",
-  error: "❌",
-  session_end_completed: "✅",
-  session_end_error: "❌",
-  system_message: "ℹ️",
-  attachment: "📎",
-};

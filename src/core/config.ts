@@ -156,7 +156,7 @@ export const ConfigSchema = z.object({
     )
     .default({}),
   speech: SpeechSchema,
-});
+}).passthrough(); // Allow plugin config fields (e.g. cowork: {...})
 
 export type Config = z.infer<typeof ConfigSchema>;
 

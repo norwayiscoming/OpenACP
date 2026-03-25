@@ -36,6 +36,7 @@ function createMockAdapter(): ChannelAdapter {
 // Test createSession by constructing a minimal OpenACPCore with mocked dependencies
 import { OpenACPCore } from "../core.js";
 import { SessionFactory } from "../session-factory.js";
+import { PluginRegistry } from "../plugin-registry.js";
 
 function createMockCore(): OpenACPCore {
   const mockAgent = createMockAgentInstance();
@@ -67,6 +68,7 @@ function createMockCore(): OpenACPCore {
     notifyAll: vi.fn().mockResolvedValue(undefined),
   } as any;
   core.eventBus = new EventBus();
+  core.pluginRegistry = new PluginRegistry();
   core.sessionFactory = new SessionFactory(
     core.agentManager,
     core.sessionManager,

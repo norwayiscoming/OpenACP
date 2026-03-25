@@ -50,7 +50,21 @@ export {
   uninstallPlugin,
   listPlugins,
   loadAdapterFactory,
+  loadCorePlugin,
 } from "./plugin-manager.js";
+export { PluginRegistry } from "./plugin-registry.js";
+export type {
+  CorePlugin,
+  PluginAPI,
+  PluginCommand,
+  PluginAdapterCommand,
+  PluginAdapterCommandHandler,
+  PluginSessionHooks,
+  PluginContext,
+  PromptPayload,
+  CommandContext,
+  SessionRecord as PluginSessionRecord,
+} from "./plugin-types.js";
 export { startDaemon, stopDaemon, getStatus, getPidPath } from "./daemon.js";
 export {
   installAutoStart,

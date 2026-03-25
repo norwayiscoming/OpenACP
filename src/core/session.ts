@@ -6,6 +6,7 @@ import { PromptQueue } from "./prompt-queue.js";
 import { PermissionGate } from "./permission-gate.js";
 import { createChildLogger, createSessionLogger, type Logger } from "./log.js";
 import type { SpeechService } from "./speech/index.js";
+import type { PluginRegistry } from "./plugin-registry.js";
 import * as fs from "node:fs";
 const moduleLog = createChildLogger({ module: "session" });
 
@@ -49,6 +50,7 @@ export class Session extends TypedEmitter<SessionEvents> {
   archiving: boolean = false;
   log: Logger;
 
+  pluginRegistry?: PluginRegistry;
   readonly permissionGate = new PermissionGate();
   private readonly queue: PromptQueue;
   private speechService?: SpeechService;
@@ -101,7 +103,13 @@ export class Session extends TypedEmitter<SessionEvents> {
   /** Transition to finished — from active only. Emits session_end for backward compat. */
   finish(reason?: string): void {
     this.transition("finished");
-    this.emit("session_end", reason ?? "completed");
+    const endReason = reason ?? "completed";
+    this.emit("session_end", endReason);
+    if (this.pluginRegistry) {
+      this.pluginRegistry.dispatchSessionEnd(this, endReason).catch((err) => {
+        this.log.warn({ err }, "Plugin dispatchSessionEnd error");
+      });
+    }
   }
 
   /** Transition to cancelled — from active only (terminal session cancel) */
@@ -157,7 +165,15 @@ export class Session extends TypedEmitter<SessionEvents> {
     this.log.debug("Prompt execution started");
 
     // STT: transcribe audio attachments if agent doesn't support audio
-    const processed = await this.maybeTranscribeAudio(text, attachments);
+    let processed = await this.maybeTranscribeAudio(text, attachments);
+
+    // Plugin hooks: allow plugins to transform the prompt (e.g. context injection)
+    if (this.pluginRegistry) {
+      processed = await this.pluginRegistry.dispatchBeforePrompt(this, {
+        text: processed.text,
+        attachments: processed.attachments,
+      });
+    }
 
     // TTS: determine if TTS is active for this prompt
     const ttsActive =
@@ -203,6 +219,13 @@ export class Session extends TypedEmitter<SessionEvents> {
     if (ttsActive && accumulatedText) {
       this.processTTSResponse(accumulatedText).catch((err) => {
         this.log.warn({ err }, "TTS post-processing failed");
+      });
+    }
+
+    // Plugin hooks: notify plugins prompt is complete
+    if (this.pluginRegistry) {
+      this.pluginRegistry.dispatchAfterPrompt(this).catch((err) => {
+        this.log.warn({ err }, "Plugin dispatchAfterPrompt error");
       });
     }
 

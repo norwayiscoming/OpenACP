@@ -93,7 +93,14 @@ export async function startServer() {
     log.info({ publicUrl }, 'Tunnel started')
   }
 
-  // 4. Register adapters from config
+  // 4. Load core plugins
+  try {
+    await core.pluginRegistry.loadAll(core)
+  } catch (err) {
+    log.error({ err }, 'Failed to load core plugins')
+  }
+
+  // 5. Register adapters from config
   for (const [channelName, channelConfig] of Object.entries(config.channels)) {
     if (!channelConfig.enabled) continue
 
@@ -141,6 +148,7 @@ export async function startServer() {
     log.info({ signal, exitCode }, 'Signal received, shutting down')
 
     try {
+      await core.pluginRegistry.unregisterAll()
       if (apiServer) await apiServer.stop()
       await core.stop()
       if (tunnelService) await tunnelService.stop()
@@ -238,6 +246,8 @@ export async function startServer() {
     const ok = (msg: string) => console.log(`\x1b[32m✓\x1b[0m ${msg}`)
     ok('Config loaded')
     ok('Dependencies checked')
+    const pluginNames = core.pluginRegistry.list()
+    if (pluginNames.length > 0) ok(`Plugins: ${pluginNames.join(', ')}`)
     if (tunnelService) ok(`Tunnel ready → ${tunnelService.getPublicUrl()}`)
     for (const [name] of core.adapters) ok(`${name.charAt(0).toUpperCase() + name.slice(1)} connected`)
     if (apiServer) ok(`API server on port ${config.api.port}`)

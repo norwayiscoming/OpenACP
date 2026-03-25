@@ -7,6 +7,7 @@ import { createChildLogger } from './log.js'
 const log = createChildLogger({ module: 'plugin-manager' })
 import type { ChannelAdapter, ChannelConfig } from './channel.js'
 import type { OpenACPCore } from './core.js'
+import type { CorePlugin } from './plugin-types.js'
 
 export interface AdapterFactory {
   name: string
@@ -40,6 +41,24 @@ export function listPlugins(): Record<string, string> {
   if (!fs.existsSync(pkgPath)) return {}
   const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'))
   return pkg.dependencies || {}
+}
+
+export async function loadCorePlugin(packageName: string): Promise<CorePlugin | null> {
+  try {
+    const require = createRequire(path.join(PLUGINS_DIR, 'package.json'))
+    const resolved = require.resolve(packageName)
+    const mod = await import(resolved)
+
+    const plugin: CorePlugin | undefined = mod.corePlugin || mod.default?.corePlugin
+    if (!plugin || typeof plugin.register !== 'function' || !plugin.name) {
+      // Not a core plugin — might be an adapter-only plugin
+      return null
+    }
+    return plugin
+  } catch (err) {
+    log.debug({ packageName, err }, 'No core plugin export found')
+    return null
+  }
 }
 
 export async function loadAdapterFactory(packageName: string): Promise<AdapterFactory | null> {

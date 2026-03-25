@@ -19,6 +19,7 @@ import type { TunnelService } from "../tunnel/tunnel-service.js";
 import { getAgentCapabilities } from "./agent-registry.js";
 import { AgentCatalog } from "./agent-catalog.js";
 import { EventBus } from "./event-bus.js";
+import { PluginRegistry } from "./plugin-registry.js";
 import { createChildLogger } from "./log.js";
 import { SpeechService, GroqSTT, EdgeTTS } from "./speech/index.js";
 const log = createChildLogger({ module: "core" });
@@ -40,6 +41,7 @@ export class OpenACPCore {
   private sessionStore: SessionStore | null = null;
   private resumeLocks: Map<string, Promise<Session | null>> = new Map();
   eventBus: EventBus;
+  pluginRegistry: PluginRegistry;
   sessionFactory: SessionFactory;
   readonly usageStore: UsageStore | null = null;
   readonly usageBudget: UsageBudget | null = null;
@@ -69,6 +71,7 @@ export class OpenACPCore {
 
     this.messageTransformer = new MessageTransformer();
     this.eventBus = new EventBus();
+    this.pluginRegistry = new PluginRegistry();
     this.sessionManager.setEventBus(this.eventBus);
     this.fileService = new FileService(
       path.join(os.homedir(), ".openacp", "files"),
@@ -286,6 +289,9 @@ export class OpenACPCore {
     // 1-3. Spawn/resume agent, create Session, register in SessionManager
     const session = await this.sessionFactory.create(params);
 
+    // Wire plugin registry into session for hook dispatch
+    session.pluginRegistry = this.pluginRegistry;
+
     // 4. Create thread if needed
     const adapter = this.adapters.get(params.channelId);
     if (params.createThread && adapter) {
@@ -334,6 +340,11 @@ export class OpenACPCore {
       lastActiveAt: new Date().toISOString(),
       name: session.name,
       platform,
+    });
+
+    // Dispatch plugin hooks
+    this.pluginRegistry.dispatchSessionCreated(session).catch((err) => {
+      log.error({ err, sessionId: session.id }, "Plugin dispatchSessionCreated error");
     });
 
     log.info(
@@ -600,6 +611,11 @@ export class OpenACPCore {
         session.threadId = message.threadId;
         session.activate();
         session.dangerousMode = record.dangerousMode ?? false;
+
+        // Dispatch plugin session resumed hooks
+        this.pluginRegistry.dispatchSessionResumed(session, record as any).catch((err) => {
+          log.error({ err, sessionId: session.id }, "Plugin dispatchSessionResumed error");
+        });
 
         log.info(
           { sessionId: session.id, threadId: message.threadId },

@@ -406,6 +406,20 @@ export class TelegramAdapter extends ChannelAdapter<OpenACPCore> {
       const threadId = ctx.message.message_thread_id;
       const text = ctx.message.text;
 
+      // Plugin commands: check if a slash command matches a registered plugin command
+      // Must be checked before pending workspace input, to avoid misinterpreting /cowork as a path
+      if (text.startsWith("/")) {
+        const spaceIdx = text.indexOf(" ");
+        const cmdName = (spaceIdx > 0 ? text.slice(1, spaceIdx) : text.slice(1)).toLowerCase();
+        const pluginCmd = this.core.pluginRegistry
+          .getAdapterCommands("telegram")
+          .find((c) => c.command === cmdName);
+        if (pluginCmd) {
+          await pluginCmd.handler(ctx, this.core, String(this.telegramConfig.chatId));
+          return;
+        }
+      }
+
       // Check for pending workspace input from interactive /new flow
       if (await handlePendingWorkspaceInput(ctx, this.core, this.telegramConfig.chatId, this.assistantTopicId)) {
         return;

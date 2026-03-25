@@ -1,0 +1,72 @@
+# Table of contents
+
+## Getting Started
+
+* [Overview](getting-started/README.md)
+* [What is OpenACP?](getting-started/what-is-openacp.md)
+* [For Users](getting-started/for-users.md)
+* [For Developers](getting-started/for-developers.md)
+* [For Contributors](getting-started/for-contributors.md)
+
+## Platform Setup
+
+* [Choose Your Platform](platform-setup/README.md)
+* [Telegram](platform-setup/telegram.md)
+* [Discord](platform-setup/discord.md)
+* [Slack](platform-setup/slack.md)
+
+## Using OpenACP
+
+* [Overview](using-openacp/README.md)
+* [Chat Commands](using-openacp/chat-commands.md)
+* [Sessions](using-openacp/sessions.md)
+* [Agents](using-openacp/agents.md)
+* [Permissions](using-openacp/permissions.md)
+* [Voice & Speech](using-openacp/voice-and-speech.md)
+* [Files & Media](using-openacp/files-and-media.md)
+
+## Self-Hosting
+
+* [Overview](self-hosting/README.md)
+* [Installation](self-hosting/installation.md)
+* [Configuration](self-hosting/configuration.md)
+* [Daemon Mode](self-hosting/daemon-mode.md)
+* [Security](self-hosting/security.md)
+* [Logging](self-hosting/logging.md)
+* [Updating](self-hosting/updating.md)
+
+## Features
+
+* [Overview](features/README.md)
+* [Tunnel & Port Forwarding](features/tunnel.md)
+* [Context Resume](features/context-resume.md)
+* [Usage & Budget](features/usage-and-budget.md)
+* [Session Persistence](features/session-persistence.md)
+* [Session Handoff](features/session-handoff.md)
+* [Doctor Diagnostics](features/doctor.md)
+* [Assistant Mode](features/assistant-mode.md)
+
+## Extending
+
+* [Overview](extending/README.md)
+* [Plugin System](extending/plugin-system.md)
+* [Building Adapters](extending/building-adapters.md)
+* [Adapter Reference](extending/adapter-reference.md)
+* [Contributing](extending/contributing.md)
+
+## API Reference
+
+* [Overview](api-reference/README.md)
+* [CLI Commands](api-reference/cli-commands.md)
+* [REST API](api-reference/rest-api.md)
+* [Configuration Schema](api-reference/configuration-schema.md)
+* [Environment Variables](api-reference/environment-variables.md)
+
+## Troubleshooting
+
+* [Common Issues](troubleshooting/README.md)
+* [Telegram Issues](troubleshooting/telegram-issues.md)
+* [Discord Issues](troubleshooting/discord-issues.md)
+* [Slack Issues](troubleshooting/slack-issues.md)
+* [Agent Issues](troubleshooting/agent-issues.md)
+* [FAQ](troubleshooting/faq.md)

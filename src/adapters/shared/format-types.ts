@@ -1,5 +1,14 @@
 // src/adapters/shared/format-types.ts
 
+export type DisplayVerbosity = "low" | "medium" | "high";
+
+export type NoiseAction = "hide" | "collapse";
+
+export interface NoiseRule {
+  match: (name: string, kind: string, rawInput: unknown) => boolean;
+  action: NoiseAction;
+}
+
 export type MessageStyle =
   | "text"
   | "thought"
@@ -27,6 +36,7 @@ export interface MessageMetadata {
 export interface FormattedMessage {
   summary: string;
   detail?: string;
+  viewerLinks?: { type: "file" | "diff"; url: string; label: string }[];
   icon: string;
   originalType: string;
   style: MessageStyle;

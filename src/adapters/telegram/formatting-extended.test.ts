@@ -142,15 +142,28 @@ describe("formatToolCall", () => {
     expect(result).toContain("Custom");
   });
 
-  it("shows content when no viewer links", () => {
+  it("shows content when no viewer links (high verbosity)", () => {
+    const result = formatToolCall(
+      {
+        id: "tc-1",
+        name: "Read",
+        status: "completed",
+        content: "file content here",
+      },
+      "high",
+    );
+    expect(result).toContain("<pre>");
+    expect(result).toContain("file content here");
+  });
+
+  it("no inline content on medium verbosity", () => {
     const result = formatToolCall({
       id: "tc-1",
       name: "Read",
       status: "completed",
       content: "file content here",
     });
-    expect(result).toContain("<pre>");
-    expect(result).toContain("file content here");
+    expect(result).not.toContain("<pre>");
   });
 
   it("shows viewer links instead of content when available", () => {
@@ -167,14 +180,17 @@ describe("formatToolCall", () => {
     expect(result).not.toContain("should not appear");
   });
 
-  it("truncates long content", () => {
+  it("truncates long content (high verbosity)", () => {
     const longContent = "x".repeat(4000);
-    const result = formatToolCall({
-      id: "tc-1",
-      name: "Read",
-      status: "completed",
-      content: longContent,
-    });
+    const result = formatToolCall(
+      {
+        id: "tc-1",
+        name: "Read",
+        status: "completed",
+        content: longContent,
+      },
+      "high",
+    );
     expect(result).toContain("… (truncated)");
   });
 
@@ -197,26 +213,32 @@ describe("formatToolCall", () => {
     expect(result).not.toContain("<pre>");
   });
 
-  it("extracts text from ACP content blocks", () => {
-    const result = formatToolCall({
-      id: "tc-1",
-      name: "Read",
-      status: "completed",
-      content: { type: "text", text: "extracted text" },
-    });
+  it("extracts text from ACP content blocks (high verbosity)", () => {
+    const result = formatToolCall(
+      {
+        id: "tc-1",
+        name: "Read",
+        status: "completed",
+        content: { type: "text", text: "extracted text" },
+      },
+      "high",
+    );
     expect(result).toContain("extracted text");
   });
 
-  it("extracts text from array of content blocks", () => {
-    const result = formatToolCall({
-      id: "tc-1",
-      name: "Read",
-      status: "completed",
-      content: [
-        { type: "text", text: "block1" },
-        { type: "text", text: "block2" },
-      ],
-    });
+  it("extracts text from array of content blocks (high verbosity)", () => {
+    const result = formatToolCall(
+      {
+        id: "tc-1",
+        name: "Read",
+        status: "completed",
+        content: [
+          { type: "text", text: "block1" },
+          { type: "text", text: "block2" },
+        ],
+      },
+      "high",
+    );
     expect(result).toContain("block1");
   });
 

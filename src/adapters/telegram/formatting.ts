@@ -17,7 +17,9 @@ import {
 import {
   extractContentText,
   formatToolSummary,
+  formatToolTitle,
 } from "../shared/message-formatter.js";
+import type { DisplayVerbosity } from "../shared/format-types.js";
 
 export function escapeHtml(text: string | undefined | null): string {
   if (!text) return "";
@@ -79,13 +81,19 @@ export function markdownToTelegramHtml(md: string): string {
   return text;
 }
 
-export function formatToolCall(tool: ToolCallMeta): string {
+export function formatToolCall(
+  tool: ToolCallMeta,
+  verbosity: DisplayVerbosity = "medium",
+): string {
   const si = STATUS_ICONS[tool.status || ""] || "🔧";
   const name = tool.name || "Tool";
-  const summary = formatToolSummary(name, tool.rawInput);
-  let text = `${si} <b>${escapeHtml(summary)}</b>`;
+  const label =
+    verbosity === "low"
+      ? formatToolTitle(name, tool.rawInput)
+      : formatToolSummary(name, tool.rawInput);
+  let text = `${si} <b>${escapeHtml(label)}</b>`;
   text += formatViewerLinks(tool.viewerLinks, tool.viewerFilePath);
-  if (!tool.viewerLinks) {
+  if (verbosity === "high" && !tool.viewerLinks) {
     const details = stripCodeFences(extractContentText(tool.content));
     if (details) {
       text += `\n<pre>${escapeHtml(truncateContent(details, 3800))}</pre>`;
@@ -94,13 +102,19 @@ export function formatToolCall(tool: ToolCallMeta): string {
   return text;
 }
 
-export function formatToolUpdate(update: ToolUpdateMeta): string {
+export function formatToolUpdate(
+  update: ToolUpdateMeta,
+  verbosity: DisplayVerbosity = "medium",
+): string {
   const si = STATUS_ICONS[update.status] || "🔧";
   const name = update.name || "Tool";
-  const summary = formatToolSummary(name, update.rawInput);
-  let text = `${si} <b>${escapeHtml(summary)}</b>`;
+  const label =
+    verbosity === "low"
+      ? formatToolTitle(name, update.rawInput)
+      : formatToolSummary(name, update.rawInput);
+  let text = `${si} <b>${escapeHtml(label)}</b>`;
   text += formatViewerLinks(update.viewerLinks, update.viewerFilePath);
-  if (!update.viewerLinks) {
+  if (verbosity === "high" && !update.viewerLinks) {
     const details = stripCodeFences(extractContentText(update.content));
     if (details) {
       text += `\n<pre>${escapeHtml(truncateContent(details, 3800))}</pre>`;

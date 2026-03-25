@@ -18,7 +18,7 @@ import type {
 import type { OpenACPCore } from "../../core/core.js";
 import type { Session } from "../../core/session.js";
 import { log } from "../../core/log.js";
-import type { ViewerLinks } from "../shared/format-types.js";
+import type { ViewerLinks, DisplayVerbosity } from "../shared/format-types.js";
 import {
   dispatchMessage,
   type MessageHandlers,
@@ -67,6 +67,13 @@ export class DiscordAdapter extends ChannelAdapter<OpenACPCore> {
   private skillManager!: SkillCommandManager;
   private permissionHandler!: PermissionHandler;
   private sessionTrackers: Map<string, ActivityTracker> = new Map();
+
+  private get verbosity(): DisplayVerbosity {
+    const v = (this.discordConfig as Record<string, unknown>).displayVerbosity;
+    if (v === "low" || v === "high") return v;
+    return "medium";
+  }
+
   private guild!: Guild;
   private forumChannel!: ForumChannel | TextChannel;
   private notificationChannel!: TextChannel;
@@ -528,30 +535,39 @@ export class DiscordAdapter extends ChannelAdapter<OpenACPCore> {
         ctx.isAssistant,
       );
       const meta = content.metadata ?? {};
-      await this.toolTracker.trackNewCall(ctx.sessionId, ctx.thread, {
-        id: String(meta.id ?? ""),
-        name: content.text || String(meta.name ?? "Tool"),
-        kind: meta.kind as string | undefined,
-        status: String(meta.status ?? "running"),
-        content: meta.content,
-        rawInput: meta.rawInput,
-        viewerLinks: meta.viewerLinks as ViewerLinks | undefined,
-        viewerFilePath: meta.viewerFilePath as string | undefined,
-      });
+      await this.toolTracker.trackNewCall(
+        ctx.sessionId,
+        ctx.thread,
+        {
+          id: String(meta.id ?? ""),
+          name: content.text || String(meta.name ?? "Tool"),
+          kind: meta.kind as string | undefined,
+          status: String(meta.status ?? "running"),
+          content: meta.content,
+          rawInput: meta.rawInput,
+          viewerLinks: meta.viewerLinks as ViewerLinks | undefined,
+          viewerFilePath: meta.viewerFilePath as string | undefined,
+        },
+        this.verbosity,
+      );
     },
 
     onToolUpdate: async (ctx, content) => {
       const meta = content.metadata ?? {};
-      await this.toolTracker.updateCall(ctx.sessionId, {
-        id: String(meta.id ?? ""),
-        name: content.text || String(meta.name ?? ""),
-        kind: meta.kind as string | undefined,
-        status: String(meta.status ?? "completed"),
-        content: meta.content,
-        rawInput: meta.rawInput,
-        viewerLinks: meta.viewerLinks as ViewerLinks | undefined,
-        viewerFilePath: meta.viewerFilePath as string | undefined,
-      });
+      await this.toolTracker.updateCall(
+        ctx.sessionId,
+        {
+          id: String(meta.id ?? ""),
+          name: content.text || String(meta.name ?? ""),
+          kind: meta.kind as string | undefined,
+          status: String(meta.status ?? "completed"),
+          content: meta.content,
+          rawInput: meta.rawInput,
+          viewerLinks: meta.viewerLinks as ViewerLinks | undefined,
+          viewerFilePath: meta.viewerFilePath as string | undefined,
+        },
+        this.verbosity,
+      );
     },
 
     onPlan: async (ctx, content) => {
@@ -721,7 +737,7 @@ export class DiscordAdapter extends ChannelAdapter<OpenACPCore> {
       this.assistantSession != null && sessionId === this.assistantSession.id;
 
     const ctx: DiscordMessageCtx = { sessionId, thread, isAssistant };
-    await dispatchMessage(this.messageHandlers, ctx, content);
+    await dispatchMessage(this.messageHandlers, ctx, content, this.verbosity);
   }
 
   // ─── sendPermissionRequest ────────────────────────────────────────────────

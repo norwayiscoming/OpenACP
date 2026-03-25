@@ -2,7 +2,11 @@ import type { Bot } from "grammy";
 import type { TelegramSendQueue } from "./send-queue.js";
 import { formatToolCall, formatToolUpdate } from "./formatting.js";
 import { createChildLogger } from "../../core/log.js";
-import type { ToolCallMeta, ViewerLinks } from "../shared/format-types.js";
+import type {
+  ToolCallMeta,
+  ViewerLinks,
+  DisplayVerbosity,
+} from "../shared/format-types.js";
 
 const log = createChildLogger({ module: "tool-call-tracker" });
 
@@ -29,6 +33,7 @@ export class ToolCallTracker {
     sessionId: string,
     threadId: number,
     meta: ToolCallMeta,
+    verbosity: DisplayVerbosity = "medium",
   ): Promise<void> {
     if (!this.sessions.has(sessionId)) {
       this.sessions.set(sessionId, new Map());
@@ -50,7 +55,7 @@ export class ToolCallTracker {
     });
 
     const msg = await this.sendQueue.enqueue(() =>
-      this.bot.api.sendMessage(this.chatId, formatToolCall(meta), {
+      this.bot.api.sendMessage(this.chatId, formatToolCall(meta, verbosity), {
         message_thread_id: threadId,
         parse_mode: "HTML",
         disable_notification: true,
@@ -65,6 +70,7 @@ export class ToolCallTracker {
   async updateCall(
     sessionId: string,
     meta: ToolCallMeta & { status: string },
+    verbosity: DisplayVerbosity = "medium",
   ): Promise<void> {
     const toolState = this.sessions.get(sessionId)?.get(meta.id);
     if (!toolState) return;
@@ -107,7 +113,7 @@ export class ToolCallTracker {
       viewerLinks: toolState.viewerLinks,
       viewerFilePath: toolState.viewerFilePath,
     };
-    const formattedText = formatToolUpdate(merged);
+    const formattedText = formatToolUpdate(merged, verbosity);
 
     try {
       await this.sendQueue.enqueue(() =>

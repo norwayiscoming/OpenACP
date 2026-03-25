@@ -17,7 +17,9 @@ import {
 import {
   extractContentText,
   formatToolSummary,
+  formatToolTitle,
 } from "../shared/message-formatter.js";
+import type { DisplayVerbosity } from "../shared/format-types.js";
 
 function formatViewerLinks(links?: ViewerLinks, filePath?: string): string {
   if (!links) return "";
@@ -29,13 +31,19 @@ function formatViewerLinks(links?: ViewerLinks, filePath?: string): string {
   return text;
 }
 
-export function formatToolCall(tool: ToolCallMeta): string {
+export function formatToolCall(
+  tool: ToolCallMeta,
+  verbosity: DisplayVerbosity = "medium",
+): string {
   const si = STATUS_ICONS[tool.status || ""] || "🔧";
   const name = tool.name || "Tool";
-  const summary = formatToolSummary(name, tool.rawInput);
-  let text = `${si} **${summary}**`;
+  const label =
+    verbosity === "low"
+      ? formatToolTitle(name, tool.rawInput)
+      : formatToolSummary(name, tool.rawInput);
+  let text = `${si} **${label}**`;
   text += formatViewerLinks(tool.viewerLinks, tool.viewerFilePath);
-  if (!tool.viewerLinks) {
+  if (verbosity === "high" && !tool.viewerLinks) {
     const details = stripCodeFences(extractContentText(tool.content));
     if (details) {
       text += `\n\`\`\`\n${truncateContent(details, 500)}\n\`\`\``;
@@ -44,8 +52,11 @@ export function formatToolCall(tool: ToolCallMeta): string {
   return text;
 }
 
-export function formatToolUpdate(update: ToolUpdateMeta): string {
-  return formatToolCall(update);
+export function formatToolUpdate(
+  update: ToolUpdateMeta,
+  verbosity: DisplayVerbosity = "medium",
+): string {
+  return formatToolCall(update, verbosity);
 }
 
 export function formatPlan(entries: PlanEntry[]): string {

@@ -48,6 +48,7 @@ import {
   dispatchMessage,
   type MessageHandlers,
 } from "../shared/message-dispatcher.js";
+import type { DisplayVerbosity } from "../shared/format-types.js";
 
 interface TelegramMessageCtx {
   sessionId: string;
@@ -107,6 +108,12 @@ export class TelegramAdapter extends ChannelAdapter<OpenACPCore> {
   private skillManager!: SkillCommandManager;
   private fileService!: FileService;
   private sessionTrackers: Map<string, ActivityTracker> = new Map();
+
+  private get verbosity(): DisplayVerbosity {
+    const v = (this.telegramConfig as Record<string, unknown>).displayVerbosity;
+    if (v === "low" || v === "high") return v;
+    return "medium";
+  }
 
   private getOrCreateTracker(
     sessionId: string,
@@ -618,30 +625,39 @@ export class TelegramAdapter extends ChannelAdapter<OpenACPCore> {
         this.assistantSession?.id,
       );
       const meta = (content.metadata ?? {}) as Partial<ToolCallMeta>;
-      await this.toolTracker.trackNewCall(ctx.sessionId, ctx.threadId, {
-        id: meta.id ?? "",
-        name: meta.name ?? content.text ?? "Tool",
-        kind: meta.kind,
-        status: meta.status,
-        content: meta.content,
-        rawInput: meta.rawInput,
-        viewerLinks: meta.viewerLinks,
-        viewerFilePath: meta.viewerFilePath,
-      });
+      await this.toolTracker.trackNewCall(
+        ctx.sessionId,
+        ctx.threadId,
+        {
+          id: meta.id ?? "",
+          name: meta.name ?? content.text ?? "Tool",
+          kind: meta.kind,
+          status: meta.status,
+          content: meta.content,
+          rawInput: meta.rawInput,
+          viewerLinks: meta.viewerLinks,
+          viewerFilePath: meta.viewerFilePath,
+        },
+        this.verbosity,
+      );
     },
 
     onToolUpdate: async (ctx, content) => {
       const meta = (content.metadata ?? {}) as Partial<ToolUpdateMeta>;
-      await this.toolTracker.updateCall(ctx.sessionId, {
-        id: meta.id ?? "",
-        name: meta.name ?? content.text ?? "",
-        kind: meta.kind,
-        status: meta.status ?? "completed",
-        content: meta.content,
-        rawInput: meta.rawInput,
-        viewerLinks: meta.viewerLinks,
-        viewerFilePath: meta.viewerFilePath,
-      });
+      await this.toolTracker.updateCall(
+        ctx.sessionId,
+        {
+          id: meta.id ?? "",
+          name: meta.name ?? content.text ?? "",
+          kind: meta.kind,
+          status: meta.status ?? "completed",
+          content: meta.content,
+          rawInput: meta.rawInput,
+          viewerLinks: meta.viewerLinks,
+          viewerFilePath: meta.viewerFilePath,
+        },
+        this.verbosity,
+      );
     },
 
     onPlan: async (ctx, content) => {
@@ -843,7 +859,7 @@ export class TelegramAdapter extends ChannelAdapter<OpenACPCore> {
     }
 
     const ctx: TelegramMessageCtx = { sessionId, threadId };
-    await dispatchMessage(this.messageHandlers, ctx, content);
+    await dispatchMessage(this.messageHandlers, ctx, content, this.verbosity);
   }
 
   async sendPermissionRequest(

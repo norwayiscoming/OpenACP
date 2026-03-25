@@ -123,7 +123,22 @@ describe("formatToolCall", () => {
     expect(result).toContain('🔍 Grep "handleNewSession"');
   });
 
-  it("includes code block for content when no viewerLinks", () => {
+  it("includes code block for content when no viewerLinks (high verbosity)", () => {
+    const result = formatToolCall(
+      {
+        id: "1",
+        name: "write_file",
+        kind: "write",
+        status: "completed",
+        content: "file content here",
+      },
+      "high",
+    );
+    expect(result).toContain("```");
+    expect(result).toContain("file content here");
+  });
+
+  it("no inline content on medium verbosity", () => {
     const result = formatToolCall({
       id: "1",
       name: "write_file",
@@ -131,18 +146,20 @@ describe("formatToolCall", () => {
       status: "completed",
       content: "file content here",
     });
-    expect(result).toContain("```");
-    expect(result).toContain("file content here");
+    expect(result).not.toContain("```");
   });
 
-  it("truncates content at 500 chars", () => {
+  it("truncates content at 500 chars (high verbosity)", () => {
     const longContent = "x".repeat(600);
-    const result = formatToolCall({
-      id: "1",
-      name: "tool",
-      status: "completed",
-      content: longContent,
-    });
+    const result = formatToolCall(
+      {
+        id: "1",
+        name: "tool",
+        status: "completed",
+        content: longContent,
+      },
+      "high",
+    );
     expect(result).toContain("… (truncated)");
     // The code block content should be truncated
     const codeBlockContent = result.replace(

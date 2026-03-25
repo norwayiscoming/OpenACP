@@ -2,7 +2,11 @@ import type { TextChannel, ThreadChannel, Message } from "discord.js";
 import { log } from "../../core/log.js";
 import { formatToolCall, formatToolUpdate } from "./formatting.js";
 import type { DiscordSendQueue } from "./send-queue.js";
-import type { ToolCallMeta, ViewerLinks } from "../shared/format-types.js";
+import type {
+  ToolCallMeta,
+  ViewerLinks,
+  DisplayVerbosity,
+} from "../shared/format-types.js";
 
 interface ToolCallState {
   message?: Message;
@@ -23,6 +27,7 @@ export class ToolCallTracker {
     sessionId: string,
     thread: TextChannel | ThreadChannel,
     tool: ToolCallMeta,
+    verbosity: DisplayVerbosity = "medium",
   ): Promise<void> {
     if (!this.sessions.has(sessionId)) {
       this.sessions.set(sessionId, new Map());
@@ -45,7 +50,7 @@ export class ToolCallTracker {
 
     this.sessions.get(sessionId)!.set(tool.id, state);
 
-    const content = formatToolCall(tool);
+    const content = formatToolCall(tool, verbosity);
 
     try {
       const msg = await this.sendQueue.enqueue(() => thread.send({ content }), {
@@ -65,6 +70,7 @@ export class ToolCallTracker {
   async updateCall(
     sessionId: string,
     update: ToolCallMeta & { status: string },
+    verbosity: DisplayVerbosity = "medium",
   ): Promise<void> {
     const toolState = this.sessions.get(sessionId)?.get(update.id);
     if (!toolState) return;
@@ -104,7 +110,7 @@ export class ToolCallTracker {
       viewerLinks: toolState.viewerLinks,
       viewerFilePath: toolState.viewerFilePath,
     };
-    const content = formatToolUpdate(merged);
+    const content = formatToolUpdate(merged, verbosity);
 
     try {
       await this.sendQueue.enqueue(() => toolState.message!.edit({ content }), {

@@ -140,7 +140,8 @@ git commit --no-verify -m "docs(gitbook): scaffold directory structure, SUMMARY.
 
 **Source references:**
 - `src/cli.ts` — CLI entry point, available commands
-- `src/core/setup.ts` — interactive setup wizard flow
+- `src/core/setup/wizard.ts` — interactive setup wizard flow (`runSetup()` for first-run, `runReconfigure()` for existing config)
+- `src/core/setup/index.ts` — setup module public API
 - `src/main.ts` — server startup
 - `package.json` — version, name, description
 - `README.md` — current product description
@@ -207,7 +208,7 @@ Content (~500 words):
   - Agent management
   - Daemon mode (run in background)
 
-Read `src/core/setup.ts` to accurately describe the setup wizard flow (channel selection, token validation, agent detection, workspace selection).
+Read `src/core/setup/wizard.ts` to accurately describe the setup wizard flow (channel selection, token validation, agent detection, workspace selection). Note: setup was refactored from monolithic `setup.ts` into modular `setup/` directory — `runSetup()` for first-run, `runReconfigure()` for modifying existing config.
 
 - [ ] **Step 5: Write `getting-started/for-contributors.md`**
 
@@ -256,6 +257,9 @@ git commit --no-verify -m "docs(gitbook): write Getting Started section — what
 - `src/adapters/slack/adapter.ts` — Slack adapter init
 - `src/adapters/slack/types.ts` — SlackChannelConfig schema
 - `src/core/config.ts` — full config schema (channel sections)
+- `src/core/setup/setup-telegram.ts` — Telegram setup wizard (token validation, chat ID detection)
+- `src/core/setup/setup-discord.ts` — Discord setup wizard (token validation, guild ID)
+- `src/core/setup/validation.ts` — API validation functions (bot tokens, chat IDs, admin privileges)
 - Existing docs (read before deleting): `docs/guide/telegram-setup.md`, `docs/guide/discord-setup.md`, `docs/slack-setup.md`
 
 **Tone:** Step-by-step tutorial. Each step numbered. Include expected output where possible.
@@ -490,6 +494,8 @@ git commit --no-verify -m "docs(gitbook): write Using OpenACP section — comman
 - `src/core/config.ts` — full Zod config schema (ConfigSchema, channelConfigSchema, etc.)
 - `src/core/config-migrations.ts` — backward compat migrations
 - `src/core/config-editor.ts` — interactive config editor
+- `src/core/setup/wizard.ts` — setup wizard (`runSetup()` + `runReconfigure()`)
+- `src/core/setup/setup-channels.ts` — channel orchestrator (modify/disable/delete)
 - `src/core/daemon.ts` — daemon start/stop/status/logs
 - `src/core/autostart.ts` — autostart on boot
 - `src/core/security-guard.ts` — allowedUserIds, maxConcurrentSessions
@@ -533,6 +539,7 @@ Content (~1000 words). Read `src/core/config.ts` thoroughly — this is the most
 Structure:
 - **Config file location:** `~/.openacp/config.json`
 - **Interactive editor:** `openacp config` launches TUI editor
+- **Reconfigure wizard:** `openacp onboard` — section-based reconfiguration (channels, agents, workspace, run mode, integrations). Can modify/disable/delete individual channels without resetting everything.
 - **Structure overview:** Top-level sections: channels, agents, defaultAgent, security, tunnel, logging, api, usage, speech, sessions, workspace
 - **Channels section:** Detailed walkthrough of telegram, discord, slack sub-objects with all fields
 - **Agents section:** How to define agents (command, args, workingDirectory, env), examples for Claude Code, Gemini, Codex
@@ -982,7 +989,7 @@ Commands to document (read source for exact flags):
 - `openacp logs` — tail logs
 - `openacp config` — interactive config editor
 - `openacp reset` — re-run setup wizard
-- `openacp onboard` — onboarding flow
+- `openacp onboard` — first-run setup wizard OR section-based reconfigure (if config exists). Reconfigure allows modifying individual sections: channels (modify/disable/delete), agents, workspace, run mode, integrations
 - `openacp agents` — list agents
 - `openacp agents install <name>` — install agent
 - `openacp agents uninstall <name>` — uninstall agent

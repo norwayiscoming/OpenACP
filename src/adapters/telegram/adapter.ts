@@ -104,7 +104,7 @@ export class TelegramAdapter extends MessagingAdapter {
   private notificationTopicId!: number;
   private assistantTopicId!: number;
   private sendQueue = new TelegramSendQueue(3000);
-  private _currentThreadId = 0;
+  private _sessionThreadIds = new Map<string, number>();
 
   // Extracted managers
   private toolTracker!: ToolCallTracker;
@@ -112,6 +112,14 @@ export class TelegramAdapter extends MessagingAdapter {
   private skillManager!: SkillCommandManager;
   private fileService!: FileService;
   private sessionTrackers: Map<string, ActivityTracker> = new Map();
+
+  private getThreadId(sessionId: string): number {
+    const threadId = this._sessionThreadIds.get(sessionId);
+    if (threadId === undefined) {
+      throw new Error(`No threadId stored for session ${sessionId}`);
+    }
+    return threadId;
+  }
 
   private getOrCreateTracker(
     sessionId: string,
@@ -634,19 +642,23 @@ export class TelegramAdapter extends MessagingAdapter {
       return;
     }
 
-    // Store threadId for handlers to use
-    this._currentThreadId = threadId;
-    await super.sendMessage(sessionId, content);
+    // Store threadId for handlers to use (keyed by sessionId for concurrency safety)
+    this._sessionThreadIds.set(sessionId, threadId);
+    try {
+      await super.sendMessage(sessionId, content);
+    } finally {
+      this._sessionThreadIds.delete(sessionId);
+    }
   }
 
   protected async handleThought(sessionId: string, _content: OutgoingMessage, _verbosity: DisplayVerbosity): Promise<void> {
-    const threadId = this._currentThreadId;
+    const threadId = this.getThreadId(sessionId);
     const tracker = this.getOrCreateTracker(sessionId, threadId);
     await tracker.onThought();
   }
 
   protected async handleText(sessionId: string, content: OutgoingMessage): Promise<void> {
-    const threadId = this._currentThreadId;
+    const threadId = this.getThreadId(sessionId);
     // CRITICAL: This handler must be fully synchronous to preserve text ordering.
     // sendMessage() is not awaited in wireSessionEvents, so multiple text events
     // run concurrently. Any await here creates a gap where subsequent text events
@@ -661,7 +673,7 @@ export class TelegramAdapter extends MessagingAdapter {
   }
 
   protected async handleToolCall(sessionId: string, content: OutgoingMessage, verbosity: DisplayVerbosity): Promise<void> {
-    const threadId = this._currentThreadId;
+    const threadId = this.getThreadId(sessionId);
     const meta = (content.metadata ?? {}) as Partial<ToolCallMeta>;
 
     const tracker = this.getOrCreateTracker(sessionId, threadId);
@@ -712,7 +724,7 @@ export class TelegramAdapter extends MessagingAdapter {
   }
 
   protected async handlePlan(sessionId: string, content: OutgoingMessage, verbosity: DisplayVerbosity): Promise<void> {
-    const threadId = this._currentThreadId;
+    const threadId = this.getThreadId(sessionId);
     const meta = (content.metadata ?? {}) as Partial<PlanMetadata>;
     const entries = meta.entries ?? [];
     const tracker = this.getOrCreateTracker(sessionId, threadId);
@@ -727,7 +739,7 @@ export class TelegramAdapter extends MessagingAdapter {
   }
 
   protected async handleUsage(sessionId: string, content: OutgoingMessage, verbosity: DisplayVerbosity): Promise<void> {
-    const threadId = this._currentThreadId;
+    const threadId = this.getThreadId(sessionId);
     const meta = content.metadata as UsageMetadata | undefined;
     await this.draftManager.finalize(
       sessionId,
@@ -765,7 +777,7 @@ export class TelegramAdapter extends MessagingAdapter {
   }
 
   protected async handleAttachment(sessionId: string, content: OutgoingMessage): Promise<void> {
-    const threadId = this._currentThreadId;
+    const threadId = this.getThreadId(sessionId);
     if (!content.attachment) return;
     const { attachment } = content;
 
@@ -824,7 +836,7 @@ export class TelegramAdapter extends MessagingAdapter {
   }
 
   protected async handleSessionEnd(sessionId: string, _content: OutgoingMessage): Promise<void> {
-    const threadId = this._currentThreadId;
+    const threadId = this.getThreadId(sessionId);
     await this.draftManager.finalize(
       sessionId,
       this.assistantSession?.id,
@@ -853,7 +865,7 @@ export class TelegramAdapter extends MessagingAdapter {
   }
 
   protected async handleError(sessionId: string, content: OutgoingMessage): Promise<void> {
-    const threadId = this._currentThreadId;
+    const threadId = this.getThreadId(sessionId);
     await this.draftManager.finalize(
       sessionId,
       this.assistantSession?.id,
@@ -877,7 +889,7 @@ export class TelegramAdapter extends MessagingAdapter {
   }
 
   protected async handleSystem(sessionId: string, content: OutgoingMessage): Promise<void> {
-    const threadId = this._currentThreadId;
+    const threadId = this.getThreadId(sessionId);
     await this.sendQueue.enqueue(() =>
       this.bot.api.sendMessage(
         this.telegramConfig.chatId,

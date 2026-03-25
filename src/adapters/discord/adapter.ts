@@ -76,9 +76,8 @@ export class DiscordAdapter extends MessagingAdapter {
   private assistantInitializing = false;
   private fileService: FileService;
 
-  // Thread reference stored by sendMessage for handler methods to use
-  private _currentThread!: ThreadChannel;
-  private _currentIsAssistant = false;
+  // Per-session thread context for concurrency safety in sendMessage handlers
+  private _sessionContexts = new Map<string, { thread: ThreadChannel; isAssistant: boolean }>();
 
   constructor(core: OpenACPCore, config: DiscordChannelConfig) {
     super(
@@ -513,6 +512,14 @@ export class DiscordAdapter extends MessagingAdapter {
     return this.sessionTrackers.get(sessionId)!;
   }
 
+  private getSessionContext(sessionId: string): { thread: ThreadChannel; isAssistant: boolean } {
+    const ctx = this._sessionContexts.get(sessionId);
+    if (!ctx) {
+      throw new Error(`No thread context stored for session ${sessionId}`);
+    }
+    return ctx;
+  }
+
   // ─── sendMessage ──────────────────────────────────────────────────────────
 
   async sendMessage(
@@ -533,24 +540,29 @@ export class DiscordAdapter extends MessagingAdapter {
 
     await ensureUnarchived(thread);
 
-    // Store thread reference for handler methods to use
-    this._currentThread = thread;
-    this._currentIsAssistant =
-      this.assistantSession != null && sessionId === this.assistantSession.id;
+    // Store thread context keyed by sessionId for concurrency safety
+    this._sessionContexts.set(sessionId, {
+      thread,
+      isAssistant: this.assistantSession != null && sessionId === this.assistantSession.id,
+    });
 
-    await super.sendMessage(sessionId, content);
+    try {
+      await super.sendMessage(sessionId, content);
+    } finally {
+      this._sessionContexts.delete(sessionId);
+    }
   }
 
   // ─── Handler overrides ─────────────────────────────────────────────────────
 
   protected async handleThought(sessionId: string, _content: OutgoingMessage, _verbosity: DisplayVerbosity): Promise<void> {
-    const thread = this._currentThread;
+    const { thread } = this.getSessionContext(sessionId);
     const tracker = this.getOrCreateTracker(sessionId, thread);
     await tracker.onThought();
   }
 
   protected async handleText(sessionId: string, content: OutgoingMessage): Promise<void> {
-    const thread = this._currentThread;
+    const { thread } = this.getSessionContext(sessionId);
     const tracker = this.getOrCreateTracker(sessionId, thread);
     await tracker.onTextStart();
     const draft = this.draftManager.getOrCreate(sessionId, thread);
@@ -559,8 +571,7 @@ export class DiscordAdapter extends MessagingAdapter {
   }
 
   protected async handleToolCall(sessionId: string, content: OutgoingMessage, verbosity: DisplayVerbosity): Promise<void> {
-    const thread = this._currentThread;
-    const isAssistant = this._currentIsAssistant;
+    const { thread, isAssistant } = this.getSessionContext(sessionId);
     const meta = content.metadata ?? {};
     const toolName = String(meta.name ?? content.text ?? "Tool");
 
@@ -617,15 +628,14 @@ export class DiscordAdapter extends MessagingAdapter {
   }
 
   protected async handlePlan(sessionId: string, content: OutgoingMessage, verbosity: DisplayVerbosity): Promise<void> {
-    const thread = this._currentThread;
+    const { thread } = this.getSessionContext(sessionId);
     const entries = (content.metadata?.entries ?? []) as PlanEntry[];
     const tracker = this.getOrCreateTracker(sessionId, thread);
     await tracker.onPlan(entries, verbosity);
   }
 
   protected async handleUsage(sessionId: string, content: OutgoingMessage, verbosity: DisplayVerbosity): Promise<void> {
-    const thread = this._currentThread;
-    const isAssistant = this._currentIsAssistant;
+    const { thread, isAssistant } = this.getSessionContext(sessionId);
     await this.draftManager.finalize(
       sessionId,
       thread,
@@ -656,8 +666,7 @@ export class DiscordAdapter extends MessagingAdapter {
   }
 
   protected async handleSessionEnd(sessionId: string, _content: OutgoingMessage): Promise<void> {
-    const thread = this._currentThread;
-    const isAssistant = this._currentIsAssistant;
+    const { thread, isAssistant } = this.getSessionContext(sessionId);
     await this.draftManager.finalize(
       sessionId,
       thread,
@@ -679,8 +688,7 @@ export class DiscordAdapter extends MessagingAdapter {
   }
 
   protected async handleError(sessionId: string, content: OutgoingMessage): Promise<void> {
-    const thread = this._currentThread;
-    const isAssistant = this._currentIsAssistant;
+    const { thread, isAssistant } = this.getSessionContext(sessionId);
     await this.draftManager.finalize(
       sessionId,
       thread,
@@ -703,8 +711,7 @@ export class DiscordAdapter extends MessagingAdapter {
   protected async handleAttachment(sessionId: string, content: OutgoingMessage): Promise<void> {
     if (!content.attachment) return;
     const { attachment } = content;
-    const thread = this._currentThread;
-    const isAssistant = this._currentIsAssistant;
+    const { thread, isAssistant } = this.getSessionContext(sessionId);
     await this.draftManager.finalize(
       sessionId,
       thread,
@@ -764,7 +771,7 @@ export class DiscordAdapter extends MessagingAdapter {
   }
 
   protected async handleSystem(sessionId: string, content: OutgoingMessage): Promise<void> {
-    const thread = this._currentThread;
+    const { thread } = this.getSessionContext(sessionId);
     try {
       await this.sendQueue.enqueue(
         () => thread.send({ content: content.text }),

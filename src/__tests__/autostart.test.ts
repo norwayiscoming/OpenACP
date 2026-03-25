@@ -29,7 +29,7 @@ describe('autostart', () => {
 
   describe('escapeXml', () => {
     it('escapes XML special characters', async () => {
-      const { escapeXml } = await import('../core/autostart.js')
+      const { escapeXml } = await import('../cli/autostart.js')
       expect(escapeXml('a & b')).toBe('a &amp; b')
       expect(escapeXml('<script>')).toBe('&lt;script&gt;')
       expect(escapeXml('"hello"')).toBe('&quot;hello&quot;')
@@ -40,7 +40,7 @@ describe('autostart', () => {
 
   describe('escapeSystemdValue', () => {
     it('quotes and escapes systemd special characters', async () => {
-      const { escapeSystemdValue } = await import('../core/autostart.js')
+      const { escapeSystemdValue } = await import('../cli/autostart.js')
       expect(escapeSystemdValue('/usr/bin/node')).toBe('"/usr/bin/node"')
       expect(escapeSystemdValue('/path with spaces/node')).toBe('"/path with spaces/node"')
       expect(escapeSystemdValue('/path"quote')).toBe('"/path\\"quote"')
@@ -52,7 +52,7 @@ describe('autostart', () => {
 
   describe('generateLaunchdPlist', () => {
     it('generates valid plist with absolute paths', async () => {
-      const { generateLaunchdPlist } = await import('../core/autostart.js')
+      const { generateLaunchdPlist } = await import('../cli/autostart.js')
       const plist = generateLaunchdPlist('/usr/local/bin/node', '/usr/local/lib/cli.js', '/Users/test/.openacp/logs')
       expect(plist).toContain('/usr/local/bin/node')
       expect(plist).toContain('/usr/local/lib/cli.js')
@@ -62,7 +62,7 @@ describe('autostart', () => {
     })
 
     it('escapes special characters in paths', async () => {
-      const { generateLaunchdPlist } = await import('../core/autostart.js')
+      const { generateLaunchdPlist } = await import('../cli/autostart.js')
       const plist = generateLaunchdPlist('/usr/bin/no<de', '/path/"cli".js', '/logs/a&b')
       expect(plist).toContain('<string>/usr/bin/no&lt;de</string>')
       expect(plist).toContain('<string>/path/&quot;cli&quot;.js</string>')
@@ -73,7 +73,7 @@ describe('autostart', () => {
 
   describe('generateSystemdUnit', () => {
     it('generates valid unit file with absolute paths', async () => {
-      const { generateSystemdUnit } = await import('../core/autostart.js')
+      const { generateSystemdUnit } = await import('../cli/autostart.js')
       const unit = generateSystemdUnit('/usr/bin/node', '/usr/lib/cli.js')
       expect(unit).toContain('/usr/bin/node')
       expect(unit).toContain('/usr/lib/cli.js')
@@ -82,13 +82,13 @@ describe('autostart', () => {
     })
 
     it('escapes special characters in paths', async () => {
-      const { generateSystemdUnit } = await import('../core/autostart.js')
+      const { generateSystemdUnit } = await import('../cli/autostart.js')
       const unit = generateSystemdUnit('/usr/bin/no de', '/path/"cli".js')
       expect(unit).toContain('ExecStart="/usr/bin/no de" "/path/\\"cli\\".js" --daemon-child')
     })
 
     it('escapes percent specifiers', async () => {
-      const { generateSystemdUnit } = await import('../core/autostart.js')
+      const { generateSystemdUnit } = await import('../cli/autostart.js')
       const unit = generateSystemdUnit('/usr/bin/node', '/home/%user/cli.js')
       expect(unit).toContain('%%user')
     })
@@ -96,7 +96,7 @@ describe('autostart', () => {
 
   describe('isAutoStartSupported', () => {
     it('returns true on darwin', async () => {
-      const { isAutoStartSupported } = await import('../core/autostart.js')
+      const { isAutoStartSupported } = await import('../cli/autostart.js')
       const supported = isAutoStartSupported()
       if (process.platform === 'darwin' || process.platform === 'linux') {
         expect(supported).toBe(true)

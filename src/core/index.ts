@@ -52,13 +52,13 @@ export {
   listPlugins,
   loadAdapterFactory,
 } from "./plugin-manager.js";
-export { startDaemon, stopDaemon, getStatus, getPidPath } from "./daemon.js";
+export { startDaemon, stopDaemon, getStatus, getPidPath } from "../cli/daemon.js";
 export {
   installAutoStart,
   uninstallAutoStart,
   isAutoStartInstalled,
   isAutoStartSupported,
-} from "./autostart.js";
+} from "../cli/autostart.js";
 export { runConfigEditor } from "./config/config-editor.js";
 export { ApiServer, type ApiConfig } from "./api/api-server.js";
 export { SSEManager } from "./api/sse-manager.js";

@@ -15,7 +15,7 @@ let shuttingDown = false
 export async function startServer() {
   // 0. If running as daemon child, check state and write PID file
   if (process.argv.includes('--daemon-child')) {
-    const { writePidFile, readPidFile, getPidPath, shouldAutoStart } = await import('./core/daemon.js')
+    const { writePidFile, readPidFile, getPidPath, shouldAutoStart } = await import('./cli/daemon.js')
 
     // Only auto-start if the daemon was previously running (user started it)
     if (!shouldAutoStart()) {
@@ -69,7 +69,7 @@ export async function startServer() {
 
   // Post-upgrade dependency check (blocking — must complete before server start)
   try {
-    const { runPostUpgradeChecks } = await import('./core/post-upgrade.js')
+    const { runPostUpgradeChecks } = await import('./cli/post-upgrade.js')
     await runPostUpgradeChecks(config)
   } catch (err) {
     log.warn({ err }, 'Post-upgrade check failed')
@@ -152,7 +152,7 @@ export async function startServer() {
 
     // Clean up PID file if running as daemon
     if (isDaemon) {
-      const { removePidFile, getPidPath } = await import('./core/daemon.js')
+      const { removePidFile, getPidPath } = await import('./cli/daemon.js')
       removePidFile(getPidPath())
     }
 

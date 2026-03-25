@@ -26,26 +26,26 @@ describe('daemon', () => {
 
   describe('isProcessRunning', () => {
     it('returns false when PID file does not exist', async () => {
-      const { isProcessRunning } = await import('../core/daemon.js')
+      const { isProcessRunning } = await import('../cli/daemon.js')
       expect(isProcessRunning(pidFile)).toBe(false)
     })
 
     it('returns false for stale PID file', async () => {
       fs.writeFileSync(pidFile, '999999999') // unlikely to be a real process
-      const { isProcessRunning } = await import('../core/daemon.js')
+      const { isProcessRunning } = await import('../cli/daemon.js')
       expect(isProcessRunning(pidFile)).toBe(false)
     })
   })
 
   describe('writePidFile / removePidFile', () => {
     it('writes and reads PID', async () => {
-      const { writePidFile, readPidFile } = await import('../core/daemon.js')
+      const { writePidFile, readPidFile } = await import('../cli/daemon.js')
       writePidFile(pidFile, 42)
       expect(readPidFile(pidFile)).toBe(42)
     })
 
     it('removePidFile deletes the file', async () => {
-      const { writePidFile, removePidFile } = await import('../core/daemon.js')
+      const { writePidFile, removePidFile } = await import('../cli/daemon.js')
       writePidFile(pidFile, 42)
       removePidFile(pidFile)
       expect(fs.existsSync(pidFile)).toBe(false)
@@ -54,14 +54,14 @@ describe('daemon', () => {
 
   describe('getStatus', () => {
     it('returns stopped when no PID file', async () => {
-      const { getStatus } = await import('../core/daemon.js')
+      const { getStatus } = await import('../cli/daemon.js')
       expect(getStatus(pidFile)).toEqual({ running: false })
     })
   })
 
   describe('stopDaemon', () => {
     it('waits for process exit before removing PID file', async () => {
-      const { writePidFile, stopDaemon, readPidFile } = await import('../core/daemon.js')
+      const { writePidFile, stopDaemon, readPidFile } = await import('../cli/daemon.js')
       writePidFile(pidFile, process.pid)
 
       let callCount = 0
@@ -87,7 +87,7 @@ describe('daemon', () => {
 
     it('sends SIGKILL after timeout', async () => {
       vi.useFakeTimers()
-      const { writePidFile, stopDaemon } = await import('../core/daemon.js')
+      const { writePidFile, stopDaemon } = await import('../cli/daemon.js')
       writePidFile(pidFile, process.pid)
 
       const signals: (string | number)[] = []
@@ -123,7 +123,7 @@ describe('daemon', () => {
     }, 10000)
 
     it('handles EPERM on initial check (stale PID from another user)', async () => {
-      const { writePidFile, stopDaemon, readPidFile } = await import('../core/daemon.js')
+      const { writePidFile, stopDaemon, readPidFile } = await import('../cli/daemon.js')
       writePidFile(pidFile, process.pid)
 
       vi.spyOn(process, 'kill').mockImplementation((pid: number, signal?: string | number) => {
@@ -144,7 +144,7 @@ describe('daemon', () => {
     })
 
     it('handles EPERM during polling (PID reuse after SIGTERM)', async () => {
-      const { writePidFile, stopDaemon, readPidFile } = await import('../core/daemon.js')
+      const { writePidFile, stopDaemon, readPidFile } = await import('../cli/daemon.js')
       writePidFile(pidFile, process.pid)
 
       let callCount = 0

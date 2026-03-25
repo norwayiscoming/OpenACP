@@ -2,7 +2,7 @@ import { spawn } from 'node:child_process'
 import * as fs from 'node:fs'
 import * as path from 'node:path'
 import * as os from 'node:os'
-import { expandHome } from './config/config.js'
+import { expandHome } from '../core/config/config.js'
 
 const DEFAULT_PID_PATH = path.join(os.homedir(), '.openacp', 'openacp.pid')
 const DEFAULT_LOG_DIR = path.join(os.homedir(), '.openacp', 'logs')

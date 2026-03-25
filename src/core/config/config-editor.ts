@@ -27,7 +27,7 @@ async function input(opts: { message: string; default?: string; validate?: (val:
   return result as string
 }
 import { validateBotToken, validateChatId, validateDiscordToken } from '../setup/index.js'
-import { installAutoStart, uninstallAutoStart, isAutoStartInstalled, isAutoStartSupported } from '../autostart.js'
+import { installAutoStart, uninstallAutoStart, isAutoStartInstalled, isAutoStartSupported } from '../../cli/autostart.js'
 import { expandHome } from './config.js'
 
 // ANSI color helpers

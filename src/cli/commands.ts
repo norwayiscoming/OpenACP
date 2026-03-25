@@ -767,7 +767,7 @@ Requires an existing config — run 'openacp' first to set up.
     return
   }
   await checkAndPromptUpdate()
-  const { startDaemon, getPidPath } = await import('../core/daemon.js')
+  const { startDaemon, getPidPath } = await import('./daemon.js')
   const { ConfigManager } = await import('../core/config/config.js')
   const cm = new ConfigManager()
   if (await cm.exists()) {
@@ -797,7 +797,7 @@ Sends a stop signal to the running OpenACP daemon process.
 `)
     return
   }
-  const { stopDaemon } = await import('../core/daemon.js')
+  const { stopDaemon } = await import('./daemon.js')
   const result = await stopDaemon()
   if (result.stopped) {
     console.log(`OpenACP daemon stopped (was PID ${result.pid})`)
@@ -819,7 +819,7 @@ Shows whether the OpenACP daemon is running and its PID.
 `)
     return
   }
-  const { getStatus } = await import('../core/daemon.js')
+  const { getStatus } = await import('./daemon.js')
   const status = getStatus()
   if (status.running) {
     console.log(`OpenACP is running (PID ${status.pid})`)
@@ -1012,7 +1012,7 @@ start fresh with the setup wizard. The daemon must be stopped first.
 `)
     return
   }
-  const { getStatus } = await import('../core/daemon.js')
+  const { getStatus } = await import('./daemon.js')
   const status = getStatus()
   if (status.running) {
     console.error('OpenACP is running. Stop it first: openacp stop')
@@ -1029,7 +1029,7 @@ start fresh with the setup wizard. The daemon must be stopped first.
     return
   }
 
-  const { uninstallAutoStart } = await import('../core/autostart.js')
+  const { uninstallAutoStart } = await import('./autostart.js')
   uninstallAutoStart()
 
   const fs = await import('node:fs')
@@ -1856,7 +1856,7 @@ export async function cmdDefault(command: string | undefined): Promise<void> {
   const config = cm.get()
 
   if (!forceForeground && config.runMode === 'daemon') {
-    const { startDaemon, getPidPath } = await import('../core/daemon.js')
+    const { startDaemon, getPidPath } = await import('./daemon.js')
     const result = startDaemon(getPidPath(), config.logging.logDir)
     if ('error' in result) {
       console.error(result.error)
@@ -1866,7 +1866,7 @@ export async function cmdDefault(command: string | undefined): Promise<void> {
     return
   }
 
-  const { markRunning } = await import('../core/daemon.js')
+  const { markRunning } = await import('./daemon.js')
   markRunning()
   const { startServer } = await import('../main.js')
   await startServer()

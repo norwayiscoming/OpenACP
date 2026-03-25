@@ -1,6 +1,6 @@
-import { createChildLogger } from "./utils/log.js";
-import { commandExists } from "./agents/agent-dependencies.js";
-import type { Config } from "./config/config.js";
+import { createChildLogger } from "../core/utils/log.js";
+import { commandExists } from "../core/agents/agent-dependencies.js";
+import type { Config } from "../core/config/config.js";
 
 const log = createChildLogger({ module: "post-upgrade" });
 
@@ -35,7 +35,7 @@ export async function runPostUpgradeChecks(config: Config): Promise<void> {
 
   // 2. Claude CLI integration + jq
   try {
-    const { getIntegration } = await import("../cli/integrate.js");
+    const { getIntegration } = await import("./integrate.js");
     const integration = getIntegration("claude");
     if (integration) {
       const allInstalled = integration.items.every((item) => item.isInstalled());
@@ -48,7 +48,7 @@ export async function runPostUpgradeChecks(config: Config): Promise<void> {
       const handoff = integration.items.find((i) => i.id === "handoff");
       if (handoff?.isInstalled() && !commandExists("jq")) {
         try {
-          const { ensureJq } = await import("./utils/install-jq.js");
+          const { ensureJq } = await import("../core/utils/install-jq.js");
           await ensureJq();
         } catch (err) {
           log.warn(
@@ -71,7 +71,7 @@ export async function runPostUpgradeChecks(config: Config): Promise<void> {
 
   // 4. uvx (needed for Python-based agents)
   try {
-    const { AgentStore } = await import("./agents/agent-store.js");
+    const { AgentStore } = await import("../core/agents/agent-store.js");
     const store = new AgentStore();
     store.load();
     const entries = store.getInstalled();

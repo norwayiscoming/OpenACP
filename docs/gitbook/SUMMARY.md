@@ -4,8 +4,7 @@
 
 * [Overview](getting-started/README.md)
 * [What is OpenACP?](getting-started/what-is-openacp.md)
-* [For Users](getting-started/for-users.md)
-* [For Developers](getting-started/for-developers.md)
+* [Quick Start](getting-started/quick-start.md)
 * [For Contributors](getting-started/for-contributors.md)
 
 ## Platform Setup

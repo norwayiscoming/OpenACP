@@ -1,6 +1,51 @@
 # Usage
 
-## Commands
+## CLI Commands
+
+```bash
+openacp                              # Start (first run: setup wizard)
+openacp start                        # Start as background daemon
+openacp stop                         # Stop daemon
+openacp status                       # Show daemon status
+openacp logs                         # Tail daemon logs
+openacp config                       # Interactive config editor
+openacp update                       # Update to latest version
+openacp reset                        # Delete all data and start fresh
+openacp --foreground                 # Force foreground mode
+```
+
+## Daemon Mode
+
+OpenACP can run as a background daemon:
+
+```bash
+openacp start                        # Start daemon
+openacp stop                         # Stop daemon
+openacp status                       # Check if running
+openacp logs                         # Tail logs
+```
+
+On macOS, auto-start is supported via LaunchAgent. Enable it in `openacp config` → Run Mode → Enable auto-start.
+
+## CLI API Commands
+
+Control sessions from the terminal. Requires a running daemon.
+
+```bash
+openacp api new [agent] [workspace]      # Create a new session
+openacp api status                       # List active sessions
+openacp api session <id>                 # Show session details
+openacp api send <id> <prompt>           # Send prompt to session
+openacp api cancel <id>                  # Cancel a session
+openacp api agents                       # List available agents
+openacp api health                       # System health check
+openacp api config                       # Show runtime config
+openacp api restart                      # Restart daemon
+```
+
+Sessions created via CLI also appear as Telegram/Discord topics, so you can continue the conversation there.
+
+## Telegram Commands
 
 | Command | Description |
 |---------|-------------|

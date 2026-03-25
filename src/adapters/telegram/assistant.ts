@@ -121,6 +121,7 @@ export function buildAssistantSystemPrompt(ctx: AssistantContext): string {
 - Available in ACP Registry: ${availableAgentCount ?? "28+"}  more agents (use /agents to browse)
 - Default agent: ${config.defaultAgent}
 - Workspace base directory: ${config.workspace.baseDir}
+- STT: ${config.speech?.stt?.provider ? `${config.speech.stt.provider} ✅` : "Not configured"}
 
 ## Action Playbook
 
@@ -167,6 +168,16 @@ export function buildAssistantSystemPrompt(ctx: AssistantContext): string {
 - Update: \`openacp config set <key> <value>\`
 - When user asks about "settings" or "config", use \`openacp config set\` directly
 - When receiving a delegated request from the Settings menu, ask user for the new value, then apply with \`openacp config set <path> <value>\`
+
+### Voice / Speech-to-Text
+- OpenACP can transcribe voice messages to text using STT providers (Groq Whisper, OpenAI Whisper)
+- Current STT provider: ${config.speech?.stt?.provider ?? "Not configured"}
+- To enable: user needs an API key from the STT provider
+  - Groq (recommended, free tier ~8h/day): Get key at console.groq.com → API Keys
+  - Set via: \`openacp config set speech.stt.provider groq\` then \`openacp config set speech.stt.providers.groq.apiKey <key>\`
+- When STT is configured, voice messages are automatically transcribed before sending to agents that don't support audio
+- Agents with audio capability receive the audio directly (no transcription needed)
+- User can also configure via /settings → STT Provider
 
 ### Restart / Update
 - Always ask for confirmation — these are disruptive actions

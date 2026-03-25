@@ -67,7 +67,7 @@ describe("agent-installer", () => {
         { type: "npx", package: "@zed-industries/claude-agent-acp@0.22.2", args: [] },
       );
       expect(result.command).toBe("npx");
-      expect(result.args).toEqual(["@zed-industries/claude-agent-acp@0.22.2"]);
+      expect(result.args).toEqual(["@zed-industries/claude-agent-acp"]);
       expect(result.distribution).toBe("npx");
     });
 

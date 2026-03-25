@@ -53,8 +53,8 @@ export class PermissionHandler {
       }
     )
 
-    // Deep link for notification
-    const deepLink = buildDeepLink(this.chatId, msg.message_id)
+    // Deep link for notification — include threadId so link navigates into the topic
+    const deepLink = buildDeepLink(this.chatId, threadId, msg.message_id)
 
     // Notify in notification topic (fire-and-forget to avoid sendQueue deadlock:
     // this method runs INSIDE a sendQueue item, so awaiting another enqueue() deadlocks)

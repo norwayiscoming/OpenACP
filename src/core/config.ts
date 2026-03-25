@@ -48,8 +48,11 @@ const TunnelSchema = z
   .object({
     enabled: z.boolean().default(false),
     port: z.number().default(3100),
-    provider: z.enum(["cloudflare", "ngrok", "bore", "tailscale"]).default("cloudflare"),
+    provider: z
+      .enum(["cloudflare", "ngrok", "bore", "tailscale"])
+      .default("cloudflare"),
     options: z.record(z.string(), z.unknown()).default({}),
+    maxUserTunnels: z.number().default(5),
     storeTtlMinutes: z.number().default(60),
     auth: TunnelAuthSchema,
   })
@@ -57,8 +60,62 @@ const TunnelSchema = z
 
 export type TunnelConfig = z.infer<typeof TunnelSchema>;
 
+const SlackChannelConfigSchema = z.object({
+  enabled: z.boolean().default(false),
+  adapter: z.literal("slack").optional(),
+  botToken: z.string().optional(),           // xoxb-...
+  appToken: z.string().optional(),           // xapp-... (Socket Mode)
+  signingSecret: z.string().optional(),
+  notificationChannelId: z.string().optional(),
+  allowedUserIds: z.array(z.string()).default([]),
+  channelPrefix: z.string().default("openacp"),
+  autoCreateSession: z.boolean().default(true),
+  startupChannelId: z.string().optional(),
+});
+
+export type SlackChannelConfig = z.infer<typeof SlackChannelConfigSchema>;
+
+const UsageSchema = z
+  .object({
+    enabled: z.boolean().default(true),
+    monthlyBudget: z.number().optional(),
+    warningThreshold: z.number().default(0.8),
+    currency: z.string().default("USD"),
+    retentionDays: z.number().default(90),
+  })
+  .default({});
+
+export type UsageConfig = z.infer<typeof UsageSchema>;
+
+const SpeechProviderSchema = z
+  .object({
+    apiKey: z.string().min(1).optional(),
+    model: z.string().optional(),
+  })
+  .passthrough();
+
+const SpeechSchema = z
+  .object({
+    stt: z
+      .object({
+        provider: z.string().nullable().default(null),
+        providers: z.record(SpeechProviderSchema).default({}),
+      })
+      .default({}),
+    tts: z
+      .object({
+        provider: z.string().nullable().default(null),
+        providers: z.record(SpeechProviderSchema).default({}),
+      })
+      .default({}),
+  })
+  .optional()
+  .default({});
+
 export const ConfigSchema = z.object({
-  channels: z.record(z.string(), BaseChannelSchema),
+  channels: z.object({
+    slack: SlackChannelConfigSchema.optional(),
+  }).catchall(BaseChannelSchema),
   agents: z.record(z.string(), AgentSchema).optional().default({}),
   defaultAgent: z.string(),
   workspace: z
@@ -74,22 +131,31 @@ export const ConfigSchema = z.object({
     })
     .default({}),
   logging: LoggingSchema,
-  runMode: z.enum(['foreground', 'daemon']).default('foreground'),
+  runMode: z.enum(["foreground", "daemon"]).default("foreground"),
   autoStart: z.boolean().default(false),
-  api: z.object({
-    port: z.number().default(21420),
-    host: z.string().default('127.0.0.1'),
-  }).default({}),
+  api: z
+    .object({
+      port: z.number().default(21420),
+      host: z.string().default("127.0.0.1"),
+    })
+    .default({}),
   sessionStore: z
     .object({
       ttlDays: z.number().default(30),
     })
     .default({}),
   tunnel: TunnelSchema,
-  integrations: z.record(z.string(), z.object({
-    installed: z.boolean(),
-    installedAt: z.string().optional(),
-  })).default({}),
+  usage: UsageSchema,
+  integrations: z
+    .record(
+      z.string(),
+      z.object({
+        installed: z.boolean(),
+        installedAt: z.string().optional(),
+      }),
+    )
+    .default({}),
+  speech: SpeechSchema,
 });
 
 export type Config = z.infer<typeof ConfigSchema>;
@@ -109,6 +175,14 @@ const DEFAULT_CONFIG = {
       chatId: 0,
       notificationTopicId: null,
       assistantTopicId: null,
+    },
+    discord: {
+      enabled: false,
+      botToken: "YOUR_DISCORD_BOT_TOKEN_HERE",
+      guildId: "",
+      forumChannelId: null,
+      notificationChannelId: null,
+      assistantThreadId: null,
     },
   },
   agents: {
@@ -131,6 +205,7 @@ const DEFAULT_CONFIG = {
     storeTtlMinutes: 60,
     auth: { enabled: false },
   },
+  usage: {},
 };
 
 export class ConfigManager extends EventEmitter {
@@ -156,7 +231,7 @@ export class ConfigManager extends EventEmitter {
       );
       log.info({ configPath: this.configPath }, "Config created");
       log.info(
-        "Please edit it with your Telegram bot token and chat ID, then restart.",
+        "Please edit it with your channel credentials (Telegram bot token, Discord bot token, etc.), then restart.",
       );
       process.exit(1);
     }
@@ -192,7 +267,10 @@ export class ConfigManager extends EventEmitter {
     return this.config;
   }
 
-  async save(updates: Record<string, unknown>, changePath?: string): Promise<void> {
+  async save(
+    updates: Record<string, unknown>,
+    changePath?: string,
+  ): Promise<void> {
     const oldConfig = this.config ? structuredClone(this.config) : undefined;
     // Read current file, merge updates, write back
     const raw = JSON.parse(fs.readFileSync(this.configPath, "utf-8"));
@@ -205,10 +283,12 @@ export class ConfigManager extends EventEmitter {
     }
     // Emit change event if path provided
     if (changePath) {
-      const { getConfigValue } = await import('./config-registry.js')
-      const value = getConfigValue(this.config, changePath)
-      const oldValue = oldConfig ? getConfigValue(oldConfig, changePath) : undefined
-      this.emit('config:changed', { path: changePath, value, oldValue })
+      const { getConfigValue } = await import("./config-registry.js");
+      const value = getConfigValue(this.config, changePath);
+      const oldValue = oldConfig
+        ? getConfigValue(oldConfig, changePath)
+        : undefined;
+      this.emit("config:changed", { path: changePath, value, oldValue });
     }
   }
 
@@ -248,6 +328,11 @@ export class ConfigManager extends EventEmitter {
     const overrides: [string, string[]][] = [
       ["OPENACP_TELEGRAM_BOT_TOKEN", ["channels", "telegram", "botToken"]],
       ["OPENACP_TELEGRAM_CHAT_ID", ["channels", "telegram", "chatId"]],
+      ["OPENACP_DISCORD_BOT_TOKEN", ["channels", "discord", "botToken"]],
+      ["OPENACP_DISCORD_GUILD_ID", ["channels", "discord", "guildId"]],
+      ["OPENACP_SLACK_BOT_TOKEN", ["channels", "slack", "botToken"]],
+      ["OPENACP_SLACK_APP_TOKEN", ["channels", "slack", "appToken"]],
+      ["OPENACP_SLACK_SIGNING_SECRET", ["channels", "slack", "signingSecret"]],
       ["OPENACP_DEFAULT_AGENT", ["defaultAgent"]],
       ["OPENACP_RUN_MODE", ["runMode"]],
       ["OPENACP_API_PORT", ["api", "port"]],
@@ -255,14 +340,15 @@ export class ConfigManager extends EventEmitter {
     for (const [envVar, configPath] of overrides) {
       const value = process.env[envVar];
       if (value !== undefined) {
-        let target = raw as Record<string, any>;
+        let target: Record<string, unknown> = raw;
         for (let i = 0; i < configPath.length - 1; i++) {
           if (!target[configPath[i]]) target[configPath[i]] = {};
-          target = target[configPath[i]];
+          target = target[configPath[i]] as Record<string, unknown>;
         }
         const key = configPath[configPath.length - 1];
         // Convert numeric fields to number
-        target[key] = (key === "chatId" || key === "port") ? Number(value) : value;
+        target[key] =
+          key === "chatId" || key === "port" ? Number(value) : value;
       }
     }
 
@@ -299,22 +385,45 @@ export class ConfigManager extends EventEmitter {
       (raw.tunnel as Record<string, unknown>).provider =
         process.env.OPENACP_TUNNEL_PROVIDER;
     }
+
+    // Speech env var overrides
+    if (process.env.OPENACP_SPEECH_STT_PROVIDER) {
+      raw.speech = raw.speech || {};
+      const speech = raw.speech as Record<string, unknown>;
+      speech.stt = speech.stt || {};
+      (speech.stt as Record<string, unknown>).provider = process.env.OPENACP_SPEECH_STT_PROVIDER;
+    }
+    if (process.env.OPENACP_SPEECH_GROQ_API_KEY) {
+      raw.speech = raw.speech || {};
+      const speech = raw.speech as Record<string, unknown>;
+      speech.stt = speech.stt || {};
+      const stt = speech.stt as Record<string, unknown>;
+      stt.providers = stt.providers || {};
+      const providers = stt.providers as Record<string, unknown>;
+      providers.groq = providers.groq || {};
+      (providers.groq as Record<string, unknown>).apiKey =
+        process.env.OPENACP_SPEECH_GROQ_API_KEY;
+    }
   }
 
   private deepMerge(
-    target: Record<string, any>,
-    source: Record<string, any>,
+    target: Record<string, unknown>,
+    source: Record<string, unknown>,
   ): void {
     for (const key of Object.keys(source)) {
+      const val = source[key];
       if (
-        source[key] &&
-        typeof source[key] === "object" &&
-        !Array.isArray(source[key])
+        val &&
+        typeof val === "object" &&
+        !Array.isArray(val)
       ) {
         if (!target[key]) target[key] = {};
-        this.deepMerge(target[key], source[key]);
+        this.deepMerge(
+          target[key] as Record<string, unknown>,
+          val as Record<string, unknown>,
+        );
       } else {
-        target[key] = source[key];
+        target[key] = val;
       }
     }
   }

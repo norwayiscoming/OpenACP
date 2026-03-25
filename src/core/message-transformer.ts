@@ -60,6 +60,8 @@ export class MessageTransformer {
         return { type: "session_end", text: `Done (${event.reason})` };
       case "error":
         return { type: "error", text: event.message };
+      case "system_message":
+        return { type: "system_message", text: event.message };
       default:
         return { type: "text", text: "" };
     }

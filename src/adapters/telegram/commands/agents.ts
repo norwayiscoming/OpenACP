@@ -230,17 +230,68 @@ async function installAgentWithProgress(ctx: Context, core: OpenACPCore, nameOrI
 
   const result = await catalog.install(nameOrId, progress);
 
-  // Show setup steps as a follow-up message
+  // Auto-integrate handoff if agent supports it
+  if (result.ok) {
+    const { getAgentCapabilities } = await import("../../../core/agent-dependencies.js");
+    const caps = getAgentCapabilities(result.agentKey);
+    if (caps.integration) {
+      const { installIntegration } = await import("../../../cli/integrate.js");
+      const intResult = await installIntegration(result.agentKey, caps.integration);
+      if (intResult.success) {
+        try {
+          await ctx.reply(`🔗 Handoff integration installed for <b>${escapeHtml(result.agentKey)}</b>`, { parse_mode: "HTML" });
+        } catch { /* ignore */ }
+      }
+    }
+  }
+
+  // Show setup steps as a follow-up message with copyable commands
   if (result.ok && result.setupSteps?.length) {
     let setupText = `📋 <b>Setup for ${escapeHtml(result.agentKey)}:</b>\n\n`;
     for (const step of result.setupSteps) {
-      setupText += `→ ${escapeHtml(step)}\n`;
+      setupText += `→ ${formatSetupStep(step)}\n`;
     }
-    setupText += `\n<i>Run in terminal: openacp agents info ${escapeHtml(result.agentKey)}</i>`;
+    setupText += `\n💡 <i>Tap any command to copy it</i>`;
     try {
       await ctx.reply(setupText, { parse_mode: "HTML" });
     } catch { /* ignore */ }
   }
+}
+
+/**
+ * Format a setup step for Telegram, wrapping commands in <code> for tap-to-copy.
+ * Patterns handled:
+ *   "Install Claude CLI: npm install -g @anthropic-ai/claude-code"
+ *   "Login: claude login (opens browser)"
+ *   "Or set API key: export OPENAI_API_KEY=<your-key>"
+ *   "Free tier: 60 requests/min" (no command — plain text)
+ */
+function formatSetupStep(step: string): string {
+  const colonIdx = step.indexOf(": ");
+  if (colonIdx === -1) return escapeHtml(step);
+
+  const label = step.slice(0, colonIdx);
+  const rest = step.slice(colonIdx + 2);
+
+  // Check if the part after ":" looks like a command (starts with known command prefixes)
+  const cmdPrefixes = [
+    "npm ", "npx ", "pip ", "uvx ", "export ", "claude ", "codex ",
+    "openacp ", "goose ", "gemini ", "cursor ", "gh ",
+  ];
+  const looksLikeCommand = cmdPrefixes.some((p) => rest.startsWith(p));
+
+  if (looksLikeCommand) {
+    // Split command from parenthetical explanation: "claude login (opens browser)"
+    const parenIdx = rest.indexOf(" (");
+    if (parenIdx !== -1) {
+      const cmd = rest.slice(0, parenIdx);
+      const explanation = rest.slice(parenIdx);
+      return `${escapeHtml(label)}: <code>${escapeHtml(cmd)}</code> ${escapeHtml(explanation)}`;
+    }
+    return `${escapeHtml(label)}: <code>${escapeHtml(rest)}</code>`;
+  }
+
+  return escapeHtml(step);
 }
 
 function truncate(text: string, maxLen: number): string {

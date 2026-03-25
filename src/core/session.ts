@@ -1,11 +1,19 @@
 import { nanoid } from "nanoid";
 import type { AgentInstance } from "./agent-instance.js";
-import type { AgentEvent, PermissionRequest, SessionStatus } from "./types.js";
+import type { AgentEvent, Attachment, PermissionRequest, SessionStatus } from "./types.js";
 import { TypedEmitter } from "./typed-emitter.js";
 import { PromptQueue } from "./prompt-queue.js";
 import { PermissionGate } from "./permission-gate.js";
 import { createChildLogger, createSessionLogger, type Logger } from "./log.js";
+import type { SpeechService } from "./speech/index.js";
+import * as fs from "node:fs";
 const moduleLog = createChildLogger({ module: "session" });
+
+// TTS constants
+export const TTS_PROMPT_INSTRUCTION = `\n\nAdditionally, include a [TTS]...[/TTS] block with a spoken-friendly summary of your response. Focus on key information, decisions the user needs to make, or actions required. The agent decides what to say and how long. Respond in the same language the user is using. This instruction applies to this message only.`;
+export const TTS_BLOCK_REGEX = /\[TTS\]([\s\S]*?)\[\/TTS\]/;
+export const TTS_MAX_LENGTH = 5000;
+export const TTS_TIMEOUT_MS = 30_000;
 
 // Valid state transitions: from → Set<to>
 const VALID_TRANSITIONS: Record<SessionStatus, Set<SessionStatus>> = {
@@ -36,11 +44,14 @@ export class Session extends TypedEmitter<SessionEvents> {
   private _status: SessionStatus = "initializing";
   name?: string;
   createdAt: Date = new Date();
+  voiceMode: "off" | "next" | "on" = "off";
   dangerousMode: boolean = false;
+  archiving: boolean = false;
   log: Logger;
 
   readonly permissionGate = new PermissionGate();
   private readonly queue: PromptQueue;
+  private speechService?: SpeechService;
 
   constructor(opts: {
     id?: string;
@@ -48,6 +59,7 @@ export class Session extends TypedEmitter<SessionEvents> {
     agentName: string;
     workingDirectory: string;
     agentInstance: AgentInstance;
+    speechService?: SpeechService;
   }) {
     super();
     this.id = opts.id || nanoid(12);
@@ -55,11 +67,12 @@ export class Session extends TypedEmitter<SessionEvents> {
     this.agentName = opts.agentName;
     this.workingDirectory = opts.workingDirectory;
     this.agentInstance = opts.agentInstance;
+    this.speechService = opts.speechService;
     this.log = createSessionLogger(this.id, moduleLog);
     this.log.info({ agentName: this.agentName }, "Session created");
 
     this.queue = new PromptQueue(
-      (text) => this.processPrompt(text),
+      (text, attachments) => this.processPrompt(text, attachments),
       (err) => {
         this.fail("Prompt execution failed");
         this.log.error({ err }, "Prompt execution failed");
@@ -118,14 +131,20 @@ export class Session extends TypedEmitter<SessionEvents> {
     return this.queue.isProcessing;
   }
 
-  // --- Public API ---
+  // --- Voice Mode ---
 
-  async enqueuePrompt(text: string): Promise<void> {
-    await this.queue.enqueue(text);
+  setVoiceMode(mode: "off" | "next" | "on"): void {
+    this.voiceMode = mode;
+    this.log.info({ voiceMode: mode }, "TTS mode changed");
   }
 
-  private async processPrompt(text: string): Promise<void> {
-    // Handle warmup sentinel
+  // --- Public API ---
+
+  async enqueuePrompt(text: string, attachments?: Attachment[]): Promise<void> {
+    await this.queue.enqueue(text, attachments);
+  }
+
+  private async processPrompt(text: string, attachments?: Attachment[]): Promise<void> {
     if (text === "\x00__warmup__") {
       await this.runWarmup();
       return;
@@ -137,15 +156,150 @@ export class Session extends TypedEmitter<SessionEvents> {
     const promptStart = Date.now();
     this.log.debug("Prompt execution started");
 
-    await this.agentInstance.prompt(text);
+    // STT: transcribe audio attachments if agent doesn't support audio
+    const processed = await this.maybeTranscribeAudio(text, attachments);
+
+    // TTS: determine if TTS is active for this prompt
+    const ttsActive =
+      this.voiceMode !== "off" &&
+      !!this.speechService?.isTTSAvailable();
+
+    // TTS: inject prompt instruction
+    if (ttsActive) {
+      processed.text += TTS_PROMPT_INSTRUCTION;
+      if (this.voiceMode === "next") {
+        this.voiceMode = "off";
+      }
+    }
+
+    // TTS: set up text accumulator before prompting
+    let accumulatedText = "";
+    const accumulatorListener = ttsActive
+      ? (event: AgentEvent) => {
+          if (event.type === "text") {
+            accumulatedText += event.content;
+          }
+        }
+      : null;
+
+    if (accumulatorListener) {
+      this.on("agent_event", accumulatorListener);
+    }
+
+    try {
+      await this.agentInstance.prompt(processed.text, processed.attachments);
+    } finally {
+      if (accumulatorListener) {
+        this.off("agent_event", accumulatorListener);
+      }
+    }
+
     this.log.info(
       { durationMs: Date.now() - promptStart },
       "Prompt execution completed",
     );
 
-    // Auto-name after first user prompt
+    // TTS: fire-and-forget post-response synthesis
+    if (ttsActive && accumulatedText) {
+      this.processTTSResponse(accumulatedText).catch((err) => {
+        this.log.warn({ err }, "TTS post-processing failed");
+      });
+    }
+
     if (!this.name) {
       await this.autoName();
+    }
+  }
+
+  private async maybeTranscribeAudio(
+    text: string,
+    attachments?: Attachment[],
+  ): Promise<{ text: string; attachments?: Attachment[] }> {
+    if (!attachments?.length || !this.speechService) {
+      return { text, attachments };
+    }
+
+    const hasAudioCapability = this.agentInstance.promptCapabilities?.audio === true;
+    if (hasAudioCapability) {
+      return { text, attachments };
+    }
+
+    if (!this.speechService.isSTTAvailable()) {
+      return { text, attachments };
+    }
+
+    let transcribedText = text;
+    const remainingAttachments: Attachment[] = [];
+
+    for (const att of attachments) {
+      if (att.type !== "audio") {
+        remainingAttachments.push(att);
+        continue;
+      }
+
+      try {
+        const audioPath = att.originalFilePath || att.filePath;
+        const audioMime = att.originalFilePath ? "audio/ogg" : att.mimeType;
+        const audioBuffer = await fs.promises.readFile(audioPath);
+        const result = await this.speechService.transcribe(audioBuffer, audioMime);
+        this.log.info({ provider: "stt", duration: result.duration }, "Voice transcribed");
+        // Notify user of transcription result
+        this.emit("agent_event", {
+          type: "system_message",
+          message: `🎤 You said: ${result.text}`,
+        });
+        // Strip [Audio: ...] placeholder since we have the transcription
+        transcribedText = transcribedText.replace(/\[Audio:\s*[^\]]*\]\s*/g, "").trim();
+        transcribedText = transcribedText
+          ? `${transcribedText}\n${result.text}`
+          : result.text;
+      } catch (err) {
+        this.log.warn({ err }, "STT transcription failed, keeping audio attachment");
+        this.emit("agent_event", {
+          type: "error",
+          message: `Voice transcription failed: ${(err as Error).message}`,
+        });
+        remainingAttachments.push(att);
+      }
+    }
+
+    return {
+      text: transcribedText,
+      attachments: remainingAttachments.length > 0 ? remainingAttachments : undefined,
+    };
+  }
+
+  private async processTTSResponse(responseText: string): Promise<void> {
+    const match = TTS_BLOCK_REGEX.exec(responseText);
+    if (!match?.[1]) {
+      this.log.debug("No [TTS] block found in response, skipping synthesis");
+      return;
+    }
+
+    let ttsText = match[1].trim();
+    if (!ttsText) return;
+
+    if (ttsText.length > TTS_MAX_LENGTH) {
+      ttsText = ttsText.slice(0, TTS_MAX_LENGTH);
+    }
+
+    try {
+      const timeoutPromise = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("TTS synthesis timed out")), TTS_TIMEOUT_MS),
+      );
+      const result = await Promise.race([
+        this.speechService!.synthesize(ttsText),
+        timeoutPromise,
+      ]);
+      const base64 = result.audioBuffer.toString("base64");
+      this.emit("agent_event", {
+        type: "audio_content",
+        data: base64,
+        mimeType: result.mimeType,
+      });
+      this.log.info("TTS synthesis completed");
+    } catch (err) {
+      this.log.warn({ err }, "TTS synthesis failed, skipping");
     }
   }
 
@@ -153,13 +307,18 @@ export class Session extends TypedEmitter<SessionEvents> {
   private async autoName(): Promise<void> {
     let title = "";
 
-    // Intercept at the source — capture text before it reaches the emitter,
-    // so adapter listeners never see auto-name output.
-    const originalHandler = this.agentInstance.onSessionUpdate;
-    this.agentInstance.onSessionUpdate = (event: AgentEvent) => {
+    // Temporarily remove all agent_event listeners so auto-name output
+    // is not forwarded to the adapter. Add a capture-only listener instead.
+    const captureHandler = (event: AgentEvent) => {
       if (event.type === "text") title += event.content;
-      // Swallow all events from auto-name prompt
+      // Swallow all other events from auto-name prompt
     };
+
+    // Pause the session emitter so agent_event emissions from SessionBridge
+    // don't reach the adapter during auto-name. The AgentInstance emitter
+    // stays active — we just intercept with our capture handler.
+    this.pause((event) => event !== "agent_event");
+    this.agentInstance.on("agent_event", captureHandler);
 
     try {
       await this.agentInstance.prompt(
@@ -173,7 +332,10 @@ export class Session extends TypedEmitter<SessionEvents> {
     } catch {
       this.name = `Session ${this.id.slice(0, 6)}`;
     } finally {
-      this.agentInstance.onSessionUpdate = originalHandler;
+      this.agentInstance.off("agent_event", captureHandler);
+      // Discard buffered auto-name agent_events, then resume normal delivery
+      this.clearBuffer();
+      this.resume();
     }
   }
 

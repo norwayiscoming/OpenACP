@@ -31,14 +31,15 @@ function buildSettingsKeyboard(core: OpenACPCore): InlineKeyboard {
 function formatFieldLabel(field: ConfigFieldDef, value: unknown): string {
   const icons: Record<string, string> = {
     agent: '🤖', logging: '📝', tunnel: '🔗',
-    security: '🔒', workspace: '📁', storage: '💾',
+    security: '🔒', workspace: '📁', storage: '💾', speech: '🎤',
   };
   const icon = icons[field.group] ?? '⚙️';
 
   if (field.type === 'toggle') {
     return `${icon} ${field.displayName}: ${value ? 'ON' : 'OFF'}`;
   }
-  return `${icon} ${field.displayName}: ${String(value)}`;
+  const displayValue = value === null || value === undefined ? 'Not set' : String(value);
+  return `${icon} ${field.displayName}: ${displayValue}`;
 }
 
 export async function handleSettings(ctx: Context, core: OpenACPCore): Promise<void> {
@@ -110,6 +111,25 @@ export function setupSettingsCallbacks(
     const newValue = parts[parts.length - 1];
 
     try {
+      // For speech.stt.provider: check if the selected provider has an API key configured
+      if (fieldPath === 'speech.stt.provider') {
+        const config = core.configManager.get();
+        const providerConfig = config.speech?.stt?.providers?.[newValue];
+        if (!providerConfig?.apiKey) {
+          // No API key — delegate to assistant to collect it
+          const assistant = getAssistantSession();
+          if (assistant) {
+            try { await ctx.answerCallbackQuery({ text: `🔑 API key needed — check Assistant topic` }); } catch { /* expired */ }
+            const prompt = `User wants to enable ${newValue} as Speech-to-Text provider, but no API key is configured yet. Guide them to get a ${newValue} API key and set it up. After they provide the key, run both commands: \`openacp config set speech.stt.providers.${newValue}.apiKey <key>\` and \`openacp config set speech.stt.provider ${newValue}\``;
+            await assistant.enqueuePrompt(prompt);
+            return;
+          }
+          // No assistant — just warn
+          try { await ctx.answerCallbackQuery({ text: `⚠️ Set API key first: openacp config set speech.stt.providers.${newValue}.apiKey <key>` }); } catch { /* expired */ }
+          return;
+        }
+      }
+
       const updates = buildNestedUpdate(fieldPath, newValue);
       await core.configManager.save(updates, fieldPath);
 

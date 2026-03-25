@@ -1,0 +1,148 @@
+name: Telegram Notifications
+
+on:
+  push:
+    branches: ["**"]
+  pull_request_target:
+    types: [opened, closed, reopened]
+  release:
+    types: [published]
+  workflow_run:
+    workflows: ["Publish to npm"]
+    types: [completed]
+
+env:
+  TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+  TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+  TELEGRAM_TOPIC_ID: ${{ secrets.TELEGRAM_TOPIC_ID }}
+
+jobs:
+  notify-push:
+    name: Push
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Build and send notification
+        env:
+          COMMITS_JSON: ${{ toJSON(github.event.commits) }}
+          BRANCH: ${{ github.ref_name }}
+          COMPARE_URL: ${{ github.event.compare }}
+          REPO: ${{ github.repository }}
+        run: |
+          COMMITS=""
+          COUNT=0
+          for row in $(echo "$COMMITS_JSON" | jq -r '.[] | @base64'); do
+            MSG=$(echo "$row" | base64 -d | jq -r '.message' | head -1)
+            AUTHOR=$(echo "$row" | base64 -d | jq -r '.author.username')
+            SHORT=$(echo "$row" | base64 -d | jq -r '.id' | cut -c1-7)
+            COMMITS="${COMMITS}<code>${SHORT}</code> ${MSG} — <a href=\"https://github.com/${AUTHOR}\"><b>${AUTHOR}</b></a>"$'\n'
+            COUNT=$((COUNT + 1))
+          done
+
+          [ -z "$COMMITS" ] && exit 0
+
+          TEXT="🔀 <b>${REPO}</b> — <code>${BRANCH}</code>
+          ${COUNT} new commit(s)
+
+          ${COMMITS}
+          <a href=\"${COMPARE_URL}\">View diff</a>"
+
+          curl -sf -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -d chat_id="${TELEGRAM_CHAT_ID}" \
+            -d message_thread_id="${TELEGRAM_TOPIC_ID}" \
+            -d parse_mode=HTML \
+            -d disable_web_page_preview=true \
+            --data-urlencode "text=${TEXT}"
+
+  notify-pr:
+    name: Pull Request
+    if: github.event_name == 'pull_request_target'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send notification
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          PR_NUM: ${{ github.event.pull_request.number }}
+          AUTHOR: ${{ github.event.pull_request.user.login }}
+          ACTION: ${{ github.event.action }}
+          MERGED: ${{ github.event.pull_request.merged }}
+          HEAD: ${{ github.event.pull_request.head.ref }}
+          BASE: ${{ github.event.pull_request.base.ref }}
+          REPO: ${{ github.repository }}
+        run: |
+          if [ "$ACTION" = "closed" ] && [ "$MERGED" = "true" ]; then
+            EMOJI="✅"; STATUS="Merged"
+          elif [ "$ACTION" = "closed" ]; then
+            EMOJI="❌"; STATUS="Closed"
+          elif [ "$ACTION" = "reopened" ]; then
+            EMOJI="🔄"; STATUS="Reopened"
+          else
+            EMOJI="📬"; STATUS="Opened"
+          fi
+
+          TEXT="${EMOJI} <b>${STATUS}: #${PR_NUM} ${PR_TITLE}</b>
+          <b>${REPO}</b> — <code>${HEAD}</code> → <code>${BASE}</code>
+          by <a href=\"https://github.com/${AUTHOR}\"><b>${AUTHOR}</b></a>
+
+          <a href=\"${PR_URL}\">View pull request</a>"
+
+          curl -sf -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -d chat_id="${TELEGRAM_CHAT_ID}" \
+            -d message_thread_id="${TELEGRAM_TOPIC_ID}" \
+            -d parse_mode=HTML \
+            -d disable_web_page_preview=true \
+            --data-urlencode "text=${TEXT}"
+
+  notify-release:
+    name: Release published
+    if: github.event_name == 'release'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send notification
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+          RELEASE_URL: ${{ github.event.release.html_url }}
+          REPO: ${{ github.repository }}
+          AUTHOR: ${{ github.event.release.author.login }}
+        run: |
+          TEXT="🚀 <b>New Release: ${TAG}</b>
+          <b>${REPO}</b> — published by <a href=\"https://github.com/${AUTHOR}\"><b>${AUTHOR}</b></a>
+
+          <a href=\"${RELEASE_URL}\">View release notes</a>"
+
+          curl -sf -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -d chat_id="${TELEGRAM_CHAT_ID}" \
+            -d message_thread_id="${TELEGRAM_TOPIC_ID}" \
+            -d parse_mode=HTML \
+            -d disable_web_page_preview=true \
+            --data-urlencode "text=${TEXT}"
+
+  notify-ci-failure:
+    name: CI failure
+    if: github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'failure'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send notification
+        env:
+          WORKFLOW: ${{ github.event.workflow_run.name }}
+          RUN_URL: ${{ github.event.workflow_run.html_url }}
+          BRANCH: ${{ github.event.workflow_run.head_branch }}
+          AUTHOR: ${{ github.event.workflow_run.actor.login }}
+          REPO: ${{ github.repository }}
+          COMMIT_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          SHORT_SHA=$(echo "$COMMIT_SHA" | cut -c1-7)
+
+          TEXT="🔴 <b>CI Failed: ${WORKFLOW}</b>
+          <b>${REPO}</b> — <code>${BRANCH}</code> @ <code>${SHORT_SHA}</code>
+          Triggered by <a href=\"https://github.com/${AUTHOR}\"><b>${AUTHOR}</b></a>
+
+          <a href=\"${RUN_URL}\">View logs</a>"
+
+          curl -sf -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -d chat_id="${TELEGRAM_CHAT_ID}" \
+            -d message_thread_id="${TELEGRAM_TOPIC_ID}" \
+            -d parse_mode=HTML \
+            -d disable_web_page_preview=true \
+            --data-urlencode "text=${TEXT}"

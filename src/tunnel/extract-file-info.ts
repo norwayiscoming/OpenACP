@@ -27,27 +27,29 @@ export function extractFileInfo(
 
   // 1. Try _meta.claudeCode.toolResponse (Claude Code puts raw file data here)
   if (meta) {
-    const m = meta as any
-    const tr = m?.claudeCode?.toolResponse
+    const m = meta as Record<string, unknown>
+    const claudeCode = m?.claudeCode as Record<string, unknown> | undefined
+    const tr = claudeCode?.toolResponse as Record<string, unknown> | undefined
     // Read tool: toolResponse.file.filePath + toolResponse.file.content
-    const file = tr?.file
-    if (file?.filePath && file?.content) {
+    const file = tr?.file as Record<string, unknown> | undefined
+    if (typeof file?.filePath === 'string' && typeof file?.content === 'string') {
       info = { filePath: file.filePath, content: file.content }
     }
     // Write/Edit tool: toolResponse.filePath + toolResponse.content (direct)
-    if (!info && tr?.filePath && tr?.content) {
+    if (!info && typeof tr?.filePath === 'string' && typeof tr?.content === 'string') {
       info = { filePath: tr.filePath, content: tr.content }
     }
   }
 
   // 2. Try rawInput for file path + content from regular content
-  if (!info && rawInput) {
-    const ri = rawInput as any
+  if (!info && rawInput && typeof rawInput === 'object') {
+    const ri = rawInput as Record<string, unknown>
     const filePath = ri?.file_path || ri?.filePath || ri?.path
     if (typeof filePath === 'string') {
       // Try to get content from the content field (including oldContent for diffs)
       const parsed = content ? parseContent(content) : null
-      info = { filePath, content: parsed?.content || ri?.content, oldContent: parsed?.oldContent }
+      const riContent = typeof ri?.content === 'string' ? ri.content : undefined
+      info = { filePath, content: parsed?.content || riContent, oldContent: parsed?.oldContent }
     }
   }
 

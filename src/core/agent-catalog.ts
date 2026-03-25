@@ -38,6 +38,7 @@ export class AgentCatalog {
   load(): void {
     this.store.load();
     this.loadRegistryFromCacheOrSnapshot();
+    this.enrichInstalledFromRegistry();
   }
 
   // --- Registry ---
@@ -205,6 +206,62 @@ export class AgentCatalog {
   }
 
   // --- Internal ---
+
+  /**
+   * Enrich installed agents (especially migrated ones) with registry data.
+   * Fixes agents that were migrated with version:"unknown", distribution:"custom",
+   * or generic names by matching them to registry entries.
+   */
+  private enrichInstalledFromRegistry(): void {
+    const installed = this.store.getInstalled();
+    let changed = false;
+
+    for (const [key, agent] of Object.entries(installed)) {
+      const regAgent = agent.registryId
+        ? this.registryAgents.find((a) => a.id === agent.registryId)
+        : this.registryAgents.find((a) => getAgentAlias(a.id) === key);
+
+      if (!regAgent) continue;
+
+      let updated = false;
+
+      // Enrich name if it's a generic capitalized key (e.g. "Claude" from migration)
+      if (agent.name !== regAgent.name) {
+        agent.name = regAgent.name;
+        updated = true;
+      }
+
+      // Enrich version if unknown
+      if (agent.version === "unknown") {
+        agent.version = regAgent.version;
+        updated = true;
+      }
+
+      // Enrich registryId if missing
+      if (!agent.registryId) {
+        agent.registryId = regAgent.id;
+        updated = true;
+      }
+
+      // Enrich distribution from "custom" to actual type
+      if (agent.distribution === "custom") {
+        const dist = resolveDistribution(regAgent);
+        if (dist) {
+          agent.distribution = dist.type;
+          updated = true;
+        }
+      }
+
+      if (updated) {
+        this.store.addAgent(key, agent);
+        changed = true;
+      }
+    }
+
+    if (changed) {
+      log.info("Enriched installed agents with registry data");
+    }
+  }
 
   private isCacheStale(): boolean {
     if (!fs.existsSync(CACHE_PATH)) return true;

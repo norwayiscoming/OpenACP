@@ -1,10 +1,16 @@
 import type { AgentManager } from "./agent-manager.js";
 import { Session } from "./session.js";
 import type { SessionStore } from "./session-store.js";
+import type { EventBus } from "./event-bus.js";
 
 export class SessionManager {
   private sessions: Map<string, Session> = new Map();
   private store: SessionStore | null;
+  private eventBus?: EventBus;
+
+  setEventBus(eventBus: EventBus): void {
+    this.eventBus = eventBus;
+  }
 
   constructor(store: SessionStore | null = null) {
     this.store = store;
@@ -67,14 +73,19 @@ export class SessionManager {
     return undefined;
   }
 
-  getRecordByAgentSessionId(agentSessionId: string): import("./types.js").SessionRecord | undefined {
+  getRecordByAgentSessionId(
+    agentSessionId: string,
+  ): import("./types.js").SessionRecord | undefined {
     return this.store?.findByAgentSessionId(agentSessionId);
   }
 
-  getRecordByThread(channelId: string, threadId: string): import("./types.js").SessionRecord | undefined {
+  getRecordByThread(
+    channelId: string,
+    threadId: string,
+  ): import("./types.js").SessionRecord | undefined {
     return this.store?.findByPlatform(
       channelId,
-      (p) => String(p.topicId) === threadId,
+      (p) => String(p.topicId) === threadId || p.threadId === threadId,
     );
   }
 
@@ -96,8 +107,9 @@ export class SessionManager {
     }
   }
 
-
-  getSessionRecord(sessionId: string): import("./types.js").SessionRecord | undefined {
+  getSessionRecord(
+    sessionId: string,
+  ): import("./types.js").SessionRecord | undefined {
     return this.store?.get(sessionId);
   }
 
@@ -121,11 +133,13 @@ export class SessionManager {
     return all;
   }
 
-  listRecords(filter?: { statuses?: string[] }): import("./types.js").SessionRecord[] {
+  listRecords(filter?: {
+    statuses?: string[];
+  }): import("./types.js").SessionRecord[] {
     if (!this.store) return [];
     let records = this.store.list();
     if (filter?.statuses?.length) {
-      records = records.filter(r => filter.statuses!.includes(r.status));
+      records = records.filter((r) => filter.statuses!.includes(r.status));
     }
     return records;
   }
@@ -133,6 +147,7 @@ export class SessionManager {
   async removeRecord(sessionId: string): Promise<void> {
     if (!this.store) return;
     await this.store.remove(sessionId);
+    this.eventBus?.emit("session:deleted", { sessionId });
   }
 
   async destroyAll(): Promise<void> {

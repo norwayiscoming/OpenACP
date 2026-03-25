@@ -68,6 +68,27 @@ function wrapVariadic(logger: pino.Logger) {
 
 export const log = wrapVariadic(rootLogger)
 
+// --- Mute/unmute (suppress pino output during interactive prompts) ---
+
+let muteCount = 0
+let savedLevel = 'info'
+
+export function muteLogger(): void {
+  if (muteCount === 0) {
+    savedLevel = rootLogger.level
+    rootLogger.level = 'silent'
+  }
+  muteCount++
+}
+
+export function unmuteLogger(): void {
+  muteCount--
+  if (muteCount <= 0) {
+    muteCount = 0
+    rootLogger.level = savedLevel
+  }
+}
+
 // --- Public API ---
 
 export function initLogger(config: LoggingConfig): Logger {
@@ -88,7 +109,12 @@ export function initLogger(config: LoggingConfig): Logger {
     targets: [
       {
         target: 'pino-pretty',
-        options: { colorize: true, translateTime: 'SYS:standard' },
+        options: {
+          colorize: true,
+          translateTime: 'HH:mm:ss',
+          ignore: 'pid,hostname',
+          singleLine: true,
+        },
         level: config.level,
       },
       {

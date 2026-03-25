@@ -1,4 +1,3 @@
-import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import { dirname, join, resolve } from 'node:path'
 import { existsSync, readFileSync } from 'node:fs'
@@ -82,18 +81,18 @@ export async function checkAndPromptUpdate(): Promise<void> {
   if (!latest || compareVersions(current, latest) >= 0) return
 
   console.log(`\x1b[33mUpdate available: v${current} → v${latest}\x1b[0m`)
-  const { confirm } = await import('@inquirer/prompts')
-  const yes = await confirm({
+  const clack = await import('@clack/prompts')
+  const yes = await clack.confirm({
     message: 'Update now before starting?',
-    default: true,
   })
-  if (yes) {
-    const ok = await runUpdate()
-    if (ok) {
-      console.log(`\x1b[32m✓ Updated to v${latest}. Please re-run your command.\x1b[0m`)
-      process.exit(0)
-    } else {
-      console.error('\x1b[31mUpdate failed. Continuing with current version.\x1b[0m')
-    }
+  if (clack.isCancel(yes) || !yes) {
+    return
+  }
+  const ok = await runUpdate()
+  if (ok) {
+    console.log(`\x1b[32m✓ Updated to v${latest}. Please re-run your command.\x1b[0m`)
+    process.exit(0)
+  } else {
+    console.error('\x1b[31mUpdate failed. Continuing with current version.\x1b[0m')
   }
 }

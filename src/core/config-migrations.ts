@@ -39,15 +39,17 @@ export const migrations: Migration[] = [
       if (!agents || typeof agents !== "object") return false;
 
       let changed = false;
-      for (const [agentName, agentDef] of Object.entries(agents as Record<string, any>)) {
-        if (!agentDef?.command) continue;
+      for (const [agentName, agentDef] of Object.entries(agents as Record<string, unknown>)) {
+        if (!agentDef || typeof agentDef !== "object" || !("command" in agentDef)) continue;
+        const def = agentDef as Record<string, unknown>;
+        if (typeof def.command !== "string") continue;
         for (const [correctCmd, legacyCmds] of Object.entries(COMMAND_MIGRATIONS)) {
-          if (legacyCmds.includes(agentDef.command)) {
+          if (legacyCmds.includes(def.command as string)) {
             log.warn(
-              { agent: agentName, oldCommand: agentDef.command, newCommand: correctCmd },
-              `Auto-migrating agent command: "${agentDef.command}" → "${correctCmd}"`,
+              { agent: agentName, oldCommand: def.command, newCommand: correctCmd },
+              `Auto-migrating agent command: "${def.command}" → "${correctCmd}"`,
             );
-            agentDef.command = correctCmd;
+            def.command = correctCmd;
             changed = true;
           }
         }
@@ -61,7 +63,7 @@ export const migrations: Migration[] = [
       const agentsJsonPath = path.join(os.homedir(), ".openacp", "agents.json");
       if (fs.existsSync(agentsJsonPath)) return false;
 
-      const agents = raw.agents as Record<string, any> | undefined;
+      const agents = raw.agents as Record<string, unknown> | undefined;
       if (!agents || Object.keys(agents).length === 0) return false;
 
       const COMMAND_TO_REGISTRY: Record<string, string> = {
@@ -69,9 +71,11 @@ export const migrations: Migration[] = [
         "codex": "codex-acp",
       };
 
-      const installed: Record<string, any> = {};
-      for (const [key, cfg] of Object.entries(agents)) {
-        const registryId = COMMAND_TO_REGISTRY[cfg.command] ?? null;
+      const installed: Record<string, unknown> = {};
+      for (const [key, val] of Object.entries(agents)) {
+        const cfg = val as Record<string, unknown>;
+        const command = typeof cfg.command === "string" ? cfg.command : "";
+        const registryId = COMMAND_TO_REGISTRY[command] ?? null;
         installed[key] = {
           registryId,
           name: key.charAt(0).toUpperCase() + key.slice(1),

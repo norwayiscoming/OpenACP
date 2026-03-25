@@ -1,8 +1,18 @@
+export interface Attachment {
+  type: 'image' | 'audio' | 'file';
+  filePath: string;
+  fileName: string;
+  mimeType: string;
+  size: number;
+  originalFilePath?: string;
+}
+
 export interface IncomingMessage {
   channelId: string;
   threadId: string;
   userId: string;
   text: string;
+  attachments?: Attachment[];
 }
 
 export interface OutgoingMessage {
@@ -14,9 +24,12 @@ export interface OutgoingMessage {
     | "plan"
     | "usage"
     | "session_end"
-    | "error";
+    | "error"
+    | "attachment"
+    | "system_message";
   text: string;
   metadata?: Record<string, unknown>;
+  attachment?: Attachment;
 }
 
 export interface PermissionRequest {
@@ -34,7 +47,7 @@ export interface PermissionOption {
 export interface NotificationMessage {
   sessionId: string;
   sessionName?: string;
-  type: "completed" | "error" | "permission" | "input_required";
+  type: "completed" | "error" | "permission" | "input_required" | "budget_warning";
   summary: string;
   deepLink?: string;
 }
@@ -78,8 +91,11 @@ export type AgentEvent =
       cost?: { amount: number; currency: string };
     }
   | { type: "commands_update"; commands: AgentCommand[] }
+  | { type: "image_content"; data: string; mimeType: string }
+  | { type: "audio_content"; data: string; mimeType: string }
   | { type: "session_end"; reason: string }
-  | { type: "error"; message: string };
+  | { type: "error"; message: string }
+  | { type: "system_message"; message: string };
 
 export interface PlanEntry {
   content: string;
@@ -197,4 +213,28 @@ export interface SessionRecord<P = Record<string, unknown>> {
 export interface TelegramPlatformData {
   topicId: number;
   skillMsgId?: number;
+}
+
+export interface UsageRecord {
+  id: string;
+  sessionId: string;
+  agentName: string;
+  tokensUsed: number;
+  contextSize: number;
+  cost?: { amount: number; currency: string };
+  timestamp: string;
+}
+
+export interface UsageSummary {
+  period: "today" | "week" | "month" | "all";
+  totalTokens: number;
+  totalCost: number;
+  currency: string;
+  sessionCount: number;
+  recordCount: number;
+}
+
+export interface DiscordPlatformData {
+  threadId: string;
+  skillMsgId?: string;
 }

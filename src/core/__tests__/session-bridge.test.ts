@@ -7,17 +7,18 @@ import type { MessageTransformer } from "../message-transformer.js";
 import type { NotificationManager } from "../notification.js";
 import type { SessionManager } from "../session-manager.js";
 import type { AgentEvent } from "../types.js";
+import { TypedEmitter } from "../typed-emitter.js";
 
 function createMockAgentInstance(): AgentInstance {
-  return {
+  const emitter = new TypedEmitter<{ agent_event: (event: AgentEvent) => void }>();
+  return Object.assign(emitter, {
     sessionId: "agent-session-1",
     agentName: "test-agent",
     prompt: vi.fn().mockResolvedValue({}),
     cancel: vi.fn().mockResolvedValue(undefined),
     destroy: vi.fn().mockResolvedValue(undefined),
-    onSessionUpdate: vi.fn(),
     onPermissionRequest: vi.fn(),
-  } as unknown as AgentInstance;
+  }) as unknown as AgentInstance;
 }
 
 function createMockAdapter(): ChannelAdapter {
@@ -78,12 +79,12 @@ describe("SessionBridge", () => {
   });
 
   describe("connect()", () => {
-    it("wires agentInstance.onSessionUpdate to session events", () => {
+    it("wires agentInstance agent_event emitter to session events", () => {
       bridge.connect();
 
       // Trigger agent event via the callback
       const event: AgentEvent = { type: "text", content: "hello" };
-      agent.onSessionUpdate(event);
+      agent.emit('agent_event', event);
 
       // Should have been transformed and sent to adapter
       expect(deps.messageTransformer.transform).toHaveBeenCalledWith(
@@ -115,7 +116,7 @@ describe("SessionBridge", () => {
         } else {
           event = { type: "usage", tokensUsed: 100 };
         }
-        agent.onSessionUpdate(event);
+        agent.emit('agent_event', event);
       }
 
       expect(adapter.sendMessage).toHaveBeenCalledTimes(4);
@@ -125,7 +126,7 @@ describe("SessionBridge", () => {
       bridge.connect();
 
       const commands = [{ name: "/test", description: "test", input: undefined }];
-      agent.onSessionUpdate({ type: "commands_update", commands });
+      agent.emit('agent_event', { type: "commands_update", commands });
 
       expect(adapter.sendSkillCommands).toHaveBeenCalledWith(
         session.id,
@@ -137,7 +138,7 @@ describe("SessionBridge", () => {
       bridge.connect();
       session.activate();
 
-      agent.onSessionUpdate({ type: "session_end", reason: "done" });
+      agent.emit('agent_event', { type: "session_end", reason: "done" });
 
       expect(session.status).toBe("finished");
       expect(adapter.cleanupSkillCommands).toHaveBeenCalledWith(session.id);
@@ -152,7 +153,7 @@ describe("SessionBridge", () => {
       bridge.connect();
       session.activate();
 
-      agent.onSessionUpdate({ type: "error", message: "crash" });
+      agent.emit('agent_event', { type: "error", message: "crash" });
 
       expect(session.status).toBe("error");
       expect(adapter.cleanupSkillCommands).toHaveBeenCalledWith(session.id);

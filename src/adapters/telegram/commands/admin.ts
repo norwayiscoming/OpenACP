@@ -30,7 +30,7 @@ export function setupDangerousModeCallbacks(bot: Bot, core: OpenACPCore): void {
 
       try {
         await ctx.editMessageReplyMarkup({
-          reply_markup: buildDangerousModeKeyboard(sessionId, session.dangerousMode),
+          reply_markup: buildSessionControlKeyboard(sessionId, session.dangerousMode, session.voiceMode === "on"),
         });
       } catch { /* ignore */ }
       return;
@@ -54,7 +54,7 @@ export function setupDangerousModeCallbacks(bot: Bot, core: OpenACPCore): void {
 
     try {
       await ctx.editMessageReplyMarkup({
-        reply_markup: buildDangerousModeKeyboard(sessionId, newDangerousMode),
+        reply_markup: buildSessionControlKeyboard(sessionId, newDangerousMode, false),
       });
     } catch { /* ignore */ }
   });
@@ -121,6 +121,79 @@ export async function handleDisableDangerous(ctx: Context, core: OpenACPCore): P
     core.sessionManager.patchRecord(record.sessionId, { dangerousMode: false }).catch(() => {});
   }
   await ctx.reply("🔐 <b>Dangerous mode disabled</b>\n\nPermission requests will be shown normally.", { parse_mode: "HTML" });
+}
+
+export function buildTTSKeyboard(sessionId: string, enabled: boolean): InlineKeyboard {
+  return new InlineKeyboard().text(
+    enabled ? "🔊 Text to Speech" : "🔇 Text to Speech",
+    `v:${sessionId}`,
+  );
+}
+
+export function buildSessionControlKeyboard(sessionId: string, dangerousMode: boolean, voiceMode: boolean): InlineKeyboard {
+  return new InlineKeyboard()
+    .text(
+      dangerousMode ? "🔐 Disable Dangerous Mode" : "☠️ Enable Dangerous Mode",
+      `d:${sessionId}`,
+    )
+    .row()
+    .text(
+      voiceMode ? "🔊 Text to Speech" : "🔇 Text to Speech",
+      `v:${sessionId}`,
+    );
+}
+
+export function setupTTSCallbacks(bot: Bot, core: OpenACPCore): void {
+  bot.callbackQuery(/^v:/, async (ctx) => {
+    const sessionId = ctx.callbackQuery.data.slice(2);
+    const session = core.sessionManager.getSession(sessionId);
+
+    if (!session) {
+      try { await ctx.answerCallbackQuery({ text: "⚠️ Session not found or not active." }); } catch { }
+      return;
+    }
+
+    const newMode = session.voiceMode === "on" ? "off" : "on";
+    session.setVoiceMode(newMode);
+
+    const toastText = newMode === "on"
+      ? "🔊 Text to Speech enabled"
+      : "🔇 Text to Speech disabled";
+    try { await ctx.answerCallbackQuery({ text: toastText }); } catch { }
+
+    try {
+      await ctx.editMessageReplyMarkup({
+        reply_markup: buildSessionControlKeyboard(sessionId, session.dangerousMode, newMode === "on"),
+      });
+    } catch { /* ignore */ }
+  });
+}
+
+export async function handleTTS(ctx: Context, core: OpenACPCore): Promise<void> {
+  const threadId = ctx.message?.message_thread_id;
+  if (!threadId) {
+    await ctx.reply("⚠️ This command only works inside a session topic.", { parse_mode: "HTML" });
+    return;
+  }
+  const session = await core.getOrResumeSession("telegram", String(threadId));
+  if (!session) {
+    await ctx.reply("⚠️ No active session in this topic.", { parse_mode: "HTML" });
+    return;
+  }
+
+  const args = ctx.message?.text?.split(/\s+/).slice(1) ?? [];
+  const arg = args[0]?.toLowerCase();
+
+  if (arg === "on") {
+    session.setVoiceMode("on");
+    await ctx.reply("🔊 Text to Speech enabled for this session.", { parse_mode: "HTML" });
+  } else if (arg === "off") {
+    session.setVoiceMode("off");
+    await ctx.reply("🔇 Text to Speech disabled.", { parse_mode: "HTML" });
+  } else {
+    session.setVoiceMode("next");
+    await ctx.reply("🔊 Text to Speech enabled for the next message.", { parse_mode: "HTML" });
+  }
 }
 
 export async function handleUpdate(ctx: Context, core: OpenACPCore): Promise<void> {

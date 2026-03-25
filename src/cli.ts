@@ -22,6 +22,8 @@ import {
   cmdIntegrate,
   cmdDoctor,
   cmdAgents,
+  cmdTunnel,
+  cmdOnboard,
 } from './cli/commands.js'
 
 const args = process.argv.slice(2);
@@ -34,19 +36,21 @@ const commands: Record<string, () => Promise<void>> = {
   '-v': () => cmdVersion(),
   'install': () => cmdInstall(args),
   'uninstall': () => cmdUninstall(args),
-  'plugins': () => cmdPlugins(),
+  'plugins': () => cmdPlugins(args),
   'api': () => cmdApi(args),
-  'start': () => cmdStart(),
-  'stop': () => cmdStop(),
-  'status': () => cmdStatus(),
-  'logs': () => cmdLogs(),
+  'start': () => cmdStart(args),
+  'stop': () => cmdStop(args),
+  'status': () => cmdStatus(args),
+  'logs': () => cmdLogs(args),
   'config': () => cmdConfig(args),
-  'reset': () => cmdReset(),
-  'update': () => cmdUpdate(),
+  'reset': () => cmdReset(args),
+  'update': () => cmdUpdate(args),
   'adopt': () => cmdAdopt(args),
   'integrate': () => cmdIntegrate(args),
   'doctor': () => cmdDoctor(args),
   'agents': () => cmdAgents(args),
+  'tunnel': () => cmdTunnel(args),
+  'onboard': () => cmdOnboard(),
   '--daemon-child': async () => {
     const { startServer } = await import('./main.js')
     await startServer()

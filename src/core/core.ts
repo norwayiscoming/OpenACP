@@ -8,12 +8,19 @@ import { NotificationManager } from "./notification.js";
 import { ChannelAdapter } from "./channel.js";
 import { Session } from "./session.js";
 import { MessageTransformer } from "./message-transformer.js";
+import { FileService } from "./file-service.js";
 import { JsonFileSessionStore, type SessionStore } from "./session-store.js";
+import { UsageStore } from "./usage-store.js";
+import { UsageBudget } from "./usage-budget.js";
+import { SecurityGuard } from "./security-guard.js";
+import { SessionFactory } from "./session-factory.js";
 import type { IncomingMessage } from "./types.js";
 import type { TunnelService } from "../tunnel/tunnel-service.js";
 import { getAgentCapabilities } from "./agent-registry.js";
 import { AgentCatalog } from "./agent-catalog.js";
+import { EventBus } from "./event-bus.js";
 import { createChildLogger } from "./log.js";
+import { SpeechService, GroqSTT, EdgeTTS } from "./speech/index.js";
 const log = createChildLogger({ module: "core" });
 
 export class OpenACPCore {
@@ -23,12 +30,19 @@ export class OpenACPCore {
   sessionManager: SessionManager;
   notificationManager: NotificationManager;
   messageTransformer: MessageTransformer;
+  fileService: FileService;
+  readonly speechService: SpeechService;
+  securityGuard: SecurityGuard;
   adapters: Map<string, ChannelAdapter> = new Map();
   /** Set by main.ts — triggers graceful shutdown with restart exit code */
   requestRestart: (() => Promise<void>) | null = null;
   private _tunnelService?: TunnelService;
   private sessionStore: SessionStore | null = null;
   private resumeLocks: Map<string, Promise<Session | null>> = new Map();
+  eventBus: EventBus;
+  sessionFactory: SessionFactory;
+  readonly usageStore: UsageStore | null = null;
+  readonly usageBudget: UsageBudget | null = null;
 
   constructor(configManager: ConfigManager) {
     this.configManager = configManager;
@@ -42,17 +56,91 @@ export class OpenACPCore {
       config.sessionStore.ttlDays,
     );
     this.sessionManager = new SessionManager(this.sessionStore);
+    this.securityGuard = new SecurityGuard(configManager, this.sessionManager);
     this.notificationManager = new NotificationManager(this.adapters);
+
+    // Usage tracking
+    const usageConfig = config.usage;
+    if (usageConfig.enabled) {
+      const usagePath = path.join(os.homedir(), ".openacp", "usage.json");
+      this.usageStore = new UsageStore(usagePath, usageConfig.retentionDays);
+      this.usageBudget = new UsageBudget(this.usageStore, usageConfig);
+    }
+
     this.messageTransformer = new MessageTransformer();
+    this.eventBus = new EventBus();
+    this.sessionManager.setEventBus(this.eventBus);
+    this.fileService = new FileService(
+      path.join(os.homedir(), ".openacp", "files"),
+    );
+
+    // Initialize speech service — edge-tts is always available by default (free, no API key)
+    const speechConfig = config.speech ?? {
+      stt: { provider: null, providers: {} },
+      tts: { provider: "edge-tts", providers: {} },
+    };
+    // Default TTS provider to edge-tts if not explicitly set
+    if (speechConfig.tts.provider == null) {
+      speechConfig.tts.provider = "edge-tts";
+    }
+    this.speechService = new SpeechService(speechConfig);
+
+    // Register built-in STT providers
+    const groqConfig = speechConfig.stt?.providers?.groq;
+    if (groqConfig?.apiKey) {
+      this.speechService.registerSTTProvider(
+        "groq",
+        new GroqSTT(groqConfig.apiKey, groqConfig.model),
+      );
+    }
+
+    // Register built-in TTS providers — always register edge-tts (free, no config needed)
+    {
+      const edgeConfig = speechConfig.tts?.providers?.["edge-tts"];
+      const voice = edgeConfig?.voice as string | undefined;
+      this.speechService.registerTTSProvider("edge-tts", new EdgeTTS(voice));
+    }
+
+    this.sessionFactory = new SessionFactory(
+      this.agentManager,
+      this.sessionManager,
+      this.speechService,
+      this.eventBus,
+    );
 
     // Hot-reload: handle config changes that need side effects
-    this.configManager.on('config:changed', async ({ path: configPath, value }: { path: string; value: unknown }) => {
-      if (configPath === 'logging.level' && typeof value === 'string') {
-        const { setLogLevel } = await import('./log.js')
-        setLogLevel(value)
-        log.info({ level: value }, 'Log level changed at runtime')
-      }
-    })
+    this.configManager.on(
+      "config:changed",
+      async ({ path: configPath, value }: { path: string; value: unknown }) => {
+        if (configPath === "logging.level" && typeof value === "string") {
+          const { setLogLevel } = await import("./log.js");
+          setLogLevel(value);
+          log.info({ level: value }, "Log level changed at runtime");
+        }
+        if (configPath.startsWith("speech.")) {
+          const newConfig = this.configManager.get();
+          const newSpeechConfig = newConfig.speech ?? {
+            stt: { provider: null, providers: {} },
+            tts: { provider: null, providers: {} },
+          };
+          this.speechService.updateConfig(newSpeechConfig);
+          const groqCfg = newSpeechConfig.stt?.providers?.groq;
+          if (groqCfg?.apiKey) {
+            this.speechService.registerSTTProvider(
+              "groq",
+              new GroqSTT(groqCfg.apiKey, groqCfg.model),
+            );
+          }
+          // Re-register TTS providers on config change — always keep edge-tts available
+          {
+            const edgeConfig = newSpeechConfig.tts?.providers?.["edge-tts"];
+            const voice = edgeConfig?.voice as string | undefined;
+            this.speechService.registerTTSProvider("edge-tts", new EdgeTTS(voice));
+          }
+          log.info("Speech service config updated at runtime");
+        }
+      },
+    );
   }
 
   get tunnelService(): TunnelService | undefined {
@@ -96,12 +184,41 @@ export class OpenACPCore {
     for (const adapter of this.adapters.values()) {
       await adapter.stop();
     }
+
+    // 4. Cleanup usage store
+    if (this.usageStore) {
+      this.usageStore.destroy();
+    }
+  }
+
+  // --- Archive ---
+
+  async archiveSession(
+    sessionId: string,
+  ): Promise<{ ok: true; newThreadId: string } | { ok: false; error: string }> {
+    const session = this.sessionManager.getSession(sessionId);
+    if (!session) return { ok: false, error: "Session not found" };
+    if (session.status === "initializing")
+      return { ok: false, error: "Session is still initializing" };
+    if (session.status !== "active")
+      return { ok: false, error: `Session is ${session.status}` };
+
+    const adapter = this.adapters.get(session.channelId);
+    if (!adapter) return { ok: false, error: "Adapter not found for session" };
+
+    try {
+      const result = await adapter.archiveSessionTopic(session.id);
+      if (!result)
+        return { ok: false, error: "Adapter does not support archiving" };
+      return { ok: true, newThreadId: result.newThreadId };
+    } catch (err) {
+      return { ok: false, error: (err as Error).message };
+    }
   }
 
   // --- Message Routing ---
 
   async handleMessage(message: IncomingMessage): Promise<void> {
-    const config = this.configManager.get();
     log.debug(
       {
         channelId: message.channelId,
@@ -111,36 +228,18 @@ export class OpenACPCore {
       "Incoming message",
     );
 
-    // Security: check allowed user IDs
-    if (config.security.allowedUserIds.length > 0) {
-      if (!config.security.allowedUserIds.includes(message.userId)) {
-        log.warn(
-          { userId: message.userId },
-          "Rejected message from unauthorized user",
-        );
-        return;
-      }
-    }
-
-    // Check concurrent session limit
-    const activeSessions = this.sessionManager
-      .listSessions()
-      .filter((s) => s.status === "active" || s.status === "initializing");
-    if (activeSessions.length >= config.security.maxConcurrentSessions) {
-      log.warn(
-        {
-          userId: message.userId,
-          currentCount: activeSessions.length,
-          max: config.security.maxConcurrentSessions,
-        },
-        "Session limit reached",
-      );
-      const adapter = this.adapters.get(message.channelId);
-      if (adapter) {
-        await adapter.sendMessage(message.threadId, {
-          type: "error",
-          text: `⚠️ Session limit reached (${config.security.maxConcurrentSessions}). Please cancel existing sessions with /cancel before starting new ones.`,
-        });
+    // Security: check user access and session limits
+    const access = this.securityGuard.checkAccess(message);
+    if (!access.allowed) {
+      log.warn({ userId: message.userId, reason: access.reason }, "Access denied");
+      if (access.reason.includes("Session limit")) {
+        const adapter = this.adapters.get(message.channelId);
+        if (adapter) {
+          await adapter.sendMessage(message.threadId, {
+            type: "error",
+            text: `⚠️ ${access.reason}. Please cancel existing sessions with /cancel before starting new ones.`,
+          });
+        }
       }
       return;
     }
@@ -165,10 +264,12 @@ export class OpenACPCore {
     }
 
     // Update activity timestamp
-    this.sessionManager.patchRecord(session.id, { lastActiveAt: new Date().toISOString() });
+    this.sessionManager.patchRecord(session.id, {
+      lastActiveAt: new Date().toISOString(),
+    });
 
     // Forward to session
-    await session.enqueuePrompt(message.text);
+    await session.enqueuePrompt(message.text, message.attachments);
   }
 
   // --- Unified Session Creation Pipeline ---
@@ -182,33 +283,8 @@ export class OpenACPCore {
     createThread?: boolean;
     initialName?: string;
   }): Promise<Session> {
-    // 1. Spawn or resume agent
-    const agentInstance = params.resumeAgentSessionId
-      ? await this.agentManager.resume(
-          params.agentName,
-          params.workingDirectory,
-          params.resumeAgentSessionId,
-        )
-      : await this.agentManager.spawn(
-          params.agentName,
-          params.workingDirectory,
-        );
-
-    // 2. Create Session instance
-    const session = new Session({
-      id: params.existingSessionId,
-      channelId: params.channelId,
-      agentName: params.agentName,
-      workingDirectory: params.workingDirectory,
-      agentInstance,
-    });
-    session.agentSessionId = agentInstance.sessionId;
-    if (params.initialName) {
-      session.name = params.initialName;
-    }
-
-    // 3. Register in SessionManager
-    this.sessionManager.registerSession(session);
+    // 1-3. Spawn/resume agent, create Session, register in SessionManager
+    const session = await this.sessionFactory.create(params);
 
     // 4. Create thread if needed
     const adapter = this.adapters.get(params.channelId);
@@ -226,6 +302,14 @@ export class OpenACPCore {
       bridge.connect();
     }
 
+    // 5b-5c. Wire usage tracking and tunnel cleanup
+    this.sessionFactory.wireSideEffects(session, {
+      usageStore: this.usageStore,
+      usageBudget: this.usageBudget,
+      notificationManager: this.notificationManager,
+      tunnelService: this._tunnelService,
+    });
+
     // 6. Persist initial record
     // Preserve existing platform data (e.g. topicId) when resuming an existing session
     const existingRecord = this.sessionStore?.get(session.id);
@@ -233,11 +317,15 @@ export class OpenACPCore {
       ...(existingRecord?.platform ?? {}),
     };
     if (session.threadId) {
-      platform.topicId = Number(session.threadId);
+      if (params.channelId === "telegram") {
+        platform.topicId = Number(session.threadId);
+      } else {
+        platform.threadId = session.threadId;
+      }
     }
     await this.sessionManager.patchRecord(session.id, {
       sessionId: session.id,
-      agentSessionId: agentInstance.sessionId,
+      agentSessionId: session.agentSessionId,
       agentName: params.agentName,
       workingDir: params.workingDirectory,
       channelId: params.channelId,
@@ -259,6 +347,7 @@ export class OpenACPCore {
     channelId: string,
     agentName?: string,
     workspacePath?: string,
+    options?: { createThread?: boolean },
   ): Promise<Session> {
     const config = this.configManager.get();
     const resolvedAgent = agentName || config.defaultAgent;
@@ -272,6 +361,7 @@ export class OpenACPCore {
       channelId,
       agentName: resolvedAgent,
       workingDirectory: resolvedWorkspace,
+      createThread: options?.createThread,
     });
   }
 
@@ -279,62 +369,96 @@ export class OpenACPCore {
     agentName: string,
     agentSessionId: string,
     cwd: string,
+    channelId?: string,
   ): Promise<
-    | { ok: true; sessionId: string; threadId: string; status: "adopted" | "existing" }
+    | {
+        ok: true;
+        sessionId: string;
+        threadId: string;
+        status: "adopted" | "existing";
+      }
     | { ok: false; error: string; message: string }
   > {
     // 1. Validate agent supports resume
     const caps = getAgentCapabilities(agentName);
     if (!caps.supportsResume) {
-      return { ok: false, error: "agent_not_supported", message: `Agent '${agentName}' does not support session resume` };
+      return {
+        ok: false,
+        error: "agent_not_supported",
+        message: `Agent '${agentName}' does not support session resume`,
+      };
     }
 
     const agentDef = this.agentManager.getAgent(agentName);
     if (!agentDef) {
-      return { ok: false, error: "agent_not_supported", message: `Agent '${agentName}' not found` };
+      return {
+        ok: false,
+        error: "agent_not_supported",
+        message: `Agent '${agentName}' not found`,
+      };
     }
 
     // 2. Validate cwd
     const { existsSync } = await import("node:fs");
     if (!existsSync(cwd)) {
-      return { ok: false, error: "invalid_cwd", message: `Directory does not exist: ${cwd}` };
+      return {
+        ok: false,
+        error: "invalid_cwd",
+        message: `Directory does not exist: ${cwd}`,
+      };
     }
 
     // 3. Check session limit
     const maxSessions = this.configManager.get().security.maxConcurrentSessions;
     if (this.sessionManager.listSessions().length >= maxSessions) {
-      return { ok: false, error: "session_limit", message: "Maximum concurrent sessions reached" };
+      return {
+        ok: false,
+        error: "session_limit",
+        message: "Maximum concurrent sessions reached",
+      };
     }
 
-    // 4. Check if session already exists
-    const existingRecord = this.sessionManager.getRecordByAgentSessionId(agentSessionId);
+    // 4. Check if session already exists on the same channel
+    const existingRecord =
+      this.sessionManager.getRecordByAgentSessionId(agentSessionId);
     if (existingRecord) {
-      const platform = existingRecord.platform as { topicId?: number } | undefined;
-      if (platform?.topicId) {
-        const adapter = this.adapters.values().next().value;
+      const sameChannel = !channelId || existingRecord.channelId === channelId;
+      const platform = existingRecord.platform as { topicId?: number; threadId?: string } | undefined;
+      const existingThreadId = platform?.topicId ? String(platform.topicId) : platform?.threadId;
+      if (existingThreadId && sameChannel) {
+        const adapter = this.adapters.get(existingRecord.channelId) ?? this.adapters.values().next().value;
         if (adapter) {
           try {
             await adapter.sendMessage(existingRecord.sessionId, {
               type: "text",
               text: "Session resumed from CLI.",
             });
-          } catch { /* Topic may be deleted */ }
+          } catch { /* Topic/thread may be deleted */ }
         }
         return {
           ok: true,
           sessionId: existingRecord.sessionId,
-          threadId: String(platform.topicId),
+          threadId: existingThreadId,
           status: "existing",
         };
       }
     }
 
-    // 5. Find default adapter
-    const firstEntry = this.adapters.entries().next().value;
-    if (!firstEntry) {
-      return { ok: false, error: "no_adapter", message: "No channel adapter registered" };
+    // 5. Find adapter (explicit channel or default first)
+    let adapterChannelId: string;
+    if (channelId) {
+      if (!this.adapters.has(channelId)) {
+        const available = Array.from(this.adapters.keys()).join(", ") || "none";
+        return { ok: false, error: "adapter_not_found", message: `Adapter '${channelId}' is not connected. Available: ${available}` };
+      }
+      adapterChannelId = channelId;
+    } else {
+      const firstEntry = this.adapters.entries().next().value;
+      if (!firstEntry) {
+        return { ok: false, error: "no_adapter", message: "No channel adapter registered" };
+      }
+      adapterChannelId = firstEntry[0];
     }
-    const [adapterChannelId] = firstEntry;
 
     // 6. Create session via unified pipeline
     let session: Session;
@@ -356,9 +480,15 @@ export class OpenACPCore {
     }
 
     // 7. Update store with adopt-specific fields
+    const adoptPlatform: Record<string, unknown> = {};
+    if (adapterChannelId === 'telegram') {
+      adoptPlatform.topicId = Number(session.threadId);
+    } else {
+      adoptPlatform.threadId = session.threadId;
+    }
     await this.sessionManager.patchRecord(session.id, {
       originalAgentSessionId: agentSessionId,
-      platform: { topicId: Number(session.threadId) },
+      platform: adoptPlatform,
     });
 
     return {
@@ -387,8 +517,12 @@ export class OpenACPCore {
     }
 
     // Fallback: look up from store (e.g. after restart before lazy resume)
-    const record = this.sessionManager.getRecordByThread(channelId, currentThreadId);
-    if (!record || record.status === "cancelled" || record.status === "error") return null;
+    const record = this.sessionManager.getRecordByThread(
+      channelId,
+      currentThreadId,
+    );
+    if (!record || record.status === "cancelled" || record.status === "error")
+      return null;
 
     return this.handleNewSession(
       channelId,
@@ -398,6 +532,16 @@ export class OpenACPCore {
   }
 
   // --- Lazy Resume ---
+
+  /**
+   * Get active session by thread, or attempt lazy resume from store.
+   * Used by adapter command handlers that need a session but don't go through handleMessage().
+   */
+  async getOrResumeSession(channelId: string, threadId: string): Promise<Session | null> {
+    const session = this.sessionManager.getSessionByThread(channelId, threadId);
+    if (session) return session;
+    return this.lazyResume({ channelId, threadId, userId: "", text: "" });
+  }
 
   private async lazyResume(message: IncomingMessage): Promise<Session | null> {
     const store = this.sessionStore;
@@ -421,17 +565,25 @@ export class OpenACPCore {
       return null;
     }
 
-    // Don't resume cancelled/error sessions
-    if (record.status === "cancelled" || record.status === "error") {
+    // Don't resume errored sessions (cancelled sessions can still be resumed)
+    if (record.status === "error") {
       log.debug(
-        { threadId: message.threadId, sessionId: record.sessionId, status: record.status },
-        "Skipping resume of cancelled/error session",
+        {
+          threadId: message.threadId,
+          sessionId: record.sessionId,
+          status: record.status,
+        },
+        "Skipping resume of error session",
       );
       return null;
     }
 
     log.info(
-      { threadId: message.threadId, sessionId: record.sessionId, status: record.status },
+      {
+        threadId: message.threadId,
+        sessionId: record.sessionId,
+        status: record.status,
+      },
       "Lazy resume: found record, attempting resume",
     );
 
@@ -464,7 +616,9 @@ export class OpenACPCore {
               type: "error",
               text: `⚠️ Failed to resume session: ${err instanceof Error ? err.message : String(err)}`,
             });
-          } catch { /* best effort */ }
+          } catch {
+            /* best effort */
+          }
         }
         return null;
       } finally {
@@ -484,7 +638,8 @@ export class OpenACPCore {
       messageTransformer: this.messageTransformer,
       notificationManager: this.notificationManager,
       sessionManager: this.sessionManager,
+      eventBus: this.eventBus,
+      fileService: this.fileService,
     });
   }
-
 }

@@ -3,8 +3,9 @@
 import { ConfigManager } from './core/config.js'
 import { OpenACPCore } from './core/core.js'
 import { loadAdapterFactory } from './core/plugin-manager.js'
-import { initLogger, shutdownLogger, cleanupOldSessionLogs, log } from './core/log.js'
+import { initLogger, shutdownLogger, cleanupOldSessionLogs, log, muteLogger, unmuteLogger } from './core/log.js'
 import { TelegramAdapter } from './adapters/telegram/index.js'
+import type { TelegramChannelConfig } from './adapters/telegram/index.js'
 import { ApiServer } from './core/api-server.js'
 import { TopicManager } from './core/topic-manager.js'
 
@@ -49,7 +50,30 @@ export async function startServer() {
   await configManager.load()
   const config = configManager.get()
   initLogger(config.logging)
-  log.info({ configPath: configManager.getConfigPath() }, 'Config loaded')
+  log.debug({ configPath: configManager.getConfigPath() }, 'Config loaded')
+
+  // Show banner in foreground TTY mode (not daemon, not piped)
+  const isForegroundTTY = !!(process.stdout.isTTY && !process.env.NO_COLOR && config.runMode !== 'daemon')
+  if (isForegroundTTY) {
+    const { printStartBanner } = await import('./core/setup.js')
+    await printStartBanner()
+  }
+
+  // Mute pino during startup, show spinner instead
+  let spinner: ReturnType<typeof import('ora').default> | undefined
+  if (isForegroundTTY) {
+    muteLogger()
+    const ora = (await import('ora')).default
+    spinner = ora({ text: 'Starting OpenACP...', spinner: 'dots' }).start()
+  }
+
+  // Post-upgrade dependency check (blocking — must complete before server start)
+  try {
+    const { runPostUpgradeChecks } = await import('./core/post-upgrade.js')
+    await runPostUpgradeChecks(config)
+  } catch (err) {
+    log.warn({ err }, 'Post-upgrade check failed')
+  }
 
   // Async cleanup of old session logs (non-blocking)
   cleanupOldSessionLogs(config.logging.sessionLogRetentionDays).catch(err =>
@@ -74,8 +98,18 @@ export async function startServer() {
     if (!channelConfig.enabled) continue
 
     if (channelName === 'telegram') {
-      core.registerAdapter('telegram', new TelegramAdapter(core, channelConfig as any))
+      core.registerAdapter('telegram', new TelegramAdapter(core, channelConfig as TelegramChannelConfig))
       log.info({ adapter: 'telegram' }, 'Adapter registered')
+    } else if (channelName === 'slack') {
+      const { SlackAdapter } = await import('./adapters/slack/adapter.js')
+      const slackConfig = channelConfig as import('./adapters/slack/types.js').SlackChannelConfig
+      core.registerAdapter('slack', new SlackAdapter(core, slackConfig))
+      log.info({ adapter: 'slack' }, 'Adapter registered')
+    } else if (channelName === 'discord') {
+      const { DiscordAdapter } = await import('./adapters/discord/index.js')
+      const discordConfig = channelConfig as import('./adapters/discord/types.js').DiscordChannelConfig
+      core.registerAdapter('discord', new DiscordAdapter(core, discordConfig))
+      log.info({ adapter: 'discord' }, 'Adapter registered')
     } else if (channelConfig.adapter) {
       // Plugin adapter
       const factory = await loadAdapterFactory(channelConfig.adapter)
@@ -182,23 +216,35 @@ export async function startServer() {
 
   const updatedConfig = core.configManager.get()
   const telegramAdapter = core.adapters.get('telegram') ?? null
-  const telegramCfg = updatedConfig.channels?.telegram as any
-  const topicManager = new TopicManager(
-    core.sessionManager,
-    telegramAdapter,
-    {
-      notificationTopicId: telegramCfg?.notificationTopicId ?? null,
-      assistantTopicId: telegramCfg?.assistantTopicId ?? null,
-    },
-  )
+  let topicManager: TopicManager | undefined
+  if (telegramAdapter) {
+    const telegramCfg = updatedConfig.channels?.telegram as TelegramChannelConfig | undefined
+    topicManager = new TopicManager(
+      core.sessionManager,
+      telegramAdapter,
+      {
+        notificationTopicId: telegramCfg?.notificationTopicId ?? null,
+        assistantTopicId: telegramCfg?.assistantTopicId ?? null,
+      },
+    )
+  }
 
   apiServer = new ApiServer(core, config.api, undefined, topicManager)
   await apiServer.start()
 
   // 6. Log ready
-  const agents = Object.keys(config.agents)
-  log.info({ agents }, 'OpenACP started')
-  log.info('Press Ctrl+C to stop')
+  if (isForegroundTTY) {
+    if (spinner) spinner.stop()
+    const ok = (msg: string) => console.log(`\x1b[32m✓\x1b[0m ${msg}`)
+    ok('Config loaded')
+    ok('Dependencies checked')
+    if (tunnelService) ok(`Tunnel ready → ${tunnelService.getPublicUrl()}`)
+    for (const [name] of core.adapters) ok(`${name.charAt(0).toUpperCase() + name.slice(1)} connected`)
+    if (apiServer) ok(`API server on port ${config.api.port}`)
+    console.log(`\nOpenACP is running. Press Ctrl+C to stop.\n`)
+    unmuteLogger()
+  }
+  log.debug({ agents: Object.keys(config.agents) }, 'OpenACP started')
 }
 
 // Direct execution for dev (node dist/main.js)

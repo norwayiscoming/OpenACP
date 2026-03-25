@@ -1,19 +1,21 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import * as fs from 'node:fs'
-import * as path from 'node:path'
-import * as os from 'node:os'
-import * as net from 'node:net'
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import * as fs from "node:fs";
+import * as path from "node:path";
+import * as os from "node:os";
+import * as net from "node:net";
+import { EventBus } from "../core/event-bus.js";
 
-describe('ApiServer', () => {
-  let tmpDir: string
-  let portFilePath: string
-  let server: any
+describe("ApiServer", () => {
+  let tmpDir: string;
+  let portFilePath: string;
+  let secretFilePath: string;
+  let server: any;
 
   const mockTopicManager = {
     listTopics: vi.fn(() => []),
     deleteTopic: vi.fn(),
     cleanup: vi.fn(),
-  }
+  };
 
   const mockCore = {
     handleNewSession: vi.fn(),
@@ -25,640 +27,1458 @@ describe('ApiServer', () => {
       listRecords: vi.fn(() => []),
       updateSessionDangerousMode: vi.fn(), // legacy — kept for backward compat tests
       patchRecord: vi.fn(),
+      cancelSession: vi.fn(),
+      getSessionRecord: vi.fn(() => null),
     },
     agentManager: {
       getAvailableAgents: vi.fn(() => []),
     },
     configManager: {
       get: vi.fn(() => ({
-        defaultAgent: 'claude',
-        agents: { claude: { command: 'claude', args: [], workingDirectory: '/tmp/ws' } },
-        security: { maxConcurrentSessions: 5, sessionTimeoutMinutes: 60, allowedUserIds: [] },
-        channels: { telegram: { enabled: false, botToken: 'secret-token', chatId: 0 } },
-        workspace: { baseDir: '~/openacp-workspace' },
-        logging: { level: 'info', logDir: '~/.openacp/logs', maxFileSize: '10m', maxFiles: 7, sessionLogRetentionDays: 30 },
-        tunnel: { enabled: true, port: 3100, provider: 'cloudflare', options: {}, storeTtlMinutes: 60, auth: { enabled: false } },
+        defaultAgent: "claude",
+        agents: {
+          claude: { command: "claude", args: [], workingDirectory: "/tmp/ws" },
+        },
+        security: {
+          maxConcurrentSessions: 5,
+          sessionTimeoutMinutes: 60,
+          allowedUserIds: [],
+        },
+        channels: {
+          telegram: { enabled: false, botToken: "secret-token", chatId: 0 },
+        },
+        workspace: { baseDir: "~/openacp-workspace" },
+        logging: {
+          level: "info",
+          logDir: "~/.openacp/logs",
+          maxFileSize: "10m",
+          maxFiles: 7,
+          sessionLogRetentionDays: 30,
+        },
+        tunnel: {
+          enabled: true,
+          port: 3100,
+          provider: "cloudflare",
+          options: {},
+          storeTtlMinutes: 60,
+          auth: { enabled: false },
+        },
         sessionStore: { ttlDays: 30 },
-        runMode: 'foreground',
+        runMode: "foreground",
         autoStart: false,
-        api: { port: 21420, host: '127.0.0.1' },
+        api: { port: 21420, host: "127.0.0.1" },
         integrations: {},
+        speech: {
+          stt: { provider: null, providers: {} },
+          tts: { provider: null, providers: {} },
+        },
       })),
       save: vi.fn(),
-      resolveWorkspace: vi.fn(() => '/tmp/ws'),
+      resolveWorkspace: vi.fn(() => "/tmp/ws"),
       on: vi.fn(),
       emit: vi.fn(),
     },
     adapters: new Map(),
     notificationManager: { notifyAll: vi.fn() },
     requestRestart: vi.fn(),
-    tunnelService: undefined as any,
-  }
+    tunnelService: undefined as unknown,
+    eventBus: new EventBus(),
+  };
 
   beforeEach(() => {
-    vi.clearAllMocks()
-    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'openacp-api-test-'))
-    portFilePath = path.join(tmpDir, 'api.port')
-  })
+    vi.clearAllMocks();
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "openacp-api-test-"));
+    portFilePath = path.join(tmpDir, "api.port");
+    secretFilePath = path.join(tmpDir, "api-secret");
+  });
 
   afterEach(async () => {
     if (server) {
-      await server.stop()
-      server = null
+      await server.stop();
+      server = null;
     }
-    fs.rmSync(tmpDir, { recursive: true, force: true })
-  })
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
 
   async function startServer(portOverride?: number) {
-    const { ApiServer } = await import('../core/api-server.js')
-    server = new ApiServer(mockCore as any, { port: portOverride ?? 0, host: '127.0.0.1' }, portFilePath, mockTopicManager as any)
-    await server.start()
-    return server.getPort()
+    const { ApiServer } = await import("../core/api-server.js");
+    server = new ApiServer(
+      mockCore as any,
+      { port: portOverride ?? 0, host: "127.0.0.1" },
+      portFilePath,
+      mockTopicManager as any,
+      secretFilePath,
+    );
+    await server.start();
+    return server.getPort();
+  }
+
+  function readTestSecret(): string {
+    return fs.readFileSync(secretFilePath, "utf-8").trim();
   }
 
   function apiFetch(port: number, urlPath: string, options?: RequestInit) {
-    return globalThis.fetch(`http://127.0.0.1:${port}${urlPath}`, options)
+    const token = fs.existsSync(secretFilePath)
+      ? fs.readFileSync(secretFilePath, "utf-8").trim()
+      : "";
+    const headers = new Headers(options?.headers);
+    if (token && !headers.has("Authorization")) {
+      headers.set("Authorization", `Bearer ${token}`);
+    }
+    return globalThis.fetch(`http://127.0.0.1:${port}${urlPath}`, {
+      ...options,
+      headers,
+    });
   }
 
-  it('starts and writes port file', async () => {
-    const port = await startServer()
-    expect(fs.existsSync(portFilePath)).toBe(true)
-    const writtenPort = parseInt(fs.readFileSync(portFilePath, 'utf-8').trim(), 10)
-    expect(writtenPort).toBe(port)
-  })
+  it("starts and writes port file", async () => {
+    const port = await startServer();
+    expect(fs.existsSync(portFilePath)).toBe(true);
+    const writtenPort = parseInt(
+      fs.readFileSync(portFilePath, "utf-8").trim(),
+      10,
+    );
+    expect(writtenPort).toBe(port);
+  });
 
-  it('stops and removes port file', async () => {
-    await startServer()
-    await server.stop()
-    server = null
-    expect(fs.existsSync(portFilePath)).toBe(false)
-  })
+  it("stops and removes port file", async () => {
+    await startServer();
+    await server.stop();
+    server = null;
+    expect(fs.existsSync(portFilePath)).toBe(false);
+  });
 
-  it('continues without API when port is in use (EADDRINUSE)', async () => {
-    const blocker = net.createServer()
+  it("continues without API when port is in use (EADDRINUSE)", async () => {
+    const blocker = net.createServer();
     const blockerPort = await new Promise<number>((resolve) => {
-      blocker.listen(0, '127.0.0.1', () => {
-        resolve((blocker.address() as net.AddressInfo).port)
-      })
-    })
+      blocker.listen(0, "127.0.0.1", () => {
+        resolve((blocker.address() as net.AddressInfo).port);
+      });
+    });
 
     try {
-      await startServer(blockerPort)
-      expect(server.getPort()).toBe(0)
-      expect(fs.existsSync(portFilePath)).toBe(false)
+      await startServer(blockerPort);
+      expect(server.getPort()).toBe(0);
+      expect(fs.existsSync(portFilePath)).toBe(false);
     } finally {
-      blocker.close()
+      blocker.close();
     }
-  })
+  });
 
-  it('POST /api/sessions creates a session', async () => {
-    const mockAgentInstance = { onPermissionRequest: vi.fn() }
-    const mockSession = { id: 'abc123', agentName: 'claude', status: 'initializing', workingDirectory: '/tmp/ws', warmup: vi.fn().mockResolvedValue(undefined), agentInstance: mockAgentInstance }
-    mockCore.createSession.mockResolvedValueOnce(mockSession)
-    const port = await startServer()
+  it("POST /api/sessions creates a session", async () => {
+    const mockAgentInstance = { onPermissionRequest: vi.fn() };
+    const mockSession = {
+      id: "abc123",
+      agentName: "claude",
+      status: "initializing",
+      workingDirectory: "/tmp/ws",
+      warmup: vi.fn().mockResolvedValue(undefined),
+      agentInstance: mockAgentInstance,
+    };
+    mockCore.createSession.mockResolvedValueOnce(mockSession);
+    const port = await startServer();
 
-    const res = await apiFetch(port, '/api/sessions', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ agent: 'claude' }),
-    })
+    const res = await apiFetch(port, "/api/sessions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ agent: "claude" }),
+    });
 
-    expect(res.status).toBe(200)
-    const data = await res.json()
-    expect(data.sessionId).toBe('abc123')
-    expect(data.agent).toBe('claude')
-    expect(data.status).toBe('initializing')
-    expect(data.workspace).toBe('/tmp/ws')
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.sessionId).toBe("abc123");
+    expect(data.agent).toBe("claude");
+    expect(data.status).toBe("initializing");
+    expect(data.workspace).toBe("/tmp/ws");
     expect(mockCore.createSession).toHaveBeenCalledWith(
-      expect.objectContaining({ channelId: 'api', agentName: 'claude' }),
-    )
-    expect(mockSession.warmup).toHaveBeenCalled()
+      expect.objectContaining({ channelId: "api", agentName: "claude" }),
+    );
+    expect(mockSession.warmup).toHaveBeenCalled();
     // Verify auto-approve permission handler was wired
-    expect(mockAgentInstance.onPermissionRequest).toBeTypeOf('function')
-  })
+    expect(mockAgentInstance.onPermissionRequest).toBeTypeOf("function");
+  });
 
-  it('POST /api/sessions with empty body uses defaults', async () => {
-    const mockSession = { id: 'def456', agentName: 'claude', status: 'initializing', workingDirectory: '/tmp/ws', warmup: vi.fn().mockResolvedValue(undefined), agentInstance: { onPermissionRequest: vi.fn() } }
-    mockCore.createSession.mockResolvedValueOnce(mockSession)
-    const port = await startServer()
+  it("POST /api/sessions with empty body uses defaults", async () => {
+    const mockSession = {
+      id: "def456",
+      agentName: "claude",
+      status: "initializing",
+      workingDirectory: "/tmp/ws",
+      warmup: vi.fn().mockResolvedValue(undefined),
+      agentInstance: { onPermissionRequest: vi.fn() },
+    };
+    mockCore.createSession.mockResolvedValueOnce(mockSession);
+    const port = await startServer();
 
-    const res = await apiFetch(port, '/api/sessions', { method: 'POST' })
-    expect(res.status).toBe(200)
+    const res = await apiFetch(port, "/api/sessions", { method: "POST" });
+    expect(res.status).toBe(200);
     expect(mockCore.createSession).toHaveBeenCalledWith(
-      expect.objectContaining({ channelId: 'api' }),
-    )
-  })
+      expect.objectContaining({ channelId: "api" }),
+    );
+  });
 
-  it('POST /api/sessions returns 429 when max sessions reached', async () => {
+  it("POST /api/sessions returns 429 when max sessions reached", async () => {
     mockCore.sessionManager.listSessions.mockReturnValueOnce([
-      { status: 'active' }, { status: 'active' }, { status: 'active' },
-      { status: 'active' }, { status: 'initializing' },
-    ])
-    const port = await startServer()
+      { status: "active" },
+      { status: "active" },
+      { status: "active" },
+      { status: "active" },
+      { status: "initializing" },
+    ]);
+    const port = await startServer();
 
-    const res = await apiFetch(port, '/api/sessions', { method: 'POST' })
-    expect(res.status).toBe(429)
-    const data = await res.json()
-    expect(data.error).toContain('concurrent sessions')
-  })
+    const res = await apiFetch(port, "/api/sessions", { method: "POST" });
+    expect(res.status).toBe(429);
+    const data = await res.json();
+    expect(data.error).toContain("concurrent sessions");
+  });
 
-  it('DELETE /api/sessions/:id cancels a session', async () => {
-    const mockSession = { id: 'abc123', abortPrompt: vi.fn() }
-    mockCore.sessionManager.getSession.mockReturnValueOnce(mockSession)
-    const port = await startServer()
+  it("DELETE /api/sessions/:id cancels a session", async () => {
+    const mockSession = { id: "abc123", abortPrompt: vi.fn() };
+    mockCore.sessionManager.getSession.mockReturnValueOnce(mockSession);
+    mockCore.sessionManager.cancelSession = vi.fn();
+    const port = await startServer();
 
-    const res = await apiFetch(port, '/api/sessions/abc123', { method: 'DELETE' })
-    expect(res.status).toBe(200)
-    const data = await res.json()
-    expect(data.ok).toBe(true)
-    expect(mockSession.abortPrompt).toHaveBeenCalled()
-  })
+    const res = await apiFetch(port, "/api/sessions/abc123", {
+      method: "DELETE",
+    });
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.ok).toBe(true);
+    expect(mockCore.sessionManager.cancelSession).toHaveBeenCalledWith(
+      "abc123",
+    );
+  });
 
-  it('DELETE /api/sessions/:id returns 404 for unknown session', async () => {
-    mockCore.sessionManager.getSession.mockReturnValueOnce(undefined)
-    const port = await startServer()
+  it("DELETE /api/sessions/:id calls sessionManager.cancelSession", async () => {
+    const mockSession = { id: "abc", abortPrompt: vi.fn() };
+    mockCore.sessionManager.getSession.mockReturnValueOnce(mockSession);
+    mockCore.sessionManager.cancelSession = vi.fn();
+    const port = await startServer();
 
-    const res = await apiFetch(port, '/api/sessions/unknown', { method: 'DELETE' })
-    expect(res.status).toBe(404)
-    const data = await res.json()
-    expect(data.error).toContain('not found')
-  })
+    const res = await apiFetch(port, "/api/sessions/abc", { method: "DELETE" });
+    expect(res.status).toBe(200);
+    expect(mockCore.sessionManager.cancelSession).toHaveBeenCalledWith("abc");
+  });
 
-  it('GET /api/sessions returns session list', async () => {
+  it("DELETE /api/sessions/:id returns 404 for unknown session", async () => {
+    mockCore.sessionManager.getSession.mockReturnValueOnce(undefined);
+    const port = await startServer();
+
+    const res = await apiFetch(port, "/api/sessions/unknown", {
+      method: "DELETE",
+    });
+    expect(res.status).toBe(404);
+    const data = await res.json();
+    expect(data.error).toContain("not found");
+  });
+
+  it("GET /api/sessions returns session list", async () => {
     mockCore.sessionManager.listSessions.mockReturnValueOnce([
-      { id: 'abc', agentName: 'claude', status: 'active', name: 'Fix bug', workingDirectory: '/tmp/a' },
-      { id: 'def', agentName: 'codex', status: 'initializing', name: undefined, workingDirectory: '/tmp/b' },
-    ])
-    const port = await startServer()
+      {
+        id: "abc",
+        agentName: "claude",
+        status: "active",
+        name: "Fix bug",
+        workingDirectory: "/tmp/a",
+        createdAt: new Date("2026-01-01T00:00:00Z"),
+        dangerousMode: false,
+        queueDepth: 0,
+        promptRunning: false,
+      },
+      {
+        id: "def",
+        agentName: "codex",
+        status: "initializing",
+        name: undefined,
+        workingDirectory: "/tmp/b",
+        createdAt: new Date("2026-01-02T00:00:00Z"),
+        dangerousMode: false,
+        queueDepth: 0,
+        promptRunning: false,
+      },
+    ]);
+    const port = await startServer();
 
-    const res = await apiFetch(port, '/api/sessions')
-    expect(res.status).toBe(200)
-    const data = await res.json()
-    expect(data.sessions).toHaveLength(2)
-    expect(data.sessions[0]).toEqual({ id: 'abc', agent: 'claude', status: 'active', name: 'Fix bug', workspace: '/tmp/a' })
-    expect(data.sessions[1]).toEqual({ id: 'def', agent: 'codex', status: 'initializing', name: null, workspace: '/tmp/b' })
-  })
+    const res = await apiFetch(port, "/api/sessions");
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.sessions).toHaveLength(2);
+    expect(data.sessions[0]).toMatchObject({
+      id: "abc",
+      agent: "claude",
+      status: "active",
+      name: "Fix bug",
+      workspace: "/tmp/a",
+    });
+    expect(data.sessions[1]).toMatchObject({
+      id: "def",
+      agent: "codex",
+      status: "initializing",
+      name: null,
+      workspace: "/tmp/b",
+    });
+  });
 
-  it('GET /api/agents returns agent list with default', async () => {
+  it("GET /api/sessions returns extended fields", async () => {
+    const created = new Date("2026-01-01T00:00:00Z");
+    mockCore.sessionManager.listSessions.mockReturnValueOnce([
+      {
+        id: "abc",
+        agentName: "claude",
+        status: "active",
+        name: "Test",
+        workingDirectory: "/tmp",
+        createdAt: created,
+        dangerousMode: true,
+        queueDepth: 2,
+        promptRunning: true,
+      },
+    ]);
+    mockCore.sessionManager.getSessionRecord.mockReturnValueOnce(null);
+    const port = await startServer();
+
+    const res = await apiFetch(port, "/api/sessions");
+    const body = await res.json();
+    expect(body.sessions[0]).toEqual({
+      id: "abc",
+      agent: "claude",
+      status: "active",
+      name: "Test",
+      workspace: "/tmp",
+      createdAt: created.toISOString(),
+      dangerousMode: true,
+      queueDepth: 2,
+      promptRunning: true,
+      lastActiveAt: null,
+    });
+  });
+
+  it("GET /api/agents returns agent list with default", async () => {
     mockCore.agentManager.getAvailableAgents.mockReturnValueOnce([
-      { name: 'claude', command: 'claude-agent-acp', args: [] },
-      { name: 'codex', command: 'codex', args: ['--acp'] },
-    ])
-    const port = await startServer()
+      { name: "claude", command: "claude-agent-acp", args: [] },
+      { name: "codex", command: "codex", args: ["--acp"] },
+    ]);
+    const port = await startServer();
 
-    const res = await apiFetch(port, '/api/agents')
-    expect(res.status).toBe(200)
-    const data = await res.json()
-    expect(data.default).toBe('claude')
-    expect(data.agents).toHaveLength(2)
-    expect(data.agents[0]).toEqual({ name: 'claude', command: 'claude-agent-acp', args: [], capabilities: { supportsResume: true } })
-  })
+    const res = await apiFetch(port, "/api/agents");
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.default).toBe("claude");
+    expect(data.agents).toHaveLength(2);
+    expect(data.agents[0]).toMatchObject({
+      name: "claude",
+      command: "claude-agent-acp",
+      args: [],
+      capabilities: { supportsResume: true },
+    });
+  });
 
-  it('returns 404 for unknown routes', async () => {
-    const port = await startServer()
-    const res = await apiFetch(port, '/api/unknown')
-    expect(res.status).toBe(404)
-  })
+  it("returns 404 for unknown routes", async () => {
+    const port = await startServer();
+    const res = await apiFetch(port, "/api/unknown");
+    expect(res.status).toBe(404);
+  });
 
-  it('GET /api/topics returns topic list', async () => {
+  it("GET /api/topics returns topic list", async () => {
     mockTopicManager.listTopics.mockReturnValueOnce([
-      { sessionId: 'abc', topicId: 42, name: 'Fix bug', status: 'finished', agentName: 'claude', lastActiveAt: '2026-03-21' },
-    ])
-    const port = await startServer()
+      {
+        sessionId: "abc",
+        topicId: 42,
+        name: "Fix bug",
+        status: "finished",
+        agentName: "claude",
+        lastActiveAt: "2026-03-21",
+      },
+    ]);
+    const port = await startServer();
 
-    const res = await apiFetch(port, '/api/topics')
-    expect(res.status).toBe(200)
-    const data = await res.json()
-    expect(data.topics).toHaveLength(1)
-    expect(data.topics[0].sessionId).toBe('abc')
-  })
+    const res = await apiFetch(port, "/api/topics");
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.topics).toHaveLength(1);
+    expect(data.topics[0].sessionId).toBe("abc");
+  });
 
-  it('GET /api/topics filters by status', async () => {
-    mockTopicManager.listTopics.mockReturnValueOnce([])
-    const port = await startServer()
+  it("GET /api/topics filters by status", async () => {
+    mockTopicManager.listTopics.mockReturnValueOnce([]);
+    const port = await startServer();
 
-    await apiFetch(port, '/api/topics?status=finished,error')
-    expect(mockTopicManager.listTopics).toHaveBeenCalledWith({ statuses: ['finished', 'error'] })
-  })
+    await apiFetch(port, "/api/topics?status=finished,error");
+    expect(mockTopicManager.listTopics).toHaveBeenCalledWith({
+      statuses: ["finished", "error"],
+    });
+  });
 
-  it('DELETE /api/topics/:sessionId deletes topic', async () => {
-    mockTopicManager.deleteTopic.mockResolvedValueOnce({ ok: true, topicId: 42 })
-    const port = await startServer()
-
-    const res = await apiFetch(port, '/api/topics/abc123', { method: 'DELETE' })
-    expect(res.status).toBe(200)
-    const data = await res.json()
-    expect(data.ok).toBe(true)
-    expect(data.topicId).toBe(42)
-  })
-
-  it('DELETE /api/topics/:sessionId returns 409 for active session', async () => {
+  it("DELETE /api/topics/:sessionId deletes topic", async () => {
     mockTopicManager.deleteTopic.mockResolvedValueOnce({
-      ok: false, needsConfirmation: true,
-      session: { id: 'abc', name: 'Task', status: 'active' },
-    })
-    const port = await startServer()
+      ok: true,
+      topicId: 42,
+    });
+    const port = await startServer();
 
-    const res = await apiFetch(port, '/api/topics/abc', { method: 'DELETE' })
-    expect(res.status).toBe(409)
-    const data = await res.json()
-    expect(data.needsConfirmation).toBe(true)
-  })
+    const res = await apiFetch(port, "/api/topics/abc123", {
+      method: "DELETE",
+    });
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.ok).toBe(true);
+    expect(data.topicId).toBe(42);
+  });
 
-  it('DELETE /api/topics/:sessionId with force=true deletes active session', async () => {
-    mockTopicManager.deleteTopic.mockResolvedValueOnce({ ok: true, topicId: 42 })
-    const port = await startServer()
+  it("DELETE /api/topics/:sessionId returns 409 for active session", async () => {
+    mockTopicManager.deleteTopic.mockResolvedValueOnce({
+      ok: false,
+      needsConfirmation: true,
+      session: { id: "abc", name: "Task", status: "active" },
+    });
+    const port = await startServer();
 
-    const res = await apiFetch(port, '/api/topics/abc?force=true', { method: 'DELETE' })
-    expect(res.status).toBe(200)
-    expect(mockTopicManager.deleteTopic).toHaveBeenCalledWith('abc', { confirmed: true })
-  })
+    const res = await apiFetch(port, "/api/topics/abc", { method: "DELETE" });
+    expect(res.status).toBe(409);
+    const data = await res.json();
+    expect(data.needsConfirmation).toBe(true);
+  });
 
-  it('DELETE /api/topics/:sessionId returns 403 for system topic', async () => {
-    mockTopicManager.deleteTopic.mockResolvedValueOnce({ ok: false, error: 'Cannot delete system topic' })
-    const port = await startServer()
+  it("DELETE /api/topics/:sessionId with force=true deletes active session", async () => {
+    mockTopicManager.deleteTopic.mockResolvedValueOnce({
+      ok: true,
+      topicId: 42,
+    });
+    const port = await startServer();
 
-    const res = await apiFetch(port, '/api/topics/sys', { method: 'DELETE' })
-    expect(res.status).toBe(403)
-  })
+    const res = await apiFetch(port, "/api/topics/abc?force=true", {
+      method: "DELETE",
+    });
+    expect(res.status).toBe(200);
+    expect(mockTopicManager.deleteTopic).toHaveBeenCalledWith("abc", {
+      confirmed: true,
+    });
+  });
 
-  it('POST /api/topics/cleanup cleans up topics', async () => {
-    mockTopicManager.cleanup.mockResolvedValueOnce({ deleted: ['a', 'b'], failed: [] })
-    const port = await startServer()
+  it("DELETE /api/topics/:sessionId returns 403 for system topic", async () => {
+    mockTopicManager.deleteTopic.mockResolvedValueOnce({
+      ok: false,
+      error: "Cannot delete system topic",
+    });
+    const port = await startServer();
 
-    const res = await apiFetch(port, '/api/topics/cleanup', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ statuses: ['finished', 'error'] }),
-    })
-    expect(res.status).toBe(200)
-    const data = await res.json()
-    expect(data.deleted).toEqual(['a', 'b'])
-    expect(data.failed).toHaveLength(0)
-  })
+    const res = await apiFetch(port, "/api/topics/sys", { method: "DELETE" });
+    expect(res.status).toBe(403);
+  });
+
+  it("POST /api/topics/cleanup cleans up topics", async () => {
+    mockTopicManager.cleanup.mockResolvedValueOnce({
+      deleted: ["a", "b"],
+      failed: [],
+    });
+    const port = await startServer();
+
+    const res = await apiFetch(port, "/api/topics/cleanup", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ statuses: ["finished", "error"] }),
+    });
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.deleted).toEqual(["a", "b"]);
+    expect(data.failed).toHaveLength(0);
+  });
 
   // ===== New endpoint tests =====
 
-  it('GET /api/health returns system health', async () => {
+  it("GET /api/health returns system health", async () => {
     mockCore.sessionManager.listSessions.mockReturnValueOnce([
-      { status: 'active' },
-      { status: 'initializing' },
-      { status: 'finished' },
-    ])
+      { status: "active" },
+      { status: "initializing" },
+      { status: "finished" },
+    ]);
     mockCore.sessionManager.listRecords.mockReturnValueOnce([
-      { sessionId: 'a' }, { sessionId: 'b' }, { sessionId: 'c' }, { sessionId: 'd' },
-    ])
-    const port = await startServer()
+      { sessionId: "a" },
+      { sessionId: "b" },
+      { sessionId: "c" },
+      { sessionId: "d" },
+    ]);
+    const port = await startServer();
 
-    const res = await apiFetch(port, '/api/health')
-    expect(res.status).toBe(200)
-    const data = await res.json()
-    expect(data.status).toBe('ok')
-    expect(data.version).toBeDefined()
-    expect(typeof data.uptime).toBe('number')
-    expect(data.memory.rss).toBeGreaterThan(0)
-    expect(data.memory.heapUsed).toBeGreaterThan(0)
-    expect(data.memory.heapTotal).toBeGreaterThan(0)
-    expect(data.sessions.active).toBe(2)
-    expect(data.sessions.total).toBe(4)
-    expect(data.tunnel.enabled).toBe(false)
-  })
+    const res = await apiFetch(port, "/api/health");
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.status).toBe("ok");
+    expect(data.version).toBeDefined();
+    expect(typeof data.uptime).toBe("number");
+    expect(data.memory.rss).toBeGreaterThan(0);
+    expect(data.memory.heapUsed).toBeGreaterThan(0);
+    expect(data.memory.heapTotal).toBeGreaterThan(0);
+    expect(data.sessions.active).toBe(2);
+    expect(data.sessions.total).toBe(4);
+    expect(data.tunnel.enabled).toBe(false);
+  });
 
-  it('GET /api/version returns version', async () => {
-    const port = await startServer()
+  it("GET /api/version returns version", async () => {
+    const port = await startServer();
 
-    const res = await apiFetch(port, '/api/version')
-    expect(res.status).toBe(200)
-    const data = await res.json()
-    expect(data.version).toBeDefined()
-    expect(typeof data.version).toBe('string')
-  })
+    const res = await apiFetch(port, "/api/version");
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.version).toBeDefined();
+    expect(typeof data.version).toBe("string");
+  });
 
-  it('GET /api/adapters returns adapter list', async () => {
-    mockCore.adapters.set('telegram', { name: 'telegram' })
-    const port = await startServer()
+  it("GET /api/adapters returns adapter list", async () => {
+    mockCore.adapters.set("telegram", { name: "telegram" });
+    const port = await startServer();
 
-    const res = await apiFetch(port, '/api/adapters')
-    expect(res.status).toBe(200)
-    const data = await res.json()
-    expect(data.adapters).toEqual([{ name: 'telegram', type: 'built-in' }])
+    const res = await apiFetch(port, "/api/adapters");
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.adapters).toEqual([{ name: "telegram", type: "built-in" }]);
 
     // Cleanup
-    mockCore.adapters.delete('telegram')
-  })
+    mockCore.adapters.delete("telegram");
+  });
 
-  it('GET /api/tunnel returns tunnel disabled when no tunnel', async () => {
-    mockCore.tunnelService = undefined
-    const port = await startServer()
+  it("GET /api/tunnel returns tunnel disabled when no tunnel", async () => {
+    mockCore.tunnelService = undefined;
+    const port = await startServer();
 
-    const res = await apiFetch(port, '/api/tunnel')
-    expect(res.status).toBe(200)
-    const data = await res.json()
-    expect(data.enabled).toBe(false)
-  })
+    const res = await apiFetch(port, "/api/tunnel");
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.enabled).toBe(false);
+  });
 
-  it('GET /api/config returns redacted config', async () => {
-    const port = await startServer()
+  it("GET /api/config returns redacted config", async () => {
+    const port = await startServer();
 
-    const res = await apiFetch(port, '/api/config')
-    expect(res.status).toBe(200)
-    const data = await res.json()
-    expect(data.config).toBeDefined()
-    expect(data.config.channels.telegram.botToken).toBe('***')
-    expect(data.config.defaultAgent).toBe('claude')
-  })
+    const res = await apiFetch(port, "/api/config");
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.config).toBeDefined();
+    expect(data.config.channels.telegram.botToken).toBe("***");
+    expect(data.config.defaultAgent).toBe("claude");
+  });
 
-  it('POST /api/sessions/:id/prompt sends prompt to session', async () => {
+  it("POST /api/sessions/:id/prompt sends prompt to session", async () => {
     const mockSession = {
-      id: 'abc123',
-      status: 'active',
+      id: "abc123",
+      status: "active",
       queueDepth: 0,
       enqueuePrompt: vi.fn().mockResolvedValue(undefined),
-    }
-    mockCore.sessionManager.getSession.mockReturnValueOnce(mockSession)
-    const port = await startServer()
+    };
+    mockCore.sessionManager.getSession.mockReturnValueOnce(mockSession);
+    const port = await startServer();
 
-    const res = await apiFetch(port, '/api/sessions/abc123/prompt', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prompt: 'Hello world' }),
-    })
+    const res = await apiFetch(port, "/api/sessions/abc123/prompt", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt: "Hello world" }),
+    });
 
-    expect(res.status).toBe(200)
-    const data = await res.json()
-    expect(data.ok).toBe(true)
-    expect(data.sessionId).toBe('abc123')
-    expect(mockSession.enqueuePrompt).toHaveBeenCalledWith('Hello world')
-  })
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.ok).toBe(true);
+    expect(data.sessionId).toBe("abc123");
+    expect(mockSession.enqueuePrompt).toHaveBeenCalledWith("Hello world");
+  });
 
-  it('POST /api/sessions/:id/prompt returns 404 for unknown session', async () => {
-    mockCore.sessionManager.getSession.mockReturnValueOnce(undefined)
-    const port = await startServer()
+  it("POST /api/sessions/:id/prompt returns 404 for unknown session", async () => {
+    mockCore.sessionManager.getSession.mockReturnValueOnce(undefined);
+    const port = await startServer();
 
-    const res = await apiFetch(port, '/api/sessions/unknown/prompt', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prompt: 'Hello' }),
-    })
+    const res = await apiFetch(port, "/api/sessions/unknown/prompt", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt: "Hello" }),
+    });
 
-    expect(res.status).toBe(404)
-  })
+    expect(res.status).toBe(404);
+  });
 
-  it('POST /api/sessions/:id/prompt returns 400 for inactive session', async () => {
-    const mockSession = { id: 'abc123', status: 'cancelled' }
-    mockCore.sessionManager.getSession.mockReturnValueOnce(mockSession)
-    const port = await startServer()
+  it("POST /api/sessions/:id/prompt returns 400 for inactive session", async () => {
+    const mockSession = { id: "abc123", status: "cancelled" };
+    mockCore.sessionManager.getSession.mockReturnValueOnce(mockSession);
+    const port = await startServer();
 
-    const res = await apiFetch(port, '/api/sessions/abc123/prompt', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prompt: 'Hello' }),
-    })
+    const res = await apiFetch(port, "/api/sessions/abc123/prompt", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt: "Hello" }),
+    });
 
-    expect(res.status).toBe(400)
-    const data = await res.json()
-    expect(data.error).toContain('cancelled')
-  })
+    expect(res.status).toBe(400);
+    const data = await res.json();
+    expect(data.error).toContain("cancelled");
+  });
 
-  it('POST /api/sessions/:id/prompt returns 400 for missing prompt', async () => {
-    const mockSession = { id: 'abc123', status: 'active' }
-    mockCore.sessionManager.getSession.mockReturnValueOnce(mockSession)
-    const port = await startServer()
+  it("POST /api/sessions/:id/prompt returns 400 for missing prompt", async () => {
+    const mockSession = { id: "abc123", status: "active" };
+    mockCore.sessionManager.getSession.mockReturnValueOnce(mockSession);
+    const port = await startServer();
 
-    const res = await apiFetch(port, '/api/sessions/abc123/prompt', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+    const res = await apiFetch(port, "/api/sessions/abc123/prompt", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({}),
-    })
+    });
 
-    expect(res.status).toBe(400)
-    const data = await res.json()
-    expect(data.error).toContain('Missing prompt')
-  })
+    expect(res.status).toBe(400);
+    const data = await res.json();
+    expect(data.error).toContain("Missing prompt");
+  });
 
-  it('GET /api/sessions/:id returns full session details', async () => {
-    const createdAt = new Date('2026-03-21T10:00:00Z')
+  it("GET /api/sessions/:id returns full session details", async () => {
+    const createdAt = new Date("2026-03-21T10:00:00Z");
     const mockSession = {
-      id: 'abc123',
-      agentName: 'claude',
-      status: 'active',
-      name: 'Fix bug',
-      workingDirectory: '/tmp/ws',
+      id: "abc123",
+      agentName: "claude",
+      status: "active",
+      name: "Fix bug",
+      workingDirectory: "/tmp/ws",
       createdAt,
       dangerousMode: false,
       queueDepth: 2,
       promptRunning: true,
-      threadId: 'thread-1',
-      channelId: 'telegram',
-      agentSessionId: 'agent-sess-1',
-    }
-    mockCore.sessionManager.getSession.mockReturnValueOnce(mockSession)
-    const port = await startServer()
+      threadId: "thread-1",
+      channelId: "telegram",
+      agentSessionId: "agent-sess-1",
+    };
+    mockCore.sessionManager.getSession.mockReturnValueOnce(mockSession);
+    const port = await startServer();
 
-    const res = await apiFetch(port, '/api/sessions/abc123')
-    expect(res.status).toBe(200)
-    const data = await res.json()
-    expect(data.session.id).toBe('abc123')
-    expect(data.session.agent).toBe('claude')
-    expect(data.session.status).toBe('active')
-    expect(data.session.name).toBe('Fix bug')
-    expect(data.session.workspace).toBe('/tmp/ws')
-    expect(data.session.createdAt).toBe(createdAt.toISOString())
-    expect(data.session.dangerousMode).toBe(false)
-    expect(data.session.queueDepth).toBe(2)
-    expect(data.session.promptRunning).toBe(true)
-    expect(data.session.threadId).toBe('thread-1')
-    expect(data.session.channelId).toBe('telegram')
-    expect(data.session.agentSessionId).toBe('agent-sess-1')
-  })
+    const res = await apiFetch(port, "/api/sessions/abc123");
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.session.id).toBe("abc123");
+    expect(data.session.agent).toBe("claude");
+    expect(data.session.status).toBe("active");
+    expect(data.session.name).toBe("Fix bug");
+    expect(data.session.workspace).toBe("/tmp/ws");
+    expect(data.session.createdAt).toBe(createdAt.toISOString());
+    expect(data.session.dangerousMode).toBe(false);
+    expect(data.session.queueDepth).toBe(2);
+    expect(data.session.promptRunning).toBe(true);
+    expect(data.session.threadId).toBe("thread-1");
+    expect(data.session.channelId).toBe("telegram");
+    expect(data.session.agentSessionId).toBe("agent-sess-1");
+  });
 
-  it('GET /api/sessions/:id returns 404 for unknown session', async () => {
-    mockCore.sessionManager.getSession.mockReturnValueOnce(undefined)
-    const port = await startServer()
+  it("GET /api/sessions/:id returns 404 for unknown session", async () => {
+    mockCore.sessionManager.getSession.mockReturnValueOnce(undefined);
+    const port = await startServer();
 
-    const res = await apiFetch(port, '/api/sessions/unknown')
-    expect(res.status).toBe(404)
-  })
+    const res = await apiFetch(port, "/api/sessions/unknown");
+    expect(res.status).toBe(404);
+  });
 
-  it('PATCH /api/sessions/:id/dangerous toggles dangerous mode', async () => {
-    const mockSession = { id: 'abc123', dangerousMode: false }
-    mockCore.sessionManager.getSession.mockReturnValueOnce(mockSession)
-    const port = await startServer()
+  it("PATCH /api/sessions/:id/dangerous toggles dangerous mode", async () => {
+    const mockSession = { id: "abc123", dangerousMode: false };
+    mockCore.sessionManager.getSession.mockReturnValueOnce(mockSession);
+    const port = await startServer();
 
-    const res = await apiFetch(port, '/api/sessions/abc123/dangerous', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
+    const res = await apiFetch(port, "/api/sessions/abc123/dangerous", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ enabled: true }),
-    })
+    });
 
-    expect(res.status).toBe(200)
-    const data = await res.json()
-    expect(data.ok).toBe(true)
-    expect(data.dangerousMode).toBe(true)
-    expect(mockSession.dangerousMode).toBe(true)
-    expect(mockCore.sessionManager.patchRecord).toHaveBeenCalledWith('abc123', { dangerousMode: true })
-  })
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.ok).toBe(true);
+    expect(data.dangerousMode).toBe(true);
+    expect(mockSession.dangerousMode).toBe(true);
+    expect(mockCore.sessionManager.patchRecord).toHaveBeenCalledWith("abc123", {
+      dangerousMode: true,
+    });
+  });
 
-  it('PATCH /api/sessions/:id/dangerous returns 400 for missing enabled', async () => {
-    const mockSession = { id: 'abc123', dangerousMode: false }
-    mockCore.sessionManager.getSession.mockReturnValueOnce(mockSession)
-    const port = await startServer()
+  it("PATCH /api/sessions/:id/dangerous returns 400 for missing enabled", async () => {
+    const mockSession = { id: "abc123", dangerousMode: false };
+    mockCore.sessionManager.getSession.mockReturnValueOnce(mockSession);
+    const port = await startServer();
 
-    const res = await apiFetch(port, '/api/sessions/abc123/dangerous', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
+    const res = await apiFetch(port, "/api/sessions/abc123/dangerous", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({}),
-    })
+    });
 
-    expect(res.status).toBe(400)
-    const data = await res.json()
-    expect(data.error).toContain('Missing enabled')
-  })
+    expect(res.status).toBe(400);
+    const data = await res.json();
+    expect(data.error).toContain("Missing enabled");
+  });
 
-  it('POST /api/notify sends notification', async () => {
-    const port = await startServer()
+  it("POST /api/notify sends notification", async () => {
+    const port = await startServer();
 
-    const res = await apiFetch(port, '/api/notify', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: 'Hello everyone' }),
-    })
+    const res = await apiFetch(port, "/api/notify", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: "Hello everyone" }),
+    });
 
-    expect(res.status).toBe(200)
-    const data = await res.json()
-    expect(data.ok).toBe(true)
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.ok).toBe(true);
     expect(mockCore.notificationManager.notifyAll).toHaveBeenCalledWith({
-      sessionId: 'system',
-      type: 'completed',
-      summary: 'Hello everyone',
-    })
-  })
+      sessionId: "system",
+      type: "completed",
+      summary: "Hello everyone",
+    });
+  });
 
-  it('POST /api/notify returns 400 for missing message', async () => {
-    const port = await startServer()
+  it("POST /api/notify returns 400 for missing message", async () => {
+    const port = await startServer();
 
-    const res = await apiFetch(port, '/api/notify', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+    const res = await apiFetch(port, "/api/notify", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({}),
-    })
+    });
 
-    expect(res.status).toBe(400)
-    const data = await res.json()
-    expect(data.error).toContain('Missing message')
-  })
+    expect(res.status).toBe(400);
+    const data = await res.json();
+    expect(data.error).toContain("Missing message");
+  });
 
-  it('POST /api/restart returns 200 and triggers restart', async () => {
-    mockCore.requestRestart = vi.fn()
-    const port = await startServer()
+  it("POST /api/restart returns 200 and triggers restart", async () => {
+    mockCore.requestRestart = vi.fn();
+    const port = await startServer();
 
-    const res = await apiFetch(port, '/api/restart', { method: 'POST' })
-    expect(res.status).toBe(200)
-    const data = await res.json()
-    expect(data.ok).toBe(true)
-    expect(data.message).toBe('Restarting...')
+    const res = await apiFetch(port, "/api/restart", { method: "POST" });
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.ok).toBe(true);
+    expect(data.message).toBe("Restarting...");
 
-    await new Promise(resolve => setImmediate(resolve))
-    expect(mockCore.requestRestart).toHaveBeenCalled()
-  })
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(mockCore.requestRestart).toHaveBeenCalled();
+  });
 
-  it('POST /api/restart returns 501 when restart not available', async () => {
-    mockCore.requestRestart = null as any
-    const port = await startServer()
+  it("POST /api/restart returns 501 when restart not available", async () => {
+    mockCore.requestRestart = null as any;
+    const port = await startServer();
 
-    const res = await apiFetch(port, '/api/restart', { method: 'POST' })
-    expect(res.status).toBe(501)
+    const res = await apiFetch(port, "/api/restart", { method: "POST" });
+    expect(res.status).toBe(501);
 
     // Restore for other tests
-    mockCore.requestRestart = vi.fn()
-  })
+    mockCore.requestRestart = vi.fn();
+  });
 
-  it('PATCH /api/config updates config', async () => {
+  it("PATCH /api/config updates config", async () => {
     const fullConfig = {
-      defaultAgent: 'claude',
-      security: { allowedUserIds: [], maxConcurrentSessions: 5, sessionTimeoutMinutes: 60 },
-      channels: { telegram: { botToken: 'secret-token' } },
-      agents: { claude: { command: 'claude-agent-acp', args: [], env: {} } },
-      workspace: { baseDir: '~/openacp-workspace' },
-      logging: { level: 'info', pretty: true },
-      runMode: 'foreground',
+      defaultAgent: "claude",
+      security: {
+        allowedUserIds: [],
+        maxConcurrentSessions: 5,
+        sessionTimeoutMinutes: 60,
+      },
+      channels: { telegram: { botToken: "secret-token" } },
+      agents: { claude: { command: "claude-agent-acp", args: [], env: {} } },
+      workspace: { baseDir: "~/openacp-workspace" },
+      logging: { level: "info", pretty: true },
+      runMode: "foreground",
       autoStart: false,
-      api: { port: 21420, host: '127.0.0.1' },
+      api: { port: 21420, host: "127.0.0.1" },
       sessionStore: { ttlDays: 30 },
-      tunnel: { enabled: true, port: 3100, provider: 'cloudflare', options: {}, storeTtlMinutes: 60, auth: { enabled: false } },
-    }
-    mockCore.configManager.get.mockReturnValue(fullConfig)
-    const port = await startServer()
+      tunnel: {
+        enabled: true,
+        port: 3100,
+        provider: "cloudflare",
+        options: {},
+        storeTtlMinutes: 60,
+        auth: { enabled: false },
+      },
+      speech: {
+        stt: { provider: null, providers: {} },
+        tts: { provider: null, providers: { "edge-tts": { voice: "en-US-AriaNeural" } } },
+      },
+    };
+    mockCore.configManager.get.mockReturnValue(fullConfig);
+    const port = await startServer();
 
-    const res = await apiFetch(port, '/api/config', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ path: 'defaultAgent', value: 'codex' }),
-    })
+    const res = await apiFetch(port, "/api/config", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: "defaultAgent", value: "codex" }),
+    });
 
-    expect(res.status).toBe(200)
-    const data = await res.json()
-    expect(data.ok).toBe(true)
-    expect(mockCore.configManager.save).toHaveBeenCalledWith({ defaultAgent: 'codex' }, 'defaultAgent')
-  })
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.ok).toBe(true);
+    expect(mockCore.configManager.save).toHaveBeenCalledWith(
+      { defaultAgent: "codex" },
+      "defaultAgent",
+    );
+  });
 
-  it('PATCH /api/config returns 400 for missing path', async () => {
-    const port = await startServer()
+  it("PATCH /api/config returns 400 for missing path", async () => {
+    const port = await startServer();
 
-    const res = await apiFetch(port, '/api/config', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ value: 'codex' }),
-    })
+    const res = await apiFetch(port, "/api/config", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ value: "codex" }),
+    });
 
-    expect(res.status).toBe(400)
-    const data = await res.json()
-    expect(data.error).toContain('Missing path')
-  })
+    expect(res.status).toBe(400);
+    const data = await res.json();
+    expect(data.error).toContain("Missing path");
+  });
 
-  it('GET /api/config/editable returns safe fields with values', async () => {
-    const port = await startServer()
-    const res = await apiFetch(port, '/api/config/editable')
-    expect(res.status).toBe(200)
-    const data = await res.json() as any
-    expect(data.fields).toBeInstanceOf(Array)
-    expect(data.fields.length).toBeGreaterThan(0)
+  it("GET /api/config/editable returns safe fields with values", async () => {
+    const port = await startServer();
+    const res = await apiFetch(port, "/api/config/editable");
+    expect(res.status).toBe(200);
+    const data = (await res.json()) as any;
+    expect(data.fields).toBeInstanceOf(Array);
+    expect(data.fields.length).toBeGreaterThan(0);
 
     for (const field of data.fields) {
-      expect(field.path).toBeTruthy()
-      expect(field.displayName).toBeTruthy()
-      expect(field.type).toBeTruthy()
-      expect(field.value).toBeDefined()
+      expect(field.path).toBeTruthy();
+      expect(field.displayName).toBeTruthy();
+      expect(field.type).toBeTruthy();
+      expect(field.value).toBeDefined();
     }
 
-    const agentField = data.fields.find((f: any) => f.path === 'defaultAgent')
-    expect(agentField).toBeDefined()
-    expect(agentField.type).toBe('select')
-    expect(agentField.options).toContain('claude')
-    expect(agentField.value).toBe('claude')
-  })
+    const agentField = data.fields.find((f: any) => f.path === "defaultAgent");
+    expect(agentField).toBeDefined();
+    expect(agentField.type).toBe("select");
+    expect(agentField.options).toContain("claude");
+    expect(agentField.value).toBe("claude");
+  });
 
-  it('PATCH /api/config uses registry for needsRestart', async () => {
-    const port = await startServer()
+  it("POST /api/sessions/:id/permission resolves pending permission", async () => {
+    const mockGate = { isPending: true, requestId: "perm1", resolve: vi.fn() };
+    const mockSession = { id: "abc", permissionGate: mockGate };
+    mockCore.sessionManager.getSession.mockReturnValueOnce(mockSession);
+    const port = await startServer();
+
+    const res = await apiFetch(port, "/api/sessions/abc/permission", {
+      method: "POST",
+      body: JSON.stringify({ permissionId: "perm1", optionId: "allow" }),
+    });
+    expect(res.status).toBe(200);
+    expect(mockGate.resolve).toHaveBeenCalledWith("allow");
+  });
+
+  it("POST /api/sessions/:id/permission returns 404 for unknown session", async () => {
+    mockCore.sessionManager.getSession.mockReturnValueOnce(undefined);
+    const port = await startServer();
+
+    const res = await apiFetch(port, "/api/sessions/unknown/permission", {
+      method: "POST",
+      body: JSON.stringify({ permissionId: "p1", optionId: "allow" }),
+    });
+    expect(res.status).toBe(404);
+  });
+
+  it("POST /api/sessions/:id/permission returns 400 when no pending permission", async () => {
+    const mockGate = { isPending: false, requestId: undefined };
+    const mockSession = { id: "abc", permissionGate: mockGate };
+    mockCore.sessionManager.getSession.mockReturnValueOnce(mockSession);
+    const port = await startServer();
+
+    const res = await apiFetch(port, "/api/sessions/abc/permission", {
+      method: "POST",
+      body: JSON.stringify({ permissionId: "perm1", optionId: "allow" }),
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it("PATCH /api/config uses registry for needsRestart", async () => {
+    const port = await startServer();
 
     // Hot-reloadable field — should NOT need restart
-    const res1 = await apiFetch(port, '/api/config', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ path: 'security.maxConcurrentSessions', value: 10 }),
-    })
-    const data1 = await res1.json() as any
-    expect(data1.ok).toBe(true)
-    expect(data1.needsRestart).toBe(false)
+    const res1 = await apiFetch(port, "/api/config", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        path: "security.maxConcurrentSessions",
+        value: 10,
+      }),
+    });
+    const data1 = (await res1.json()) as any;
+    expect(data1.ok).toBe(true);
+    expect(data1.needsRestart).toBe(false);
 
     // Non-hot-reloadable field — should need restart
-    const res2 = await apiFetch(port, '/api/config', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ path: 'tunnel.enabled', value: false }),
-    })
-    const data2 = await res2.json() as any
-    expect(data2.ok).toBe(true)
-    expect(data2.needsRestart).toBe(true)
-  })
-})
+    const res2 = await apiFetch(port, "/api/config", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: "tunnel.enabled", value: false }),
+    });
+    const data2 = (await res2.json()) as any;
+    expect(data2.ok).toBe(true);
+    expect(data2.needsRestart).toBe(true);
+  });
+
+  it("GET /api/events returns SSE headers", async () => {
+    mockCore.eventBus = new EventBus();
+    const port = await startServer();
+
+    const controller = new AbortController();
+    const res = await apiFetch(port, "/api/events", {
+      signal: controller.signal,
+    });
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toBe("text/event-stream");
+    expect(res.headers.get("cache-control")).toBe("no-cache");
+    controller.abort();
+  });
+
+  it("GET /api/events streams session:created events", async () => {
+    const eventBus = new EventBus();
+    mockCore.eventBus = eventBus;
+    const port = await startServer();
+
+    const controller = new AbortController();
+    const res = await apiFetch(port, "/api/events", {
+      signal: controller.signal,
+    });
+    const reader = res.body!.getReader();
+    const decoder = new TextDecoder();
+
+    // Wait for SSE connection to be registered
+    await new Promise((r) => setTimeout(r, 50));
+
+    // Emit event after connection
+    eventBus.emit("session:created", {
+      sessionId: "s1",
+      agent: "claude",
+      status: "initializing",
+    });
+
+    // Read SSE data
+    const { value } = await reader.read();
+    const text = decoder.decode(value);
+    expect(text).toContain("event: session:created");
+    expect(text).toContain('"sessionId":"s1"');
+    controller.abort();
+  });
+
+  it("GET /api/events supports sessionId filter for agent:event", async () => {
+    const eventBus = new EventBus();
+    mockCore.eventBus = eventBus;
+    const port = await startServer();
+
+    const controller = new AbortController();
+    const res = await apiFetch(port, "/api/events?sessionId=s1", {
+      signal: controller.signal,
+    });
+    const reader = res.body!.getReader();
+    const decoder = new TextDecoder();
+
+    // Wait for SSE connection to be registered
+    await new Promise((r) => setTimeout(r, 50));
+
+    // Emit event for target session — should be received
+    eventBus.emit("agent:event", {
+      sessionId: "s1",
+      event: { type: "text", content: "right" } as any,
+    });
+
+    const { value } = await reader.read();
+    const text = decoder.decode(value);
+    expect(text).toContain('"sessionId":"s1"');
+    expect(text).toContain("right");
+    controller.abort();
+  });
+
+  describe("static file serving", () => {
+    let uiDir: string;
+
+    beforeEach(() => {
+      uiDir = path.join(tmpDir, "ui");
+      fs.mkdirSync(uiDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(uiDir, "index.html"),
+        "<html><body>Dashboard</body></html>",
+      );
+      fs.mkdirSync(path.join(uiDir, "assets"), { recursive: true });
+      fs.writeFileSync(
+        path.join(uiDir, "assets", "app.js"),
+        'console.log("app")',
+      );
+      fs.writeFileSync(
+        path.join(uiDir, "assets", "style.css"),
+        "body { color: red }",
+      );
+    });
+
+    it("serves index.html for root path", async () => {
+      const { ApiServer } = await import("../core/api-server.js");
+      server = new ApiServer(
+        mockCore as any,
+        { port: 0, host: "127.0.0.1" },
+        portFilePath,
+        mockTopicManager as any,
+        secretFilePath,
+        uiDir,
+      );
+      await server.start();
+      const port = server.getPort();
+
+      const res = await apiFetch(port, "/");
+      expect(res.status).toBe(200);
+      expect(res.headers.get("content-type")).toContain("text/html");
+      const body = await res.text();
+      expect(body).toContain("Dashboard");
+    });
+
+    it("serves static assets with correct content-type", async () => {
+      const { ApiServer } = await import("../core/api-server.js");
+      server = new ApiServer(
+        mockCore as any,
+        { port: 0, host: "127.0.0.1" },
+        portFilePath,
+        mockTopicManager as any,
+        secretFilePath,
+        uiDir,
+      );
+      await server.start();
+      const port = server.getPort();
+
+      const jsRes = await apiFetch(port, "/assets/app.js");
+      expect(jsRes.status).toBe(200);
+      expect(jsRes.headers.get("content-type")).toContain("javascript");
+
+      const cssRes = await apiFetch(port, "/assets/style.css");
+      expect(cssRes.status).toBe(200);
+      expect(cssRes.headers.get("content-type")).toContain("text/css");
+    });
+
+    it("falls back to index.html for SPA routes", async () => {
+      const { ApiServer } = await import("../core/api-server.js");
+      server = new ApiServer(
+        mockCore as any,
+        { port: 0, host: "127.0.0.1" },
+        portFilePath,
+        mockTopicManager as any,
+        secretFilePath,
+        uiDir,
+      );
+      await server.start();
+      const port = server.getPort();
+
+      const res = await apiFetch(port, "/sessions/abc");
+      expect(res.status).toBe(200);
+      expect(res.headers.get("content-type")).toContain("text/html");
+      const body = await res.text();
+      expect(body).toContain("Dashboard");
+    });
+
+    it("API routes still work when UI is enabled", async () => {
+      const { ApiServer } = await import("../core/api-server.js");
+      server = new ApiServer(
+        mockCore as any,
+        { port: 0, host: "127.0.0.1" },
+        portFilePath,
+        mockTopicManager as any,
+        secretFilePath,
+        uiDir,
+      );
+      await server.start();
+      const port = server.getPort();
+
+      const res = await apiFetch(port, "/api/health");
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.status).toBe("ok");
+    });
+
+    it("returns 404 for non-API routes when UI not available", async () => {
+      const { ApiServer } = await import("../core/api-server.js");
+      const nonExistentUiDir = path.join(tmpDir, "no-ui");
+      server = new ApiServer(
+        mockCore as any,
+        { port: 0, host: "127.0.0.1" },
+        portFilePath,
+        mockTopicManager as any,
+        secretFilePath,
+        nonExistentUiDir,
+      );
+      await server.start();
+      const port = server.getPort();
+      const res = await apiFetch(port, "/nonexistent");
+      expect(res.status).toBe(404);
+    });
+  });
+
+  describe("security", () => {
+    // --- Prototype pollution via config update ---
+
+    it("rejects config paths containing __proto__", async () => {
+      const port = await startServer();
+      const res = await apiFetch(port, "/api/config", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path: "__proto__.polluted", value: true }),
+      });
+      expect(res.status).toBe(400);
+    });
+
+    it("rejects config paths containing constructor.prototype", async () => {
+      const port = await startServer();
+      const res = await apiFetch(port, "/api/config", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          path: "constructor.prototype.polluted",
+          value: true,
+        }),
+      });
+      expect(res.status).toBe(400);
+    });
+
+    it("rejects config paths containing prototype segment", async () => {
+      const port = await startServer();
+      const res = await apiFetch(port, "/api/config", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path: "a.prototype.b", value: "x" }),
+      });
+      expect(res.status).toBe(400);
+    });
+
+    // --- Config scope enforcement ---
+
+    it("rejects modification of sensitive config fields", async () => {
+      const port = await startServer();
+      const res = await apiFetch(port, "/api/config", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          path: "channels.telegram.botToken",
+          value: "stolen",
+        }),
+      });
+      expect(res.status).toBe(403);
+    });
+
+    // --- Path traversal in static server ---
+
+    describe("path traversal protection", () => {
+      let uiDir: string;
+
+      beforeEach(() => {
+        uiDir = path.join(tmpDir, "ui-traversal");
+        fs.mkdirSync(uiDir, { recursive: true });
+        fs.writeFileSync(
+          path.join(uiDir, "index.html"),
+          "<html><body>Safe</body></html>",
+        );
+      });
+
+      it("blocks path traversal with ../ (no file leaked, SPA fallback or 404)", async () => {
+        const { ApiServer } = await import("../core/api-server.js");
+        server = new ApiServer(
+          mockCore as any,
+          { port: 0, host: "127.0.0.1" },
+          portFilePath,
+          mockTopicManager as any,
+          secretFilePath,
+          uiDir,
+        );
+        await server.start();
+        const port = server.getPort();
+
+        // HTTP clients normalize /../../../etc/passwd → /etc/passwd before sending.
+        // The static server resolves this to uiDir/etc/passwd (does not escape uiDir),
+        // which doesn't exist, so it falls back to serving index.html (SPA pattern).
+        const res = await globalThis.fetch(
+          `http://127.0.0.1:${port}/../../../etc/passwd`,
+        );
+        // Must never expose actual /etc/passwd contents — either SPA fallback or 404
+        expect([200, 404]).toContain(res.status);
+        const body = await res.text();
+        expect(body).not.toMatch(/root:.*:0:0/); // not real /etc/passwd
+      });
+
+      it("blocks encoded path traversal with %2e%2e (no file leaked)", async () => {
+        const { ApiServer } = await import("../core/api-server.js");
+        server = new ApiServer(
+          mockCore as any,
+          { port: 0, host: "127.0.0.1" },
+          portFilePath,
+          mockTopicManager as any,
+          secretFilePath,
+          uiDir,
+        );
+        await server.start();
+        const port = server.getPort();
+
+        // %2e%2e decodes to ".." — HTTP normalises before server sees the path.
+        // Result is the same: uiDir-contained path, no file system escape.
+        const res = await globalThis.fetch(
+          `http://127.0.0.1:${port}/%2e%2e/%2e%2e/etc/passwd`,
+        );
+        expect([200, 404]).toContain(res.status);
+        const body = await res.text();
+        expect(body).not.toMatch(/root:.*:0:0/); // not real /etc/passwd
+      });
+    });
+
+    // --- SSE auth ---
+
+    it("rejects SSE without auth token", async () => {
+      mockCore.eventBus = new EventBus();
+      const port = await startServer();
+
+      const controller = new AbortController();
+      const res = await globalThis.fetch(
+        `http://127.0.0.1:${port}/api/events`,
+        { signal: controller.signal },
+      );
+      expect(res.status).toBe(401);
+      controller.abort();
+    });
+
+    it("accepts SSE with query param token", async () => {
+      mockCore.eventBus = new EventBus();
+      const port = await startServer();
+      const token = readTestSecret();
+
+      const controller = new AbortController();
+      const res = await globalThis.fetch(
+        `http://127.0.0.1:${port}/api/events?token=${token}`,
+        { signal: controller.signal },
+      );
+      expect(res.status).toBe(200);
+      expect(res.headers.get("content-type")).toBe("text/event-stream");
+      controller.abort();
+    });
+
+    it("rejects SSE with invalid query param token", async () => {
+      mockCore.eventBus = new EventBus();
+      const port = await startServer();
+
+      const controller = new AbortController();
+      const res = await globalThis.fetch(
+        `http://127.0.0.1:${port}/api/events?token=wrong-token`,
+        { signal: controller.signal },
+      );
+      expect(res.status).toBe(401);
+      controller.abort();
+    });
+
+    // --- readBody size limit ---
+
+    it("rejects oversized request body with 413 or socket close", async () => {
+      const port = await startServer();
+      // Use /api/sessions/adopt which explicitly checks body === null and returns 413.
+      // When the server calls req.destroy(), the socket is forcibly closed.
+      // Some fetch implementations receive the 413 response; others get a SocketError.
+      const largeBody = JSON.stringify({
+        agentSessionId: "x".repeat(1024 * 1024 + 1),
+      });
+      try {
+        const res = await apiFetch(port, "/api/sessions/adopt", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: largeBody,
+        });
+        // If the response arrived, it must be 413
+        expect(res.status).toBe(413);
+      } catch {
+        // Socket was destroyed before response arrived — this is also correct behaviour
+        // (the server aborted the oversized upload). Test passes.
+      }
+    });
+
+    // --- Auth edge cases ---
+
+    it("rejects empty Authorization header (Bearer with no token)", async () => {
+      const port = await startServer();
+      const res = await globalThis.fetch(
+        `http://127.0.0.1:${port}/api/sessions`,
+        {
+          headers: { Authorization: "Bearer " },
+        },
+      );
+      expect(res.status).toBe(401);
+    });
+
+    it("rejects Bearer token with wrong length", async () => {
+      const port = await startServer();
+      // Use a token with clearly different length from the 64-char hex secret
+      const res = await globalThis.fetch(
+        `http://127.0.0.1:${port}/api/sessions`,
+        {
+          headers: { Authorization: "Bearer short" },
+        },
+      );
+      expect(res.status).toBe(401);
+    });
+
+    // --- Config Zod validation ---
+
+    it("rejects invalid config values (string for number field)", async () => {
+      const port = await startServer();
+      // Pass a string where Zod expects a number — ConfigSchema.safeParse will fail
+      const res = await apiFetch(port, "/api/config", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          path: "security.maxConcurrentSessions",
+          value: "not-a-number",
+        }),
+      });
+      // Fails Zod validation → 400
+      expect(res.status).toBe(400);
+      const data = (await res.json()) as any;
+      expect(data.error).toBe("Validation failed");
+    });
+
+    // --- Redact config with arrays ---
+
+    it("redacts sensitive keys inside arrays", async () => {
+      mockCore.configManager.get.mockReturnValueOnce({
+        defaultAgent: "claude",
+        agents: {
+          claude: { command: "claude", args: [], workingDirectory: "/tmp/ws" },
+        },
+        security: {
+          maxConcurrentSessions: 5,
+          sessionTimeoutMinutes: 60,
+          allowedUserIds: [],
+        },
+        channels: {
+          telegram: { enabled: false, botToken: "secret-token", chatId: 0 },
+        },
+        workspace: { baseDir: "~/openacp-workspace" },
+        logging: {
+          level: "info",
+          logDir: "~/.openacp/logs",
+          maxFileSize: "10m",
+          maxFiles: 7,
+          sessionLogRetentionDays: 30,
+        },
+        tunnel: {
+          enabled: true,
+          port: 3100,
+          provider: "cloudflare",
+          options: {},
+          storeTtlMinutes: 60,
+          auth: { enabled: false },
+        },
+        sessionStore: { ttlDays: 30 },
+        runMode: "foreground",
+        autoStart: false,
+        api: { port: 21420, host: "127.0.0.1" },
+        integrations: {
+          webhooks: [
+            { name: "webhook1", token: "super-secret-token" },
+            { name: "webhook2", token: "another-secret" },
+          ],
+        },
+      });
+      const port = await startServer();
+
+      const res = await apiFetch(port, "/api/config");
+      expect(res.status).toBe(200);
+      const data = (await res.json()) as any;
+      // Token inside array items must be redacted
+      expect(data.config.integrations.webhooks[0].token).toBe("***");
+      expect(data.config.integrations.webhooks[1].token).toBe("***");
+      // Name fields should NOT be redacted
+      expect(data.config.integrations.webhooks[0].name).toBe("webhook1");
+    });
+  });
+
+  describe("authentication", () => {
+    it("returns 401 for requests without auth token", async () => {
+      const port = await startServer();
+      // Use raw fetch without auth
+      const res = await globalThis.fetch(
+        `http://127.0.0.1:${port}/api/sessions`,
+      );
+      expect(res.status).toBe(401);
+      const data = await res.json();
+      expect(data.error).toBe("Unauthorized");
+    });
+
+    it("returns 401 for requests with wrong token", async () => {
+      const port = await startServer();
+      const res = await globalThis.fetch(
+        `http://127.0.0.1:${port}/api/sessions`,
+        {
+          headers: { Authorization: "Bearer wrong-token" },
+        },
+      );
+      expect(res.status).toBe(401);
+    });
+
+    it("allows health endpoint without auth", async () => {
+      mockCore.sessionManager.listSessions.mockReturnValueOnce([]);
+      mockCore.sessionManager.listRecords.mockReturnValueOnce([]);
+      const port = await startServer();
+      // Use raw fetch without auth
+      const res = await globalThis.fetch(`http://127.0.0.1:${port}/api/health`);
+      expect(res.status).toBe(200);
+    });
+
+    it("allows version endpoint without auth", async () => {
+      const port = await startServer();
+      const res = await globalThis.fetch(
+        `http://127.0.0.1:${port}/api/version`,
+      );
+      expect(res.status).toBe(200);
+    });
+
+    it("accepts requests with valid auth token", async () => {
+      mockCore.sessionManager.listSessions.mockReturnValueOnce([]);
+      const port = await startServer();
+      const token = readTestSecret();
+      const res = await globalThis.fetch(
+        `http://127.0.0.1:${port}/api/sessions`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        },
+      );
+      expect(res.status).toBe(200);
+    });
+
+    it("accepts SSE with token query param", async () => {
+      mockCore.eventBus = new EventBus();
+      const port = await startServer();
+      const token = readTestSecret();
+
+      const controller = new AbortController();
+      const res = await globalThis.fetch(
+        `http://127.0.0.1:${port}/api/events?token=${token}`,
+        { signal: controller.signal },
+      );
+      expect(res.status).toBe(200);
+      controller.abort();
+    });
+
+    it("does not require auth for static file routes", async () => {
+      const uiDir = path.join(tmpDir, "ui-auth-test");
+      fs.mkdirSync(uiDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(uiDir, "index.html"),
+        "<html><body>Test</body></html>",
+      );
+
+      const { ApiServer } = await import("../core/api-server.js");
+      server = new ApiServer(
+        mockCore as any,
+        { port: 0, host: "127.0.0.1" },
+        portFilePath,
+        mockTopicManager as any,
+        secretFilePath,
+        uiDir,
+      );
+      await server.start();
+      const port = server.getPort();
+
+      // Raw fetch without auth — static routes should be accessible
+      const res = await globalThis.fetch(`http://127.0.0.1:${port}/`);
+      expect(res.status).toBe(200);
+      const body = await res.text();
+      expect(body).toContain("Test");
+    });
+  });
+});

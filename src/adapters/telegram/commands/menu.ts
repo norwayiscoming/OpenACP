@@ -50,6 +50,7 @@ export async function handleHelp(ctx: Context): Promise<void> {
       `/enable_dangerous — Auto-approve permissions\n` +
       `/disable_dangerous — Restore permission prompts\n` +
       `/handoff — Continue session in terminal\n` +
+      `/archive — Archive session topic\n` +
       `/clear — Clear assistant history\n\n` +
       `💬 Need help? Just ask me in this topic!`,
     { parse_mode: "HTML" },

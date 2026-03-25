@@ -132,7 +132,7 @@ export class JsonFileSessionStore implements SessionStore {
       for (const [id, record] of Object.entries(raw.sessions)) {
         this.records.set(id, record);
       }
-      log.info({ count: this.records.size }, "Loaded session records");
+      log.debug({ count: this.records.size }, "Loaded session records");
     } catch (err) {
       log.error({ err }, "Failed to load session store");
     }

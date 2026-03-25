@@ -111,8 +111,11 @@ export class SkillCommandManager {
     // Clear persisted skillMsgId
     const record = this.sessionManager.getSessionRecord(sessionId);
     if (record) {
-      const { skillMsgId: _removed, ...rest } = record.platform as unknown as TelegramPlatformData;
-      await this.sessionManager.patchRecord(sessionId, { platform: rest });
+      const platform = record.platform;
+      if (platform && typeof platform === 'object' && 'topicId' in platform) {
+        const { skillMsgId: _removed, ...rest } = platform as unknown as TelegramPlatformData;
+        await this.sessionManager.patchRecord(sessionId, { platform: rest });
+      }
     }
   }
 }

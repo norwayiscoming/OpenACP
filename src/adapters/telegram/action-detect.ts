@@ -133,7 +133,10 @@ export function setupActionCallbacks(
             action.agent,
             action.workspace,
           );
-          const topicLink = `https://t.me/c/${String(chatId).replace("-100", "")}/${firstMsgId ?? threadId}`;
+          const cleanId = String(chatId).replace("-100", "");
+          const topicLink = firstMsgId
+            ? `https://t.me/c/${cleanId}/${threadId}/${firstMsgId}`
+            : `https://t.me/c/${cleanId}/${threadId}`;
           const originalText = ctx.callbackQuery.message?.text ?? "";
           try {
             await ctx.editMessageText(

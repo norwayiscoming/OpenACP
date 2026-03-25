@@ -391,35 +391,24 @@ export async function handleArchive(
   const threadId = ctx.message?.message_thread_id;
   if (!threadId) return;
 
+  // Check in-memory session first, then fall back to stored record
   const session = core.sessionManager.getSessionByThread("telegram", String(threadId));
-  if (!session) {
-    await ctx.reply(
-      "ℹ️ <b>/archive</b> works in session topics — it recreates the topic with a clean chat view while keeping your agent session alive.\n\nGo to the session topic you want to archive and type /archive there.",
-      { parse_mode: "HTML" },
-    );
-    return;
-  }
-
-  if (session.status === "initializing") {
-    await ctx.reply("⏳ Please wait for session to be ready.", { parse_mode: "HTML" });
-    return;
-  }
-
-  if (session.status !== "active") {
-    await ctx.reply(`⚠️ Cannot archive — session is ${session.status}.`, { parse_mode: "HTML" });
-    return;
-  }
+  const record = !session ? core.sessionManager.getRecordByThread("telegram", String(threadId)) : undefined;
+  // Use sessionId if available, otherwise use threadId as identifier for orphan topics
+  const identifier = session?.id ?? record?.sessionId ?? `topic:${threadId}`;
 
   await ctx.reply(
-    "⚠️ <b>Archive this session topic?</b>\n\n" +
-    "This will permanently delete all messages in this topic and create a fresh one.\n" +
-    "Your agent session will continue — only the chat view is reset.\n\n" +
-    "<i>Note: links to messages in this topic will stop working.</i>",
+    "⚠️ <b>Archive this session?</b>\n\n" +
+    "This will:\n" +
+    "• Delete this topic and all messages\n" +
+    "• Stop the agent session (if running)\n" +
+    "• Remove the session record\n\n" +
+    "<i>This action cannot be undone.</i>",
     {
       parse_mode: "HTML",
       reply_markup: new InlineKeyboard()
-        .text("🗑 Yes, archive", `ar:yes:${session.id}`)
-        .text("❌ Cancel", `ar:no:${session.id}`),
+        .text("🗑 Yes, archive", `ar:yes:${identifier}`)
+        .text("❌ Cancel", `ar:no:${identifier}`),
     },
   );
 }
@@ -436,7 +425,9 @@ export async function handleArchiveConfirm(
     await ctx.answerCallbackQuery();
   } catch { /* expired */ }
 
-  const [, action, sessionId] = data.split(":");
+  // Format: ar:<action>:<identifier> where identifier is sessionId or topic:<threadId>
+  const [, action, ...rest] = data.split(":");
+  const identifier = rest.join(":");
 
   if (action === "no") {
     await ctx.editMessageText("Archive cancelled.", { parse_mode: "HTML" });
@@ -444,23 +435,45 @@ export async function handleArchiveConfirm(
   }
 
   // action === "yes"
-  await ctx.editMessageText("🔄 Archiving topic...", { parse_mode: "HTML" });
+  await ctx.editMessageText("🔄 Archiving...", { parse_mode: "HTML" });
 
-  const result = await core.archiveSession(sessionId);
+  // Handle orphan topics (no session/record) — delete topic directly
+  if (identifier.startsWith("topic:")) {
+    const topicId = Number(identifier.slice("topic:".length));
+    try {
+      await ctx.api.deleteForumTopic(chatId, topicId);
+      core.notificationManager.notifyAll({
+        sessionId: "system",
+        sessionName: `Orphan topic #${topicId}`,
+        type: "completed",
+        summary: `Orphan topic #${topicId} archived and deleted.`,
+      });
+    } catch (err) {
+      core.notificationManager.notifyAll({
+        sessionId: "system",
+        sessionName: `Orphan topic #${topicId}`,
+        type: "error",
+        summary: `Failed to delete orphan topic #${topicId}: ${(err as Error).message}`,
+      });
+    }
+    return;
+  }
+
+  const result = await core.archiveSession(identifier);
   if (result.ok) {
-    const newTopicId = Number(result.newThreadId);
-    await ctx.api.sendMessage(chatId, "✅ Topic archived. Session continues.", {
-      message_thread_id: newTopicId,
-      parse_mode: "HTML",
+    core.notificationManager.notifyAll({
+      sessionId: identifier,
+      type: "completed",
+      summary: `Session archived and deleted.`,
     });
   } else {
     try {
       await ctx.editMessageText(`❌ Failed to archive: <code>${escapeHtml(result.error)}</code>`, { parse_mode: "HTML" });
     } catch {
       core.notificationManager.notifyAll({
-        sessionId,
+        sessionId: identifier,
         type: "error",
-        summary: `Failed to recreate topic for session "${sessionId}": ${result.error}`,
+        summary: `Failed to archive session "${identifier}": ${result.error}`,
       });
     }
   }

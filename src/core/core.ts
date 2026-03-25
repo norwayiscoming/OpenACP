@@ -199,25 +199,47 @@ export class OpenACPCore {
 
   // --- Archive ---
 
-  async archiveSession(
-    sessionId: string,
-  ): Promise<{ ok: true; newThreadId: string } | { ok: false; error: string }> {
+  async archiveSession(sessionId: string): Promise<{ ok: true } | { ok: false; error: string }> {
     const session = this.sessionManager.getSession(sessionId);
-    if (!session) return { ok: false, error: "Session not found" };
-    if (session.status === "initializing")
-      return { ok: false, error: "Session is still initializing" };
-    if (session.status !== "active")
-      return { ok: false, error: `Session is ${session.status}` };
+    const record = this.sessionManager.getSessionRecord(sessionId);
 
-    const adapter = this.adapters.get(session.channelId);
+    if (!session && !record) return { ok: false, error: "Session not found" };
+
+    const channelId = session?.channelId ?? record?.channelId;
+    if (!channelId) return { ok: false, error: "No channel for session" };
+
+    const adapter = this.adapters.get(channelId);
     if (!adapter) return { ok: false, error: "Adapter not found for session" };
 
     try {
-      const result = await adapter.archiveSessionTopic(session.id);
-      if (!result)
-        return { ok: false, error: "Adapter does not support archiving" };
-      return { ok: true, newThreadId: result.newThreadId };
+      // 1. Delete topic — if session is in memory use archiveSessionTopic (cleans up trackers),
+      //    otherwise use deleteSessionThread (looks up topicId from record)
+      if (session) {
+        await adapter.archiveSessionTopic(session.id);
+      } else {
+        await adapter.deleteSessionThread(sessionId);
+      }
+
+      // 2. Cancel the session if in memory (stop agent)
+      if (session) {
+        try {
+          await this.sessionManager.cancelSession(sessionId);
+        } catch {
+          // Session may already be finished/cancelled
+        } finally {
+          // Clear archiving flag after cancel completes — prevents race window
+          // where agent events try to send to deleted topic
+          session.archiving = false;
+        }
+      }
+
+      // 3. Remove session record
+      await this.sessionManager.removeRecord(sessionId);
+
+      return { ok: true };
     } catch (err) {
+      // Clear archiving flag on error too
+      if (session) session.archiving = false;
       return { ok: false, error: (err as Error).message };
     }
   }

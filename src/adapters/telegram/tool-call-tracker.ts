@@ -2,6 +2,11 @@ import type { Bot } from "grammy";
 import type { TelegramSendQueue } from "./send-queue.js";
 import { formatToolCall, formatToolUpdate } from "./formatting.js";
 import { createChildLogger } from "../../core/log.js";
+import type {
+  ToolCallMeta,
+  ViewerLinks,
+  DisplayVerbosity,
+} from "../shared/format-types.js";
 
 const log = createChildLogger({ module: "tool-call-tracker" });
 
@@ -9,19 +14,10 @@ interface ToolCallState {
   msgId: number;
   name: string;
   kind?: string;
-  viewerLinks?: { file?: string; diff?: string };
+  rawInput?: unknown;
+  viewerLinks?: ViewerLinks;
   viewerFilePath?: string;
   ready: Promise<void>;
-}
-
-interface ToolCallMeta {
-  id: string;
-  name: string;
-  kind?: string;
-  status?: string;
-  content?: unknown;
-  viewerLinks?: { file?: string; diff?: string };
-  viewerFilePath?: string;
 }
 
 export class ToolCallTracker {
@@ -37,6 +33,7 @@ export class ToolCallTracker {
     sessionId: string,
     threadId: number,
     meta: ToolCallMeta,
+    verbosity: DisplayVerbosity = "medium",
   ): Promise<void> {
     if (!this.sessions.has(sessionId)) {
       this.sessions.set(sessionId, new Map());
@@ -51,31 +48,32 @@ export class ToolCallTracker {
       msgId: 0,
       name: meta.name,
       kind: meta.kind,
+      rawInput: meta.rawInput,
       viewerLinks: meta.viewerLinks,
       viewerFilePath: meta.viewerFilePath,
       ready,
     });
 
-    const msg = await this.sendQueue.enqueue(() =>
-      this.bot.api.sendMessage(
-        this.chatId,
-        formatToolCall(meta),
-        {
+    try {
+      const msg = await this.sendQueue.enqueue(() =>
+        this.bot.api.sendMessage(this.chatId, formatToolCall(meta, verbosity), {
           message_thread_id: threadId,
           parse_mode: "HTML",
           disable_notification: true,
-        },
-      ),
-    );
+        }),
+      );
 
-    const toolEntry = this.sessions.get(sessionId)!.get(meta.id)!;
-    toolEntry.msgId = msg!.message_id;
-    resolveReady();
+      const toolEntry = this.sessions.get(sessionId)!.get(meta.id)!;
+      toolEntry.msgId = msg!.message_id;
+    } finally {
+      resolveReady();
+    }
   }
 
   async updateCall(
     sessionId: string,
     meta: ToolCallMeta & { status: string },
+    verbosity: DisplayVerbosity = "medium",
   ): Promise<void> {
     const toolState = this.sessions.get(sessionId)?.get(meta.id);
     if (!toolState) return;
@@ -83,7 +81,10 @@ export class ToolCallTracker {
     // Accumulate state from intermediate updates
     if (meta.viewerLinks) {
       toolState.viewerLinks = meta.viewerLinks;
-      log.debug({ toolId: meta.id, viewerLinks: meta.viewerLinks }, "Accumulated viewerLinks");
+      log.debug(
+        { toolId: meta.id, viewerLinks: meta.viewerLinks },
+        "Accumulated viewerLinks",
+      );
     }
     if (meta.viewerFilePath) toolState.viewerFilePath = meta.viewerFilePath;
     if (meta.name) toolState.name = meta.name;
@@ -111,10 +112,11 @@ export class ToolCallTracker {
       ...meta,
       name: toolState.name,
       kind: toolState.kind,
+      rawInput: toolState.rawInput,
       viewerLinks: toolState.viewerLinks,
       viewerFilePath: toolState.viewerFilePath,
     };
-    const formattedText = formatToolUpdate(merged);
+    const formattedText = formatToolUpdate(merged, verbosity);
 
     try {
       await this.sendQueue.enqueue(() =>

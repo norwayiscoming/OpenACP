@@ -4,6 +4,8 @@ import type { OutgoingMessage, PermissionRequest, NotificationMessage, AgentComm
 import type { OpenACPCore } from '../../core/core.js'
 import type { Session } from '../../core/session.js'
 import { log } from '../../core/log.js'
+import type { DisplayVerbosity } from '../shared/format-types.js'
+import { evaluateNoise } from '../shared/message-formatter.js'
 import { dispatchMessage, type MessageHandlers } from '../shared/message-dispatcher.js'
 import type { DiscordChannelConfig } from './types.js'
 import { DiscordSendQueue } from './send-queue.js'
@@ -48,6 +50,11 @@ export class DiscordAdapter extends ChannelAdapter<OpenACPCore> {
   private skillManager!: SkillCommandManager
   private permissionHandler!: PermissionHandler
   private sessionTrackers: Map<string, ActivityTracker> = new Map()
+
+  private get verbosity(): DisplayVerbosity {
+    return (this.discordConfig as Record<string, unknown>).displayVerbosity as DisplayVerbosity ?? 'medium'
+  }
+
   private guild!: Guild
   private forumChannel!: ForumChannel | TextChannel
   private notificationChannel!: TextChannel
@@ -424,19 +431,25 @@ export class DiscordAdapter extends ChannelAdapter<OpenACPCore> {
     },
 
     onToolCall: async (ctx, content) => {
+      const meta = content.metadata ?? {}
+      const toolName = String(meta.name ?? content.text ?? 'Tool')
+      const toolKind = String(meta.kind ?? 'other')
+      const noiseAction = evaluateNoise(toolName, toolKind, meta.rawInput)
+      if (noiseAction === 'hide' && this.verbosity !== 'high') return
+      if (noiseAction === 'collapse' && this.verbosity === 'low') return
+
       const tracker = this.getOrCreateTracker(ctx.sessionId, ctx.thread)
       await tracker.onToolCall()
       await this.draftManager.finalize(ctx.sessionId, ctx.thread, ctx.isAssistant)
-      const meta = content.metadata ?? {}
       await this.toolTracker.trackNewCall(ctx.sessionId, ctx.thread, {
         id: String(meta.id ?? ''),
-        name: content.text || String(meta.name ?? 'Tool'),
+        name: toolName,
         kind: meta.kind as string | undefined,
         status: String(meta.status ?? 'running'),
         content: meta.content,
         viewerLinks: meta.viewerLinks as { file?: string; diff?: string } | undefined,
         viewerFilePath: meta.viewerFilePath as string | undefined,
-      })
+      }, this.verbosity)
     },
 
     onToolUpdate: async (ctx, content) => {
@@ -449,7 +462,7 @@ export class DiscordAdapter extends ChannelAdapter<OpenACPCore> {
         content: meta.content,
         viewerLinks: meta.viewerLinks as { file?: string; diff?: string } | undefined,
         viewerFilePath: meta.viewerFilePath as string | undefined,
-      })
+      }, this.verbosity)
     },
 
     onPlan: async (ctx, content) => {
@@ -575,7 +588,7 @@ export class DiscordAdapter extends ChannelAdapter<OpenACPCore> {
       this.assistantSession != null && sessionId === this.assistantSession.id
 
     const ctx: DiscordMessageCtx = { sessionId, thread, isAssistant }
-    await dispatchMessage(this.messageHandlers, ctx, content)
+    await dispatchMessage(this.messageHandlers, ctx, content, this.verbosity)
   }
 
   // ─── sendPermissionRequest ────────────────────────────────────────────────

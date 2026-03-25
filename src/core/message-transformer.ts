@@ -18,6 +18,7 @@ export class MessageTransformer {
       case "thought":
         return { type: "thought", text: event.content };
       case "tool_call": {
+        const meta = event.meta as Record<string, unknown> | undefined;
         const metadata: Record<string, unknown> = {
           id: event.id,
           name: event.name,
@@ -25,17 +26,26 @@ export class MessageTransformer {
           status: event.status,
           content: event.content,
           locations: event.locations,
+          rawInput: event.rawInput,
+          displaySummary: meta?.displaySummary,
+          displayTitle: meta?.displayTitle,
+          displayKind: meta?.displayKind,
         };
         this.enrichWithViewerLinks(event, metadata, sessionContext);
         return { type: "tool_call", text: event.name, metadata };
       }
       case "tool_update": {
+        const meta = event.meta as Record<string, unknown> | undefined;
         const metadata: Record<string, unknown> = {
           id: event.id,
           name: event.name,
           kind: event.kind,
           status: event.status,
           content: event.content,
+          rawInput: event.rawInput,
+          displaySummary: meta?.displaySummary,
+          displayTitle: meta?.displayTitle,
+          displayKind: meta?.displayKind,
         };
         this.enrichWithViewerLinks(event, metadata, sessionContext);
         return { type: "tool_update", text: "", metadata };

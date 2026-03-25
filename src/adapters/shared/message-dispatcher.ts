@@ -1,4 +1,5 @@
 import type { OutgoingMessage } from "../../core/types.js";
+import type { DisplayVerbosity } from "./format-types.js";
 
 export interface MessageHandlers<TCtx = unknown> {
   onText(ctx: TCtx, content: OutgoingMessage): Promise<void>;
@@ -13,11 +14,24 @@ export interface MessageHandlers<TCtx = unknown> {
   onSystemMessage(ctx: TCtx, content: OutgoingMessage): Promise<void>;
 }
 
+const HIDDEN_ON_LOW: Set<string> = new Set(["thought", "plan", "usage"]);
+
+export function shouldDispatch(
+  type: string,
+  verbosity: DisplayVerbosity,
+): boolean {
+  if (verbosity === "low" && HIDDEN_ON_LOW.has(type)) return false;
+  return true;
+}
+
 export async function dispatchMessage<TCtx>(
   handlers: MessageHandlers<TCtx>,
   ctx: TCtx,
   content: OutgoingMessage,
+  verbosity: DisplayVerbosity = "medium",
 ): Promise<void> {
+  if (!shouldDispatch(content.type, verbosity)) return;
+
   switch (content.type) {
     case "text":
       return handlers.onText(ctx, content);

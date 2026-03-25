@@ -246,7 +246,7 @@ function ConfigFieldRow({
 
       <div className="flex flex-col gap-2 shrink-0 w-full sm:w-auto">
         <div className="flex items-center gap-3">
-          {field.type === "boolean" ? (
+          {field.type === "boolean" || field.type === "toggle" ? (
             <div className="h-[38px] flex items-center">
               <Toggle
                 checked={localValue as boolean}
@@ -254,7 +254,8 @@ function ConfigFieldRow({
                 disabled={saving}
               />
             </div>
-          ) : field.type === "enum" && field.options ? (
+          ) : (field.type === "enum" || field.type === "select") &&
+            field.options ? (
             <select
               value={String(localValue)}
               onChange={(e) => {
@@ -292,16 +293,17 @@ function ConfigFieldRow({
             />
           )}
 
-          {isDirty && field.type !== "boolean" && field.type !== "enum" && (
-            <Button
-              size="sm"
-              variant="primary"
-              onClick={() => onSave(field.path, localValue)}
-              disabled={saving}
-            >
-              Save
-            </Button>
-          )}
+          {isDirty &&
+            !["boolean", "toggle", "enum", "select"].includes(field.type) && (
+              <Button
+                size="sm"
+                variant="primary"
+                onClick={() => onSave(field.path, localValue)}
+                disabled={saving}
+              >
+                Save
+              </Button>
+            )}
         </div>
       </div>
     </div>

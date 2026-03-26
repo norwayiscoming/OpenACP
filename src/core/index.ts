@@ -1,3 +1,4 @@
+// ─── Core modules ───────────────────────────────────────────────────────────
 export * from "./types.js";
 export {
   log,
@@ -15,7 +16,6 @@ export {
   type AdapterCapabilities,
   type ChannelConfig,
 } from "./channel.js";
-export { NotificationManager } from "../plugins/notifications/notification.js";
 export { nodeToWebWritable, nodeToWebReadable } from "./utils/streams.js";
 export { StderrCapture } from "./utils/stderr-capture.js";
 export {
@@ -33,10 +33,8 @@ export { TypedEmitter } from "./utils/typed-emitter.js";
 export { PromptQueue } from "./sessions/prompt-queue.js";
 export { PermissionGate } from "./sessions/permission-gate.js";
 export { MessageTransformer } from "./message-transformer.js";
-export { FileService } from "../plugins/file-service/file-service.js";
 export type { FileServiceInterface } from "./plugin/types.js";
 export { SessionManager } from "./sessions/session-manager.js";
-export { SecurityGuard } from "../plugins/security/security-guard.js";
 export { SessionBridge, type BridgeDeps } from "./sessions/session-bridge.js";
 export {
   SessionFactory,
@@ -44,26 +42,7 @@ export {
   type SideEffectDeps,
 } from "./sessions/session-factory.js";
 export { OpenACPCore } from "./core.js";
-export { UsageStore } from "../plugins/usage/usage-store.js";
-export { UsageBudget } from "../plugins/usage/usage-budget.js";
-export { startDaemon, stopDaemon, getStatus, getPidPath } from "../cli/daemon.js";
-export {
-  installAutoStart,
-  uninstallAutoStart,
-  isAutoStartInstalled,
-  isAutoStartSupported,
-} from "../cli/autostart.js";
-export { runConfigEditor } from "./config/config-editor.js";
-export { ApiServer, type ApiConfig } from "../plugins/api-server/api-server.js";
-export { SSEManager } from "../plugins/api-server/sse-manager.js";
-export { StaticServer } from "../plugins/api-server/static-server.js";
 export { EventBus, type EventBusEvents } from "./event-bus.js";
-export {
-  TopicManager,
-  type TopicInfo,
-  type DeleteTopicResult,
-  type CleanupResult,
-} from "../plugins/telegram/topic-manager.js";
 export {
   CONFIG_REGISTRY,
   getFieldDef,
@@ -73,6 +52,32 @@ export {
   getConfigValue,
   type ConfigFieldDef,
 } from "./config/config-registry.js";
+export { runConfigEditor } from "./config/config-editor.js";
+export { startDaemon, stopDaemon, getStatus, getPidPath } from "../cli/daemon.js";
+export {
+  installAutoStart,
+  uninstallAutoStart,
+  isAutoStartInstalled,
+  isAutoStartSupported,
+} from "../cli/autostart.js";
+
+// ─── Plugin re-exports (convenience for @openacp/cli consumers) ──────────────
+// These are NOT core dependencies — they're re-exported for public API
+// convenience so consumers don't need to import from deep plugin paths.
+export { NotificationManager } from "../plugins/notifications/notification.js";
+export { FileService } from "../plugins/file-service/file-service.js";
+export { SecurityGuard } from "../plugins/security/security-guard.js";
+export { UsageStore } from "../plugins/usage/usage-store.js";
+export { UsageBudget } from "../plugins/usage/usage-budget.js";
+export { ApiServer, type ApiConfig } from "../plugins/api-server/api-server.js";
+export { SSEManager } from "../plugins/api-server/sse-manager.js";
+export { StaticServer } from "../plugins/api-server/static-server.js";
+export {
+  TopicManager,
+  type TopicInfo,
+  type DeleteTopicResult,
+  type CleanupResult,
+} from "../plugins/telegram/topic-manager.js";
 export { SpeechService, GroqSTT } from "../plugins/speech/exports.js";
 export type {
   STTProvider,
@@ -84,6 +89,13 @@ export type {
   SpeechServiceConfig,
   SpeechProviderConfig,
 } from "../plugins/speech/exports.js";
-export type { ContextProvider, ContextQuery, ContextOptions, ContextResult, SessionInfo as ContextSessionInfo, SessionListResult } from "../plugins/context/context-provider.js";
+export type {
+  ContextProvider,
+  ContextQuery,
+  ContextOptions,
+  ContextResult,
+  SessionInfo as ContextSessionInfo,
+  SessionListResult,
+} from "../plugins/context/context-provider.js";
 export { ContextManager } from "../plugins/context/context-manager.js";
 export { EntireProvider } from "../plugins/context/entire/entire-provider.js";

@@ -8,7 +8,7 @@ const speechPlugin: OpenACPPlugin = {
   description: 'Text-to-speech and speech-to-text with pluggable providers',
   essential: false,
   optionalPluginDependencies: { '@openacp/file-service': '^1.0.0' },
-  permissions: ['services:register'],
+  permissions: ['services:register', 'commands:register'],
 
   async install(ctx: InstallContext) {
     const { terminal, settings, legacyConfig } = ctx
@@ -159,6 +159,23 @@ const speechPlugin: OpenACPPlugin = {
     })
 
     ctx.registerService('speech', service)
+
+    ctx.registerCommand({
+      name: 'tts',
+      description: 'Toggle text-to-speech',
+      usage: 'on|off',
+      category: 'plugin',
+      handler: async (args) => {
+        const mode = args.raw.trim().toLowerCase()
+        if (mode === 'on') return { type: 'text', text: 'Text-to-speech enabled' }
+        if (mode === 'off') return { type: 'text', text: 'Text-to-speech disabled' }
+        return { type: 'menu', title: 'Text to Speech', options: [
+          { label: 'Enable', command: '/tts on' },
+          { label: 'Disable', command: '/tts off' },
+        ]}
+      },
+    })
+
     ctx.log.info('Speech service ready')
   },
 }

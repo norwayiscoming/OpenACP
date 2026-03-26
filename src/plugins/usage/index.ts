@@ -13,7 +13,7 @@ function createUsagePlugin(): OpenACPPlugin {
     version: '1.0.0',
     description: 'Token usage tracking and budget enforcement',
     essential: false,
-    permissions: ['services:register'],
+    permissions: ['services:register', 'commands:register'],
 
     async install(ctx: InstallContext) {
       const { settings, legacyConfig, terminal } = ctx
@@ -103,6 +103,23 @@ function createUsagePlugin(): OpenACPPlugin {
       const budget = new UsageBudget(store, config as unknown as UsageConfig)
 
       ctx.registerService('usage', { store, budget })
+
+      ctx.registerCommand({
+        name: 'usage',
+        description: 'Show usage summary',
+        category: 'plugin',
+        handler: async () => {
+          const status = budget.getStatus()
+          const lines = [
+            `Usage (this month):`,
+            `  Spent: $${status.used.toFixed(2)}`,
+            `  Budget: $${status.budget.toFixed(2)}`,
+            `  Status: ${status.status} (${status.percent}%)`,
+          ]
+          return { type: 'text', text: lines.join('\n') }
+        },
+      })
+
       ctx.log.info('Usage tracking ready')
     },
 

@@ -9,7 +9,7 @@ function createTunnelPlugin(): OpenACPPlugin {
     version: '1.0.0',
     description: 'Expose local services to internet via tunnel providers',
     essential: false,
-    permissions: ['services:register', 'kernel:access'],
+    permissions: ['services:register', 'kernel:access', 'commands:register'],
 
     async install(ctx: InstallContext) {
       const { terminal, settings, legacyConfig } = ctx
@@ -139,6 +139,29 @@ function createTunnelPlugin(): OpenACPPlugin {
       service = tunnelSvc
 
       ctx.registerService('tunnel', tunnelSvc)
+
+      ctx.registerCommand({
+        name: 'tunnel',
+        description: 'Show tunnel status and URL',
+        category: 'plugin',
+        handler: async () => {
+          const url = tunnelSvc.getPublicUrl()
+          return { type: 'text', text: `Tunnel active: ${url}` }
+        },
+      })
+
+      ctx.registerCommand({
+        name: 'tunnels',
+        description: 'List active tunnels',
+        category: 'plugin',
+        handler: async () => {
+          const url = tunnelSvc.getPublicUrl()
+          return { type: 'list', title: 'Active Tunnels', items: [
+            { label: 'Primary', detail: url },
+          ]}
+        },
+      })
+
       ctx.log.info(`Tunnel ready: ${publicUrl}`)
     },
 

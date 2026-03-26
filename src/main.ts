@@ -7,7 +7,7 @@ import { initLogger, shutdownLogger, cleanupOldSessionLogs, log, muteLogger, unm
 import { TelegramAdapter } from './plugins/telegram/adapter.js'
 import type { TelegramChannelConfig } from './plugins/telegram/types.js'
 import { ApiServer } from './plugins/api-server/api-server.js'
-import { TopicManager } from './core/topic-manager.js'
+import { TopicManager } from './plugins/telegram/topic-manager.js'
 import { corePlugins } from './plugins/core-plugins.js'
 import { SettingsManager } from './core/plugin/settings-manager.js'
 import { PluginRegistry } from './core/plugin/plugin-registry.js'

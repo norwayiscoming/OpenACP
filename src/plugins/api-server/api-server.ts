@@ -5,7 +5,7 @@ import * as os from "node:os";
 import * as crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
 import type { OpenACPCore } from "../../core/core.js";
-import type { TopicManager } from "../../core/topic-manager.js";
+import type { TopicManager } from "../telegram/topic-manager.js";
 import { createChildLogger } from "../../core/utils/log.js";
 import { SSEManager } from "./sse-manager.js";
 import { StaticServer } from "./static-server.js";

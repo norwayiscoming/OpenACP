@@ -1,7 +1,7 @@
-import type { SessionManager } from './sessions/session-manager.js'
-import type { IChannelAdapter } from './channel.js'
-import type { SessionRecord } from './types.js'
-import { createChildLogger } from './utils/log.js'
+import type { SessionManager } from '../../core/sessions/session-manager.js'
+import type { IChannelAdapter } from '../../core/channel.js'
+import type { SessionRecord } from '../../core/types.js'
+import { createChildLogger } from '../../core/utils/log.js'
 
 const log = createChildLogger({ module: 'topic-manager' })
 

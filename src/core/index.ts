@@ -69,7 +69,7 @@ export {
   type TopicInfo,
   type DeleteTopicResult,
   type CleanupResult,
-} from "./topic-manager.js";
+} from "../plugins/telegram/topic-manager.js";
 export {
   CONFIG_REGISTRY,
   getFieldDef,

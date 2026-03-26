@@ -26,7 +26,14 @@ export interface OutgoingMessage {
     | "session_end"
     | "error"
     | "attachment"
-    | "system_message";
+    | "system_message"
+    // ACP Phase 2 additions
+    | "mode_change"
+    | "config_update"
+    | "model_update"
+    | "user_replay"
+    | "resource"
+    | "resource_link";
   text: string;
   metadata?: Record<string, unknown>;
   attachment?: Attachment;
@@ -95,7 +102,15 @@ export type AgentEvent =
   | { type: "audio_content"; data: string; mimeType: string }
   | { type: "session_end"; reason: string }
   | { type: "error"; message: string }
-  | { type: "system_message"; message: string };
+  | { type: "system_message"; message: string }
+  // ACP Phase 2 additions
+  | { type: "session_info_update"; title?: string; updatedAt?: string; _meta?: Record<string, unknown> }
+  | { type: "current_mode_update"; modeId: string }
+  | { type: "config_option_update"; options: ConfigOption[] }
+  | { type: "model_update"; modelId: string }
+  | { type: "user_message_chunk"; content: string }
+  | { type: "resource_content"; uri: string; name: string; text?: string; blob?: string; mimeType?: string }
+  | { type: "resource_link"; uri: string; name: string; mimeType?: string; title?: string; description?: string; size?: number };
 
 export interface PlanEntry {
   content: string;
@@ -238,3 +253,146 @@ export interface DiscordPlatformData {
   threadId: string;
   skillMsgId?: string;
 }
+
+// --- ACP Protocol Types (Phase 2) ---
+
+// Session Modes
+export interface SessionMode {
+  id: string;
+  name: string;
+  description?: string;
+}
+
+export interface SessionModeState {
+  currentModeId: string;
+  availableModes: SessionMode[];
+}
+
+// Config Options (matches ACP SDK SessionConfigOption)
+export interface ConfigSelectChoice {
+  value: string;
+  label: string;
+  description?: string;
+}
+
+export interface ConfigSelectGroup {
+  group: string;
+  name: string;
+  options: ConfigSelectChoice[];
+}
+
+export type ConfigOption =
+  | {
+      id: string;
+      name: string;
+      description?: string;
+      category?: string;
+      type: "select";
+      currentValue: string;
+      options: (ConfigSelectChoice | ConfigSelectGroup)[];
+      _meta?: Record<string, unknown>;
+    }
+  | {
+      id: string;
+      name: string;
+      description?: string;
+      category?: string;
+      type: "boolean";
+      currentValue: boolean;
+      _meta?: Record<string, unknown>;
+    };
+
+export type SetConfigOptionValue =
+  | { type: "select"; value: string }
+  | { type: "boolean"; value: boolean };
+
+// Model Selection
+export interface ModelInfo {
+  id: string;
+  name: string;
+  description?: string;
+}
+
+export interface SessionModelState {
+  currentModelId: string;
+  availableModels: ModelInfo[];
+}
+
+// Agent Capabilities (from initialize response)
+export interface AgentCapabilities {
+  name: string;
+  title?: string;
+  version?: string;
+  loadSession?: boolean;
+  promptCapabilities?: {
+    image?: boolean;
+    audio?: boolean;
+    embeddedContext?: boolean;
+  };
+  sessionCapabilities?: {
+    list?: boolean;
+    fork?: boolean;
+    close?: boolean;
+  };
+  mcp?: { http?: boolean; sse?: boolean };
+  authMethods?: AuthMethod[];
+}
+
+// Session Response (modes, configOptions, models from session/new response)
+export interface NewSessionResponse {
+  sessionId: string;
+  modes?: SessionModeState;
+  configOptions?: ConfigOption[];
+  models?: SessionModelState;
+}
+
+// Auth
+export type AuthMethod =
+  | { type: "agent" }
+  | { type: "env_var"; name: string; description?: string }
+  | { type: "terminal" };
+
+export interface AuthenticateRequest {
+  methodId: string;
+}
+
+// Prompt Response
+export type StopReason =
+  | "end_turn"
+  | "max_tokens"
+  | "max_turn_requests"
+  | "refusal"
+  | "cancelled";
+
+export interface PromptResponse {
+  stopReason: StopReason;
+  _meta?: Record<string, unknown>;
+}
+
+// Content Blocks (for prompt input)
+export type ContentBlock =
+  | { type: "text"; text: string }
+  | { type: "image"; data: string; mimeType: string; uri?: string }
+  | { type: "audio"; data: string; mimeType: string }
+  | { type: "resource"; resource: { uri: string; text?: string; blob?: string; mimeType?: string } }
+  | { type: "resource_link"; uri: string; name: string; mimeType?: string; title?: string; description?: string; size?: number };
+
+// Session List
+export interface SessionListItem {
+  sessionId: string;
+  title?: string;
+  createdAt: string;
+  updatedAt?: string;
+  _meta?: Record<string, unknown>;
+}
+
+export interface SessionListResponse {
+  sessions: SessionListItem[];
+  nextCursor?: string;
+}
+
+// MCP Server Config
+export type McpServerConfig =
+  | { type?: "stdio"; name: string; command: string; args?: string[]; env?: Record<string, string> }
+  | { type: "http"; name: string; url: string; headers?: Record<string, string> }
+  | { type: "sse"; name: string; url: string; headers?: Record<string, string> };

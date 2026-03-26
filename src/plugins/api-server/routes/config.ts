@@ -1,5 +1,5 @@
 import type { Router } from "../router.js";
-import type { RouteDeps } from "../index.js";
+import type { RouteDeps } from "../api-server.js";
 
 const SENSITIVE_KEYS = [
   "botToken",
@@ -34,7 +34,7 @@ function redactDeep(obj: Record<string, unknown>): void {
 export function registerConfigRoutes(router: Router, deps: RouteDeps): void {
   router.get("/api/config/editable", async (_req, res) => {
     const { getSafeFields, resolveOptions, getConfigValue } =
-      await import("../../config/config-registry.js");
+      await import("../../../core/config/config-registry.js");
     const config = deps.core.configManager.get();
     const safeFields = getSafeFields();
 
@@ -86,7 +86,7 @@ export function registerConfigRoutes(router: Router, deps: RouteDeps): void {
     }
 
     // Enforce safe-fields scope — only fields marked 'safe' can be modified via API
-    const { getFieldDef } = await import("../../config/config-registry.js");
+    const { getFieldDef } = await import("../../../core/config/config-registry.js");
     const fieldDef = getFieldDef(configPath);
     if (!fieldDef || fieldDef.scope !== "safe") {
       deps.sendJson(res, 403, {
@@ -121,7 +121,7 @@ export function registerConfigRoutes(router: Router, deps: RouteDeps): void {
     target[lastKey] = value;
 
     // Validate with Zod
-    const { ConfigSchema } = await import("../../config/config.js");
+    const { ConfigSchema } = await import("../../../core/config/config.js");
     const result = ConfigSchema.safeParse(cloned);
     if (!result.success) {
       deps.sendJson(res, 400, {
@@ -145,7 +145,7 @@ export function registerConfigRoutes(router: Router, deps: RouteDeps): void {
 
     await deps.core.configManager.save(updates, configPath);
 
-    const { isHotReloadable } = await import("../../config/config-registry.js");
+    const { isHotReloadable } = await import("../../../core/config/config-registry.js");
     const needsRestart = !isHotReloadable(configPath!);
 
     deps.sendJson(res, 200, {

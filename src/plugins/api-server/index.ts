@@ -1,6 +1,6 @@
 import type { OpenACPPlugin, InstallContext } from '../../core/plugin/types.js'
 import type { OpenACPCore } from '../../core/core.js'
-import type { ApiConfig } from '../../core/api/index.js'
+import type { ApiConfig } from './api-server.js'
 
 function createApiServerPlugin(): OpenACPPlugin {
   let server: { start(): Promise<void>; stop?(): Promise<void> } | null = null
@@ -82,7 +82,7 @@ function createApiServerPlugin(): OpenACPPlugin {
       const config = ctx.pluginConfig as Record<string, unknown>
 
       // Lazy import to avoid loading unless needed
-      const { ApiServer } = await import('../../core/api/index.js')
+      const { ApiServer } = await import('./api-server.js')
 
       const apiConfig: ApiConfig = {
         port: (config.port as number) ?? 0,

@@ -1,5 +1,5 @@
 import type { Router } from "../router.js";
-import type { RouteDeps } from "../index.js";
+import type { RouteDeps } from "../api-server.js";
 
 export function registerTunnelRoutes(router: Router, deps: RouteDeps): void {
   router.get("/api/tunnel", async (_req, res) => {

@@ -1,5 +1,5 @@
 import type { Router } from "../router.js";
-import type { RouteDeps } from "../index.js";
+import type { RouteDeps } from "../api-server.js";
 
 export function registerNotifyRoutes(router: Router, deps: RouteDeps): void {
   router.post("/api/notify", async (req, res) => {

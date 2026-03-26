@@ -3,13 +3,13 @@
 export { runSetup, runReconfigure } from "./wizard.js";
 export { printStartBanner } from "./helpers.js";
 
-// Validation functions (re-exported from new location for backward compat)
+// Validation functions (re-exported from plugin locations for backward compat)
 export {
   validateBotToken,
   validateChatId,
   validateBotAdmin,
-  validateDiscordToken,
-} from "../validators/channel-validators.js";
+} from "../../plugins/telegram/validators.js";
+export { validateDiscordToken } from "../../plugins/discord/validators.js";
 
 // Agent detection (used by tests)
 export { detectAgents, validateAgentCommand } from "./setup-agents.js";

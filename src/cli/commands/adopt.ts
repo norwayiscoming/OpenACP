@@ -1,4 +1,4 @@
-import { readApiPort } from '../../core/api/api-client.js'
+import { readApiPort } from '../../core/api-client.js'
 import { wantsHelp } from './helpers.js'
 
 export async function cmdAdopt(args: string[]): Promise<void> {
@@ -50,7 +50,7 @@ as a messaging thread. Requires a running daemon.
   }
 
   try {
-    const { apiCall } = await import('../../core/api/api-client.js')
+    const { apiCall } = await import('../../core/api-client.js')
     const res = await apiCall(port, '/api/sessions/adopt', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

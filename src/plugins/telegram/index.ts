@@ -39,7 +39,7 @@ function createTelegramPlugin(): OpenACPPlugin {
       }
 
       // Interactive setup via terminal
-      const { validateBotToken, validateChatId, validateBotAdmin } = await import('../../core/validators/channel-validators.js')
+      const { validateBotToken, validateChatId, validateBotAdmin } = await import('./validators.js')
 
       let botToken = ''
       while (true) {

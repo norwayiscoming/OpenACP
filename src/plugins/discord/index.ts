@@ -40,7 +40,7 @@ function createDiscordPlugin(): OpenACPPlugin {
       }
 
       // Interactive setup via terminal
-      const { validateDiscordToken } = await import('../../core/validators/channel-validators.js')
+      const { validateDiscordToken } = await import('./validators.js')
 
       terminal.note(
         '1. Create app at https://discord.com/developers/applications\n' +

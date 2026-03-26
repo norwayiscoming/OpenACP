@@ -1,5 +1,5 @@
 import * as http from "node:http";
-import type { EventBus, EventBusEvents } from "../event-bus.js";
+import type { EventBus, EventBusEvents } from "../../core/event-bus.js";
 
 interface SSEResponse extends http.ServerResponse {
   sessionFilter?: string;

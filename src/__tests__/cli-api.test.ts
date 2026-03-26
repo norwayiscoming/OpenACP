@@ -18,19 +18,19 @@ describe('api-client', () => {
   })
 
   it('readApiPort returns null when port file does not exist', async () => {
-    const { readApiPort } = await import('../core/api/api-client.js')
+    const { readApiPort } = await import('../core/api-client.js')
     expect(readApiPort(portFile)).toBeNull()
   })
 
   it('readApiPort returns port number when file exists', async () => {
     fs.writeFileSync(portFile, '21420')
-    const { readApiPort } = await import('../core/api/api-client.js')
+    const { readApiPort } = await import('../core/api-client.js')
     expect(readApiPort(portFile)).toBe(21420)
   })
 
   it('removeStalePortFile deletes the port file', async () => {
     fs.writeFileSync(portFile, '21420')
-    const { removeStalePortFile } = await import('../core/api/api-client.js')
+    const { removeStalePortFile } = await import('../core/api-client.js')
     removeStalePortFile(portFile)
     expect(fs.existsSync(portFile)).toBe(false)
   })
@@ -43,7 +43,7 @@ describe('api-client', () => {
     })
     vi.stubGlobal('fetch', mockFetch)
 
-    const { apiCall } = await import('../core/api/api-client.js')
+    const { apiCall } = await import('../core/api-client.js')
     const result = await apiCall(21420, '/api/sessions', { method: 'GET' })
 
     expect(mockFetch).toHaveBeenCalledWith(

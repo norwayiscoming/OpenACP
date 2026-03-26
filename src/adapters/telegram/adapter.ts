@@ -47,7 +47,7 @@ import { DraftManager } from "./draft-manager.js";
 import { SkillCommandManager } from "./skill-command-manager.js";
 import { MessagingAdapter, type MessagingAdapterConfig } from "../shared/messaging-adapter.js";
 import type { IRenderer } from "../shared/rendering/renderer.js";
-import { BaseRenderer } from "../shared/rendering/renderer.js";
+import { TelegramRenderer } from "./renderer.js";
 import type { AdapterCapabilities } from "../../core/channel.js";
 import type { DisplayVerbosity, ToolCallMeta, ToolUpdateMeta } from "../shared/format-types.js";
 // evaluateNoise is handled by MessagingAdapter.shouldDisplay()
@@ -89,7 +89,7 @@ function patchedFetch(
 
 export class TelegramAdapter extends MessagingAdapter {
   readonly name = 'telegram';
-  readonly renderer: IRenderer = new BaseRenderer();
+  readonly renderer: IRenderer = new TelegramRenderer();
   readonly capabilities: AdapterCapabilities = {
     streaming: true, richFormatting: true, threads: true,
     reactions: true, fileUpload: true, voice: true,

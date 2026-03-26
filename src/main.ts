@@ -134,9 +134,17 @@ export async function startServer() {
 
   // 4.5 Boot community plugins (if any)
   try {
+    // Emit kernel:booted before plugin boot
+    core.eventBus.emit('kernel:booted')
+
     // Discover community plugins from ~/.openacp/plugins/
     // For now: empty array until CLI plugin add is implemented
     await core.lifecycleManager.boot([])
+
+    // Collect registered commands and emit system:commands-ready
+    const commands = core.lifecycleManager.serviceRegistry.get<import('./core/plugin/types.js').CommandDef[]>('registered-commands') ?? []
+    core.eventBus.emit('system:commands-ready', { commands })
+
     core.eventBus.emit('system:ready')
   } catch (err) {
     log.error({ err }, 'Plugin boot failed')

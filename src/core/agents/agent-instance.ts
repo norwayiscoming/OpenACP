@@ -111,6 +111,8 @@ interface TerminalState {
   process: ChildProcess;
   output: string;
   exitStatus: { exitCode: number | null; signal: string | null } | null;
+  command: string;
+  startTime: number;
 }
 
 // Local types for ACP session update shapes not fully typed by SDK
@@ -554,7 +556,7 @@ export class AgentInstance extends TypedEmitter<AgentInstanceEvents> {
         const p = params as unknown as SdkReadTextFileParams;
         // Hook: fs:beforeRead — modifiable, can block
         if (self.middlewareChain) {
-          const result = await self.middlewareChain.execute('fs:beforeRead', { path: p.path, line: p.line, limit: p.limit }, async (r) => r);
+          const result = await self.middlewareChain.execute('fs:beforeRead', { sessionId: self.sessionId, path: p.path, line: p.line, limit: p.limit }, async (r) => r);
           if (!result) return { content: "" }; // blocked by middleware
           p.path = result.path;
         }
@@ -570,7 +572,7 @@ export class AgentInstance extends TypedEmitter<AgentInstanceEvents> {
         let writePath = params.path;
         let writeContent = params.content;
         if (self.middlewareChain) {
-          const result = await self.middlewareChain.execute('fs:beforeWrite', { path: writePath, content: writeContent }, async (r) => r);
+          const result = await self.middlewareChain.execute('fs:beforeWrite', { sessionId: self.sessionId, path: writePath, content: writeContent }, async (r) => r);
           if (!result) return {}; // blocked by middleware
           writePath = result.path;
           writeContent = result.content;
@@ -583,22 +585,39 @@ export class AgentInstance extends TypedEmitter<AgentInstanceEvents> {
       // ── Terminal operations ──────────────────────────────────────────────
       async createTerminal(params) {
         // Hook: terminal:beforeCreate — modifiable, can block
-        let termParams = params;
+        let termCommand = params.command;
+        let termArgs = params.args ?? [];
+        let termEnvArr = params.env ?? [];
+        let termCwd = params.cwd ?? undefined;
         if (self.middlewareChain) {
-          const result = await self.middlewareChain.execute('terminal:beforeCreate', params, async (p) => p);
+          const envRecord: Record<string, string> = {};
+          for (const ev of termEnvArr) { envRecord[ev.name] = ev.value; }
+          const result = await self.middlewareChain.execute('terminal:beforeCreate', {
+            sessionId: self.sessionId,
+            command: termCommand,
+            args: termArgs as string[],
+            env: envRecord,
+            cwd: termCwd,
+          }, async (p) => p);
           if (!result) return { terminalId: "" }; // blocked by middleware
-          termParams = result;
+          termCommand = result.command;
+          termArgs = result.args ?? termArgs;
+          termCwd = result.cwd ?? termCwd;
+          // Convert env record back to array format if middleware modified it
+          if (result.env) {
+            termEnvArr = Object.entries(result.env).map(([name, value]) => ({ name, value }));
+          }
         }
 
         const terminalId = randomUUID();
-        const args = termParams.args ?? [];
+        const args = termArgs;
         const env: Record<string, string> = {};
-        for (const ev of termParams.env ?? []) {
+        for (const ev of termEnvArr) {
           env[ev.name] = ev.value;
         }
 
-        const childProcess = spawn(termParams.command, args, {
-          cwd: termParams.cwd ?? undefined,
+        const childProcess = spawn(termCommand, args, {
+          cwd: termCwd,
           env: { ...process.env, ...env },
           shell: false,
         });
@@ -607,10 +626,12 @@ export class AgentInstance extends TypedEmitter<AgentInstanceEvents> {
           process: childProcess,
           output: "",
           exitStatus: null,
+          command: termCommand,
+          startTime: Date.now(),
         };
         self.terminals.set(terminalId, state);
 
-        const outputByteLimit = termParams.outputByteLimit ?? MAX_OUTPUT_BYTES;
+        const outputByteLimit = params.outputByteLimit ?? MAX_OUTPUT_BYTES;
 
         const appendOutput = (chunk: string) => {
           state.output += chunk;
@@ -634,7 +655,13 @@ export class AgentInstance extends TypedEmitter<AgentInstanceEvents> {
           state.exitStatus = { exitCode: code, signal };
           // Hook: terminal:afterExit — read-only, fire-and-forget
           if (self.middlewareChain) {
-            self.middlewareChain.execute('terminal:afterExit', { terminalId, exitCode: code, signal }, async (p) => p).catch(() => {});
+            self.middlewareChain.execute('terminal:afterExit', {
+              sessionId: self.sessionId,
+              terminalId,
+              command: state.command,
+              exitCode: code ?? -1,
+              durationMs: Date.now() - state.startTime,
+            }, async (p) => p).catch(() => {});
           }
         });
 

@@ -44,9 +44,22 @@ export class SessionFactory {
     // Hook: session:beforeCreate — modifiable, can block
     let createParams = params;
     if (this.middlewareChain) {
-      const result = await this.middlewareChain.execute('session:beforeCreate', params, async (p) => p);
+      const payload = {
+        agentName: params.agentName,
+        workingDir: params.workingDirectory,
+        userId: '', // userId is not part of SessionCreateParams — resolved upstream
+        channelId: params.channelId,
+        threadId: '', // threadId is assigned after session creation
+      };
+      const result = await this.middlewareChain.execute('session:beforeCreate', payload, async (p) => p);
       if (!result) throw new Error("Session creation blocked by middleware");
-      createParams = result;
+      // Apply any middleware modifications back to create params
+      createParams = {
+        ...params,
+        agentName: result.agentName,
+        workingDirectory: result.workingDir,
+        channelId: result.channelId,
+      };
     }
 
     // 1. Spawn or resume agent

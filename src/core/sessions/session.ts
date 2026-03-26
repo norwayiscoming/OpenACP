@@ -221,11 +221,15 @@ export class Session extends TypedEmitter<SessionEvents> {
 
     // Hook: turn:start — read-only, fire-and-forget
     if (this.middlewareChain) {
-      this.middlewareChain.execute('turn:start', { sessionId: this.id, text: processed.text }, async (p) => p).catch(() => {});
+      this.middlewareChain.execute('turn:start', { sessionId: this.id, promptText: processed.text, promptNumber: this.promptCount }, async (p) => p).catch(() => {});
     }
 
+    let stopReason: string = 'end_turn';
     try {
-      await this.agentInstance.prompt(processed.text, processed.attachments);
+      const response = await this.agentInstance.prompt(processed.text, processed.attachments);
+      if (response && typeof response === 'object' && 'stopReason' in response) {
+        stopReason = (response as { stopReason?: string }).stopReason ?? 'end_turn';
+      }
     } finally {
       if (accumulatorListener) {
         this.off("agent_event", accumulatorListener);
@@ -234,7 +238,7 @@ export class Session extends TypedEmitter<SessionEvents> {
 
     // Hook: turn:end — read-only, fire-and-forget
     if (this.middlewareChain) {
-      this.middlewareChain.execute('turn:end', { sessionId: this.id, durationMs: Date.now() - promptStart }, async (p) => p).catch(() => {});
+      this.middlewareChain.execute('turn:end', { sessionId: this.id, stopReason: stopReason as import('../types.js').StopReason, durationMs: Date.now() - promptStart }, async (p) => p).catch(() => {});
     }
 
     this.log.info(
@@ -470,26 +474,29 @@ export class Session extends TypedEmitter<SessionEvents> {
     this.emit("named", name);
   }
 
-  updateMode(modeId: string): void {
-    // Hook: mode:beforeChange — fire-and-forget (sync context)
+  async updateMode(modeId: string): Promise<void> {
+    // Hook: mode:beforeChange — await-able, can block
     if (this.middlewareChain) {
-      this.middlewareChain.execute('mode:beforeChange', { sessionId: this.id, modeId }, async (p) => p).catch(() => {});
+      const result = await this.middlewareChain.execute('mode:beforeChange', { sessionId: this.id, fromMode: this.currentMode, toMode: modeId }, async (p) => p);
+      if (!result) return; // blocked by middleware
     }
     this.currentMode = modeId;
   }
 
-  updateConfigOptions(options: ConfigOption[]): void {
-    // Hook: config:beforeChange — fire-and-forget (sync context)
+  async updateConfigOptions(options: ConfigOption[]): Promise<void> {
+    // Hook: config:beforeChange — await-able, can block
     if (this.middlewareChain) {
-      this.middlewareChain.execute('config:beforeChange', { sessionId: this.id, options }, async (p) => p).catch(() => {});
+      const result = await this.middlewareChain.execute('config:beforeChange', { sessionId: this.id, configId: 'options', oldValue: this.configOptions, newValue: options }, async (p) => p);
+      if (!result) return; // blocked by middleware
     }
     this.configOptions = options;
   }
 
-  updateModel(modelId: string): void {
-    // Hook: model:beforeChange — fire-and-forget (sync context)
+  async updateModel(modelId: string): Promise<void> {
+    // Hook: model:beforeChange — await-able, can block
     if (this.middlewareChain) {
-      this.middlewareChain.execute('model:beforeChange', { sessionId: this.id, modelId }, async (p) => p).catch(() => {});
+      const result = await this.middlewareChain.execute('model:beforeChange', { sessionId: this.id, fromModel: this.currentModel, toModel: modelId }, async (p) => p);
+      if (!result) return; // blocked by middleware
     }
     this.currentModel = modelId;
   }

@@ -121,9 +121,11 @@ export class LifecycleManager {
         await withTimeout(plugin.setup(ctx), SETUP_TIMEOUT_MS, `${plugin.name}.setup()`)
         this.contexts.set(plugin.name, ctx)
         this._loaded.add(plugin.name)
-      } catch {
+        this.eventBus?.emit('plugin:loaded', { name: plugin.name, version: plugin.version })
+      } catch (err) {
         this._failed.add(plugin.name)
         ctx.cleanup()
+        this.eventBus?.emit('plugin:failed', { name: plugin.name, error: String(err) })
       }
     }
   }
@@ -149,6 +151,8 @@ export class LifecycleManager {
         ctx.cleanup()
         this.contexts.delete(plugin.name)
       }
+
+      this.eventBus?.emit('plugin:unloaded', { name: plugin.name })
     }
 
     this._loaded.clear()

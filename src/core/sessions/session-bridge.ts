@@ -40,9 +40,9 @@ export class SessionBridge {
   private async sendMessage(sessionId: string, message: ReturnType<MessageTransformer["transform"]>): Promise<void> {
     const mw = this.deps.middlewareChain;
     if (mw) {
-      const result = await mw.execute('message:outgoing', message, async (m) => m);
+      const result = await mw.execute('message:outgoing', { sessionId, message }, async (m) => m);
       if (!result) return; // blocked by middleware
-      this.adapter.sendMessage(sessionId, result);
+      this.adapter.sendMessage(sessionId, result.message);
     } else {
       this.adapter.sendMessage(sessionId, message);
     }
@@ -91,11 +91,16 @@ export class SessionBridge {
       // Hook: agent:beforeEvent — modifiable, can block
       const mw = this.deps.middlewareChain;
       if (mw) {
-        mw.execute('agent:beforeEvent', event, async (e) => e).then((result) => {
+        mw.execute('agent:beforeEvent', { sessionId: this.session.id, event }, async (e) => e).then((result) => {
           if (!result) return; // blocked by middleware
-          this.handleAgentEvent(result);
+          const transformedEvent = result.event;
+          const outgoing = this.handleAgentEvent(transformedEvent);
           // Hook: agent:afterEvent — read-only, fire-and-forget
-          mw.execute('agent:afterEvent', result, async (e) => e).catch(() => {});
+          mw.execute('agent:afterEvent', {
+            sessionId: this.session.id,
+            event: transformedEvent,
+            outgoingMessage: outgoing ?? { type: 'text' as const, text: '' },
+          }, async (e) => e).catch(() => {});
         }).catch(() => {
           // Middleware error — proceed with original event
           this.handleAgentEvent(event);
@@ -108,7 +113,7 @@ export class SessionBridge {
     this.session.on("agent_event", this.sessionEventHandler);
   }
 
-  private handleAgentEvent(event: AgentEvent): void {
+  private handleAgentEvent(event: AgentEvent): import('../types.js').OutgoingMessage | undefined {
     const session = this.session;
     const ctx = {
       get id() {
@@ -119,6 +124,8 @@ export class SessionBridge {
       },
     };
 
+    let outgoing: import('../types.js').OutgoingMessage | undefined;
+
       switch (event.type) {
         case "text":
         case "thought":
@@ -126,19 +133,15 @@ export class SessionBridge {
         case "tool_update":
         case "plan":
         case "usage":
-          this.sendMessage(
-            this.session.id,
-            this.deps.messageTransformer.transform(event, ctx),
-          );
+          outgoing = this.deps.messageTransformer.transform(event, ctx);
+          this.sendMessage(this.session.id, outgoing);
           break;
 
         case "session_end":
           this.session.finish(event.reason);
           this.adapter.cleanupSkillCommands?.(this.session.id);
-          this.sendMessage(
-            this.session.id,
-            this.deps.messageTransformer.transform(event),
-          );
+          outgoing = this.deps.messageTransformer.transform(event);
+          this.sendMessage(this.session.id, outgoing);
           this.deps.notificationManager.notify(this.session.channelId, {
             sessionId: this.session.id,
             sessionName: this.session.name,
@@ -150,10 +153,8 @@ export class SessionBridge {
         case "error":
           this.session.fail(event.message);
           this.adapter.cleanupSkillCommands?.(this.session.id);
-          this.sendMessage(
-            this.session.id,
-            this.deps.messageTransformer.transform(event),
-          );
+          outgoing = this.deps.messageTransformer.transform(event);
+          this.sendMessage(this.session.id, outgoing);
           this.deps.notificationManager.notify(this.session.channelId, {
             sessionId: this.session.id,
             sessionName: this.session.name,
@@ -207,59 +208,45 @@ export class SessionBridge {
           break;
 
         case "system_message":
-          this.sendMessage(
-            this.session.id,
-            this.deps.messageTransformer.transform(event),
-          );
+          outgoing = this.deps.messageTransformer.transform(event);
+          this.sendMessage(this.session.id, outgoing);
           break;
 
         case "session_info_update":
           if (event.title) {
             this.session.setName(event.title);
           }
-          this.sendMessage(
-            this.session.id,
-            this.deps.messageTransformer.transform(event),
-          );
+          outgoing = this.deps.messageTransformer.transform(event);
+          this.sendMessage(this.session.id, outgoing);
           break;
 
         case "current_mode_update":
           this.session.updateMode(event.modeId);
-          this.sendMessage(
-            this.session.id,
-            this.deps.messageTransformer.transform(event),
-          );
+          outgoing = this.deps.messageTransformer.transform(event);
+          this.sendMessage(this.session.id, outgoing);
           break;
 
         case "config_option_update":
           this.session.updateConfigOptions(event.options);
-          this.sendMessage(
-            this.session.id,
-            this.deps.messageTransformer.transform(event),
-          );
+          outgoing = this.deps.messageTransformer.transform(event);
+          this.sendMessage(this.session.id, outgoing);
           break;
 
         case "model_update":
           this.session.updateModel(event.modelId);
-          this.sendMessage(
-            this.session.id,
-            this.deps.messageTransformer.transform(event),
-          );
+          outgoing = this.deps.messageTransformer.transform(event);
+          this.sendMessage(this.session.id, outgoing);
           break;
 
         case "user_message_chunk":
-          this.sendMessage(
-            this.session.id,
-            this.deps.messageTransformer.transform(event),
-          );
+          outgoing = this.deps.messageTransformer.transform(event);
+          this.sendMessage(this.session.id, outgoing);
           break;
 
         case "resource_content":
         case "resource_link":
-          this.sendMessage(
-            this.session.id,
-            this.deps.messageTransformer.transform(event),
-          );
+          outgoing = this.deps.messageTransformer.transform(event);
+          this.sendMessage(this.session.id, outgoing);
           break;
       }
 
@@ -267,6 +254,8 @@ export class SessionBridge {
         sessionId: this.session.id,
         event,
       });
+
+    return outgoing;
   }
 
   private wirePermissions(): void {
@@ -275,12 +264,24 @@ export class SessionBridge {
     this.session.agentInstance.onPermissionRequest = async (
       request: PermissionRequest,
     ) => {
-      // Hook: permission:beforeRequest — modifiable, can block
+      const startTime = Date.now();
+
+      // Hook: permission:beforeRequest — modifiable, can block or autoResolve
       let permReq = request;
       if (mw) {
-        const result = await mw.execute('permission:beforeRequest', request, async (r) => r);
+        const payload = { sessionId: this.session.id, request, autoResolve: undefined as string | undefined };
+        const result = await mw.execute('permission:beforeRequest', payload, async (r) => r);
         if (!result) return ""; // blocked by middleware
-        permReq = result;
+        permReq = result.request;
+        // I4: If middleware set autoResolve, skip UI and return directly
+        if (result.autoResolve) {
+          if (mw) {
+            mw.execute('permission:afterResolve', {
+              sessionId: this.session.id, requestId: permReq.id, decision: result.autoResolve, userId: 'middleware', durationMs: Date.now() - startTime,
+            }, async (p) => p).catch(() => {});
+          }
+          return result.autoResolve;
+        }
       }
 
       this.session.emit("permission_request", permReq);
@@ -299,7 +300,9 @@ export class SessionBridge {
           );
           // Hook: permission:afterResolve — read-only, fire-and-forget
           if (mw) {
-            mw.execute('permission:afterResolve', { request: permReq, optionId: allowOption.id }, async (p) => p).catch(() => {});
+            mw.execute('permission:afterResolve', {
+              sessionId: this.session.id, requestId: permReq.id, decision: allowOption.id, userId: 'system', durationMs: Date.now() - startTime,
+            }, async (p) => p).catch(() => {});
           }
           return allowOption.id;
         }
@@ -315,7 +318,9 @@ export class SessionBridge {
           );
           // Hook: permission:afterResolve — read-only, fire-and-forget
           if (mw) {
-            mw.execute('permission:afterResolve', { request: permReq, optionId: allowOption.id }, async (p) => p).catch(() => {});
+            mw.execute('permission:afterResolve', {
+              sessionId: this.session.id, requestId: permReq.id, decision: allowOption.id, userId: 'system', durationMs: Date.now() - startTime,
+            }, async (p) => p).catch(() => {});
           }
           return allowOption.id;
         }
@@ -332,7 +337,9 @@ export class SessionBridge {
 
       // Hook: permission:afterResolve — read-only, fire-and-forget
       if (mw) {
-        mw.execute('permission:afterResolve', { request: permReq, optionId }, async (p) => p).catch(() => {});
+        mw.execute('permission:afterResolve', {
+          sessionId: this.session.id, requestId: permReq.id, decision: optionId, userId: 'user', durationMs: Date.now() - startTime,
+        }, async (p) => p).catch(() => {});
       }
 
       return optionId;

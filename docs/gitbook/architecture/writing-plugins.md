@@ -2,6 +2,12 @@
 
 This guide walks through building an OpenACP plugin from scratch. By the end, you'll have a working plugin that registers services, commands, and middleware.
 
+> **Quick Start**: Want to get up and running fast? See [Getting Started: Your First Plugin](../extending/getting-started-plugin.md) for a step-by-step tutorial using the scaffold generator and dev mode. Then come back here for the full API reference.
+>
+> **Plugin SDK**: For type exports, base classes, and testing utilities, see the [Plugin SDK Reference](../extending/plugin-sdk-reference.md).
+>
+> **Dev Mode**: For hot-reload development workflow, see the [Dev Mode guide](../extending/dev-mode.md).
+
 ---
 
 ## Plugin Structure
@@ -486,6 +492,9 @@ Before publishing:
 
 ## Further Reading
 
+- [Getting Started: Your First Plugin](../extending/getting-started-plugin.md) -- scaffold, develop, test, and publish
+- [Plugin SDK Reference](../extending/plugin-sdk-reference.md) -- types, base classes, and testing utilities
+- [Dev Mode](../extending/dev-mode.md) -- hot-reload development workflow
 - [Plugin System](plugin-system.md) -- complete plugin infrastructure
 - [Command System](command-system.md) -- command registration and rendering
 - [Built-in Plugins](built-in-plugins.md) -- examples of real plugins

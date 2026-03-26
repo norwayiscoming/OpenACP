@@ -1,6 +1,6 @@
 import { nanoid } from "nanoid";
 import type { AgentInstance } from "../agents/agent-instance.js";
-import type { AgentEvent, Attachment, PermissionRequest, SessionStatus } from "../types.js";
+import type { AgentEvent, Attachment, PermissionRequest, SessionStatus, SessionMode, ConfigOption, ModelInfo, SessionModeState, SessionModelState } from "../types.js";
 import { TypedEmitter } from "../utils/typed-emitter.js";
 import { PromptQueue } from "./prompt-queue.js";
 import { PermissionGate } from "./permission-gate.js";
@@ -46,6 +46,11 @@ export class Session extends TypedEmitter<SessionEvents> {
   createdAt: Date = new Date();
   voiceMode: "off" | "next" | "on" = "off";
   dangerousMode: boolean = false;
+  currentMode?: string;
+  availableModes: SessionMode[] = [];
+  configOptions: ConfigOption[] = [];
+  currentModel?: string;
+  availableModels: ModelInfo[] = [];
   archiving: boolean = false;
   promptCount: number = 0;
   log: Logger;
@@ -412,6 +417,38 @@ export class Session extends TypedEmitter<SessionEvents> {
       this.clearBuffer();
       this.resume();
     }
+  }
+
+  // --- ACP Mode / Config / Model State ---
+
+  setInitialAcpState(state: {
+    modes?: SessionModeState | null;
+    configOptions?: ConfigOption[] | null;
+    models?: SessionModelState | null;
+  }): void {
+    if (state.modes) {
+      this.currentMode = state.modes.currentModeId;
+      this.availableModes = state.modes.availableModes;
+    }
+    if (state.configOptions) {
+      this.configOptions = state.configOptions;
+    }
+    if (state.models) {
+      this.currentModel = state.models.currentModelId;
+      this.availableModels = state.models.availableModels;
+    }
+  }
+
+  updateMode(modeId: string): void {
+    this.currentMode = modeId;
+  }
+
+  updateConfigOptions(options: ConfigOption[]): void {
+    this.configOptions = options;
+  }
+
+  updateModel(modelId: string): void {
+    this.currentModel = modelId;
   }
 
   /** Cancel the current prompt and clear the queue. Stays in active state. */

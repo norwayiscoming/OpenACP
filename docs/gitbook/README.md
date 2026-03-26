@@ -2,7 +2,7 @@
 
 **Control AI coding agents from your favorite messaging platform.**
 
-OpenACP bridges AI coding agents to messaging platforms like Telegram, Discord, and Slack using the [Agent Client Protocol (ACP)](../acp-guide.md). Send a message, and your AI agent writes code, runs commands, and streams results back — all from your phone or desktop.
+OpenACP bridges AI coding agents to messaging platforms like Telegram, Discord, and Slack using the [Agent Client Protocol (ACP)](https://agentclientprotocol.com/). Send a message, and your AI agent writes code, runs commands, and streams results back — all from your phone or desktop.
 
 ## Why OpenACP?
 

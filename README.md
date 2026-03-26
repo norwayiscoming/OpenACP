@@ -12,7 +12,7 @@ Send a message. The agent writes code. You see everything — in real time.
 [![npm](https://img.shields.io/npm/v/@openacp/cli.svg)](https://www.npmjs.com/package/@openacp/cli)
 [![Twitter Follow](https://img.shields.io/twitter/follow/Open_ACP?style=social)](https://x.com/Open_ACP)
 
-[Documentation](docs/gitbook/) · [Quick Start](#quick-start) · [Features](#features) · [Agents](#supported-agents) · [Contributing](docs/gitbook/extending/contributing.md)
+[Documentation](https://openacp.gitbook.io/docs) · [Quick Start](#quick-start) · [Features](#features) · [Agents](#supported-agents) · [Contributing](https://openacp.gitbook.io/docs/extending/contributing)
 
 </div>
 
@@ -64,7 +64,7 @@ The interactive setup wizard walks you through everything:
 
 That's it. Send a message to your bot and start coding.
 
-> **Need detailed setup for a specific platform?** See the [Platform Setup guides](docs/gitbook/platform-setup/).
+> **Need detailed setup for a specific platform?** See the [Platform Setup guides](https://openacp.gitbook.io/docs/platform-setup).
 
 ## Features
 
@@ -101,7 +101,7 @@ That's it. Send a message to your bot and start coding.
 - **Doctor diagnostics** — `openacp doctor` checks everything and suggests fixes
 - **Structured logging** — Pino with rotation, per-session log files
 
-> **Full feature documentation** — [docs/gitbook/](docs/gitbook/)
+> **Full feature documentation** — [Documentation](https://openacp.gitbook.io/docs)
 
 ## Supported Agents
 
@@ -151,20 +151,20 @@ openacp tunnel add <port> [--label name]
 openacp tunnel list
 ```
 
-> **Full CLI reference** — [docs/gitbook/api-reference/cli-commands.md](docs/gitbook/api-reference/cli-commands.md)
+> **Full CLI reference** — [CLI Commands](https://openacp.gitbook.io/docs/api-reference/cli-commands)
 
 ## Documentation
 
 | Section | Description |
 |---------|-------------|
-| [Getting Started](docs/gitbook/getting-started/) | What is OpenACP, quickstart for users & developers |
-| [Platform Setup](docs/gitbook/platform-setup/) | Step-by-step guides for Telegram, Discord, Slack |
-| [Using OpenACP](docs/gitbook/using-openacp/) | Commands, sessions, agents, permissions, voice |
-| [Self-Hosting](docs/gitbook/self-hosting/) | Installation, configuration, daemon, security |
-| [Features](docs/gitbook/features/) | Tunnel, context resume, usage tracking, and more |
-| [Extending](docs/gitbook/extending/) | Plugin system, building adapters, contributing |
-| [API Reference](docs/gitbook/api-reference/) | CLI commands, REST API, config schema, env vars |
-| [Troubleshooting](docs/gitbook/troubleshooting/) | Common issues and FAQ |
+| [Getting Started](https://openacp.gitbook.io/docs/getting-started) | What is OpenACP, quickstart for users & developers |
+| [Platform Setup](https://openacp.gitbook.io/docs/platform-setup) | Step-by-step guides for Telegram, Discord, Slack |
+| [Using OpenACP](https://openacp.gitbook.io/docs/using-openacp) | Commands, sessions, agents, permissions, voice |
+| [Self-Hosting](https://openacp.gitbook.io/docs/self-hosting) | Installation, configuration, daemon, security |
+| [Features](https://openacp.gitbook.io/docs/features) | Tunnel, context resume, usage tracking, and more |
+| [Extending](https://openacp.gitbook.io/docs/extending) | Plugin system, building adapters, contributing |
+| [API Reference](https://openacp.gitbook.io/docs/api-reference) | CLI commands, REST API, config schema, env vars |
+| [Troubleshooting](https://openacp.gitbook.io/docs/troubleshooting) | Common issues and FAQ |
 
 ## Star History
 
@@ -178,7 +178,7 @@ openacp tunnel list
 
 ## Contributing
 
-We welcome contributions! See the [contributing guide](docs/gitbook/extending/contributing.md) for development setup, testing conventions, and PR process.
+We welcome contributions! See the [contributing guide](https://openacp.gitbook.io/docs/extending/contributing) for development setup, testing conventions, and PR process.
 
 ## Follow Us
 

@@ -46,7 +46,7 @@ If your favorite agent supports ACP, it works with OpenACP. If it doesn't yet, t
 
 ## What is ACP?
 
-ACP (Agent Client Protocol) is an open standard that defines how tools like editors and CLIs communicate with AI agents. It handles things like streaming responses, tool calls, and permission requests in a consistent way — so OpenACP doesn't need to know the internals of each agent. For a deeper dive, see the [ACP Guide](../../acp-guide.md).
+ACP (Agent Client Protocol) is an open standard that defines how tools like editors and CLIs communicate with AI agents. It handles things like streaming responses, tool calls, and permission requests in a consistent way — so OpenACP doesn't need to know the internals of each agent. For a deeper dive, see the [ACP Guide](https://agentclientprotocol.com/).
 
 ## Your data stays on your machine
 

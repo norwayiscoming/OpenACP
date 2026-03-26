@@ -1,7 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import os from 'node:os'
-import { createChildLogger } from '../core/utils/log.js'
+import { createChildLogger } from '../../core/utils/log.js'
 import type { TunnelProvider } from './provider.js'
 import { CloudflareTunnelProvider } from './providers/cloudflare.js'
 import { NgrokTunnelProvider } from './providers/ngrok.js'

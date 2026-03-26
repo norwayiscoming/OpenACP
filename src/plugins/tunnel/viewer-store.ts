@@ -1,6 +1,6 @@
 import * as path from 'node:path'
 import { nanoid } from 'nanoid'
-import { createChildLogger } from '../core/utils/log.js'
+import { createChildLogger } from '../../core/utils/log.js'
 
 const log = createChildLogger({ module: 'viewer-store' })
 

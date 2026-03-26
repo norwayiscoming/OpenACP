@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { extractFileInfo } from '../tunnel/extract-file-info.js'
+import { extractFileInfo } from '../plugins/tunnel/extract-file-info.js'
 
 describe('extractFileInfo', () => {
   describe('kind filtering', () => {

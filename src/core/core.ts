@@ -15,7 +15,7 @@ import type { UsageBudget } from "./sessions/usage-budget.js";
 import type { SecurityGuard } from "../plugins/security/security-guard.js";
 import { SessionFactory } from "./sessions/session-factory.js";
 import type { IncomingMessage } from "./types.js";
-import type { TunnelService } from "../tunnel/tunnel-service.js";
+import type { TunnelService } from "../plugins/tunnel/tunnel-service.js";
 import { getAgentCapabilities } from "./agents/agent-registry.js";
 import { AgentCatalog } from "./agents/agent-catalog.js";
 import { EventBus } from "./event-bus.js";

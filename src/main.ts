@@ -85,9 +85,9 @@ export async function startServer() {
   const core = new OpenACPCore(configManager)
 
   // 3.5 Start tunnel if configured
-  let tunnelService: import('./tunnel/tunnel-service.js').TunnelService | undefined
+  let tunnelService: import('./plugins/tunnel/tunnel-service.js').TunnelService | undefined
   if (config.tunnel.enabled) {
-    const { TunnelService } = await import('./tunnel/tunnel-service.js')
+    const { TunnelService } = await import('./plugins/tunnel/tunnel-service.js')
     tunnelService = new TunnelService(config.tunnel)
     const publicUrl = await tunnelService.start()
     core.tunnelService = tunnelService

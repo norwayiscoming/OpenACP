@@ -50,7 +50,7 @@ export const tunnelCheck: DoctorCheck = {
           fixRisk: "safe",
           fix: async () => {
             try {
-              const { ensureCloudflared } = await import("../../../tunnel/providers/install-cloudflared.js");
+              const { ensureCloudflared } = await import("../../../plugins/tunnel/providers/install-cloudflared.js");
               await ensureCloudflared();
               return { success: true, message: "installed cloudflared" };
             } catch (err) {

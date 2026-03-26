@@ -1,5 +1,5 @@
 import { spawn, execSync, type ChildProcess } from 'node:child_process'
-import { createChildLogger } from '../../core/utils/log.js'
+import { createChildLogger } from '../../../core/utils/log.js'
 import type { TunnelProvider } from '../provider.js'
 
 const log = createChildLogger({ module: 'tailscale-tunnel' })

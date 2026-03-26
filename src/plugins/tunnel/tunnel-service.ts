@@ -1,6 +1,6 @@
 import { serve } from '@hono/node-server'
-import type { TunnelConfig } from '../core/config/config.js'
-import { createChildLogger } from '../core/utils/log.js'
+import type { TunnelConfig } from '../../core/config/config.js'
+import { createChildLogger } from '../../core/utils/log.js'
 import { TunnelRegistry, type TunnelEntry } from './tunnel-registry.js'
 import { ViewerStore } from './viewer-store.js'
 import { createTunnelServer } from './server.js'

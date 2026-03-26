@@ -1,6 +1,6 @@
 import type { AgentEvent, OutgoingMessage } from "./types.js";
-import type { TunnelService } from "../tunnel/tunnel-service.js";
-import { extractFileInfo } from "../tunnel/extract-file-info.js";
+import type { TunnelService } from "../plugins/tunnel/tunnel-service.js";
+import { extractFileInfo } from "../plugins/tunnel/extract-file-info.js";
 import { createChildLogger } from "./utils/log.js";
 
 const log = createChildLogger({ module: "message-transformer" });

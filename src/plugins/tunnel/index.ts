@@ -16,7 +16,7 @@ function createTunnelPlugin(): OpenACPPlugin {
         return
       }
 
-      const { TunnelService } = await import('../../tunnel/tunnel-service.js')
+      const { TunnelService } = await import('./tunnel-service.js')
       const tunnelSvc = new TunnelService(config as any)
       const publicUrl = await tunnelSvc.start()
       service = tunnelSvc

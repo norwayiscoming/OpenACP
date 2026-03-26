@@ -1,4 +1,4 @@
-import { ensureBinary, type BinarySpec } from '../../core/utils/install-binary.js'
+import { ensureBinary, type BinarySpec } from '../../../core/utils/install-binary.js'
 
 const CLOUDFLARED_SPEC: BinarySpec = {
   name: 'cloudflared',

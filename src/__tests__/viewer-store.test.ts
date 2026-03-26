@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { ViewerStore } from '../tunnel/viewer-store.js'
+import { ViewerStore } from '../plugins/tunnel/viewer-store.js'
 
 describe('ViewerStore', () => {
   let store: ViewerStore

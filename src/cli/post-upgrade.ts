@@ -15,7 +15,7 @@ export async function runPostUpgradeChecks(config: Config): Promise<void> {
     if (config.tunnel.provider === "cloudflare") {
       try {
         const { ensureCloudflared } = await import(
-          "../tunnel/providers/install-cloudflared.js"
+          "../plugins/tunnel/providers/install-cloudflared.js"
         );
         await ensureCloudflared();
       } catch (err) {

@@ -44,6 +44,11 @@ export interface IRenderer {
   renderAttachment?(content: OutgoingMessage): RenderedMessage
   renderSessionEnd?(content: OutgoingMessage): RenderedMessage
   renderSystemMessage?(content: OutgoingMessage): RenderedMessage
+  renderModeChange?(content: OutgoingMessage, verbosity: DisplayVerbosity): RenderedMessage
+  renderConfigUpdate?(content: OutgoingMessage, verbosity: DisplayVerbosity): RenderedMessage
+  renderModelUpdate?(content: OutgoingMessage, verbosity: DisplayVerbosity): RenderedMessage
+  renderResource?(content: OutgoingMessage): RenderedMessage
+  renderResourceLink?(content: OutgoingMessage): RenderedMessage
 }
 
 /**
@@ -127,5 +132,29 @@ export class BaseRenderer implements IRenderer {
 
   renderSystemMessage(content: OutgoingMessage): RenderedMessage {
     return { body: content.text, format: 'plain' }
+  }
+
+  renderModeChange(content: OutgoingMessage): RenderedMessage {
+    const modeId = (content.metadata as Record<string, unknown>)?.modeId ?? ''
+    return { body: `🔄 Mode: ${modeId}`, format: 'plain' }
+  }
+
+  renderConfigUpdate(): RenderedMessage {
+    return { body: '⚙️ Config updated', format: 'plain' }
+  }
+
+  renderModelUpdate(content: OutgoingMessage): RenderedMessage {
+    const modelId = (content.metadata as Record<string, unknown>)?.modelId ?? ''
+    return { body: `🤖 Model: ${modelId}`, format: 'plain' }
+  }
+
+  renderResource(content: OutgoingMessage): RenderedMessage {
+    const uri = (content.metadata as Record<string, unknown>)?.uri ?? ''
+    return { body: `📄 Resource: ${content.text} (${uri})`, format: 'plain' }
+  }
+
+  renderResourceLink(content: OutgoingMessage): RenderedMessage {
+    const uri = (content.metadata as Record<string, unknown>)?.uri ?? ''
+    return { body: `🔗 ${content.text}: ${uri}`, format: 'plain' }
   }
 }

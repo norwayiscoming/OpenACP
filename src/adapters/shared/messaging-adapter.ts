@@ -66,6 +66,12 @@ export abstract class MessagingAdapter implements IChannelAdapter {
       case 'attachment':     return this.handleAttachment(sessionId, content)
       case 'system_message': return this.handleSystem(sessionId, content)
       case 'session_end':    return this.handleSessionEnd(sessionId, content)
+      case 'mode_change':    return this.handleModeChange(sessionId, content)
+      case 'config_update':  return this.handleConfigUpdate(sessionId, content)
+      case 'model_update':   return this.handleModelUpdate(sessionId, content)
+      case 'user_replay':    return this.handleUserReplay(sessionId, content)
+      case 'resource':       return this.handleResource(sessionId, content)
+      case 'resource_link':  return this.handleResourceLink(sessionId, content)
     }
   }
 
@@ -81,6 +87,12 @@ export abstract class MessagingAdapter implements IChannelAdapter {
   protected async handleAttachment(_sessionId: string, _content: OutgoingMessage): Promise<void> {}
   protected async handleSystem(_sessionId: string, _content: OutgoingMessage): Promise<void> {}
   protected async handleSessionEnd(_sessionId: string, _content: OutgoingMessage): Promise<void> {}
+  protected async handleModeChange(_sessionId: string, _content: OutgoingMessage): Promise<void> {}
+  protected async handleConfigUpdate(_sessionId: string, _content: OutgoingMessage): Promise<void> {}
+  protected async handleModelUpdate(_sessionId: string, _content: OutgoingMessage): Promise<void> {}
+  protected async handleUserReplay(_sessionId: string, _content: OutgoingMessage): Promise<void> {}
+  protected async handleResource(_sessionId: string, _content: OutgoingMessage): Promise<void> {}
+  protected async handleResourceLink(_sessionId: string, _content: OutgoingMessage): Promise<void> {}
 
   // === Helpers ===
 

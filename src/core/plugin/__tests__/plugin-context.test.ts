@@ -92,7 +92,7 @@ describe('PluginContext permission enforcement', () => {
 
   it('throws on registerCommand without commands:register', () => {
     const { ctx } = makeContext([])
-    expect(() => ctx.registerCommand({ name: 'test', description: 'test', handler: async () => {} })).toThrow(/commands:register/)
+    expect(() => ctx.registerCommand({ name: 'test', description: 'test', category: 'plugin', handler: async () => {} })).toThrow(/commands:register/)
   })
 
   it('throws on storage.set without storage:write', () => {

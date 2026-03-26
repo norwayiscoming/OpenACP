@@ -149,9 +149,32 @@ export interface MigrateContext {
   log: Logger
 }
 
+// ─── Command Response Types ───
+
+export type CommandResponse =
+  | { type: 'text'; text: string }
+  | { type: 'menu'; title: string; options: MenuOption[] }
+  | { type: 'list'; title: string; items: ListItem[] }
+  | { type: 'confirm'; question: string; onYes: string; onNo: string }
+  | { type: 'error'; message: string }
+  | { type: 'silent' }
+
+export interface MenuOption {
+  label: string
+  command: string
+  hint?: string
+}
+
+export interface ListItem {
+  label: string
+  detail?: string
+}
+
 export interface CommandArgs {
   /** Raw argument string after command name */
   raw: string
+  /** Parsed key/value options (e.g., --flag value) */
+  options?: Record<string, string>
   /** Session ID where command was invoked (null if from notification/system topic) */
   sessionId: string | null
   /** Channel ID ('telegram', 'discord', 'slack') */
@@ -159,7 +182,9 @@ export interface CommandArgs {
   /** User ID who invoked the command */
   userId: string
   /** Reply helper — sends message to the topic where command was invoked */
-  reply(content: string | OutgoingMessage): Promise<void>
+  reply(content: string | CommandResponse | OutgoingMessage): Promise<void>
+  /** Direct access to OpenACPCore instance. Available when 'kernel:access' permission is granted. */
+  coreAccess?: CoreAccess
 }
 
 export interface CommandDef {
@@ -169,8 +194,12 @@ export interface CommandDef {
   description: string
   /** Usage pattern, e.g., '<session-number>' */
   usage?: string
+  /** Whether this is a built-in system command or registered by a plugin */
+  category: 'system' | 'plugin'
+  /** Plugin that registered this command (set automatically by plugin manager) */
+  pluginName?: string
   /** Handler function */
-  handler(args: CommandArgs): Promise<void>
+  handler(args: CommandArgs): Promise<CommandResponse | void>
 }
 
 // Forward declarations for kernel types used in PluginContext.

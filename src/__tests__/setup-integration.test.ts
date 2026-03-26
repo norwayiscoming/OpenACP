@@ -15,6 +15,7 @@ vi.mock('@clack/prompts', () => ({
   intro: vi.fn(),
   outro: vi.fn(),
   cancel: vi.fn(),
+  note: vi.fn(),
   isCancel: vi.fn(() => false),
 }))
 
@@ -69,7 +70,7 @@ vi.mock('../tunnel/providers/install-cloudflared.js', () => ({
 }))
 
 import * as clack from '@clack/prompts'
-import { runSetup } from '../core/setup.js'
+import { runSetup, runReconfigure } from '../core/setup/index.js'
 
 const mockedText = vi.mocked(clack.text)
 const mockedSelect = vi.mocked(clack.select)
@@ -183,5 +184,101 @@ describe('runSetup integration', () => {
     expect(written.workspace.baseDir).toBe('~/my-workspace')
     expect(written.security.maxConcurrentSessions).toBe(20)
     expect(written.security.sessionTimeoutMinutes).toBe(60)
+  })
+})
+
+describe('runReconfigure integration', () => {
+  let tmpDir: string
+  let configPath: string
+  const originalEnv = process.env.OPENACP_CONFIG_PATH
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'openacp-reconfig-'))
+    configPath = path.join(tmpDir, 'config.json')
+    process.env.OPENACP_CONFIG_PATH = configPath
+  })
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true })
+    if (originalEnv === undefined) {
+      delete process.env.OPENACP_CONFIG_PATH
+    } else {
+      process.env.OPENACP_CONFIG_PATH = originalEnv
+    }
+    vi.restoreAllMocks()
+  })
+
+  it('shows section menu and allows channel reconfiguration', { timeout: 15000 }, async () => {
+    // Pre-create config file with existing Telegram config
+    const existingConfig = {
+      channels: {
+        telegram: {
+          enabled: true,
+          botToken: '123:OLD_TOKEN',
+          chatId: -1001234567890,
+        },
+      },
+      agents: {},
+      defaultAgent: 'claude',
+      workspace: { baseDir: '~/workspace' },
+      security: {
+        allowedUserIds: [],
+        maxConcurrentSessions: 20,
+        sessionTimeoutMinutes: 60,
+      },
+      logging: {
+        level: 'info',
+        logDir: '~/.openacp/logs',
+        maxFileSize: '10m',
+        maxFiles: 7,
+        sessionLogRetentionDays: 30,
+      },
+      runMode: 'foreground',
+      autoStart: false,
+      api: { port: 21420, host: '127.0.0.1' },
+      sessionStore: { ttlDays: 30 },
+      tunnel: {
+        enabled: true,
+        port: 3100,
+        provider: 'cloudflare',
+        options: {},
+        maxUserTunnels: 5,
+        storeTtlMinutes: 60,
+        auth: { enabled: false },
+      },
+      usage: {
+        enabled: true,
+        warningThreshold: 0.8,
+        currency: 'USD',
+        retentionDays: 90,
+      },
+      integrations: {},
+      speech: {
+        stt: { provider: null, providers: {} },
+        tts: { provider: null, providers: {} },
+      },
+    }
+    fs.writeFileSync(configPath, JSON.stringify(existingConfig, null, 2))
+
+    // Mock select calls in order:
+    // 1. section menu → 'channels'
+    // 2. channel loop → 'telegram'
+    // 3. configured action → 'skip'
+    // 4. channel loop → '__done__'
+    // 5. section menu → '__continue'
+    mockedSelect
+      .mockResolvedValueOnce('channels' as any)
+      .mockResolvedValueOnce('telegram' as any)
+      .mockResolvedValueOnce('skip' as any)
+      .mockResolvedValueOnce('__done__' as any)
+      .mockResolvedValueOnce('__continue' as any)
+
+    const cm = new ConfigManager()
+    await runReconfigure(cm)
+
+    // Config file should be unchanged: skip means no modifications
+    const written = JSON.parse(fs.readFileSync(configPath, 'utf-8'))
+    expect(written.channels.telegram.botToken).toBe('123:OLD_TOKEN')
+    expect(written.channels.telegram.enabled).toBe(true)
   })
 })

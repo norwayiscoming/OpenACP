@@ -137,6 +137,7 @@ describe('PlanCard', () => {
     api = makeMockApi()
     queue = makeMockQueue()
     card = new PlanCard(api as never, 100, 200, queue)
+    card.setVerbosity('high')
     vi.useFakeTimers()
   })
 
@@ -204,6 +205,7 @@ describe('PlanCard', () => {
       { content: 'Task C', status: 'pending', priority: 'low' },
     ]
     const card2 = new PlanCard(api as never, 100, 200, queue)
+    card2.setVerbosity('high')
     card2.update(singleDone)
     await card2.finalize()
     const text: string = api.sendMessage.mock.calls[0][1]

@@ -49,7 +49,5 @@ export abstract class ChannelAdapter<TCore = unknown> implements IChannelAdapter
   async cleanupSkillCommands(_sessionId: string): Promise<void> {}
 
   // Archive — override in adapters that support topic archiving
-  async archiveSessionTopic(_sessionId: string): Promise<{ newThreadId: string } | null> {
-    return null;
-  }
+  async archiveSessionTopic(_sessionId: string): Promise<void> {}
 }

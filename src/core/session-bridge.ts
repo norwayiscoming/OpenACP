@@ -108,7 +108,7 @@ export class SessionBridge {
             sessionId: this.session.id,
             sessionName: this.session.name,
             type: "completed",
-            summary: `Session "${this.session.name || this.session.id}" completed`,
+            summary: `Session "${this.session.name || this.session.id}" completed\n⏱ ${Math.round((Date.now() - this.session.createdAt.getTime()) / 60000)} min · 💬 ${this.session.promptCount} prompts`,
           });
           break;
 

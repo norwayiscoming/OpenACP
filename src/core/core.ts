@@ -22,6 +22,9 @@ import { EventBus } from "./event-bus.js";
 import { PluginRegistry } from "./plugin-registry.js";
 import { createChildLogger } from "./log.js";
 import { SpeechService, GroqSTT, EdgeTTS } from "./speech/index.js";
+import { ContextManager } from "./context/context-manager.js";
+import { EntireProvider } from "./context/entire/entire-provider.js";
+import type { ContextQuery, ContextOptions, ContextResult } from "./context/context-provider.js";
 const log = createChildLogger({ module: "core" });
 
 export class OpenACPCore {
@@ -45,6 +48,7 @@ export class OpenACPCore {
   sessionFactory: SessionFactory;
   readonly usageStore: UsageStore | null = null;
   readonly usageBudget: UsageBudget | null = null;
+  readonly contextManager: ContextManager;
 
   constructor(configManager: ConfigManager) {
     this.configManager = configManager;
@@ -73,6 +77,8 @@ export class OpenACPCore {
     this.eventBus = new EventBus();
     this.pluginRegistry = new PluginRegistry();
     this.sessionManager.setEventBus(this.eventBus);
+    this.contextManager = new ContextManager();
+    this.contextManager.register(new EntireProvider());
     this.fileService = new FileService(
       path.join(os.homedir(), ".openacp", "files"),
     );
@@ -194,27 +200,104 @@ export class OpenACPCore {
     }
   }
 
+  // --- Summary ---
+
+  async summarizeSession(sessionId: string): Promise<{ ok: true; summary: string } | { ok: false; error: string }> {
+    // Active session — summarize directly
+    const session = this.sessionManager.getSession(sessionId);
+    if (session && session.status === "active") {
+      try {
+        const summary = await session.generateSummary();
+        if (!summary) return { ok: false, error: "Agent could not generate summary" };
+        return { ok: true, summary };
+      } catch (err) {
+        return { ok: false, error: (err as Error).message };
+      }
+    }
+
+    // Ended session — respawn agent temporarily with conversation history
+    const record = this.sessionManager.getSessionRecord(sessionId);
+    if (!record?.agentSessionId) {
+      return { ok: false, error: "Session not found or has no agent history" };
+    }
+
+    const caps = getAgentCapabilities(record.agentName);
+    if (!caps.supportsResume) {
+      return { ok: false, error: `Agent "${record.agentName}" does not support resume — cannot summarize ended session` };
+    }
+
+    let tempSession: Session | undefined;
+    try {
+      const agentInstance = await this.agentManager.resume(
+        record.agentName,
+        record.workingDir,
+        record.agentSessionId,
+      );
+
+      tempSession = new Session({
+        id: `summary-${sessionId}`,
+        channelId: record.channelId,
+        agentName: record.agentName,
+        workingDirectory: record.workingDir,
+        agentInstance,
+      });
+      tempSession.activate();
+
+      const summary = await tempSession.generateSummary();
+      if (!summary) return { ok: false, error: "Agent could not generate summary" };
+      return { ok: true, summary };
+    } catch (err) {
+      return { ok: false, error: (err as Error).message };
+    } finally {
+      if (tempSession) {
+        try { await tempSession.destroy(); } catch { /* best effort */ }
+      }
+    }
+  }
+
   // --- Archive ---
 
-  async archiveSession(
-    sessionId: string,
-  ): Promise<{ ok: true; newThreadId: string } | { ok: false; error: string }> {
+  async archiveSession(sessionId: string): Promise<{ ok: true } | { ok: false; error: string }> {
     const session = this.sessionManager.getSession(sessionId);
-    if (!session) return { ok: false, error: "Session not found" };
-    if (session.status === "initializing")
-      return { ok: false, error: "Session is still initializing" };
-    if (session.status !== "active")
-      return { ok: false, error: `Session is ${session.status}` };
+    const record = this.sessionManager.getSessionRecord(sessionId);
 
-    const adapter = this.adapters.get(session.channelId);
+    if (!session && !record) return { ok: false, error: "Session not found" };
+
+    const channelId = session?.channelId ?? record?.channelId;
+    if (!channelId) return { ok: false, error: "No channel for session" };
+
+    const adapter = this.adapters.get(channelId);
     if (!adapter) return { ok: false, error: "Adapter not found for session" };
 
     try {
-      const result = await adapter.archiveSessionTopic(session.id);
-      if (!result)
-        return { ok: false, error: "Adapter does not support archiving" };
-      return { ok: true, newThreadId: result.newThreadId };
+      // 1. Delete topic — if session is in memory use archiveSessionTopic (cleans up trackers),
+      //    otherwise use deleteSessionThread (looks up topicId from record)
+      if (session) {
+        await adapter.archiveSessionTopic(session.id);
+      } else {
+        await adapter.deleteSessionThread(sessionId);
+      }
+
+      // 2. Cancel the session if in memory (stop agent)
+      if (session) {
+        try {
+          await this.sessionManager.cancelSession(sessionId);
+        } catch {
+          // Session may already be finished/cancelled
+        } finally {
+          // Clear archiving flag after cancel completes — prevents race window
+          // where agent events try to send to deleted topic
+          session.archiving = false;
+        }
+      }
+
+      // 3. Remove session record
+      await this.sessionManager.removeRecord(sessionId);
+
+      return { ok: true };
     } catch (err) {
+      // Clear archiving flag on error too
+      if (session) session.archiving = false;
       return { ok: false, error: (err as Error).message };
     }
   }
@@ -540,6 +623,38 @@ export class OpenACPCore {
       record.agentName,
       record.workingDir,
     );
+  }
+
+  async createSessionWithContext(params: {
+    channelId: string;
+    agentName: string;
+    workingDirectory: string;
+    contextQuery: ContextQuery;
+    contextOptions?: ContextOptions;
+    createThread?: boolean;
+  }): Promise<{ session: Session; contextResult: ContextResult | null }> {
+    let contextResult: ContextResult | null = null;
+    try {
+      contextResult = await this.contextManager.buildContext(
+        params.contextQuery,
+        params.contextOptions,
+      );
+    } catch (err) {
+      log.warn({ err }, "Context building failed, proceeding without context");
+    }
+
+    const session = await this.createSession({
+      channelId: params.channelId,
+      agentName: params.agentName,
+      workingDirectory: params.workingDirectory,
+      createThread: params.createThread,
+    });
+
+    if (contextResult) {
+      session.setContext(contextResult.markdown);
+    }
+
+    return { session, contextResult };
   }
 
   // --- Lazy Resume ---

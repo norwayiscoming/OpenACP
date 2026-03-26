@@ -284,6 +284,16 @@ export function registerSessionRoutes(router: Router, deps: RouteDeps): void {
     });
   });
 
+  router.post("/api/sessions/:sessionId/summary", async (_req, res, params) => {
+    const sessionId = decodeURIComponent(params.sessionId);
+    const result = await deps.core.summarizeSession(sessionId);
+    if (result.ok) {
+      deps.sendJson(res, 200, result);
+    } else {
+      deps.sendJson(res, 400, result);
+    }
+  });
+
   router.post("/api/sessions/:sessionId/archive", async (_req, res, params) => {
     const sessionId = decodeURIComponent(params.sessionId);
     const result = await deps.core.archiveSession(sessionId);

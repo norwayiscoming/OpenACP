@@ -11,6 +11,10 @@ const BaseChannelSchema = z
   .object({
     enabled: z.boolean().default(false),
     adapter: z.string().optional(), // package name for plugin adapters
+    displayVerbosity: z
+      .enum(["low", "medium", "high"])
+      .default("medium")
+      .optional(),
   })
   .passthrough();
 
@@ -63,8 +67,8 @@ export type TunnelConfig = z.infer<typeof TunnelSchema>;
 const SlackChannelConfigSchema = z.object({
   enabled: z.boolean().default(false),
   adapter: z.literal("slack").optional(),
-  botToken: z.string().optional(),           // xoxb-...
-  appToken: z.string().optional(),           // xapp-... (Socket Mode)
+  botToken: z.string().optional(), // xoxb-...
+  appToken: z.string().optional(), // xapp-... (Socket Mode)
   signingSecret: z.string().optional(),
   notificationChannelId: z.string().optional(),
   allowedUserIds: z.array(z.string()).default([]),
@@ -113,9 +117,11 @@ const SpeechSchema = z
   .default({});
 
 export const ConfigSchema = z.object({
-  channels: z.object({
-    slack: SlackChannelConfigSchema.optional(),
-  }).catchall(BaseChannelSchema),
+  channels: z
+    .object({
+      slack: SlackChannelConfigSchema.optional(),
+    })
+    .catchall(BaseChannelSchema),
   agents: z.record(z.string(), AgentSchema).optional().default({}),
   defaultAgent: z.string(),
   workspace: z
@@ -391,7 +397,8 @@ export class ConfigManager extends EventEmitter {
       raw.speech = raw.speech || {};
       const speech = raw.speech as Record<string, unknown>;
       speech.stt = speech.stt || {};
-      (speech.stt as Record<string, unknown>).provider = process.env.OPENACP_SPEECH_STT_PROVIDER;
+      (speech.stt as Record<string, unknown>).provider =
+        process.env.OPENACP_SPEECH_STT_PROVIDER;
     }
     if (process.env.OPENACP_SPEECH_GROQ_API_KEY) {
       raw.speech = raw.speech || {};
@@ -412,11 +419,7 @@ export class ConfigManager extends EventEmitter {
   ): void {
     for (const key of Object.keys(source)) {
       const val = source[key];
-      if (
-        val &&
-        typeof val === "object" &&
-        !Array.isArray(val)
-      ) {
+      if (val && typeof val === "object" && !Array.isArray(val)) {
         if (!target[key]) target[key] = {};
         this.deepMerge(
           target[key] as Record<string, unknown>,

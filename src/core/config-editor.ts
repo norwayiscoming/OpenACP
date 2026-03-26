@@ -26,7 +26,7 @@ async function input(opts: { message: string; default?: string; validate?: (val:
   if (clack.isCancel(result)) { clack.cancel('Cancelled.'); process.exit(0) }
   return result as string
 }
-import { validateBotToken, validateChatId, validateDiscordToken } from './setup.js'
+import { validateBotToken, validateChatId, validateDiscordToken } from './setup/index.js'
 import { installAutoStart, uninstallAutoStart, isAutoStartInstalled, isAutoStartSupported } from './autostart.js'
 import { expandHome } from './config.js'
 

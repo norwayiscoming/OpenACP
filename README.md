@@ -2,9 +2,9 @@
 
 # OpenACP
 
-**Self-hosted bridge between messaging platforms and AI coding agents**
+**Control AI coding agents from Telegram, Discord & Slack**
 
-One message, any channel, any agent.
+Send a message. The agent writes code. You see everything — in real time.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Node.js >= 20](https://img.shields.io/badge/Node.js-%3E%3D%2020-green.svg)](https://nodejs.org/)
@@ -12,7 +12,7 @@ One message, any channel, any agent.
 [![npm](https://img.shields.io/npm/v/@openacp/cli.svg)](https://www.npmjs.com/package/@openacp/cli)
 [![Twitter Follow](https://img.shields.io/twitter/follow/Open_ACP?style=social)](https://x.com/Open_ACP)
 
-[Getting Started](docs/guide/getting-started.md) | [Agents](docs/guide/agents.md) | [Usage](docs/guide/usage.md) | [Configuration](docs/guide/configuration.md) | [Plugins](docs/guide/plugins.md) | [Development](docs/guide/development.md)
+[Documentation](https://openacp.gitbook.io/docs) · [Quick Start](#quick-start) · [Features](#features) · [Agents](#supported-agents) · [Contributing](https://openacp.gitbook.io/docs/extending/contributing)
 
 </div>
 
@@ -20,21 +20,19 @@ One message, any channel, any agent.
 
 ## What is OpenACP?
 
-OpenACP lets you control AI coding agents (Claude Code, Codex, ...) from messaging apps like Telegram and Discord. You send a message, the agent writes code, runs commands, and streams everything back — in real time.
+OpenACP is a self-hosted bridge that connects AI coding agents to your messaging platforms. You chat with an AI agent through Telegram, Discord, or Slack — it reads your codebase, writes code, runs commands, and streams results back to you in real time.
 
-It uses the [Agent Client Protocol (ACP)](https://agentclientprotocol.org/) to talk to agents. You host it on your own machine, so you own the data.
+Built on the open [Agent Client Protocol (ACP)](https://agentclientprotocol.org/). Your machine, your keys, your data.
 
 ```
-You (Telegram / Discord / ...)
+You (Telegram / Discord / Slack)
   ↓
-OpenACP ─── ChannelAdapter ─── Session Manager ─── Session Store
-  ↓                                                     ↓
-ACP Protocol (JSON-RPC / stdio)                  Tunnel Service
-  ↓                                                     ↓
-AI Agent (Claude Code, Codex, ...)            File/Diff Viewer
+OpenACP (bridge + session manager)
+  ↓
+AI Agent (Claude Code, Codex, Gemini, Cursor, ...)
+  ↓
+Your Codebase
 ```
-
-## Screenshots
 
 <div align="center">
 <table>
@@ -49,176 +47,124 @@ AI Agent (Claude Code, Codex, ...)            File/Diff Viewer
 </table>
 </div>
 
-## Supported Agents
-
-OpenACP follows the [Agent Client Protocol (ACP)](https://agentclientprotocol.com/) standard — an open protocol for connecting AI coding agents to client applications. Agent definitions are loaded from the [official ACP Registry](https://agentclientprotocol.com/get-started/registry) via CDN ([`registry.json`](https://cdn.agentclientprotocol.com/registry/v1/latest/registry.json)), so new agents are available as soon as they're registered.
-
-| Agent | Distribution | Description |
-|-------|-------------|-------------|
-| [Claude Agent](https://github.com/anthropics/claude-code) | npx | Anthropic's Claude coding agent |
-| [Gemini CLI](https://github.com/google-gemini/gemini-cli) | npx | Google's official CLI for Gemini |
-| [Codex CLI](https://github.com/openai/codex) | npx | OpenAI's coding assistant |
-| [GitHub Copilot](https://github.com/github/copilot-cli) | npx | GitHub's AI pair programmer |
-| [Cursor](https://www.cursor.com/) | binary | Cursor's coding agent |
-| [Cline](https://github.com/cline/cline) | npx | Autonomous coding agent with file editing, commands, and browser |
-| [goose](https://github.com/block/goose) | binary | Open source AI agent for engineering tasks |
-| [Amp](https://github.com/tao12345666333/amp-acp) | binary | The frontier coding agent |
-| [Auggie CLI](https://www.augmentcode.com/) | npx | Augment Code's agent with industry-leading context engine |
-| [Junie](https://www.jetbrains.com/) | binary | AI coding agent by JetBrains |
-| [Kilo](https://github.com/kilocode/kilo) | npx | The open source coding agent |
-| [Qwen Code](https://github.com/QwenLM/qwen-code) | npx | Alibaba's Qwen coding assistant |
-| [crow-cli](https://github.com/crowdecode/crow-cli) | uvx | Minimal ACP native coding agent |
-| ...and more | | [See full registry →](https://agentclientprotocol.com/get-started/registry) |
-
-> **28+ agents supported** — any agent registered in the ACP Registry works out of the box. Install with `openacp agents install <name>` or browse from Telegram with `/agents`.
-
-## Features
-
-- **Multi-agent** — Claude Code, Codex, Gemini, Cursor, and [28+ ACP-compatible agents](#supported-agents)
-- **Telegram** — Forum topics, real-time streaming, permission buttons, skill commands
-- **Discord** — Forum/thread-based sessions, slash commands, button interactions
-- **Session persistence** — Resume sessions across restarts
-- **Daemon mode** — Background service with auto-start on boot
-- **CLI API** — Create and manage sessions from the terminal
-- **Config editor** — Interactive `openacp config` for all settings
-- **Setup wizard** — Interactive first-run setup with bot validation and auto-detect
-- **Plugin system** — Install channel adapters as npm packages
-- **Structured logging** — Pino with rotation, per-session log files
-- **Self-hosted** — Your keys, your data, your machine
-
-### [Tunnel & Port Forwarding](docs/guide/tunnel.md)
-
-Expose any local port to the internet — dev servers, APIs, static sites. Tunnel is enabled by default with Cloudflare (free, no account needed).
-
-- `/tunnel 3000 my-app` in Telegram or `openacp tunnel add 3000 --label my-app` from CLI
-- `/tunnels` to list active tunnels with public URLs and stop buttons
-- Agents can create tunnels too — say "expose port 5173" and the agent handles it
-- Built-in file/diff viewer — Monaco Editor (VS Code engine) with syntax highlighting, line range links, markdown preview
-- Providers: Cloudflare (default), ngrok, bore, Tailscale Funnel
-
-## Setup
-
-### Prerequisites
-
-- **Node.js 20+**
-- **A messaging platform** — Telegram, Discord, or both:
-  - **Telegram**: Create a bot via [@BotFather](https://t.me/BotFather), create a supergroup with Topics enabled, add bot as admin
-  - **Discord**: Create a bot at [Discord Developer Portal](https://discord.com/developers/applications), invite it to your server with Manage Channels + Send Messages permissions
-
-### Install & first run
+## Quick Start
 
 ```bash
 npm install -g @openacp/cli
 openacp
 ```
 
-> **Important: `openacp` is an interactive CLI.**
-> The first run launches a setup wizard that asks you questions in the terminal (bot token, server selection, workspace path, etc.).
-> You **must run it yourself in a terminal** — it cannot be run by a script or an AI agent because it requires interactive input.
+The interactive setup wizard walks you through everything:
 
-The wizard will:
+1. Choose your platform (Telegram, Discord, Slack, or multiple)
+2. Connect your bot (token validation + auto-detection)
+3. Pick a workspace directory
+4. Select your default AI agent
+5. Choose run mode (foreground or daemon)
 
-1. **Choose your channel(s)** — Telegram, Discord, or both
-2. **Configure bot credentials** — bot token and server/group ID, validated against the platform API
-3. **Set a workspace directory** — where agents will create project folders (default: `~/openacp-workspace`)
-4. **Detect installed agents** — finds Claude Code, Codex, etc.
-5. **Choose run mode** — foreground (in terminal) or background (daemon with auto-start)
+That's it. Send a message to your bot and start coding.
 
-Config is saved to `~/.openacp/config.json`. After setup, OpenACP starts automatically.
+> **Need detailed setup for a specific platform?** See the [Platform Setup guides](https://openacp.gitbook.io/docs/platform-setup).
 
-### Running after setup
+## Features
+
+### Messaging Platforms
+
+| Platform | Status | Highlights |
+|----------|--------|------------|
+| **Telegram** | Stable | Forum topics per session, streaming, permission buttons, voice |
+| **Discord** | Stable | Thread-based sessions, slash commands, button interactions |
+| **Slack** | Stable | Socket Mode, channel-based sessions, thread organization |
+
+### Core
+
+- **28+ AI agents** — Claude Code, Codex, Gemini, Cursor, Copilot, and [more](#supported-agents)
+- **Session management** — Each conversation gets its own thread/topic with auto-naming
+- **Session persistence** — Sessions survive restarts, with configurable TTL
+- **Permission control** — Approve or deny agent actions via buttons, with optional auto-approve
+- **Real-time streaming** — See agent thinking, tool calls, and output as they happen
+
+### Developer Tools
+
+- **Tunnel & port forwarding** — Expose local ports to the internet (Cloudflare, ngrok, bore, Tailscale)
+- **Built-in file viewer** — Monaco Editor with syntax highlighting, diffs, and markdown preview
+- **Session transfer** — Move sessions between terminal and chat (`/handoff`)
+- **Voice & speech** — Send voice messages, get spoken responses (Groq STT + Edge TTS)
+- **Usage tracking** — Token counts, cost reports, optional monthly budget limits
+- **Context resume** — Resume sessions with full conversation history
+
+### Operations
+
+- **Daemon mode** — Run as a background service with auto-start on boot
+- **CLI API** — Full REST API for automation (`openacp api ...`)
+- **Plugin system** — Install adapters as npm packages
+- **Doctor diagnostics** — `openacp doctor` checks everything and suggests fixes
+- **Structured logging** — Pino with rotation, per-session log files
+
+> **Full feature documentation** — [Documentation](https://openacp.gitbook.io/docs)
+
+## Supported Agents
+
+OpenACP uses the [ACP Registry](https://agentclientprotocol.com/get-started/registry) — new agents are available as soon as they're registered.
+
+| Agent | Type | Description |
+|-------|------|-------------|
+| [Claude Code](https://github.com/anthropics/claude-code) | npx | Anthropic's Claude coding agent |
+| [Gemini CLI](https://github.com/google-gemini/gemini-cli) | npx | Google's Gemini CLI |
+| [Codex CLI](https://github.com/openai/codex) | npx | OpenAI's coding assistant |
+| [GitHub Copilot](https://github.com/github/copilot-cli) | npx | GitHub's AI pair programmer |
+| [Cursor](https://www.cursor.com/) | binary | Cursor's coding agent |
+| [Cline](https://github.com/cline/cline) | npx | Autonomous coding agent |
+| [goose](https://github.com/block/goose) | binary | Open source AI agent by Block |
+| [Amp](https://github.com/tao12345666333/amp-acp) | binary | The frontier coding agent |
+| [Auggie CLI](https://www.augmentcode.com/) | npx | Augment Code's context engine |
+| [Junie](https://www.jetbrains.com/) | binary | AI coding agent by JetBrains |
+| [Kilo](https://github.com/kilocode/kilo) | npx | Open source coding agent |
+| [Qwen Code](https://github.com/QwenLM/qwen-code) | npx | Alibaba's Qwen assistant |
+| ...and more | | [Full registry →](https://agentclientprotocol.com/get-started/registry) |
 
 ```bash
-# Foreground (shows logs in terminal)
-openacp
-
-# Or as a background daemon
-openacp start
-openacp stop
-openacp status
-openacp logs
+openacp agents                     # Browse all agents
+openacp agents install <name>      # Install from registry
 ```
 
-### Other CLI commands
+## CLI Overview
 
 ```bash
-# Agent management
-openacp agents                    # List all agents (installed + available)
-openacp agents install <name>     # Install an agent from the ACP Registry
-openacp agents uninstall <name>   # Remove an installed agent
-openacp agents info <name>        # Show agent details & dependencies
-openacp agents refresh            # Force-refresh the registry
+# Server
+openacp                            # Start (first run = setup wizard)
+openacp start / stop / status      # Daemon management
+openacp logs                       # Tail daemon logs
 
-# API (requires running daemon)
-openacp api new [agent] [workspace]      # Create a new session
-openacp api cancel <id>                  # Cancel a session
-openacp api status                       # Show active sessions
-openacp api agents                       # List available agents
+# Configuration
+openacp config                     # Interactive config editor
+openacp reset                      # Re-run setup wizard
+openacp doctor                     # System diagnostics
 
-# System
-openacp config            # Interactive config editor
-openacp reset             # Re-run the setup wizard
-openacp update            # Update to latest version
-openacp install <plugin>  # Install a plugin (e.g. @openacp/adapter-discord)
-openacp uninstall <plugin>
-openacp plugins           # List installed plugins
+# Sessions & API (requires running daemon)
+openacp api new [agent] [workspace]
+openacp api status
+openacp api cancel <id>
+
+# Tunnels
+openacp tunnel add <port> [--label name]
+openacp tunnel list
 ```
 
-## Usage
+> **Full CLI reference** — [CLI Commands](https://openacp.gitbook.io/docs/api-reference/cli-commands)
 
-Once OpenACP is running, control it from Telegram or Discord:
+## Documentation
 
-**Telegram** — Bot commands in your supergroup:
-
-| Command | Description |
+| Section | Description |
 |---------|-------------|
-| `/new [agent] [workspace]` | Create a new session |
-| `/newchat` | New session, same agent & workspace |
-| `/cancel` | Cancel current session |
-| `/status` | Show session or system status |
-| `/agents` | Browse & install agents from ACP Registry |
-| `/install <name>` | Install an agent directly |
-
-Each session gets its own forum topic.
-
-**Discord** — Slash commands in your server:
-
-| Command | Description |
-|---------|-------------|
-| `/new [agent] [workspace]` | Create a new session |
-| `/newchat` | New session, same agent & workspace |
-| `/cancel` | Cancel current session |
-| `/status` | Show session or system status |
-| `/menu` | Open the control panel |
-
-Each session gets its own thread in the sessions channel. The agent streams responses in real time, shows tool calls, and asks for permission when needed.
-
-### Session Transfer
-
-Move sessions between your terminal and messaging platforms:
-
-**Terminal → Chat:**
-```bash
-# Install integration (one-time)
-openacp integrate claude
-
-# In Claude CLI, type /openacp:handoff to transfer the current session
-# Or manually:
-openacp adopt claude <session_id> --cwd /path/to/project
-```
-
-**Chat → Terminal:**
-Type `/handoff` in any session topic/thread. The bot replies with a command you can paste in your terminal to continue.
-
-Sessions are not locked after transfer — you can continue from either side.
-
-## Roadmap
-
-- **Phase 1** — Core + Telegram + ACP agents
-- **Phase 2** — Tunnel/file viewer, session persistence, logging, plugin system
-- **Phase 3** — Agent skills as commands, Discord adapter 🚧, Web UI
-- **Phase 4** — Voice control, file/image sharing
-- **Phase 5** — WhatsApp, agent chaining, plugin marketplace
+| [Getting Started](https://openacp.gitbook.io/docs/getting-started) | What is OpenACP, quickstart for users & developers |
+| [Platform Setup](https://openacp.gitbook.io/docs/platform-setup) | Step-by-step guides for Telegram, Discord, Slack |
+| [Using OpenACP](https://openacp.gitbook.io/docs/using-openacp) | Commands, sessions, agents, permissions, voice |
+| [Self-Hosting](https://openacp.gitbook.io/docs/self-hosting) | Installation, configuration, daemon, security |
+| [Features](https://openacp.gitbook.io/docs/features) | Tunnel, context resume, usage tracking, and more |
+| [Extending](https://openacp.gitbook.io/docs/extending) | Plugin system, building adapters, contributing |
+| [API Reference](https://openacp.gitbook.io/docs/api-reference) | CLI commands, REST API, config schema, env vars |
+| [Troubleshooting](https://openacp.gitbook.io/docs/troubleshooting) | Common issues and FAQ |
 
 ## Star History
 
@@ -232,7 +178,7 @@ Sessions are not locked after transfer — you can continue from either side.
 
 ## Contributing
 
-See [development guide](docs/guide/development.md).
+We welcome contributions! See the [contributing guide](https://openacp.gitbook.io/docs/extending/contributing) for development setup, testing conventions, and PR process.
 
 ## Follow Us
 

@@ -1813,8 +1813,14 @@ ACP-specific flags are automatically stripped.
 export async function cmdOnboard(): Promise<void> {
   const { ConfigManager } = await import('../core/config.js')
   const cm = new ConfigManager()
-  const { runSetup } = await import('../core/setup.js')
-  await runSetup(cm, { skipRunMode: true })
+
+  if (await cm.exists()) {
+    const { runReconfigure } = await import('../core/setup/index.js')
+    await runReconfigure(cm)
+  } else {
+    const { runSetup } = await import('../core/setup/index.js')
+    await runSetup(cm, { skipRunMode: true })
+  }
 }
 
 export async function cmdDefault(command: string | undefined): Promise<void> {
@@ -1841,7 +1847,7 @@ export async function cmdDefault(command: string | undefined): Promise<void> {
 
   // If no config, run setup first
   if (!(await cm.exists())) {
-    const { runSetup } = await import('../core/setup.js')
+    const { runSetup } = await import('../core/setup/index.js')
     const shouldStart = await runSetup(cm)
     if (!shouldStart) process.exit(0)
   }

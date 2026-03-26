@@ -3,12 +3,17 @@ import type { OpenACPCore } from "../../../core/index.js";
 import type { CommandsAssistantContext } from "../types.js";
 
 // Domain modules
-import { handleNew, handleNewChat, setupNewSessionCallbacks, createSessionDirect } from "./new-session.js";
-import { handleCancel, handleStatus, handleTopics, handleUsage, handleArchive, handleArchiveConfirm, setupSessionCallbacks } from "./session.js";
-import { handleEnableDangerous, handleDisableDangerous, handleUpdate, handleRestart, handleTTS } from "./admin.js";
-import { handleMenu, handleHelp, handleClear, buildMenuKeyboard } from "./menu.js";
+import { handleNew, handleNewChat, setupNewSessionCallbacks, createSessionDirect } from './new-session.js'
+import { handleCancel, handleStatus, handleTopics, handleUsage, handleArchive, handleArchiveConfirm, handleSummary, handleSummaryCallback, setupSessionCallbacks } from './session.js'
+import { handleEnableDangerous, handleDisableDangerous, handleUpdate, handleRestart, handleTTS, handleVerbosity } from './admin.js'
+import { handleMenu, handleHelp, handleClear, buildMenuKeyboard } from './menu.js'
 import { handleAgents, handleInstall, handleAgentCallback } from "./agents.js";
 import { handleIntegrate } from "./integrate.js";
+import {
+  handleResume,
+  setupResumeCallbacks,
+  handlePendingResumeInput,
+} from "./resume.js";
 import { handleSettings, setupSettingsCallbacks } from "./settings.js";
 import { handleDoctor, setupDoctorCallbacks } from "./doctor.js";
 import { handleTunnel, handleTunnels, setupTunnelCallbacks } from "./tunnel.js";
@@ -39,7 +44,10 @@ export function setupCommands(
   bot.command("tunnel", (ctx) => handleTunnel(ctx, core));
   bot.command("tunnels", (ctx) => handleTunnels(ctx, core));
   bot.command("archive", (ctx) => handleArchive(ctx, core));
+  bot.command("summary", (ctx) => handleSummary(ctx, core));
   bot.command("text_to_speech", (ctx) => handleTTS(ctx, core));
+  bot.command("verbosity", (ctx) => handleVerbosity(ctx, core));
+  bot.command("resume", (ctx) => handleResume(ctx, core, chatId, assistant));
 }
 
 export function setupAllCallbacks(
@@ -47,14 +55,17 @@ export function setupAllCallbacks(
   core: OpenACPCore,
   chatId: number,
   systemTopicIds?: { notificationTopicId: number; assistantTopicId: number },
-  getAssistantSession?: () => { topicId: number; enqueuePrompt: (p: string) => Promise<void> } | undefined,
+  getAssistantSession?: () =>
+    | { topicId: number; enqueuePrompt: (p: string) => Promise<void> }
+    | undefined,
 ): void {
   // Register specific prefix handlers FIRST (grammY middleware order matters)
   setupNewSessionCallbacks(bot, core, chatId);
+  setupResumeCallbacks(bot, core, chatId);
   setupSessionCallbacks(bot, core, chatId, systemTopicIds);
 
   // Settings handlers — must be before broad m: handler
-  setupSettingsCallbacks(bot, core, getAssistantSession ?? (() => undefined))
+  setupSettingsCallbacks(bot, core, getAssistantSession ?? (() => undefined));
 
   // Doctor handlers — must be before broad m: handler
   setupDoctorCallbacks(bot);
@@ -69,18 +80,29 @@ export function setupAllCallbacks(
   bot.callbackQuery(/^na:/, async (ctx) => {
     const agentKey = ctx.callbackQuery.data!.replace("na:", "");
     await ctx.answerCallbackQuery();
-    await createSessionDirect(ctx, core, chatId, agentKey, core.configManager.get().workspace.baseDir);
+    await createSessionDirect(
+      ctx,
+      core,
+      chatId,
+      agentKey,
+      core.configManager.get().workspace.baseDir,
+    );
   });
 
   // Archive confirmation callbacks
   bot.callbackQuery(/^ar:/, (ctx) => handleArchiveConfirm(ctx, core, chatId));
+
+  // Summary button callbacks
+  bot.callbackQuery(/^sm:/, (ctx) => handleSummaryCallback(ctx, core, chatId));
 
   // Broad m: handler for remaining menu dispatch — LAST
   bot.callbackQuery(/^m:/, async (ctx) => {
     const data = ctx.callbackQuery.data;
     try {
       await ctx.answerCallbackQuery();
-    } catch { /* expired or network — ignore */ }
+    } catch {
+      /* expired or network — ignore */
+    }
 
     switch (data) {
       case "m:new":
@@ -120,13 +142,28 @@ export { setupAllCallbacks as setupMenuCallbacks };
 // Re-exports for external consumers (adapter.ts, action-detect.ts)
 export { buildMenuKeyboard } from "./menu.js";
 export { buildSkillMessages } from "./menu.js";
-export { handlePendingWorkspaceInput, executeNewSession, startInteractiveNewSession } from "./new-session.js";
+export {
+  handlePendingWorkspaceInput,
+  executeNewSession,
+  startInteractiveNewSession,
+} from "./new-session.js";
 export { executeCancelSession } from "./session.js";
-export { setupDangerousModeCallbacks, buildDangerousModeKeyboard } from "./admin.js";
-export { setupTTSCallbacks, buildTTSKeyboard, buildSessionControlKeyboard, handleTTS } from "./admin.js";
+export {
+  setupDangerousModeCallbacks,
+  buildDangerousModeKeyboard,
+} from "./admin.js";
+export {
+  setupTTSCallbacks,
+  setupVerbosityCallbacks,
+  buildTTSKeyboard,
+  buildSessionControlKeyboard,
+  handleTTS,
+  handleVerbosity,
+} from "./admin.js";
 export { setupIntegrateCallbacks } from "./integrate.js";
 export { setupSettingsCallbacks } from "./settings.js";
 export { setupDoctorCallbacks } from "./doctor.js";
+export { handlePendingResumeInput, setupResumeCallbacks } from "./resume.js";
 
 export const STATIC_COMMANDS = [
   { command: "new", description: "Create new session" },
@@ -138,8 +175,14 @@ export const STATIC_COMMANDS = [
   { command: "install", description: "Install a new agent" },
   { command: "help", description: "Help" },
   { command: "menu", description: "Show menu" },
-  { command: "enable_dangerous", description: "Auto-approve all permission requests (session only)" },
-  { command: "disable_dangerous", description: "Restore normal permission prompts (session only)" },
+  {
+    command: "enable_dangerous",
+    description: "Auto-approve all permission requests (session only)",
+  },
+  {
+    command: "disable_dangerous",
+    description: "Restore normal permission prompts (session only)",
+  },
   { command: "integrate", description: "Manage agent integrations" },
   { command: "handoff", description: "Continue this session in your terminal" },
   { command: "clear", description: "Clear assistant history" },
@@ -149,6 +192,9 @@ export const STATIC_COMMANDS = [
   { command: "usage", description: "View token usage and cost report" },
   { command: "tunnel", description: "Create/stop tunnel for a local port" },
   { command: "tunnels", description: "List active tunnels" },
-  { command: "archive", description: "Archive session topic (recreate with clean history)" },
-  { command: "text_to_speech", description: "Toggle Text to Speech (/text_to_speech on, /text_to_speech off)" },
+  { command: 'archive', description: 'Archive session topic (recreate with clean history)' },
+  { command: 'summary', description: 'Get AI summary of current session' },
+  { command: 'text_to_speech', description: 'Toggle Text to Speech (/text_to_speech on, /text_to_speech off)' },
+  { command: 'verbosity', description: 'Set display verbosity (/verbosity low|medium|high)' },
+  { command: 'resume', description: 'Resume with conversation history from Entire checkpoints' },
 ];

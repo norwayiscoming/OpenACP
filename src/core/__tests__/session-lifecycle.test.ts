@@ -300,3 +300,48 @@ describe('Session - Lifecycle & Prompt Processing', () => {
     })
   })
 })
+
+describe("Session - Context Injection", () => {
+  it("prepends context to first prompt only", async () => {
+    const agent = mockAgentInstance();
+    const session = createTestSession(agent);
+    session.name = "skip-autoname";
+    session.setContext("Previous conversation context here");
+
+    await session.enqueuePrompt("fix the bug");
+    await vi.waitFor(() => expect(agent.prompt).toHaveBeenCalledTimes(1));
+
+    const promptText = agent.prompt.mock.calls[0][0];
+    expect(promptText).toContain("[CONVERSATION HISTORY");
+    expect(promptText).toContain("Previous conversation context here");
+    expect(promptText).toContain("[END CONVERSATION HISTORY]");
+    expect(promptText).toContain("fix the bug");
+  });
+
+  it("does not inject context on second prompt", async () => {
+    const agent = mockAgentInstance();
+    const session = createTestSession(agent);
+    session.setContext("context");
+    session.name = "skip-autoname";
+
+    await session.enqueuePrompt("first");
+    await vi.waitFor(() => expect(agent.prompt).toHaveBeenCalledTimes(1));
+
+    await session.enqueuePrompt("second");
+    await vi.waitFor(() => expect(agent.prompt).toHaveBeenCalledTimes(2));
+
+    const secondPrompt = agent.prompt.mock.calls[1][0];
+    expect(secondPrompt).not.toContain("[CONVERSATION HISTORY");
+    expect(secondPrompt).toBe("second");
+  });
+
+  it("works without context set (no injection)", async () => {
+    const agent = mockAgentInstance();
+    const session = createTestSession(agent);
+    session.name = "skip-autoname";
+
+    await session.enqueuePrompt("hello");
+    await vi.waitFor(() => expect(agent.prompt).toHaveBeenCalledTimes(1));
+    expect(agent.prompt.mock.calls[0][0]).toBe("hello");
+  });
+});

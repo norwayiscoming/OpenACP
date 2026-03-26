@@ -41,7 +41,7 @@ export async function startServer() {
   const configExists = await configManager.exists()
 
   if (!configExists) {
-    const { runSetup } = await import('./core/setup.js')
+    const { runSetup } = await import('./core/setup/index.js')
     const shouldStart = await runSetup(configManager)
     if (!shouldStart) process.exit(0)
   }
@@ -55,7 +55,7 @@ export async function startServer() {
   // Show banner in foreground TTY mode (not daemon, not piped)
   const isForegroundTTY = !!(process.stdout.isTTY && !process.env.NO_COLOR && config.runMode !== 'daemon')
   if (isForegroundTTY) {
-    const { printStartBanner } = await import('./core/setup.js')
+    const { printStartBanner } = await import('./core/setup/index.js')
     await printStartBanner()
   }
 

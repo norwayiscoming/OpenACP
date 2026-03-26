@@ -46,6 +46,17 @@ fs.chmodSync(cliPath, 0o755)
 // 5. Generate package.json
 const rootPkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf-8'))
 
+// Exclude force-bundled packages from published dependencies.
+// These are bundled via tsup's `noExternal` because they can't be
+// installed via npm (e.g. msedge-tts enforces pnpm-only).
+const bundledDeps = new Set(['msedge-tts'])
+const publishDeps: Record<string, string> = {}
+for (const [dep, version] of Object.entries(rootPkg.dependencies as Record<string, string>)) {
+  if (!bundledDeps.has(dep)) {
+    publishDeps[dep] = version
+  }
+}
+
 const publishPkg = {
   name: '@openacp/cli',
   version: rootPkg.version,
@@ -62,7 +73,7 @@ const publishPkg = {
   },
   files: ['dist/', 'README.md'],
   engines: { node: '>=20' },
-  dependencies: rootPkg.dependencies,
+  dependencies: publishDeps,
   repository: {
     type: 'git',
     url: 'https://github.com/Open-ACP/OpenACP',
@@ -86,6 +97,47 @@ fs.copyFileSync(
   path.join(root, 'README.md'),
   path.join(root, 'dist-publish/README.md')
 )
+
+// 6. Verify: every external import in the bundle must be a Node builtin or a published dependency
+import { builtinModules } from 'node:module'
+
+const builtins = new Set([
+  ...builtinModules,
+  ...builtinModules.map(m => `node:${m}`),
+])
+
+const importPattern = /(?:from\s+["']|import\s*\(\s*["'])([^./"'][^"']*)["']/g
+const missingDeps: Map<string, string[]> = new Map()
+
+const jsFiles = fs.readdirSync(distDir).filter(f => f.endsWith('.js'))
+for (const file of jsFiles) {
+  const content = fs.readFileSync(path.join(distDir, file), 'utf-8')
+  for (const match of content.matchAll(importPattern)) {
+    const specifier = match[1]
+    // Resolve package name (handle scoped packages like @foo/bar)
+    const pkgName = specifier.startsWith('@')
+      ? specifier.split('/').slice(0, 2).join('/')
+      : specifier.split('/')[0]
+
+    if (builtins.has(pkgName)) continue
+    if (pkgName in publishDeps) continue
+
+    if (!missingDeps.has(pkgName)) missingDeps.set(pkgName, [])
+    missingDeps.get(pkgName)!.push(file)
+  }
+}
+
+if (missingDeps.size > 0) {
+  console.error('\n❌ Build verification failed!')
+  console.error('These packages are imported in the bundle but not in published dependencies:\n')
+  for (const [dep, files] of missingDeps) {
+    console.error(`  ${dep}  (in ${[...new Set(files)].join(', ')})`)
+  }
+  console.error('\nFix: add them to `dependencies` in package.json, or to `noExternal` in tsup.config.ts')
+  process.exit(1)
+}
+
+console.log('✅ All external imports are covered by published dependencies')
 
 console.log(`\nBuild complete! Package: @openacp/cli@${rootPkg.version}`)
 console.log('To publish: cd dist-publish && npm publish --access=public')

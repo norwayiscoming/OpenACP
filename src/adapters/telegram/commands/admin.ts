@@ -5,7 +5,10 @@ import { escapeHtml } from "../formatting.js";
 import { createChildLogger } from "../../../core/log.js";
 const log = createChildLogger({ module: "telegram-cmd-admin" });
 
-export function buildDangerousModeKeyboard(sessionId: string, enabled: boolean): InlineKeyboard {
+export function buildDangerousModeKeyboard(
+  sessionId: string,
+  enabled: boolean,
+): InlineKeyboard {
   return new InlineKeyboard().text(
     enabled ? "🔐 Disable Dangerous Mode" : "☠️ Enable Dangerous Mode",
     `d:${sessionId}`,
@@ -20,72 +23,129 @@ export function setupDangerousModeCallbacks(bot: Bot, core: OpenACPCore): void {
     // Session live in memory — toggle directly
     if (session) {
       session.dangerousMode = !session.dangerousMode;
-      log.info({ sessionId, dangerousMode: session.dangerousMode }, "Dangerous mode toggled via button");
-      core.sessionManager.patchRecord(sessionId, { dangerousMode: session.dangerousMode }).catch(() => {});
+      log.info(
+        { sessionId, dangerousMode: session.dangerousMode },
+        "Dangerous mode toggled via button",
+      );
+      core.sessionManager
+        .patchRecord(sessionId, { dangerousMode: session.dangerousMode })
+        .catch(() => {});
 
       const toastText = session.dangerousMode
         ? "☠️ Dangerous mode enabled — permissions auto-approved"
         : "🔐 Dangerous mode disabled — permissions shown normally";
-      try { await ctx.answerCallbackQuery({ text: toastText }); } catch { /* expired */ }
+      try {
+        await ctx.answerCallbackQuery({ text: toastText });
+      } catch {
+        /* expired */
+      }
 
       try {
         await ctx.editMessageReplyMarkup({
-          reply_markup: buildSessionControlKeyboard(sessionId, session.dangerousMode, session.voiceMode === "on"),
+          reply_markup: buildSessionControlKeyboard(
+            sessionId,
+            session.dangerousMode,
+            session.voiceMode === "on",
+          ),
         });
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
       return;
     }
 
     // Session not in memory (e.g. after restart) — toggle directly in store
     const record = core.sessionManager.getSessionRecord(sessionId);
     if (!record || record.status === "cancelled" || record.status === "error") {
-      try { await ctx.answerCallbackQuery({ text: "⚠️ Session not found or already ended." }); } catch { /* expired */ }
+      try {
+        await ctx.answerCallbackQuery({
+          text: "⚠️ Session not found or already ended.",
+        });
+      } catch {
+        /* expired */
+      }
       return;
     }
 
     const newDangerousMode = !(record.dangerousMode ?? false);
-    core.sessionManager.patchRecord(sessionId, { dangerousMode: newDangerousMode }).catch(() => {});
-    log.info({ sessionId, dangerousMode: newDangerousMode }, "Dangerous mode toggled via button (store-only, session not in memory)");
+    core.sessionManager
+      .patchRecord(sessionId, { dangerousMode: newDangerousMode })
+      .catch(() => {});
+    log.info(
+      { sessionId, dangerousMode: newDangerousMode },
+      "Dangerous mode toggled via button (store-only, session not in memory)",
+    );
 
     const toastText = newDangerousMode
       ? "☠️ Dangerous mode enabled — permissions auto-approved"
       : "🔐 Dangerous mode disabled — permissions shown normally";
-    try { await ctx.answerCallbackQuery({ text: toastText }); } catch { /* expired */ }
+    try {
+      await ctx.answerCallbackQuery({ text: toastText });
+    } catch {
+      /* expired */
+    }
 
     try {
       await ctx.editMessageReplyMarkup({
-        reply_markup: buildSessionControlKeyboard(sessionId, newDangerousMode, false),
+        reply_markup: buildSessionControlKeyboard(
+          sessionId,
+          newDangerousMode,
+          false,
+        ),
       });
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
   });
 }
 
-export async function handleEnableDangerous(ctx: Context, core: OpenACPCore): Promise<void> {
+export async function handleEnableDangerous(
+  ctx: Context,
+  core: OpenACPCore,
+): Promise<void> {
   const threadId = ctx.message?.message_thread_id;
   if (!threadId) {
-    await ctx.reply("⚠️ This command only works inside a session topic.", { parse_mode: "HTML" });
+    await ctx.reply("⚠️ This command only works inside a session topic.", {
+      parse_mode: "HTML",
+    });
     return;
   }
-  const session = core.sessionManager.getSessionByThread("telegram", String(threadId));
+  const session = core.sessionManager.getSessionByThread(
+    "telegram",
+    String(threadId),
+  );
   if (session) {
     if (session.dangerousMode) {
-      await ctx.reply("☠️ Dangerous mode is already enabled.", { parse_mode: "HTML" });
+      await ctx.reply("☠️ Dangerous mode is already enabled.", {
+        parse_mode: "HTML",
+      });
       return;
     }
     session.dangerousMode = true;
-    core.sessionManager.patchRecord(session.id, { dangerousMode: true }).catch(() => {});
+    core.sessionManager
+      .patchRecord(session.id, { dangerousMode: true })
+      .catch(() => {});
   } else {
     // Session not in memory (e.g. after restart) — update store directly
-    const record = core.sessionManager.getRecordByThread("telegram", String(threadId));
+    const record = core.sessionManager.getRecordByThread(
+      "telegram",
+      String(threadId),
+    );
     if (!record || record.status === "cancelled" || record.status === "error") {
-      await ctx.reply("⚠️ No active session in this topic.", { parse_mode: "HTML" });
+      await ctx.reply("⚠️ No active session in this topic.", {
+        parse_mode: "HTML",
+      });
       return;
     }
     if (record.dangerousMode) {
-      await ctx.reply("☠️ Dangerous mode is already enabled.", { parse_mode: "HTML" });
+      await ctx.reply("☠️ Dangerous mode is already enabled.", {
+        parse_mode: "HTML",
+      });
       return;
     }
-    core.sessionManager.patchRecord(record.sessionId, { dangerousMode: true }).catch(() => {});
+    core.sessionManager
+      .patchRecord(record.sessionId, { dangerousMode: true })
+      .catch(() => {});
   }
   await ctx.reply(
     `⚠️ <b>Dangerous mode enabled</b>\n\nAll permission requests will be auto-approved. Claude can run arbitrary commands without asking.\n\nUse /disable_dangerous to restore normal behaviour.`,
@@ -93,44 +153,75 @@ export async function handleEnableDangerous(ctx: Context, core: OpenACPCore): Pr
   );
 }
 
-export async function handleDisableDangerous(ctx: Context, core: OpenACPCore): Promise<void> {
+export async function handleDisableDangerous(
+  ctx: Context,
+  core: OpenACPCore,
+): Promise<void> {
   const threadId = ctx.message?.message_thread_id;
   if (!threadId) {
-    await ctx.reply("⚠️ This command only works inside a session topic.", { parse_mode: "HTML" });
+    await ctx.reply("⚠️ This command only works inside a session topic.", {
+      parse_mode: "HTML",
+    });
     return;
   }
-  const session = core.sessionManager.getSessionByThread("telegram", String(threadId));
+  const session = core.sessionManager.getSessionByThread(
+    "telegram",
+    String(threadId),
+  );
   if (session) {
     if (!session.dangerousMode) {
-      await ctx.reply("🔐 Dangerous mode is already disabled.", { parse_mode: "HTML" });
+      await ctx.reply("🔐 Dangerous mode is already disabled.", {
+        parse_mode: "HTML",
+      });
       return;
     }
     session.dangerousMode = false;
-    core.sessionManager.patchRecord(session.id, { dangerousMode: false }).catch(() => {});
+    core.sessionManager
+      .patchRecord(session.id, { dangerousMode: false })
+      .catch(() => {});
   } else {
     // Session not in memory (e.g. after restart) — update store directly
-    const record = core.sessionManager.getRecordByThread("telegram", String(threadId));
+    const record = core.sessionManager.getRecordByThread(
+      "telegram",
+      String(threadId),
+    );
     if (!record || record.status === "cancelled" || record.status === "error") {
-      await ctx.reply("⚠️ No active session in this topic.", { parse_mode: "HTML" });
+      await ctx.reply("⚠️ No active session in this topic.", {
+        parse_mode: "HTML",
+      });
       return;
     }
     if (!record.dangerousMode) {
-      await ctx.reply("🔐 Dangerous mode is already disabled.", { parse_mode: "HTML" });
+      await ctx.reply("🔐 Dangerous mode is already disabled.", {
+        parse_mode: "HTML",
+      });
       return;
     }
-    core.sessionManager.patchRecord(record.sessionId, { dangerousMode: false }).catch(() => {});
+    core.sessionManager
+      .patchRecord(record.sessionId, { dangerousMode: false })
+      .catch(() => {});
   }
-  await ctx.reply("🔐 <b>Dangerous mode disabled</b>\n\nPermission requests will be shown normally.", { parse_mode: "HTML" });
+  await ctx.reply(
+    "🔐 <b>Dangerous mode disabled</b>\n\nPermission requests will be shown normally.",
+    { parse_mode: "HTML" },
+  );
 }
 
-export function buildTTSKeyboard(sessionId: string, enabled: boolean): InlineKeyboard {
+export function buildTTSKeyboard(
+  sessionId: string,
+  enabled: boolean,
+): InlineKeyboard {
   return new InlineKeyboard().text(
     enabled ? "🔊 Text to Speech" : "🔇 Text to Speech",
     `v:${sessionId}`,
   );
 }
 
-export function buildSessionControlKeyboard(sessionId: string, dangerousMode: boolean, voiceMode: boolean): InlineKeyboard {
+export function buildSessionControlKeyboard(
+  sessionId: string,
+  dangerousMode: boolean,
+  voiceMode: boolean,
+): InlineKeyboard {
   return new InlineKeyboard()
     .text(
       dangerousMode ? "🔐 Disable Dangerous Mode" : "☠️ Enable Dangerous Mode",
@@ -149,35 +240,55 @@ export function setupTTSCallbacks(bot: Bot, core: OpenACPCore): void {
     const session = core.sessionManager.getSession(sessionId);
 
     if (!session) {
-      try { await ctx.answerCallbackQuery({ text: "⚠️ Session not found or not active." }); } catch { }
+      try {
+        await ctx.answerCallbackQuery({
+          text: "⚠️ Session not found or not active.",
+        });
+      } catch {}
       return;
     }
 
     const newMode = session.voiceMode === "on" ? "off" : "on";
     session.setVoiceMode(newMode);
 
-    const toastText = newMode === "on"
-      ? "🔊 Text to Speech enabled"
-      : "🔇 Text to Speech disabled";
-    try { await ctx.answerCallbackQuery({ text: toastText }); } catch { }
+    const toastText =
+      newMode === "on"
+        ? "🔊 Text to Speech enabled"
+        : "🔇 Text to Speech disabled";
+    try {
+      await ctx.answerCallbackQuery({ text: toastText });
+    } catch {}
 
     try {
       await ctx.editMessageReplyMarkup({
-        reply_markup: buildSessionControlKeyboard(sessionId, session.dangerousMode, newMode === "on"),
+        reply_markup: buildSessionControlKeyboard(
+          sessionId,
+          session.dangerousMode,
+          newMode === "on",
+        ),
       });
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
   });
 }
 
-export async function handleTTS(ctx: Context, core: OpenACPCore): Promise<void> {
+export async function handleTTS(
+  ctx: Context,
+  core: OpenACPCore,
+): Promise<void> {
   const threadId = ctx.message?.message_thread_id;
   if (!threadId) {
-    await ctx.reply("⚠️ This command only works inside a session topic.", { parse_mode: "HTML" });
+    await ctx.reply("⚠️ This command only works inside a session topic.", {
+      parse_mode: "HTML",
+    });
     return;
   }
   const session = await core.getOrResumeSession("telegram", String(threadId));
   if (!session) {
-    await ctx.reply("⚠️ No active session in this topic.", { parse_mode: "HTML" });
+    await ctx.reply("⚠️ No active session in this topic.", {
+      parse_mode: "HTML",
+    });
     return;
   }
 
@@ -186,34 +297,114 @@ export async function handleTTS(ctx: Context, core: OpenACPCore): Promise<void> 
 
   if (arg === "on") {
     session.setVoiceMode("on");
-    await ctx.reply("🔊 Text to Speech enabled for this session.", { parse_mode: "HTML" });
+    await ctx.reply("🔊 Text to Speech enabled for this session.", {
+      parse_mode: "HTML",
+    });
   } else if (arg === "off") {
     session.setVoiceMode("off");
     await ctx.reply("🔇 Text to Speech disabled.", { parse_mode: "HTML" });
   } else {
     session.setVoiceMode("next");
-    await ctx.reply("🔊 Text to Speech enabled for the next message.", { parse_mode: "HTML" });
+    await ctx.reply("🔊 Text to Speech enabled for the next message.", {
+      parse_mode: "HTML",
+    });
   }
 }
 
-export async function handleUpdate(ctx: Context, core: OpenACPCore): Promise<void> {
+// ─── Verbosity ─────────────────────────────────────────────────────────────
+
+const VERBOSITY_LABELS: Record<string, string> = {
+  low: "🔇 Low",
+  medium: "📊 Medium",
+  high: "📖 High",
+};
+
+export async function handleVerbosity(
+  ctx: Context,
+  core: OpenACPCore,
+): Promise<void> {
+  const args = ctx.message?.text?.split(/\s+/).slice(1) ?? [];
+  const arg = args[0]?.toLowerCase();
+
+  if (arg === "low" || arg === "medium" || arg === "high") {
+    await core.configManager.save(
+      { channels: { telegram: { displayVerbosity: arg } } },
+      "channels.telegram.displayVerbosity",
+    );
+    await ctx.reply(
+      `${VERBOSITY_LABELS[arg]} Display verbosity set to <b>${arg}</b>.`,
+      { parse_mode: "HTML" },
+    );
+  } else {
+    const current =
+      (
+        core.configManager.get().channels?.telegram as
+          | Record<string, unknown>
+          | undefined
+      )?.displayVerbosity ?? "medium";
+    await ctx.reply(
+      `📊 Current verbosity: <b>${current}</b>\n\nUsage: <code>/verbosity low|medium|high</code>\n\n• <b>low</b> — minimal output, title only\n• <b>medium</b> — balanced (default)\n• <b>high</b> — full detail with content`,
+      { parse_mode: "HTML" },
+    );
+  }
+}
+
+export function setupVerbosityCallbacks(bot: Bot, core: OpenACPCore): void {
+  bot.callbackQuery(/^vb:/, async (ctx) => {
+    const level = ctx.callbackQuery.data.slice(3);
+    if (level !== "low" && level !== "medium" && level !== "high") return;
+
+    await core.configManager.save(
+      { channels: { telegram: { displayVerbosity: level } } },
+      "channels.telegram.displayVerbosity",
+    );
+
+    try {
+      await ctx.answerCallbackQuery({
+        text: `${VERBOSITY_LABELS[level]} Verbosity: ${level}`,
+      });
+    } catch {}
+  });
+}
+
+export async function handleUpdate(
+  ctx: Context,
+  core: OpenACPCore,
+): Promise<void> {
   if (!core.requestRestart) {
-    await ctx.reply("⚠️ Update is not available (no restart handler registered).", { parse_mode: "HTML" });
+    await ctx.reply(
+      "⚠️ Update is not available (no restart handler registered).",
+      { parse_mode: "HTML" },
+    );
     return;
   }
 
-  const { getCurrentVersion, getLatestVersion, compareVersions, runUpdate } = await import("../../../cli/version.js");
+  const { getCurrentVersion, getLatestVersion, compareVersions, runUpdate } =
+    await import("../../../cli/version.js");
   const current = getCurrentVersion();
-  const statusMsg = await ctx.reply(`🔍 Checking for updates... (current: v${escapeHtml(current)})`, { parse_mode: "HTML" });
+  const statusMsg = await ctx.reply(
+    `🔍 Checking for updates... (current: v${escapeHtml(current)})`,
+    { parse_mode: "HTML" },
+  );
 
   const latest = await getLatestVersion();
   if (!latest) {
-    await ctx.api.editMessageText(ctx.chat!.id, statusMsg.message_id, "❌ Could not check for updates.", { parse_mode: "HTML" });
+    await ctx.api.editMessageText(
+      ctx.chat!.id,
+      statusMsg.message_id,
+      "❌ Could not check for updates.",
+      { parse_mode: "HTML" },
+    );
     return;
   }
 
   if (compareVersions(current, latest) >= 0) {
-    await ctx.api.editMessageText(ctx.chat!.id, statusMsg.message_id, `✅ Already up to date (v${escapeHtml(current)}).`, { parse_mode: "HTML" });
+    await ctx.api.editMessageText(
+      ctx.chat!.id,
+      statusMsg.message_id,
+      `✅ Already up to date (v${escapeHtml(current)}).`,
+      { parse_mode: "HTML" },
+    );
     return;
   }
 
@@ -226,7 +417,12 @@ export async function handleUpdate(ctx: Context, core: OpenACPCore): Promise<voi
 
   const ok = await runUpdate();
   if (!ok) {
-    await ctx.api.editMessageText(ctx.chat!.id, statusMsg.message_id, "❌ Update failed. Try manually: <code>npm install -g @openacp/cli@latest</code>", { parse_mode: "HTML" });
+    await ctx.api.editMessageText(
+      ctx.chat!.id,
+      statusMsg.message_id,
+      "❌ Update failed. Try manually: <code>npm install -g @openacp/cli@latest</code>",
+      { parse_mode: "HTML" },
+    );
     return;
   }
 
@@ -241,12 +437,21 @@ export async function handleUpdate(ctx: Context, core: OpenACPCore): Promise<voi
   await core.requestRestart();
 }
 
-export async function handleRestart(ctx: Context, core: OpenACPCore): Promise<void> {
+export async function handleRestart(
+  ctx: Context,
+  core: OpenACPCore,
+): Promise<void> {
   if (!core.requestRestart) {
-    await ctx.reply("⚠️ Restart is not available (no restart handler registered).", { parse_mode: "HTML" });
+    await ctx.reply(
+      "⚠️ Restart is not available (no restart handler registered).",
+      { parse_mode: "HTML" },
+    );
     return;
   }
-  await ctx.reply("🔄 <b>Restarting OpenACP...</b>\nRebuilding and restarting. Be back shortly.", { parse_mode: "HTML" });
+  await ctx.reply(
+    "🔄 <b>Restarting OpenACP...</b>\nRebuilding and restarting. Be back shortly.",
+    { parse_mode: "HTML" },
+  );
   // Give Telegram a moment to deliver the message before shutting down
   await new Promise((r) => setTimeout(r, 500));
   await core.requestRestart();

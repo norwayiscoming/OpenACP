@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { UsageBudget } from "../usage-budget.js";
 import type { UsageStore } from "../usage-store.js";
-import type { UsageConfig } from "../../config/config.js";
+import type { UsageConfig } from "../../../core/config/config.js";
 
 function createMockStore(monthlyTotal = 0): UsageStore {
   return {

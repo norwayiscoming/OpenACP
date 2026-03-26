@@ -43,8 +43,8 @@ export {
   type SideEffectDeps,
 } from "./sessions/session-factory.js";
 export { OpenACPCore } from "./core.js";
-export { UsageStore } from "./sessions/usage-store.js";
-export { UsageBudget } from "./sessions/usage-budget.js";
+export { UsageStore } from "../plugins/usage/usage-store.js";
+export { UsageBudget } from "../plugins/usage/usage-budget.js";
 export {
   AdapterFactory,
   installPlugin,

@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
-import type { UsageRecord, UsageSummary } from "../types.js";
-import { createChildLogger } from "../utils/log.js";
+import type { UsageRecord, UsageSummary } from "../../core/types.js";
+import { createChildLogger } from "../../core/utils/log.js";
 
 const log = createChildLogger({ module: "usage-store" });
 

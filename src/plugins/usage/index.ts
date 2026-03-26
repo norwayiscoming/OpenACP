@@ -1,6 +1,6 @@
 import type { OpenACPPlugin } from '../../core/plugin/types.js'
-import { UsageStore } from '../../core/sessions/usage-store.js'
-import { UsageBudget } from '../../core/sessions/usage-budget.js'
+import { UsageStore } from './usage-store.js'
+import { UsageBudget } from './usage-budget.js'
 import path from 'node:path'
 import os from 'node:os'
 

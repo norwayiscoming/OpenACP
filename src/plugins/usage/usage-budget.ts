@@ -1,4 +1,4 @@
-import type { UsageConfig } from "../config/config.js";
+import type { UsageConfig } from "../../core/config/config.js";
 import type { UsageStore } from "./usage-store.js";
 
 export class UsageBudget {

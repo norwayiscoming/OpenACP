@@ -2,8 +2,8 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import { UsageStore } from "../core/sessions/usage-store.js";
-import { UsageBudget } from "../core/sessions/usage-budget.js";
+import { UsageStore } from "../plugins/usage/usage-store.js";
+import { UsageBudget } from "../plugins/usage/usage-budget.js";
 import type { UsageConfig } from "../core/config/config.js";
 import type { UsageRecord } from "../core/types.js";
 

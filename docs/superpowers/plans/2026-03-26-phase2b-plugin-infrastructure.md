@@ -46,6 +46,7 @@ src/core/core.ts              — Wire LifecycleManager, auto-register services
 src/core/sessions/session-bridge.ts — Insert middleware hooks (agent, message, permission)
 src/core/agents/agent-instance.ts   — Insert middleware hooks (fs, terminal)
 src/core/sessions/session-factory.ts — Insert middleware hook (session:beforeCreate)
+src/core/sessions/session-manager.ts — Insert middleware hook (session:afterDestroy)
 src/core/sessions/session.ts  — Insert middleware hooks (mode, model, config, cancel)
 src/main.ts                   — Use LifecycleManager for startup
 ```
@@ -542,6 +543,22 @@ describe('PluginLoader', () => {
     expect(names.indexOf('a')).toBeLessThan(names.indexOf('b'))
     expect(names.indexOf('b')).toBeLessThan(names.indexOf('c'))
   })
+
+  // Checksum verification
+  it('computes and stores checksum on register', () => {
+    const loader = new PluginLoader()
+    const checksum = loader.computeChecksum('/path/to/plugin/index.js')
+    expect(typeof checksum).toBe('string')
+    expect(checksum.length).toBe(64)  // SHA-256 hex
+  })
+
+  it('verifies checksum matches on load', () => {
+    const loader = new PluginLoader()
+    // Valid checksum → load succeeds
+    expect(loader.verifyChecksum('plugin', 'abc123', 'abc123')).toBe(true)
+    // Mismatch → load fails
+    expect(loader.verifyChecksum('plugin', 'abc123', 'xyz789')).toBe(false)
+  })
 })
 ```
 
@@ -622,6 +639,46 @@ describe('PluginContext', () => {
   it('throws when accessing sessions without kernel:access', () => {
     const ctx = makeCtx([])
     expect(() => ctx.sessions).toThrow(/permission/i)
+  })
+
+  it('allows emit with events:emit permission', () => {
+    const ctx = makeCtx(['events:emit'])
+    expect(() => ctx.emit('test-plugin:custom', {})).not.toThrow()
+  })
+
+  it('throws on emit without events:emit permission', () => {
+    const ctx = makeCtx([])
+    expect(() => ctx.emit('test-plugin:custom', {})).toThrow(/permission/i)
+  })
+
+  it('throws on getService without services:use permission', () => {
+    const ctx = makeCtx([])
+    expect(() => ctx.getService('test')).toThrow(/permission/i)
+  })
+
+  it('throws on registerMiddleware without middleware:register permission', () => {
+    const ctx = makeCtx([])
+    expect(() => ctx.registerMiddleware('message:incoming', { handler: async (p, n) => n() })).toThrow(/permission/i)
+  })
+
+  it('throws on registerCommand without commands:register permission', () => {
+    const ctx = makeCtx([])
+    expect(() => ctx.registerCommand({ name: 'test', description: 'test', handler: async () => {} })).toThrow(/permission/i)
+  })
+
+  it('throws on storage.set without storage:write permission', async () => {
+    const ctx = makeCtx(['storage:read'])
+    await expect(ctx.storage.set('key', 'val')).rejects.toThrow(/permission/i)
+  })
+
+  it('allows storage.get with storage:read permission', async () => {
+    const ctx = makeCtx(['storage:read'])
+    await expect(ctx.storage.get('key')).resolves.not.toThrow()
+  })
+
+  it('tests sendMessage requires services:use permission', async () => {
+    const ctx = makeCtx([])
+    await expect(ctx.sendMessage('session-1', { type: 'text', text: 'hi' })).rejects.toThrow(/permission/i)
   })
 })
 ```
@@ -781,79 +838,144 @@ git commit -m "feat(core): wire LifecycleManager and auto-register built-in serv
 
 ## Task 11: Wire middleware hooks into pipeline
 
-This is split into sub-tasks matching spec Plan 1 tasks 10a-10g. Each sub-task wires hooks into a specific part of the pipeline.
+Split into sub-tasks. Each specifies EXACT file + function to modify.
 
 ### Task 11a: Message hooks
 
-**Files:**
-- Modify: `src/core/core.ts` — `handleMessage()` wraps with `message:incoming`
-- Modify: `src/core/sessions/session-bridge.ts` — `sendMessage` wraps with `message:outgoing`
+**Files + functions:**
+- `src/core/core.ts` → `handleMessage()` method (~line 315): Wrap the function body with `middlewareChain.execute('message:incoming', incomingMessage, async (msg) => { /* existing handleMessage logic */ })`
+- `src/core/sessions/session-bridge.ts` → `wireSessionToAdapter()` method, inside the `sessionEventHandler`: Before calling `this.adapter.sendMessage()`, wrap with `middlewareChain.execute('message:outgoing', { sessionId, message: outgoingMsg }, async (payload) => { this.adapter.sendMessage(payload.sessionId, payload.message) })`
+
+- [ ] **Write tests** verifying both hooks fire with correct payloads
+- [ ] **Implement**
+- [ ] **Commit:** `feat(plugin): wire message:incoming and message:outgoing hooks`
 
 ### Task 11b: Agent hooks
 
-**Files:**
-- Modify: `src/core/sessions/session-bridge.ts` — `agent:beforeEvent`, `agent:afterEvent`
-- Modify: `src/core/sessions/session.ts` — `agent:beforePrompt`, `turn:start`, `turn:end`
+**Files + functions:**
+- `src/core/sessions/session-bridge.ts` → `wireSessionToAdapter()`, the `sessionEventHandler` callback: Before processing the event, wrap with `middlewareChain.execute('agent:beforeEvent', { sessionId, event }, ...)`. After processing, call `middlewareChain.execute('agent:afterEvent', { sessionId, event, outgoingMessage }, ...)` (read-only, no await needed).
+- `src/core/sessions/session.ts` → `enqueuePrompt()` method: Before calling `this.agentInstance.prompt()`, wrap with `middlewareChain.execute('agent:beforePrompt', { sessionId, text, attachments }, ...)`. Emit `turn:start` before prompt, `turn:end` after PromptResponse received.
+
+- [ ] **Write tests**
+- [ ] **Implement**
+- [ ] **Commit:** `feat(plugin): wire agent:beforePrompt, agent:beforeEvent, agent:afterEvent, turn hooks`
 
 ### Task 11c: FS hooks
 
-**Files:**
-- Modify: `src/core/agents/agent-instance.ts` — `fs:beforeRead`, `fs:beforeWrite`
+**Files + functions:**
+- `src/core/agents/agent-instance.ts` → `createClient()` method, `readTextFile` callback (~line 476): Wrap with `middlewareChain.execute('fs:beforeRead', { sessionId, path, line, limit }, ...)`
+- Same file, `writeTextFile` callback (~line 492): Wrap with `middlewareChain.execute('fs:beforeWrite', { sessionId, path, content }, ...)`
+
+- [ ] **Write tests**
+- [ ] **Implement**
+- [ ] **Commit:** `feat(plugin): wire fs:beforeRead and fs:beforeWrite hooks`
 
 ### Task 11d: Terminal hooks
 
-**Files:**
-- Modify: `src/core/agents/agent-instance.ts` — `terminal:beforeCreate`, `terminal:afterExit`
+**Files + functions:**
+- `src/core/agents/agent-instance.ts` → `createClient()` method, `createTerminal` callback (~line 500): Wrap with `middlewareChain.execute('terminal:beforeCreate', { sessionId, command, args, env, cwd }, ...)`
+- Same file, after terminal process exits (in `waitForTerminalExit` or process close handler): Call `middlewareChain.execute('terminal:afterExit', { sessionId, terminalId, command, exitCode, durationMs }, ...)` (read-only).
+
+- [ ] **Write tests**
+- [ ] **Implement**
+- [ ] **Commit:** `feat(plugin): wire terminal:beforeCreate and terminal:afterExit hooks`
 
 ### Task 11e: Permission hooks
 
-**Files:**
-- Modify: `src/core/sessions/session-bridge.ts` — `permission:beforeRequest`, `permission:afterResolve`
+**Files + functions:**
+- `src/core/sessions/session-bridge.ts` → `wirePermissions()` method, the `onPermissionRequest` callback (~line 191): Before calling `permissionGate.setPending()`, wrap with `middlewareChain.execute('permission:beforeRequest', { sessionId, request, autoResolve: undefined }, ...)`. If `payload.autoResolve` is set after middleware, skip UI and return that optionId.
+- After permission is resolved (user clicked allow/deny), call `middlewareChain.execute('permission:afterResolve', { sessionId, requestId, decision, userId, durationMs }, ...)` (read-only).
+
+- [ ] **Write tests**
+- [ ] **Implement**
+- [ ] **Commit:** `feat(plugin): wire permission:beforeRequest and permission:afterResolve hooks`
 
 ### Task 11f: Session hooks
 
-**Files:**
-- Modify: `src/core/sessions/session-factory.ts` — `session:beforeCreate`
-- Modify: `src/core/sessions/session-manager.ts` — `session:afterDestroy`
+**Files + functions:**
+- `src/core/sessions/session-factory.ts` → `create()` method (~line 55): Before creating Session, wrap with `middlewareChain.execute('session:beforeCreate', { agentName, workingDir, userId, channelId, threadId }, ...)`. If null → reject session creation.
+- `src/core/sessions/session-manager.ts` → wherever session is removed/destroyed (check for `removeSession` or equivalent method): Call `middlewareChain.execute('session:afterDestroy', { sessionId, reason, durationMs, promptCount }, ...)` (read-only).
+
+- [ ] **Write tests**
+- [ ] **Implement**
+- [ ] **Commit:** `feat(plugin): wire session:beforeCreate and session:afterDestroy hooks`
 
 ### Task 11g: Control hooks
 
-**Files:**
-- Modify: `src/core/sessions/session.ts` — `mode:beforeChange`, `model:beforeChange`, `config:beforeChange`, `agent:beforeCancel`
+**Files + functions:**
+- `src/core/sessions/session.ts` → `setMode()` method (if exists, or create wrapper): Wrap with `middlewareChain.execute('mode:beforeChange', { sessionId, fromMode, toMode }, ...)`
+- Same file → `setModel()` (or wrapper): Wrap with `middlewareChain.execute('model:beforeChange', { sessionId, fromModel, toModel }, ...)`
+- Same file → `setConfigOption()` (or wrapper): Wrap with `middlewareChain.execute('config:beforeChange', { sessionId, configId, oldValue, newValue }, ...)`
+- Same file → `cancel()` method: Wrap with `middlewareChain.execute('agent:beforeCancel', { sessionId, reason }, ...)`
 
-For EACH sub-task:
-- [ ] **Write test** verifying the hook fires with correct payload
-- [ ] **Implement** by wrapping existing logic with `middlewareChain.execute(hook, payload, coreHandler)`
-- [ ] **Run tests — PASS**
-- [ ] **Commit**
+- [ ] **Write tests**
+- [ ] **Implement**
+- [ ] **Commit:** `feat(plugin): wire mode, model, config, cancel control hooks`
+
+---
+
+## Task 12: Config Migration
+
+Add auto-migration from old config format (flat) to new plugin config format.
+
+**Files:**
+- Create: `src/core/config/plugin-config-migration.ts`
+- Test: `src/core/config/__tests__/plugin-config-migration.test.ts`
+
+- [ ] **Step 1: Write tests**
+
+```typescript
+describe('PluginConfigMigration', () => {
+  it('detects old config format (no plugins field)', () => { ... })
+  it('maps channels.telegram.* to plugins.builtin.@openacp/telegram.config.*', () => { ... })
+  it('maps security.* to plugins.builtin.@openacp/security.config.*', () => { ... })
+  it('maps speech.* to plugins.builtin.@openacp/speech.config.*', () => { ... })
+  it('maps tunnel.* to plugins.builtin.@openacp/tunnel.*', () => { ... })
+  it('maps usage.* to plugins.builtin.@openacp/usage.config.*', () => { ... })
+  it('maps api.* to plugins.builtin.@openacp/api-server.config.*', () => { ... })
+  it('preserves top-level fields (defaultAgent, workingDirectory, debug)', () => { ... })
+  it('is idempotent — already-migrated config unchanged', () => { ... })
+  it('creates backup of old config', () => { ... })
+  it('handles env var overrides after migration', () => { ... })
+})
+```
+
+- [ ] **Step 2: Implement** following spec Section 10 mapping table
+- [ ] **Step 3: Wire into ConfigManager — auto-migrate on load**
+- [ ] **Step 4: Build + test + commit**
 
 ```bash
-git commit -m "feat(plugin): wire message:incoming and message:outgoing hooks"
-# ... one commit per sub-task
+git commit -m "feat(config): add plugin config auto-migration from old format"
 ```
 
 ---
 
-## Task 12: CLI plugin commands
+## Task 13: CLI plugin commands
 
 **Files:**
-- Create: `src/cli/commands/plugin.ts`
+- Modify: `src/cli/commands/plugins.ts` — extend existing `cmdPlugins` to handle subcommands
 - Modify: `src/cli/commands/index.ts`
 
-Implement: `openacp plugin add`, `openacp plugin remove`, `openacp plugin list`, `openacp plugin enable`, `openacp plugin disable`.
+NOTE: `src/cli/commands/plugins.ts` already exists with `cmdPlugins` function (handles `openacp plugins` = list). Extend it to support:
+- `openacp plugin add <package>` — install community plugin (npm install + checksum + config)
+- `openacp plugin remove <package>` — uninstall
+- `openacp plugin list` — list all (built-in + community) with status
+- `openacp plugin enable <name>` — set enabled=true in config
+- `openacp plugin disable <name>` — set enabled=false in config
 
-- [ ] **Step 1: Write tests for plugin list command**
-- [ ] **Step 2: Implement all subcommands**
-- [ ] **Step 3: Build + test**
-- [ ] **Step 4: Commit**
+Keep backward compat: `openacp plugins` (plural, no subcommand) still works as alias for `openacp plugin list`.
+
+- [ ] **Step 1: Implement subcommands**
+- [ ] **Step 2: Build + test**
+- [ ] **Step 3: Commit**
 
 ```bash
-git commit -m "feat(cli): add plugin add/remove/list/enable/disable commands"
+git commit -m "feat(cli): extend plugin commands with add/remove/enable/disable"
 ```
 
 ---
 
-## Task 13: Integration test
+## Task 14: Integration test
 
 **Files:**
 - Create: `src/core/plugin/__tests__/integration.test.ts`
@@ -895,11 +1017,12 @@ git push
 | 3 | MiddlewareChain | 1 create | 9+ tests |
 | 4 | PluginStorage | 1 create | 6+ tests |
 | 5 | ErrorTracker | 1 create | 6+ tests |
-| 6 | PluginLoader | 1 create | 6+ tests |
-| 7 | PluginContext | 1 create | 7+ tests |
+| 6 | PluginLoader + checksum | 1 create | 8+ tests |
+| 7 | PluginContext (all 9 permissions) | 1 create | 16+ tests |
 | 8 | LifecycleManager | 1 create | 5+ tests |
 | 9 | EventBus expand | 1 modify | build verify |
 | 10 | Wire into core | 2 modify | build + existing |
-| 11a-g | Wire 19 hooks | 5 modify | 19+ tests |
-| 12 | CLI commands | 2 create/modify | 3+ tests |
-| 13 | Integration test | 1 create | 1 e2e test |
+| 11a-g | Wire 19 hooks (exact functions specified) | 6 modify | 19+ tests |
+| 12 | Config migration | 2 create | 11+ tests |
+| 13 | CLI plugin commands | 1 modify | 3+ tests |
+| 14 | Integration test | 1 create | 1 e2e test |

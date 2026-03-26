@@ -10,7 +10,7 @@ vi.mock('@clack/prompts', () => ({
   select: vi.fn(),
   confirm: vi.fn(),
   multiselect: vi.fn(),
-  autocompleteMultiselect: vi.fn(),
+  autocompleteMultiselect: vi.fn().mockResolvedValue([]),
   spinner: vi.fn(() => ({ start: vi.fn(), stop: vi.fn() })),
   intro: vi.fn(),
   outro: vi.fn(),
@@ -36,7 +36,7 @@ vi.mock('../core/autostart.js', () => ({
 }))
 
 // Mock AgentCatalog to avoid real registry/fs operations during setup
-vi.mock('../core/agent-catalog.js', () => {
+vi.mock('../core/agents/agent-catalog.js', () => {
   class MockAgentCatalog {
     load = vi.fn()
     refreshRegistryIfStale = vi.fn().mockResolvedValue(undefined)
@@ -54,7 +54,7 @@ vi.mock('../core/agent-catalog.js', () => {
 })
 
 // Mock AgentStore for the fallback path in setupAgents
-vi.mock('../core/agent-store.js', () => {
+vi.mock('../core/agents/agent-store.js', () => {
   class MockAgentStore {
     load = vi.fn()
     addAgent = vi.fn()

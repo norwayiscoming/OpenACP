@@ -120,8 +120,8 @@ export async function startServer() {
       core.registerAdapter('telegram', new TelegramAdapter(core, channelConfig as TelegramChannelConfig))
       log.info({ adapter: 'telegram' }, 'Adapter registered')
     } else if (channelName === 'slack') {
-      const { SlackAdapter } = await import('./adapters/slack/adapter.js')
-      const slackConfig = channelConfig as import('./adapters/slack/types.js').SlackChannelConfig
+      const { SlackAdapter } = await import('./plugins/slack/adapter.js')
+      const slackConfig = channelConfig as import('./plugins/slack/types.js').SlackChannelConfig
       core.registerAdapter('slack', new SlackAdapter(core, slackConfig))
       log.info({ adapter: 'slack' }, 'Adapter registered')
     } else if (channelName === 'discord') {

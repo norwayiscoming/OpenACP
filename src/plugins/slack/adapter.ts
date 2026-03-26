@@ -10,7 +10,7 @@ import type {
   Attachment,
 } from "../../core/types.js";
 import type { AdapterCapabilities } from "../../core/channel.js";
-import type { FileService } from "../../plugins/file-service/file-service.js";
+import type { FileService } from "../file-service/file-service.js";
 import { createChildLogger } from "../../core/utils/log.js";
 import { MessagingAdapter, type MessagingAdapterConfig } from "../../core/adapter-primitives/messaging-adapter.js";
 import type { DisplayVerbosity } from "../../core/adapter-primitives/format-types.js";

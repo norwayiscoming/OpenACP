@@ -1,6 +1,6 @@
 import type { OpenACPPlugin, InstallContext } from '../../core/plugin/types.js'
 import type { OpenACPCore } from '../../core/core.js'
-import type { SlackChannelConfig } from '../../adapters/slack/types.js'
+import type { SlackChannelConfig } from './types.js'
 
 function createSlackPlugin(): OpenACPPlugin {
   let adapter: { stop(): Promise<void> } | null = null
@@ -123,7 +123,7 @@ function createSlackPlugin(): OpenACPPlugin {
         return
       }
 
-      const { SlackAdapter } = await import('../../adapters/slack/adapter.js')
+      const { SlackAdapter } = await import('./adapter.js')
       // config is a Record<string, unknown> from pluginConfig; at runtime it
       // contains all SlackChannelConfig fields populated from the migrated config.
       adapter = new SlackAdapter(ctx.core as OpenACPCore, {

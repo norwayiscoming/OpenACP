@@ -14,6 +14,7 @@ function printApiHelp(): void {
   openacp api status                       Show active sessions
   openacp api session <id>                 Show session details
   openacp api new [agent] [workspace]      Create a new session
+                                           [--channel <id>]
   openacp api send <id> <prompt>           Send prompt to session
   openacp api cancel <id>                  Cancel a session
   openacp api dangerous <id> on|off        Toggle dangerous mode
@@ -75,16 +76,19 @@ dangerous mode, queue depth, and channel/thread IDs.
 
 \x1b[1mUsage:\x1b[0m
   openacp api new [agent] [workspace]
-  openacp api new [agent] --workspace <path>
+  openacp api new [agent] --workspace <path> [--channel <id>]
 
 \x1b[1mArguments:\x1b[0m
   [agent]         Agent name (uses default if omitted)
   [workspace]     Working directory for the session
 
+\x1b[1mOptions:\x1b[0m
+  --channel <id>  Target adapter (e.g. telegram, discord). Defaults to first registered adapter.
+
 \x1b[1mExamples:\x1b[0m
   openacp api new
   openacp api new claude /path/to/project
-  openacp api new gemini --workspace /path/to/project
+  openacp api new claude /path/to/project --channel discord
 `,
       'send': `
 \x1b[1mopenacp api send\x1b[0m — Send prompt to a session
@@ -253,9 +257,12 @@ Shows the version of the currently running daemon process.
       const agent = args[2]
       const workspaceIdx = args.indexOf('--workspace')
       const workspace = workspaceIdx !== -1 ? args[workspaceIdx + 1] : args[3]
+      const channelIdx = args.indexOf('--channel')
+      const channel = channelIdx !== -1 ? args[channelIdx + 1] : undefined
       const body: Record<string, string> = {}
       if (agent) body.agent = agent
       if (workspace) body.workspace = workspace
+      if (channel) body.channel = channel
 
       const res = await apiCall(port, '/api/sessions', {
         method: 'POST',

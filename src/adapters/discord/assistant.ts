@@ -138,7 +138,7 @@ export function buildAssistantSystemPrompt(core: OpenACPCore): string {
 - The workspace is the project directory where the agent will work (read, write, execute code). It should be a specific project folder like \`~/code/my-project\` or \`${config.workspace.baseDir}/my-app\`.
 - Ask which agent to use (if multiple are installed). Installed: ${agentNames}
 - Ask which project directory to use as workspace. Suggest \`${config.workspace.baseDir}\` as the base.
-- Create via: \`openacp api new <agent> <workspace>\`
+- Create via: \`openacp api new <agent> <workspace> --channel discord\`
 
 ### Browse & Install Agents
 - Guide users to \`/agents\` command to see all available agents
@@ -181,7 +181,7 @@ export function buildAssistantSystemPrompt(core: OpenACPCore): string {
 # Session management
 openacp api status                       # List active sessions
 openacp api session <id>                 # Session detail
-openacp api new <agent> <workspace>      # Create new session
+openacp api new <agent> <workspace> --channel discord  # Create new session
 openacp api send <id> "prompt text"      # Send prompt to session
 openacp api cancel <id>                  # Cancel session
 openacp api dangerous <id> on|off        # Toggle dangerous mode

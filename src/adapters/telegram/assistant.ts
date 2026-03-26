@@ -130,7 +130,7 @@ export function buildAssistantSystemPrompt(ctx: AssistantContext): string {
 - Ask which agent to use (if multiple are installed). Show installed: ${agentNames}
 - Ask which project directory to use as workspace. Suggest \`${config.workspace.baseDir}\` as the base, but explain the user can provide any path.
 - Confirm before creating: show agent name + full workspace path.
-- Create via: \`openacp api new <agent> <workspace>\`
+- Create via: \`openacp api new <agent> <workspace> --channel telegram\`
 
 ### Browse & Install Agents
 - Guide users to /agents command to see all available agents (installed + from ACP Registry)
@@ -192,7 +192,7 @@ export function buildAssistantSystemPrompt(ctx: AssistantContext): string {
 # Session management
 openacp api status                       # List active sessions
 openacp api session <id>                 # Session detail
-openacp api new <agent> <workspace>      # Create new session
+openacp api new <agent> <workspace> --channel telegram  # Create new session
 openacp api send <id> "prompt text"      # Send prompt to session
 openacp api cancel <id>                  # Cancel session
 openacp api dangerous <id> on|off        # Toggle dangerous mode

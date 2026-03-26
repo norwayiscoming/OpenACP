@@ -1,10 +1,18 @@
 import type { STTProvider, TTSProvider, STTOptions, STTResult, TTSOptions, TTSResult, SpeechServiceConfig } from './speech-types.js';
 
+export type ProviderFactory = (config: SpeechServiceConfig) => { stt: Map<string, STTProvider>; tts: Map<string, TTSProvider> };
+
 export class SpeechService {
   private sttProviders = new Map<string, STTProvider>();
   private ttsProviders = new Map<string, TTSProvider>();
+  private providerFactory?: ProviderFactory;
 
   constructor(private config: SpeechServiceConfig) {}
+
+  /** Set a factory function that can recreate providers from config (for hot-reload) */
+  setProviderFactory(factory: ProviderFactory): void {
+    this.providerFactory = factory;
+  }
 
   registerSTTProvider(name: string, provider: STTProvider): void {
     this.sttProviders.set(name, provider);
@@ -50,5 +58,15 @@ export class SpeechService {
 
   updateConfig(config: SpeechServiceConfig): void {
     this.config = config;
+  }
+
+  /** Re-create all providers from current config using the registered factory */
+  refreshProviders(newConfig: SpeechServiceConfig): void {
+    this.config = newConfig;
+    if (this.providerFactory) {
+      const { stt, tts } = this.providerFactory(newConfig);
+      this.sttProviders = stt;
+      this.ttsProviders = tts;
+    }
   }
 }

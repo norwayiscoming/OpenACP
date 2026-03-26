@@ -145,6 +145,19 @@ const speechPlugin: OpenACPPlugin = {
     }
     service.registerTTSProvider('edge-tts', new EdgeTTS(ttsVoice))
 
+    // Register provider factory for hot-reload (core calls refreshProviders on config change)
+    service.setProviderFactory((cfg) => {
+      const sttMap = new Map<string, InstanceType<typeof GroqSTT>>()
+      const ttsMap = new Map<string, InstanceType<typeof EdgeTTS>>()
+      const groqCfg = cfg.stt?.providers?.groq
+      if (groqCfg?.apiKey) {
+        sttMap.set('groq', new GroqSTT(groqCfg.apiKey, groqCfg.model))
+      }
+      const edgeVoice = cfg.tts?.providers?.['edge-tts']?.voice as string | undefined
+      ttsMap.set('edge-tts', new EdgeTTS(edgeVoice))
+      return { stt: sttMap, tts: ttsMap }
+    })
+
     ctx.registerService('speech', service)
     ctx.log.info('Speech service ready')
   },

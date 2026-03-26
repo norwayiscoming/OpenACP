@@ -130,26 +130,12 @@ export class OpenACPCore {
         if (configPath.startsWith("speech.")) {
           const speechSvc = this.speechService;
           if (speechSvc) {
-            const { GroqSTT, EdgeTTS } = await import("../plugins/speech/exports.js");
             const newConfig = this.configManager.get();
             const newSpeechConfig = newConfig.speech ?? {
               stt: { provider: null, providers: {} },
               tts: { provider: null, providers: {} },
             };
-            speechSvc.updateConfig(newSpeechConfig);
-            const groqCfg = newSpeechConfig.stt?.providers?.groq;
-            if (groqCfg?.apiKey) {
-              speechSvc.registerSTTProvider(
-                "groq",
-                new GroqSTT(groqCfg.apiKey, groqCfg.model),
-              );
-            }
-            // Re-register TTS providers on config change — always keep edge-tts available
-            {
-              const edgeConfig = newSpeechConfig.tts?.providers?.["edge-tts"];
-              const voice = edgeConfig?.voice as string | undefined;
-              speechSvc.registerTTSProvider("edge-tts", new EdgeTTS(voice));
-            }
+            speechSvc.refreshProviders(newSpeechConfig);
             log.info("Speech service config updated at runtime");
           }
         }

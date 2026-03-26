@@ -2,7 +2,6 @@ import { spawn, execFileSync, type ChildProcess } from "node:child_process";
 import { Transform } from "node:stream";
 import fs from "node:fs";
 import path from "node:path";
-import { randomUUID } from "node:crypto";
 import { ClientSideConnection, ndJsonStream } from "@agentclientprotocol/sdk";
 import type {
   Agent,
@@ -25,6 +24,8 @@ import type {
 import { FileService } from "../../plugins/file-service/file-service.js";
 import type { MiddlewareChain } from "../plugin/middleware-chain.js";
 import { PROTOCOL_VERSION } from "@agentclientprotocol/sdk";
+import { TerminalManager } from "../sessions/terminal-manager.js";
+import { McpManager } from "./mcp-manager.js";
 import type {
   ListSessionsResponse,
   LoadSessionResponse,
@@ -107,13 +108,7 @@ function resolveAgentCommand(cmd: string): { command: string; args: string[] } {
   return { command: cmd, args: [] };
 }
 
-interface TerminalState {
-  process: ChildProcess;
-  output: string;
-  exitStatus: { exitCode: number | null; signal: string | null } | null;
-  command: string;
-  startTime: number;
-}
+// TerminalState has been extracted to TerminalManager
 
 // Local types for ACP session update shapes not fully typed by SDK
 interface SdkToolCallFields {
@@ -160,7 +155,8 @@ export class AgentInstance extends TypedEmitter<AgentInstanceEvents> {
   private connection!: ClientSideConnection;
   private child!: ChildProcess;
   private stderrCapture!: StderrCapture;
-  private terminals: Map<string, TerminalState> = new Map();
+  private terminalManager = new TerminalManager();
+  private static mcpManager = new McpManager();
 
   sessionId!: string;
   agentName: string;
@@ -310,9 +306,10 @@ export class AgentInstance extends TypedEmitter<AgentInstanceEvents> {
       workingDirectory,
     );
 
+    const resolvedMcp = AgentInstance.mcpManager.resolve(mcpServers);
     const response = await instance.connection.newSession({
       cwd: workingDirectory,
-      mcpServers: (mcpServers ?? []) as any,
+      mcpServers: resolvedMcp as any,
     });
     instance.sessionId = response.sessionId;
     instance.setupCrashDetection();
@@ -353,9 +350,10 @@ export class AgentInstance extends TypedEmitter<AgentInstanceEvents> {
         { err, agentSessionId },
         "Resume failed, falling back to new session",
       );
+      const resolvedMcp = AgentInstance.mcpManager.resolve(mcpServers);
       const response = await instance.connection.newSession({
         cwd: workingDirectory,
-        mcpServers: (mcpServers ?? []) as any,
+        mcpServers: resolvedMcp as any,
       });
       instance.sessionId = response.sessionId;
       log.info(
@@ -582,143 +580,36 @@ export class AgentInstance extends TypedEmitter<AgentInstanceEvents> {
         return {};
       },
 
-      // ── Terminal operations ──────────────────────────────────────────────
+      // ── Terminal operations (delegated to TerminalManager) ─────────────
       async createTerminal(params) {
-        // Hook: terminal:beforeCreate — modifiable, can block
-        let termCommand = params.command;
-        let termArgs = params.args ?? [];
-        let termEnvArr = params.env ?? [];
-        let termCwd = params.cwd ?? undefined;
-        if (self.middlewareChain) {
-          const envRecord: Record<string, string> = {};
-          for (const ev of termEnvArr) { envRecord[ev.name] = ev.value; }
-          const result = await self.middlewareChain.execute('terminal:beforeCreate', {
-            sessionId: self.sessionId,
-            command: termCommand,
-            args: termArgs as string[],
-            env: envRecord,
-            cwd: termCwd,
-          }, async (p) => p);
-          if (!result) return { terminalId: "" }; // blocked by middleware
-          termCommand = result.command;
-          termArgs = result.args ?? termArgs;
-          termCwd = result.cwd ?? termCwd;
-          // Convert env record back to array format if middleware modified it
-          if (result.env) {
-            termEnvArr = Object.entries(result.env).map(([name, value]) => ({ name, value }));
-          }
-        }
-
-        const terminalId = randomUUID();
-        const args = termArgs;
-        const env: Record<string, string> = {};
-        for (const ev of termEnvArr) {
-          env[ev.name] = ev.value;
-        }
-
-        const childProcess = spawn(termCommand, args, {
-          cwd: termCwd,
-          env: { ...process.env, ...env },
-          shell: false,
-        });
-
-        const state: TerminalState = {
-          process: childProcess,
-          output: "",
-          exitStatus: null,
-          command: termCommand,
-          startTime: Date.now(),
-        };
-        self.terminals.set(terminalId, state);
-
-        const outputByteLimit = params.outputByteLimit ?? MAX_OUTPUT_BYTES;
-
-        const appendOutput = (chunk: string) => {
-          state.output += chunk;
-          // Truncate from the beginning if over limit
-          const bytes = Buffer.byteLength(state.output, "utf-8");
-          if (bytes > outputByteLimit) {
-            // Find truncation point at character boundary
-            const excess = bytes - outputByteLimit;
-            state.output = state.output.slice(excess);
-          }
-        };
-
-        childProcess.stdout?.on("data", (chunk: Buffer) =>
-          appendOutput(chunk.toString()),
+        return self.terminalManager.createTerminal(
+          self.sessionId,
+          {
+            command: params.command,
+            args: params.args,
+            env: params.env,
+            cwd: params.cwd,
+            outputByteLimit: params.outputByteLimit ?? MAX_OUTPUT_BYTES,
+          },
+          self.middlewareChain,
         );
-        childProcess.stderr?.on("data", (chunk: Buffer) =>
-          appendOutput(chunk.toString()),
-        );
-
-        childProcess.on("exit", (code, signal) => {
-          state.exitStatus = { exitCode: code, signal };
-          // Hook: terminal:afterExit — read-only, fire-and-forget
-          if (self.middlewareChain) {
-            self.middlewareChain.execute('terminal:afterExit', {
-              sessionId: self.sessionId,
-              terminalId,
-              command: state.command,
-              exitCode: code ?? -1,
-              durationMs: Date.now() - state.startTime,
-            }, async (p) => p).catch(() => {});
-          }
-        });
-
-        return { terminalId };
       },
 
       async terminalOutput(params) {
-        const state = self.terminals.get(params.terminalId);
-        if (!state) {
-          throw new Error(`Terminal not found: ${params.terminalId}`);
-        }
-        return {
-          output: state.output,
-          truncated: false,
-          exitStatus: state.exitStatus
-            ? {
-                exitCode: state.exitStatus.exitCode,
-                signal: state.exitStatus.signal,
-              }
-            : undefined,
-        };
+        return self.terminalManager.getOutput(params.terminalId);
       },
 
       async waitForTerminalExit(params) {
-        const state = self.terminals.get(params.terminalId);
-        if (!state) {
-          throw new Error(`Terminal not found: ${params.terminalId}`);
-        }
-        if (state.exitStatus !== null) {
-          return {
-            exitCode: state.exitStatus.exitCode,
-            signal: state.exitStatus.signal,
-          };
-        }
-        return new Promise((resolve) => {
-          state.process.on("exit", (code, signal) => {
-            resolve({ exitCode: code, signal });
-          });
-        });
+        return self.terminalManager.waitForExit(params.terminalId);
       },
 
       async killTerminal(params) {
-        const state = self.terminals.get(params.terminalId);
-        if (!state) {
-          throw new Error(`Terminal not found: ${params.terminalId}`);
-        }
-        state.process.kill("SIGTERM");
+        self.terminalManager.kill(params.terminalId);
         return {};
       },
 
       async releaseTerminal(params) {
-        const state = self.terminals.get(params.terminalId);
-        if (!state) {
-          return;
-        }
-        state.process.kill("SIGKILL");
-        self.terminals.delete(params.terminalId);
+        self.terminalManager.release(params.terminalId);
       },
     };
   }
@@ -762,10 +653,11 @@ export class AgentInstance extends TypedEmitter<AgentInstanceEvents> {
     cwd: string,
     mcpServers?: McpServerConfig[],
   ): Promise<LoadSessionResponse> {
+    const resolvedMcp = AgentInstance.mcpManager.resolve(mcpServers);
     return await this.connection.loadSession({
       sessionId,
       cwd,
-      mcpServers: (mcpServers ?? []) as any,
+      mcpServers: resolvedMcp as any,
     });
   }
 
@@ -778,10 +670,11 @@ export class AgentInstance extends TypedEmitter<AgentInstanceEvents> {
     cwd: string,
     mcpServers?: McpServerConfig[],
   ): Promise<ForkSessionResponse> {
+    const resolvedMcp = AgentInstance.mcpManager.resolve(mcpServers);
     return await this.connection.unstable_forkSession({
       sessionId,
       cwd,
-      mcpServers: (mcpServers ?? []) as any,
+      mcpServers: resolvedMcp as any,
     });
   }
 
@@ -831,10 +724,7 @@ export class AgentInstance extends TypedEmitter<AgentInstanceEvents> {
 
   async destroy(): Promise<void> {
     // Cleanup terminals
-    for (const [, t] of this.terminals) {
-      t.process.kill("SIGKILL");
-    }
-    this.terminals.clear();
+    this.terminalManager.destroyAll();
 
     // Kill agent subprocess
     this.child.kill("SIGTERM");

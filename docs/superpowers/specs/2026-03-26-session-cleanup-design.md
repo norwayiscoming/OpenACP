@@ -6,7 +6,7 @@ After extended use, OpenACP creates many forum topics (one per session) in the T
 
 ## Solution
 
-Extend the existing `TopicManager.cleanup()` and `openacp api cleanup` into a full interactive cleanup flow, accessible from both CLI and chat platforms.
+Extend the existing `TopicManager.cleanup()` and `openacp api cleanup` into a full interactive cleanup flow, accessible from both CLI and chat platforms. The new code builds on top of existing `TopicManager` and `OpenACPCore.archiveSession()` rather than reimplementing cleanup logic.
 
 ## User Flows
 
@@ -14,12 +14,14 @@ Extend the existing `TopicManager.cleanup()` and `openacp api cleanup` into a fu
 
 ```
 openacp api cleanup                              # List cleanable sessions, prompt to delete
-openacp api cleanup --list                       # List only, no delete
+openacp api cleanup --list                       # List only, no delete (CLI-only presentation flag)
 openacp api cleanup --status finished,cancelled  # Filter by status
-openacp api cleanup --older-than 7d              # Filter by age
+openacp api cleanup --older-than 7d              # Filter by age (parsed by parseDuration utility)
 openacp api cleanup --all                        # All non-active sessions
 openacp api cleanup --yes                        # Skip confirmation prompt
 ```
+
+Note: `--list` is a CLI-only flag that calls `listCleanableSessions()` and prints the table without calling `cleanupSessions()`. It has no HTTP API equivalent.
 
 **Output format:**
 
@@ -46,10 +48,12 @@ Delete 3 sessions and their forum topics? [y/N]
 
 ### Core Layer (Adapter-Agnostic)
 
-Two new methods on `OpenACPCore`:
+Two new methods on `OpenACPCore`, built on existing `TopicManager` and `archiveSession()`:
 
 ```typescript
 // List sessions eligible for cleanup
+// By default (no filter), excludes sessions with status 'active' or 'initializing'.
+// Callers may explicitly include those statuses via the filter.
 listCleanableSessions(filter?: CleanupFilter): SessionRecord[]
 
 interface CleanupFilter {
@@ -59,8 +63,11 @@ interface CleanupFilter {
 }
 
 // Delete sessions and their platform threads
+// Implemented as a loop calling archiveSession() per session ID,
+// collecting successes and failures into CleanupResult.
 cleanupSessions(sessionIds: string[]): Promise<CleanupResult>
 
+// Reuse existing CleanupResult type from TopicManager
 interface CleanupResult {
   deleted: string[]               // successfully deleted session IDs
   failed: Array<{ sessionId: string; error: string }>
@@ -68,23 +75,28 @@ interface CleanupResult {
 ```
 
 **`cleanupSessions` logic:**
-1. For each session ID:
-   a. If session is active in memory: cancel it (abort prompt, mark cancelled)
-   b. Call `adapter.deleteSessionThread(sessionId)` to delete the platform thread/topic
-   c. Remove session record from `SessionStore`
-2. Collect results: which succeeded, which failed
-3. Return `CleanupResult`
+Delegates to the existing `archiveSession(sessionId)` method for each ID. `archiveSession` already handles:
+1. If session is active in memory: sets `session.archiving = true` to suppress in-flight messages, calls `archiveSessionTopic()` (which cleans up in-memory trackers), then cancels and removes the record.
+2. If session is NOT in memory (already finished): calls `adapter.deleteSessionThread()` directly, then removes the record.
+
+The new `cleanupSessions` wraps this in a loop with error collection.
+
+### Duration Parsing
+
+A `parseDuration(str: string): number` utility converts human-friendly duration strings (e.g., `7d`, `24h`, `30m`) to milliseconds. Used by both the CLI (`--older-than` flag) and HTTP API (`olderThan` query param). Lives in a shared utils file.
 
 ### HTTP API Endpoints
 
 ```
-GET  /api/sessions/cleanable?status=finished,cancelled&olderThan=7d
+GET  /api/cleanup/list?status=finished,cancelled&olderThan=7d
      → Returns array of SessionRecord matching the filter
 
-POST /api/sessions/cleanup
+POST /api/cleanup
      Body: { sessionIds: string[] }
      → Executes cleanup, returns CleanupResult
 ```
+
+Note: Routes use `/api/cleanup/` prefix instead of `/api/sessions/cleanable` to avoid collision with the existing `/api/sessions/:sessionId` parameterized route.
 
 ### Chat Command Handler
 
@@ -93,6 +105,17 @@ POST /api/sessions/cleanup
 - Renders platform-appropriate UI (Telegram: inline keyboard with toggle buttons)
 - On user confirmation, calls `core.cleanupSessions(selectedIds)`
 - Reports results back to user
+
+**Selection state storage (Telegram):** A `Map<string, CleanupFlowState>` keyed by the cleanup message ID, stored in memory on the adapter. Each entry holds the set of selected session IDs and the current page number. Entries have a 5-minute TTL and are cleaned up on server restart. This is consistent with the codebase's existing in-memory state pattern.
+
+```typescript
+interface CleanupFlowState {
+  selectedIds: Set<string>
+  sessions: SessionRecord[]
+  page: number
+  createdAt: number  // for TTL
+}
+```
 
 ### Callback Routing (Telegram)
 
@@ -112,14 +135,15 @@ Button data format:
 - **API rate limiting**: If Telegram/Discord rate-limits during bulk delete, retry with backoff.
 - **Concurrent cleanup calls**: Idempotent — if a session is already deleted, skip it gracefully.
 - **No cleanable sessions**: Display "No sessions to clean up."
-- **Active session selected**: Cancel it first (abort prompt, mark cancelled), then delete.
+- **Active session selected**: `archiveSession()` handles this correctly — sets `session.archiving = true` to suppress in-flight messages before deleting the topic.
 
 ## Testing Strategy
 
 ### Unit Tests
 
-- `listCleanableSessions()`: filter by status, by age, exclude active, empty store
+- `listCleanableSessions()`: filter by status, by age, exclude active/initializing by default, empty store
 - `cleanupSessions()`: happy path (all deleted), partial failure (some topics fail), already-deleted sessions
+- `parseDuration()`: valid inputs (`7d`, `24h`, `30m`), invalid inputs, edge cases
 - Cleanup callback routing (Telegram button handlers)
 
 ### Integration Tests
@@ -130,27 +154,31 @@ Button data format:
 
 ### Edge Cases
 
-- Session active in memory: cancel before delete
+- Session active in memory and mid-stream: verify `archiving` flag is set before topic deletion and cleared on completion or error
 - Topic already manually deleted on Telegram: graceful skip
 - Concurrent cleanup from CLI and chat simultaneously: idempotent
 - Empty session list
 - Session with no platform data (no topicId): skip platform delete, remove record only
+- Cleanup flow state TTL expiry: handle gracefully when user clicks button after 5 minutes
 
 ## Files to Modify
 
 ### Core
-- `src/core/core.ts` — Add `listCleanableSessions()` and `cleanupSessions()` methods
+- `src/core/core.ts` — Add `listCleanableSessions()` and `cleanupSessions()` methods (thin wrappers around `TopicManager` and `archiveSession()`)
 - `src/core/sessions/session-store.ts` — May need query helpers for filtering
 
 ### HTTP API
-- `src/core/api/` — Add `/api/sessions/cleanable` and `/api/sessions/cleanup` endpoints
+- `src/core/api/routes/` — Add `/api/cleanup/list` and `/api/cleanup` endpoints
 
 ### CLI
-- `src/cli.ts` or relevant CLI handler — Enhance `openacp api cleanup` with new flags and interactive output
+- `src/cli/commands/api.ts` — Enhance `openacp api cleanup` with new flags (`--list`, `--older-than`, `--all`, `--yes`) and interactive output
+
+### Shared Utils
+- `src/core/utils/` or similar — `parseDuration()` utility
 
 ### Telegram Adapter
 - `src/adapters/telegram/adapter.ts` — Register `/cleanup` command, handle `cl:` callbacks
-- `src/adapters/telegram/` — New file for cleanup UI rendering (inline keyboard builder, message formatter)
+- `src/adapters/telegram/cleanup.ts` — New file for cleanup UI rendering (inline keyboard builder, message formatter, `CleanupFlowState` management)
 
 ### Channel Adapter Interface
 - `src/core/channel.ts` — No changes needed. `deleteSessionThread` already exists as optional method.

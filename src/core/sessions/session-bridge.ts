@@ -6,6 +6,7 @@ import type { SessionManager } from "./session-manager.js";
 import type { AgentEvent, PermissionRequest, SessionStatus } from "../types.js";
 import type { EventBus } from "../event-bus.js";
 import { FileService } from "../utils/file-service.js";
+import type { MiddlewareChain } from "../plugin/middleware-chain.js";
 import { createChildLogger } from "../utils/log.js";
 
 const log = createChildLogger({ module: "session-bridge" });
@@ -16,6 +17,7 @@ export interface BridgeDeps {
   sessionManager: SessionManager;
   eventBus?: EventBus;
   fileService?: FileService;
+  middlewareChain?: MiddlewareChain;
 }
 
 export class SessionBridge {
@@ -33,6 +35,18 @@ export class SessionBridge {
     private adapter: IChannelAdapter,
     private deps: BridgeDeps,
   ) {}
+
+  /** Send message to adapter, optionally running through message:outgoing middleware */
+  private async sendMessage(sessionId: string, message: ReturnType<MessageTransformer["transform"]>): Promise<void> {
+    const mw = this.deps.middlewareChain;
+    if (mw) {
+      const result = await mw.execute('message:outgoing', message, async (m) => m);
+      if (!result) return; // blocked by middleware
+      this.adapter.sendMessage(sessionId, result);
+    } else {
+      this.adapter.sendMessage(sessionId, message);
+    }
+  }
 
   connect(): void {
     if (this.connected) return;
@@ -73,6 +87,28 @@ export class SessionBridge {
   }
 
   private wireSessionToAdapter(): void {
+    this.sessionEventHandler = (event: AgentEvent) => {
+      // Hook: agent:beforeEvent — modifiable, can block
+      const mw = this.deps.middlewareChain;
+      if (mw) {
+        mw.execute('agent:beforeEvent', event, async (e) => e).then((result) => {
+          if (!result) return; // blocked by middleware
+          this.handleAgentEvent(result);
+          // Hook: agent:afterEvent — read-only, fire-and-forget
+          mw.execute('agent:afterEvent', result, async (e) => e).catch(() => {});
+        }).catch(() => {
+          // Middleware error — proceed with original event
+          this.handleAgentEvent(event);
+        });
+      } else {
+        this.handleAgentEvent(event);
+      }
+    };
+
+    this.session.on("agent_event", this.sessionEventHandler);
+  }
+
+  private handleAgentEvent(event: AgentEvent): void {
     const session = this.session;
     const ctx = {
       get id() {
@@ -83,7 +119,6 @@ export class SessionBridge {
       },
     };
 
-    this.sessionEventHandler = (event: AgentEvent) => {
       switch (event.type) {
         case "text":
         case "thought":
@@ -91,7 +126,7 @@ export class SessionBridge {
         case "tool_update":
         case "plan":
         case "usage":
-          this.adapter.sendMessage(
+          this.sendMessage(
             this.session.id,
             this.deps.messageTransformer.transform(event, ctx),
           );
@@ -100,7 +135,7 @@ export class SessionBridge {
         case "session_end":
           this.session.finish(event.reason);
           this.adapter.cleanupSkillCommands?.(this.session.id);
-          this.adapter.sendMessage(
+          this.sendMessage(
             this.session.id,
             this.deps.messageTransformer.transform(event),
           );
@@ -115,7 +150,7 @@ export class SessionBridge {
         case "error":
           this.session.fail(event.message);
           this.adapter.cleanupSkillCommands?.(this.session.id);
-          this.adapter.sendMessage(
+          this.sendMessage(
             this.session.id,
             this.deps.messageTransformer.transform(event),
           );
@@ -136,7 +171,7 @@ export class SessionBridge {
             const ext = FileService.extensionFromMime(mimeType);
             fs.saveFile(sid, `agent-image${ext}`, buffer, mimeType)
               .then((att) => {
-                this.adapter.sendMessage(sid, {
+                this.sendMessage(sid, {
                   type: "attachment",
                   text: "",
                   attachment: att,
@@ -155,7 +190,7 @@ export class SessionBridge {
             const ext = FileService.extensionFromMime(mimeType);
             fs.saveFile(sid, `agent-audio${ext}`, buffer, mimeType)
               .then((att) => {
-                this.adapter.sendMessage(sid, {
+                this.sendMessage(sid, {
                   type: "attachment",
                   text: "",
                   attachment: att,
@@ -172,7 +207,7 @@ export class SessionBridge {
           break;
 
         case "system_message":
-          this.adapter.sendMessage(
+          this.sendMessage(
             this.session.id,
             this.deps.messageTransformer.transform(event),
           );
@@ -182,7 +217,7 @@ export class SessionBridge {
           if (event.title) {
             this.session.setName(event.title);
           }
-          this.adapter.sendMessage(
+          this.sendMessage(
             this.session.id,
             this.deps.messageTransformer.transform(event),
           );
@@ -190,7 +225,7 @@ export class SessionBridge {
 
         case "current_mode_update":
           this.session.updateMode(event.modeId);
-          this.adapter.sendMessage(
+          this.sendMessage(
             this.session.id,
             this.deps.messageTransformer.transform(event),
           );
@@ -198,7 +233,7 @@ export class SessionBridge {
 
         case "config_option_update":
           this.session.updateConfigOptions(event.options);
-          this.adapter.sendMessage(
+          this.sendMessage(
             this.session.id,
             this.deps.messageTransformer.transform(event),
           );
@@ -206,14 +241,14 @@ export class SessionBridge {
 
         case "model_update":
           this.session.updateModel(event.modelId);
-          this.adapter.sendMessage(
+          this.sendMessage(
             this.session.id,
             this.deps.messageTransformer.transform(event),
           );
           break;
 
         case "user_message_chunk":
-          this.adapter.sendMessage(
+          this.sendMessage(
             this.session.id,
             this.deps.messageTransformer.transform(event),
           );
@@ -221,7 +256,7 @@ export class SessionBridge {
 
         case "resource_content":
         case "resource_link":
-          this.adapter.sendMessage(
+          this.sendMessage(
             this.session.id,
             this.deps.messageTransformer.transform(event),
           );
@@ -232,53 +267,75 @@ export class SessionBridge {
         sessionId: this.session.id,
         event,
       });
-    };
-
-    this.session.on("agent_event", this.sessionEventHandler);
   }
 
   private wirePermissions(): void {
+    const mw = this.deps.middlewareChain;
+
     this.session.agentInstance.onPermissionRequest = async (
       request: PermissionRequest,
     ) => {
-      this.session.emit("permission_request", request);
+      // Hook: permission:beforeRequest — modifiable, can block
+      let permReq = request;
+      if (mw) {
+        const result = await mw.execute('permission:beforeRequest', request, async (r) => r);
+        if (!result) return ""; // blocked by middleware
+        permReq = result;
+      }
+
+      this.session.emit("permission_request", permReq);
       this.deps.eventBus?.emit("permission:request", {
         sessionId: this.session.id,
-        permission: request,
+        permission: permReq,
       });
 
       // Auto-approve openacp CLI commands
-      if (request.description.toLowerCase().includes("openacp")) {
-        const allowOption = request.options.find((o) => o.isAllow);
+      if (permReq.description.toLowerCase().includes("openacp")) {
+        const allowOption = permReq.options.find((o) => o.isAllow);
         if (allowOption) {
           log.info(
-            { sessionId: this.session.id, requestId: request.id },
+            { sessionId: this.session.id, requestId: permReq.id },
             "Auto-approving openacp command",
           );
+          // Hook: permission:afterResolve — read-only, fire-and-forget
+          if (mw) {
+            mw.execute('permission:afterResolve', { request: permReq, optionId: allowOption.id }, async (p) => p).catch(() => {});
+          }
           return allowOption.id;
         }
       }
 
       // Dangerous mode: auto-approve all permissions
       if (this.session.dangerousMode) {
-        const allowOption = request.options.find((o) => o.isAllow);
+        const allowOption = permReq.options.find((o) => o.isAllow);
         if (allowOption) {
           log.info(
-            { sessionId: this.session.id, requestId: request.id, optionId: allowOption.id },
+            { sessionId: this.session.id, requestId: permReq.id, optionId: allowOption.id },
             "Dangerous mode: auto-approving permission",
           );
+          // Hook: permission:afterResolve — read-only, fire-and-forget
+          if (mw) {
+            mw.execute('permission:afterResolve', { request: permReq, optionId: allowOption.id }, async (p) => p).catch(() => {});
+          }
           return allowOption.id;
         }
       }
 
       // Set pending BEFORE sending UI to avoid race condition
-      const promise = this.session.permissionGate.setPending(request);
+      const promise = this.session.permissionGate.setPending(permReq);
 
       // Send permission UI to session topic
-      await this.adapter.sendPermissionRequest(this.session.id, request);
+      await this.adapter.sendPermissionRequest(this.session.id, permReq);
 
       // Wait for user response — adapter resolves this promise
-      return promise;
+      const optionId = await promise;
+
+      // Hook: permission:afterResolve — read-only, fire-and-forget
+      if (mw) {
+        mw.execute('permission:afterResolve', { request: permReq, optionId }, async (p) => p).catch(() => {});
+      }
+
+      return optionId;
     };
   }
 

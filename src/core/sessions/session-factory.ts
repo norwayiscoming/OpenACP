@@ -8,6 +8,7 @@ import type { UsageBudget } from "./usage-budget.js";
 import type { NotificationManager } from "../notification.js";
 import type { TunnelService } from "../../tunnel/tunnel-service.js";
 import type { AgentEvent, UsageRecord } from "../types.js";
+import type { MiddlewareChain } from "../plugin/middleware-chain.js";
 import { Session } from "./session.js";
 import { createChildLogger } from "../utils/log.js";
 
@@ -30,6 +31,8 @@ export interface SideEffectDeps {
 }
 
 export class SessionFactory {
+  middlewareChain?: MiddlewareChain;
+
   constructor(
     private agentManager: AgentManager,
     private sessionManager: SessionManager,
@@ -38,30 +41,42 @@ export class SessionFactory {
   ) {}
 
   async create(params: SessionCreateParams): Promise<Session> {
+    // Hook: session:beforeCreate — modifiable, can block
+    let createParams = params;
+    if (this.middlewareChain) {
+      const result = await this.middlewareChain.execute('session:beforeCreate', params, async (p) => p);
+      if (!result) throw new Error("Session creation blocked by middleware");
+      createParams = result;
+    }
+
     // 1. Spawn or resume agent
-    const agentInstance = params.resumeAgentSessionId
+    const agentInstance = createParams.resumeAgentSessionId
       ? await this.agentManager.resume(
-          params.agentName,
-          params.workingDirectory,
-          params.resumeAgentSessionId,
+          createParams.agentName,
+          createParams.workingDirectory,
+          createParams.resumeAgentSessionId,
         )
       : await this.agentManager.spawn(
-          params.agentName,
-          params.workingDirectory,
+          createParams.agentName,
+          createParams.workingDirectory,
         );
+
+    // Wire middleware chain to agent instance for FS/terminal hooks
+    agentInstance.middlewareChain = this.middlewareChain;
 
     // 2. Create Session instance
     const session = new Session({
-      id: params.existingSessionId,
-      channelId: params.channelId,
-      agentName: params.agentName,
-      workingDirectory: params.workingDirectory,
+      id: createParams.existingSessionId,
+      channelId: createParams.channelId,
+      agentName: createParams.agentName,
+      workingDirectory: createParams.workingDirectory,
       agentInstance,
       speechService: this.speechService,
     });
     session.agentSessionId = agentInstance.sessionId;
-    if (params.initialName) {
-      session.name = params.initialName;
+    session.middlewareChain = this.middlewareChain;
+    if (createParams.initialName) {
+      session.name = createParams.initialName;
     }
 
     // 3. Register in SessionManager

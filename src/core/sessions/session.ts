@@ -6,6 +6,7 @@ import { PromptQueue } from "./prompt-queue.js";
 import { PermissionGate } from "./permission-gate.js";
 import { createChildLogger, createSessionLogger, type Logger } from "../utils/log.js";
 import type { SpeechService } from "../../speech/index.js";
+import type { MiddlewareChain } from "../plugin/middleware-chain.js";
 import * as fs from "node:fs";
 const moduleLog = createChildLogger({ module: "session" });
 
@@ -55,6 +56,7 @@ export class Session extends TypedEmitter<SessionEvents> {
   archiving: boolean = false;
   promptCount: number = 0;
   log: Logger;
+  middlewareChain?: MiddlewareChain;
 
   readonly permissionGate = new PermissionGate();
   private readonly queue: PromptQueue;
@@ -155,6 +157,14 @@ export class Session extends TypedEmitter<SessionEvents> {
   // --- Public API ---
 
   async enqueuePrompt(text: string, attachments?: Attachment[]): Promise<void> {
+    // Hook: agent:beforePrompt — modifiable, can block
+    if (this.middlewareChain) {
+      const payload = { text, attachments, sessionId: this.id };
+      const result = await this.middlewareChain.execute('agent:beforePrompt', payload, async (p) => p);
+      if (!result) return; // blocked by middleware
+      text = result.text;
+      attachments = result.attachments;
+    }
     await this.queue.enqueue(text, attachments);
   }
 
@@ -209,12 +219,22 @@ export class Session extends TypedEmitter<SessionEvents> {
       this.on("agent_event", accumulatorListener);
     }
 
+    // Hook: turn:start — read-only, fire-and-forget
+    if (this.middlewareChain) {
+      this.middlewareChain.execute('turn:start', { sessionId: this.id, text: processed.text }, async (p) => p).catch(() => {});
+    }
+
     try {
       await this.agentInstance.prompt(processed.text, processed.attachments);
     } finally {
       if (accumulatorListener) {
         this.off("agent_event", accumulatorListener);
       }
+    }
+
+    // Hook: turn:end — read-only, fire-and-forget
+    if (this.middlewareChain) {
+      this.middlewareChain.execute('turn:end', { sessionId: this.id, durationMs: Date.now() - promptStart }, async (p) => p).catch(() => {});
     }
 
     this.log.info(
@@ -451,19 +471,36 @@ export class Session extends TypedEmitter<SessionEvents> {
   }
 
   updateMode(modeId: string): void {
+    // Hook: mode:beforeChange — fire-and-forget (sync context)
+    if (this.middlewareChain) {
+      this.middlewareChain.execute('mode:beforeChange', { sessionId: this.id, modeId }, async (p) => p).catch(() => {});
+    }
     this.currentMode = modeId;
   }
 
   updateConfigOptions(options: ConfigOption[]): void {
+    // Hook: config:beforeChange — fire-and-forget (sync context)
+    if (this.middlewareChain) {
+      this.middlewareChain.execute('config:beforeChange', { sessionId: this.id, options }, async (p) => p).catch(() => {});
+    }
     this.configOptions = options;
   }
 
   updateModel(modelId: string): void {
+    // Hook: model:beforeChange — fire-and-forget (sync context)
+    if (this.middlewareChain) {
+      this.middlewareChain.execute('model:beforeChange', { sessionId: this.id, modelId }, async (p) => p).catch(() => {});
+    }
     this.currentModel = modelId;
   }
 
   /** Cancel the current prompt and clear the queue. Stays in active state. */
   async abortPrompt(): Promise<void> {
+    // Hook: agent:beforeCancel — modifiable, can block
+    if (this.middlewareChain) {
+      const result = await this.middlewareChain.execute('agent:beforeCancel', { sessionId: this.id }, async (p) => p);
+      if (!result) return; // blocked by middleware
+    }
     this.queue.clear();
     this.log.info("Prompt aborted");
     await this.agentInstance.cancel();

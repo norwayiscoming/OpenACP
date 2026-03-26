@@ -23,6 +23,7 @@ import type {
   SetConfigOptionValue,
 } from "../types.js";
 import { FileService } from "../utils/file-service.js";
+import type { MiddlewareChain } from "../plugin/middleware-chain.js";
 import { PROTOCOL_VERSION } from "@agentclientprotocol/sdk";
 import type {
   ListSessionsResponse,
@@ -162,6 +163,7 @@ export class AgentInstance extends TypedEmitter<AgentInstanceEvents> {
   sessionId!: string;
   agentName: string;
   promptCapabilities?: { image?: boolean; audio?: boolean };
+  middlewareChain?: MiddlewareChain;
 
   // Callback — set by core when wiring events
   onPermissionRequest: (request: PermissionRequest) => Promise<string> =
@@ -550,6 +552,12 @@ export class AgentInstance extends TypedEmitter<AgentInstanceEvents> {
       // ── File operations ──────────────────────────────────────────────────
       async readTextFile(params) {
         const p = params as unknown as SdkReadTextFileParams;
+        // Hook: fs:beforeRead — modifiable, can block
+        if (self.middlewareChain) {
+          const result = await self.middlewareChain.execute('fs:beforeRead', { path: p.path, line: p.line, limit: p.limit }, async (r) => r);
+          if (!result) return { content: "" }; // blocked by middleware
+          p.path = result.path;
+        }
         const content = await FileService.readTextFileWithRange(p.path, {
           line: p.line ?? undefined,
           limit: p.limit ?? undefined,
@@ -558,22 +566,39 @@ export class AgentInstance extends TypedEmitter<AgentInstanceEvents> {
       },
 
       async writeTextFile(params) {
-        await fs.promises.mkdir(path.dirname(params.path), { recursive: true });
-        await fs.promises.writeFile(params.path, params.content, "utf-8");
+        // Hook: fs:beforeWrite — modifiable, can block
+        let writePath = params.path;
+        let writeContent = params.content;
+        if (self.middlewareChain) {
+          const result = await self.middlewareChain.execute('fs:beforeWrite', { path: writePath, content: writeContent }, async (r) => r);
+          if (!result) return {}; // blocked by middleware
+          writePath = result.path;
+          writeContent = result.content;
+        }
+        await fs.promises.mkdir(path.dirname(writePath), { recursive: true });
+        await fs.promises.writeFile(writePath, writeContent, "utf-8");
         return {};
       },
 
       // ── Terminal operations ──────────────────────────────────────────────
       async createTerminal(params) {
+        // Hook: terminal:beforeCreate — modifiable, can block
+        let termParams = params;
+        if (self.middlewareChain) {
+          const result = await self.middlewareChain.execute('terminal:beforeCreate', params, async (p) => p);
+          if (!result) return { terminalId: "" }; // blocked by middleware
+          termParams = result;
+        }
+
         const terminalId = randomUUID();
-        const args = params.args ?? [];
+        const args = termParams.args ?? [];
         const env: Record<string, string> = {};
-        for (const ev of params.env ?? []) {
+        for (const ev of termParams.env ?? []) {
           env[ev.name] = ev.value;
         }
 
-        const childProcess = spawn(params.command, args, {
-          cwd: params.cwd ?? undefined,
+        const childProcess = spawn(termParams.command, args, {
+          cwd: termParams.cwd ?? undefined,
           env: { ...process.env, ...env },
           shell: false,
         });
@@ -585,7 +610,7 @@ export class AgentInstance extends TypedEmitter<AgentInstanceEvents> {
         };
         self.terminals.set(terminalId, state);
 
-        const outputByteLimit = params.outputByteLimit ?? MAX_OUTPUT_BYTES;
+        const outputByteLimit = termParams.outputByteLimit ?? MAX_OUTPUT_BYTES;
 
         const appendOutput = (chunk: string) => {
           state.output += chunk;
@@ -607,6 +632,10 @@ export class AgentInstance extends TypedEmitter<AgentInstanceEvents> {
 
         childProcess.on("exit", (code, signal) => {
           state.exitStatus = { exitCode: code, signal };
+          // Hook: terminal:afterExit — read-only, fire-and-forget
+          if (self.middlewareChain) {
+            self.middlewareChain.execute('terminal:afterExit', { terminalId, exitCode: code, signal }, async (p) => p).catch(() => {});
+          }
         });
 
         return { terminalId };

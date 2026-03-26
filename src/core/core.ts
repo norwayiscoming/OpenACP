@@ -119,7 +119,7 @@ export class OpenACPCore {
       this.eventBus,
     );
 
-    // Initialize plugin lifecycle manager
+    // Initialize plugin lifecycle manager (before setting middlewareChain on factory)
     this.lifecycleManager = new LifecycleManager({
       serviceRegistry: new ServiceRegistry(),
       middlewareChain: new MiddlewareChain(),
@@ -139,6 +139,10 @@ export class OpenACPCore {
     }
     this.lifecycleManager.serviceRegistry.register("context", this.contextManager, "@openacp/context");
     this.lifecycleManager.serviceRegistry.register("speech", this.speechService, "@openacp/speech");
+
+    // Wire middleware chain to session factory and session manager
+    this.sessionFactory.middlewareChain = this.lifecycleManager.middlewareChain;
+    this.sessionManager.middlewareChain = this.lifecycleManager.middlewareChain;
 
     // Hot-reload: handle config changes that need side effects
     this.configManager.on(
@@ -336,6 +340,17 @@ export class OpenACPCore {
       },
       "Incoming message",
     );
+
+    // Hook: message:incoming — modifiable, can block
+    if (this.lifecycleManager?.middlewareChain) {
+      const result = await this.lifecycleManager.middlewareChain.execute(
+        'message:incoming',
+        message,
+        async (msg) => msg,
+      );
+      if (!result) return; // blocked by middleware
+      message = result;
+    }
 
     // Security: check user access and session limits
     const access = this.securityGuard.checkAccess(message);
@@ -781,6 +796,7 @@ export class OpenACPCore {
       sessionManager: this.sessionManager,
       eventBus: this.eventBus,
       fileService: this.fileService,
+      middlewareChain: this.lifecycleManager?.middlewareChain,
     });
   }
 }

@@ -2,11 +2,13 @@ import type { AgentManager } from "../agents/agent-manager.js";
 import { Session } from "./session.js";
 import type { SessionStore } from "./session-store.js";
 import type { EventBus } from "../event-bus.js";
+import type { MiddlewareChain } from "../plugin/middleware-chain.js";
 
 export class SessionManager {
   private sessions: Map<string, Session> = new Map();
   private store: SessionStore | null;
   private eventBus?: EventBus;
+  middlewareChain?: MiddlewareChain;
 
   setEventBus(eventBus: EventBus): void {
     this.eventBus = eventBus;
@@ -125,6 +127,10 @@ export class SessionManager {
         await this.store.save({ ...record, status: "cancelled" });
       }
     }
+    // Hook: session:afterDestroy — read-only, fire-and-forget
+    if (this.middlewareChain) {
+      this.middlewareChain.execute('session:afterDestroy', { sessionId }, async (p) => p).catch(() => {});
+    }
   }
 
   listSessions(channelId?: string): Session[] {
@@ -159,9 +165,16 @@ export class SessionManager {
         }
       }
     }
+    const sessionIds = [...this.sessions.keys()];
     for (const session of this.sessions.values()) {
       await session.destroy();
     }
     this.sessions.clear();
+    // Hook: session:afterDestroy — read-only, fire-and-forget
+    if (this.middlewareChain) {
+      for (const sessionId of sessionIds) {
+        this.middlewareChain.execute('session:afterDestroy', { sessionId }, async (p) => p).catch(() => {});
+      }
+    }
   }
 }

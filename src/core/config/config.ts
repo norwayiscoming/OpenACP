@@ -64,20 +64,6 @@ const TunnelSchema = z
 
 export type TunnelConfig = z.infer<typeof TunnelSchema>;
 
-const SlackChannelConfigSchema = z.object({
-  enabled: z.boolean().default(false),
-  adapter: z.literal("slack").optional(),
-  botToken: z.string().optional(), // xoxb-...
-  appToken: z.string().optional(), // xapp-... (Socket Mode)
-  signingSecret: z.string().optional(),
-  notificationChannelId: z.string().optional(),
-  allowedUserIds: z.array(z.string()).default([]),
-  channelPrefix: z.string().default("openacp"),
-  autoCreateSession: z.boolean().default(true),
-  startupChannelId: z.string().optional(),
-});
-
-export type SlackChannelConfig = z.infer<typeof SlackChannelConfigSchema>;
 
 const UsageSchema = z
   .object({
@@ -118,9 +104,7 @@ const SpeechSchema = z
 
 export const ConfigSchema = z.object({
   channels: z
-    .object({
-      slack: SlackChannelConfigSchema.optional(),
-    })
+    .object({})
     .catchall(BaseChannelSchema),
   agents: z.record(z.string(), AgentSchema).optional().default({}),
   defaultAgent: z.string(),

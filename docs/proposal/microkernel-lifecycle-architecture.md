@@ -115,7 +115,7 @@ The goal is not architectural purity. The goal is:
 | Tunnel service | `@openacp/plugin-tunnel` | `tunnel` |
 | API server | `@openacp/plugin-api-server` | `api-server` |
 | `TelegramAdapter` | `@openacp/plugin-telegram` | `adapter:telegram` |
-| `DiscordAdapter` | `@openacp/plugin-discord` | `adapter:discord` |
+| `DiscordAdapter` | `@openacp/adapter-discord` | `adapter:discord` |
 | `SlackAdapter` | `@openacp/plugin-slack` | `adapter:slack` |
 
 ### Project structure
@@ -1808,7 +1808,7 @@ Phase 3: Microkernel + Plugin System (this proposal)
   │
   ├── PR 3: Adapter plugins
   │   - Migrate TelegramAdapter → @openacp/plugin-telegram
-  │   - Migrate DiscordAdapter → @openacp/plugin-discord
+  │   - Migrate DiscordAdapter → @openacp/adapter-discord
   │   - Migrate SlackAdapter → @openacp/plugin-slack
   │   - Command registration + adapter integration
   │   - Middleware pipeline integration

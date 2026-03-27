@@ -61,7 +61,7 @@ async function configureViaPlugin(channelId: ChannelId): Promise<void> {
   const pluginImports: Record<ChannelId, () => Promise<any>> = {
     telegram: () => import('../../plugins/telegram/index.js'),
     discord: async () => {
-      const pkg = '@openacp/plugin-discord';
+      const pkg = '@openacp/adapter-discord';
       try {
         return await import(/* webpackIgnore: true */ pkg);
       } catch {

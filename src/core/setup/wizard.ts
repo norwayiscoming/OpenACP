@@ -37,7 +37,7 @@ export async function runSetup(
         message: 'Which channels do you want to set up?',
         options: [
           { value: 'telegram' as const, label: 'Telegram', hint: 'built-in' },
-          { value: 'discord' as const, label: 'Discord', hint: 'will install @openacp/plugin-discord' },
+          { value: 'discord' as const, label: 'Discord', hint: 'will install @openacp/adapter-discord' },
         ],
         required: true,
         initialValues: ['telegram' as const],
@@ -176,13 +176,13 @@ export async function runSetup(
 }
 
 /**
- * Install @openacp/plugin-discord from npm if needed, then run its install() hook.
+ * Install @openacp/adapter-discord from npm if needed, then run its install() hook.
  */
 async function installAndSetupDiscord(
   settingsManager: SettingsManager,
   pluginRegistry: PluginRegistry,
 ): Promise<void> {
-  const packageName = '@openacp/plugin-discord';
+  const packageName = '@openacp/adapter-discord';
 
   // Try to import first — if not installed, install it
   let discordPlugin: any;
@@ -201,7 +201,7 @@ async function installAndSetupDiscord(
       spinner.stop(ok(`${packageName} installed`));
     } catch (installErr) {
       spinner.stop(fail(`Failed to install ${packageName}: ${(installErr as Error).message}`));
-      console.log(fail('You can install it later with: openacp plugin add @openacp/plugin-discord'));
+      console.log(fail('You can install it later with: openacp plugin add @openacp/adapter-discord'));
       return;
     }
   }

@@ -6,13 +6,13 @@ The Discord adapter is bundled as a built-in plugin in OpenACP, meaning `discord
 
 ## Solution
 
-Extract `src/plugins/discord/` from the OpenACP monorepo into a standalone package `@openacp/plugin-discord` in a separate repository. Extend `@openacp/plugin-sdk` to export all types/classes the Discord plugin needs. Remove the Discord plugin from the OpenACP repo.
+Extract `src/plugins/discord/` from the OpenACP monorepo into a standalone package `@openacp/adapter-discord` in a separate repository. Extend `@openacp/plugin-sdk` to export all types/classes the Discord plugin needs. Remove the Discord plugin from the OpenACP repo.
 
 ## Target Repository
 
-`/Users/lab3/Documents/lab3/discord-plugin/` → published as `@openacp/plugin-discord` on npm.
+`/Users/lab3/Documents/lab3/discord-plugin/` → published as `@openacp/adapter-discord` on npm.
 
-**Note on naming:** The current built-in plugin is named `@openacp/discord`. The extracted plugin will be renamed to `@openacp/plugin-discord`. The legacy migration map in `lifecycle-manager.ts` (`'@openacp/discord': 'channels.discord'`) must be updated to also match the new name to preserve backward compatibility for config migration.
+**Note on naming:** The current built-in plugin is named `@openacp/discord`. The extracted plugin will be renamed to `@openacp/adapter-discord`. The legacy migration map in `lifecycle-manager.ts` (`'@openacp/discord': 'channels.discord'`) must be updated to also match the new name to preserve backward compatibility for config migration.
 
 ## Standalone Plugin Structure
 
@@ -61,7 +61,7 @@ discord-plugin/
 
 ```json
 {
-  "name": "@openacp/plugin-discord",
+  "name": "@openacp/adapter-discord",
   "version": "0.1.0",
   "type": "module",
   "main": "dist/index.js",
@@ -168,7 +168,7 @@ These are currently internal to `@openacp/cli` and need to be re-exported from `
 ## Plugin Metadata
 
 The extracted plugin should set:
-- `name: '@openacp/plugin-discord'`
+- `name: '@openacp/adapter-discord'`
 - `essential: false` — since it's an optional plugin users choose to install
 - `pluginDependencies`: references `@openacp/security` and `@openacp/notifications` by their built-in names. The lifecycle manager resolves these by matching against loaded plugin names. Built-in plugins load before external plugins, so these dependencies will always be available when the Discord plugin loads.
 
@@ -186,7 +186,7 @@ Add all missing re-exports listed above to `packages/plugin-sdk/src/index.ts`. A
 
 ### Update legacy migration map
 
-In `src/core/plugin/lifecycle-manager.ts`, add `'@openacp/plugin-discord'` as an alias mapping to `'channels.discord'` alongside the existing `'@openacp/discord'` entry. This ensures config migration works for both the old built-in name and the new package name.
+In `src/core/plugin/lifecycle-manager.ts`, add `'@openacp/adapter-discord'` as an alias mapping to `'channels.discord'` alongside the existing `'@openacp/discord'` entry. This ensures config migration works for both the old built-in name and the new package name.
 
 ### No changes needed
 
@@ -198,7 +198,7 @@ In `src/core/plugin/lifecycle-manager.ts`, add `'@openacp/plugin-discord'` as an
 
 ```bash
 # Install from npm (after publishing)
-openacp plugin add @openacp/plugin-discord
+openacp plugin add @openacp/adapter-discord
 
 # Install from local path (development)
 openacp plugin add /path/to/discord-plugin
@@ -207,7 +207,7 @@ openacp plugin add /path/to/discord-plugin
 openacp dev /path/to/discord-plugin
 
 # Uninstall
-openacp plugin remove @openacp/plugin-discord
+openacp plugin remove @openacp/adapter-discord
 ```
 
 When installed, `discord.js` is npm-installed as a dependency of the plugin. When not installed, OpenACP has zero Discord-related dependencies.
@@ -232,7 +232,7 @@ When installed, `discord.js` is npm-installed as a dependency of the plugin. Whe
 ### OpenACP repo
 - `packages/plugin-sdk/src/index.ts` — Add ~40 re-exports
 - `packages/plugin-sdk/src/testing.ts` — Add `runAdapterConformanceTests` re-export
-- `src/core/plugin/lifecycle-manager.ts` — Add `@openacp/plugin-discord` to migration map
+- `src/core/plugin/lifecycle-manager.ts` — Add `@openacp/adapter-discord` to migration map
 - `src/plugins/core-plugins.ts` — Remove Discord registration
 - `src/plugins/discord/` — Delete entirely
 - `package.json` — Remove `discord.js` dependency

@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Extract the Discord adapter from OpenACP's built-in plugins into a standalone npm package `@openacp/plugin-discord`.
+**Goal:** Extract the Discord adapter from OpenACP's built-in plugins into a standalone npm package `@openacp/adapter-discord`.
 
 **Architecture:** Copy all 29 files from `src/plugins/discord/` to the standalone repo at `/Users/lab3/Documents/lab3/discord-plugin/`. Extend `@openacp/plugin-sdk` to re-export all symbols the Discord plugin needs. Replace all `../../core/` imports with `@openacp/plugin-sdk`. Remove Discord from OpenACP's built-in plugins.
 
@@ -201,7 +201,7 @@ const legacyMap: Record<string, string> = {
   '@openacp/api-server': 'api',
   '@openacp/telegram': 'channels.telegram',
   '@openacp/discord': 'channels.discord',
-  '@openacp/plugin-discord': 'channels.discord',  // alias for extracted plugin
+  '@openacp/adapter-discord': 'channels.discord',  // alias for extracted plugin
   '@openacp/slack': 'channels.slack',
 }
 ```
@@ -215,7 +215,7 @@ Expected: No errors
 
 ```bash
 git add src/core/plugin/lifecycle-manager.ts
-git commit -m "fix(plugin): add @openacp/plugin-discord migration alias for backward compat"
+git commit -m "fix(plugin): add @openacp/adapter-discord migration alias for backward compat"
 ```
 
 ---
@@ -232,7 +232,7 @@ git commit -m "fix(plugin): add @openacp/plugin-discord migration alias for back
 
 ```json
 {
-  "name": "@openacp/plugin-discord",
+  "name": "@openacp/adapter-discord",
   "version": "0.1.0",
   "description": "Discord adapter plugin for OpenACP — forum threads, slash commands, streaming messages",
   "type": "module",
@@ -349,7 +349,7 @@ import type { OpenACPPlugin, InstallContext, OpenACPCore } from '@openacp/plugin
 ```
 
 Also change:
-- `name: '@openacp/discord'` → `name: '@openacp/plugin-discord'`
+- `name: '@openacp/discord'` → `name: '@openacp/adapter-discord'`
 - `essential: true` → `essential: false`
 
 - [ ] **Step 3: Refactor adapter.ts imports**
@@ -581,7 +581,7 @@ Expected: All tests pass. Discord-specific tests are gone (deleted with the dire
 
 ```bash
 git add -A
-git commit -m "feat: remove built-in Discord plugin (now available as @openacp/plugin-discord)"
+git commit -m "feat: remove built-in Discord plugin (now available as @openacp/adapter-discord)"
 ```
 
 ---
@@ -594,14 +594,14 @@ git commit -m "feat: remove built-in Discord plugin (now available as @openacp/p
 - [ ] **Step 1: Write README**
 
 ```markdown
-# @openacp/plugin-discord
+# @openacp/adapter-discord
 
 Discord adapter plugin for [OpenACP](https://github.com/Open-ACP/OpenACP). Creates forum threads for each AI session, supports slash commands, streaming messages, and permission requests.
 
 ## Installation
 
 ```bash
-openacp plugin add @openacp/plugin-discord
+openacp plugin add @openacp/adapter-discord
 ```
 
 ## Development
@@ -619,7 +619,7 @@ openacp dev .
 
 ## Configuration
 
-After installing the plugin, run `openacp plugin configure @openacp/plugin-discord` to set up:
+After installing the plugin, run `openacp plugin configure @openacp/adapter-discord` to set up:
 
 - Discord bot token
 - Guild ID

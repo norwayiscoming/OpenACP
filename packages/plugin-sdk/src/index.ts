@@ -37,24 +37,12 @@ export type { MessagingAdapterConfig, IRenderer, RenderedMessage } from '@openac
 // --- @stable: Adapter primitives ---
 export { SendQueue, DraftManager, ToolCallTracker, ActivityTracker } from '@openacp/cli'
 
-// --- @stable: Formatting (also available via @openacp/plugin-sdk/formatting) ---
-export type { DisplayVerbosity, ToolCallMeta, ToolUpdateMeta, ViewerLinks } from '@openacp/cli'
-export { STATUS_ICONS, KIND_ICONS } from '@openacp/cli'
-export { progressBar, formatTokens, truncateContent, stripCodeFences, splitMessage } from '@openacp/cli'
-export { extractContentText, formatToolSummary, formatToolTitle, resolveToolIcon } from '@openacp/cli'
-
 // --- @stable: Core classes ---
 export { OpenACPCore } from '@openacp/cli'
 export { Session } from '@openacp/cli'
 export type { SessionEvents } from '@openacp/cli'
 export { SessionManager } from '@openacp/cli'
 export { CommandRegistry } from '@openacp/cli'
-
-// --- @experimental: Config utilities (also via @openacp/plugin-sdk/config) ---
-export { DoctorEngine } from '@openacp/cli'
-export type { DoctorReport, PendingFix } from '@openacp/cli'
-export type { ConfigFieldDef } from '@openacp/cli'
-export { getSafeFields, resolveOptions, getConfigValue, isHotReloadable } from '@openacp/cli'
 
 // --- @stable: Logging ---
 export { log, createChildLogger } from '@openacp/cli'
@@ -68,3 +56,7 @@ export type {
   UsageRecord, InstallProgress,
   DiscordPlatformData, TelegramPlatformData,
 } from '@openacp/cli'
+
+// --- Re-exports from sub-paths for convenience (prefer direct sub-path imports) ---
+export * from './formatting.js'
+export * from './config.js'

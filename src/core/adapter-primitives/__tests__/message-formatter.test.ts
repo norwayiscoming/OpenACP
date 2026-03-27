@@ -212,10 +212,12 @@ describe("evaluateNoise", () => {
   it("hides directory reads (path ends with /)", () => {
     expect(evaluateNoise("Read", "read", { file_path: "src/" })).toBe("hide");
   });
-  it("collapses glob tool", () => {
-    expect(evaluateNoise("Glob", "search", { pattern: "**/*.ts" })).toBe(
-      "collapse",
-    );
+  it("hides glob tool", () => {
+    expect(evaluateNoise("Glob", "search", {})).toBe("hide");
+  });
+  it("hides grep tool", () => {
+    expect(evaluateNoise("Grep", "search", {})).toBe("hide");
+    expect(evaluateNoise("grep", "search", { pattern: "TODO" })).toBe("hide");
   });
   it("returns null for normal Read/Edit/Bash", () => {
     expect(

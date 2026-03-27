@@ -63,6 +63,7 @@ export const KIND_ICONS: Record<string, string> = {
   execute: "▶️",
   command: "▶️",
   bash: "▶️",
+  terminal: "▶️",
   search: "🔍",
   web: "🌐",
   fetch: "🌐",

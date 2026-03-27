@@ -44,14 +44,20 @@ import { escapeHtml } from "./formatting.js";
 import { ActivityTracker } from "./activity.js";
 import { SendQueue } from "../../core/adapter-primitives/primitives/send-queue.js";
 import { setupActionCallbacks } from "./action-detect.js";
-import { TelegramToolCallTracker } from "./tool-call-tracker.js";
 import { DraftManager } from "./draft-manager.js";
 import { SkillCommandManager } from "./skill-command-manager.js";
-import { MessagingAdapter, type MessagingAdapterConfig } from "../../core/adapter-primitives/messaging-adapter.js";
+import {
+  MessagingAdapter,
+  type MessagingAdapterConfig,
+} from "../../core/adapter-primitives/messaging-adapter.js";
 import type { IRenderer } from "../../core/adapter-primitives/rendering/renderer.js";
 import { TelegramRenderer } from "./renderer.js";
 import type { AdapterCapabilities } from "../../core/channel.js";
-import type { DisplayVerbosity, ToolCallMeta, ToolUpdateMeta } from "../../core/adapter-primitives/format-types.js";
+import type {
+  DisplayVerbosity,
+  ToolCallMeta,
+  ToolUpdateMeta,
+} from "../../core/adapter-primitives/format-types.js";
 // evaluateNoise is handled by MessagingAdapter.shouldDisplay()
 
 interface PlanMetadata {
@@ -90,11 +96,15 @@ function patchedFetch(
 }
 
 export class TelegramAdapter extends MessagingAdapter {
-  readonly name = 'telegram';
+  readonly name = "telegram";
   readonly renderer: IRenderer = new TelegramRenderer();
   readonly capabilities: AdapterCapabilities = {
-    streaming: true, richFormatting: true, threads: true,
-    reactions: true, fileUpload: true, voice: true,
+    streaming: true,
+    richFormatting: true,
+    threads: true,
+    reactions: true,
+    fileUpload: true,
+    voice: true,
   };
 
   private core: OpenACPCore;
@@ -109,7 +119,6 @@ export class TelegramAdapter extends MessagingAdapter {
   private _sessionThreadIds = new Map<string, number>();
 
   // Extracted managers
-  private toolTracker!: TelegramToolCallTracker;
   private draftManager!: DraftManager;
   private skillManager!: SkillCommandManager;
   private fileService!: FileServiceInterface;
@@ -128,6 +137,7 @@ export class TelegramAdapter extends MessagingAdapter {
   private getOrCreateTracker(
     sessionId: string,
     threadId: number,
+    verbosity: DisplayVerbosity = "medium",
   ): ActivityTracker {
     let tracker = this.sessionTrackers.get(sessionId);
     if (!tracker) {
@@ -136,6 +146,7 @@ export class TelegramAdapter extends MessagingAdapter {
         this.telegramConfig.chatId,
         threadId,
         this.sendQueue,
+        verbosity,
       );
       this.sessionTrackers.set(sessionId, tracker);
     }
@@ -143,10 +154,11 @@ export class TelegramAdapter extends MessagingAdapter {
   }
 
   constructor(core: OpenACPCore, config: TelegramChannelConfig) {
-    super(
-      { configManager: core.configManager },
-      { ...config as Record<string, unknown>, maxMessageLength: 4096, enabled: config.enabled ?? true } as MessagingAdapterConfig,
-    );
+    super({ configManager: core.configManager }, {
+      ...(config as Record<string, unknown>),
+      maxMessageLength: 4096,
+      enabled: config.enabled ?? true,
+    } as MessagingAdapterConfig);
     this.core = core;
     this.telegramConfig = config;
   }
@@ -161,11 +173,6 @@ export class TelegramAdapter extends MessagingAdapter {
     this.fileService = this.core.fileService;
 
     // Initialize extracted managers
-    this.toolTracker = new TelegramToolCallTracker(
-      this.bot,
-      this.telegramConfig.chatId,
-      this.sendQueue,
-    );
     this.draftManager = new DraftManager(
       this.bot,
       this.telegramConfig.chatId,
@@ -268,17 +275,25 @@ export class TelegramAdapter extends MessagingAdapter {
       const text = ctx.message?.text;
       if (!text?.startsWith("/")) return next();
 
-      const registry = this.core.lifecycleManager?.serviceRegistry?.get<CommandRegistry>("command-registry");
+      const registry =
+        this.core.lifecycleManager?.serviceRegistry?.get<CommandRegistry>(
+          "command-registry",
+        );
       if (!registry) return next();
 
       // Extract command name (remove / and @botname suffix)
       const rawCommand = text.split(" ")[0].slice(1);
       const atIdx = rawCommand.indexOf("@");
       // If command is directed at another bot, ignore it
-      if (atIdx !== -1 && rawCommand.slice(atIdx + 1).toLowerCase() !== ctx.me.username.toLowerCase()) {
+      if (
+        atIdx !== -1 &&
+        rawCommand.slice(atIdx + 1).toLowerCase() !==
+          ctx.me.username.toLowerCase()
+      ) {
         return next();
       }
-      const commandName = atIdx === -1 ? rawCommand : rawCommand.slice(0, atIdx);
+      const commandName =
+        atIdx === -1 ? rawCommand : rawCommand.slice(0, atIdx);
       const def = registry.get(commandName);
       if (!def) return next(); // not in registry, fall through to existing handlers
 
@@ -288,7 +303,10 @@ export class TelegramAdapter extends MessagingAdapter {
       try {
         const sessionId =
           topicId != null
-            ? this.core.sessionManager.getSessionByThread("telegram", String(topicId))?.id ?? null
+            ? (this.core.sessionManager.getSessionByThread(
+                "telegram",
+                String(topicId),
+              )?.id ?? null)
             : null;
 
         const response = await registry.execute(text, {
@@ -299,8 +317,16 @@ export class TelegramAdapter extends MessagingAdapter {
           reply: async (content) => {
             if (typeof content === "string") {
               await ctx.reply(content);
-            } else if (typeof content === "object" && content !== null && "type" in content) {
-              await this.renderCommandResponse(content as CommandResponse, chatId, topicId);
+            } else if (
+              typeof content === "object" &&
+              content !== null &&
+              "type" in content
+            ) {
+              await this.renderCommandResponse(
+                content as CommandResponse,
+                chatId,
+                topicId,
+              );
             }
           },
         });
@@ -321,7 +347,10 @@ export class TelegramAdapter extends MessagingAdapter {
       const data = ctx.callbackQuery.data;
       const command = this.fromCallbackData(data);
 
-      const registry = this.core.lifecycleManager?.serviceRegistry?.get<CommandRegistry>("command-registry");
+      const registry =
+        this.core.lifecycleManager?.serviceRegistry?.get<CommandRegistry>(
+          "command-registry",
+        );
       if (!registry) return;
 
       const chatId = ctx.chat!.id;
@@ -330,7 +359,10 @@ export class TelegramAdapter extends MessagingAdapter {
       try {
         const sessionId =
           topicId != null
-            ? this.core.sessionManager.getSessionByThread("telegram", String(topicId))?.id ?? null
+            ? (this.core.sessionManager.getSessionByThread(
+                "telegram",
+                String(topicId),
+              )?.id ?? null)
             : null;
 
         const response = await registry.execute(command, {
@@ -835,13 +867,20 @@ export class TelegramAdapter extends MessagingAdapter {
     }
   }
 
-  protected async handleThought(sessionId: string, _content: OutgoingMessage, _verbosity: DisplayVerbosity): Promise<void> {
+  protected async handleThought(
+    sessionId: string,
+    _content: OutgoingMessage,
+    _verbosity: DisplayVerbosity,
+  ): Promise<void> {
     const threadId = this.getThreadId(sessionId);
     const tracker = this.getOrCreateTracker(sessionId, threadId);
     await tracker.onThought();
   }
 
-  protected async handleText(sessionId: string, content: OutgoingMessage): Promise<void> {
+  protected async handleText(
+    sessionId: string,
+    content: OutgoingMessage,
+  ): Promise<void> {
     const threadId = this.getThreadId(sessionId);
     // CRITICAL: This handler must be fully synchronous to preserve text ordering.
     // sendMessage() is not awaited in wireSessionEvents, so multiple text events
@@ -856,19 +895,17 @@ export class TelegramAdapter extends MessagingAdapter {
     this.draftManager.appendText(sessionId, content.text);
   }
 
-  protected async handleToolCall(sessionId: string, content: OutgoingMessage, verbosity: DisplayVerbosity): Promise<void> {
+  protected async handleToolCall(
+    sessionId: string,
+    content: OutgoingMessage,
+    verbosity: DisplayVerbosity,
+  ): Promise<void> {
     const threadId = this.getThreadId(sessionId);
     const meta = (content.metadata ?? {}) as Partial<ToolCallMeta>;
 
-    const tracker = this.getOrCreateTracker(sessionId, threadId);
-    await tracker.onToolCall();
-    await this.draftManager.finalize(
-      sessionId,
-      this.assistantSession?.id,
-    );
-    await this.toolTracker.trackNewCall(
-      sessionId,
-      threadId,
+    const tracker = this.getOrCreateTracker(sessionId, threadId, verbosity);
+    await this.draftManager.finalize(sessionId, this.assistantSession?.id);
+    await tracker.onToolCall(
       {
         id: meta.id ?? "",
         name: meta.name ?? content.text ?? "Tool",
@@ -882,61 +919,58 @@ export class TelegramAdapter extends MessagingAdapter {
         displayTitle: meta.displayTitle as string | undefined,
         displayKind: meta.displayKind as string | undefined,
       },
-      verbosity,
+      String(meta.kind ?? ""),
+      meta.rawInput,
     );
   }
 
-  protected async handleToolUpdate(sessionId: string, content: OutgoingMessage, verbosity: DisplayVerbosity): Promise<void> {
+  protected async handleToolUpdate(
+    sessionId: string,
+    content: OutgoingMessage,
+    verbosity: DisplayVerbosity,
+  ): Promise<void> {
+    const threadId = this.getThreadId(sessionId);
     const meta = (content.metadata ?? {}) as Partial<ToolUpdateMeta>;
-    await this.toolTracker.updateCall(
-      sessionId,
-      {
-        id: meta.id ?? "",
-        name: meta.name ?? content.text ?? "",
-        kind: meta.kind,
-        status: meta.status ?? "completed",
-        content: meta.content,
-        rawInput: meta.rawInput,
-        viewerLinks: meta.viewerLinks,
-        viewerFilePath: meta.viewerFilePath,
-        displaySummary: meta.displaySummary as string | undefined,
-        displayTitle: meta.displayTitle as string | undefined,
-        displayKind: meta.displayKind as string | undefined,
-      },
-      verbosity,
+    const tracker = this.getOrCreateTracker(sessionId, threadId, verbosity);
+    await tracker.onToolUpdate(
+      meta.id ?? "",
+      meta.status ?? "completed",
+      meta.viewerLinks as { file?: string; diff?: string } | undefined,
+      meta.viewerFilePath as string | undefined,
     );
   }
 
-  protected async handlePlan(sessionId: string, content: OutgoingMessage, verbosity: DisplayVerbosity): Promise<void> {
+  protected async handlePlan(
+    sessionId: string,
+    content: OutgoingMessage,
+    verbosity: DisplayVerbosity,
+  ): Promise<void> {
     const threadId = this.getThreadId(sessionId);
     const meta = (content.metadata ?? {}) as Partial<PlanMetadata>;
     const entries = meta.entries ?? [];
-    const tracker = this.getOrCreateTracker(sessionId, threadId);
+    const tracker = this.getOrCreateTracker(sessionId, threadId, verbosity);
     await tracker.onPlan(
       entries.map((e) => ({
         content: e.content,
         status: e.status as "pending" | "in_progress" | "completed",
         priority: (e.priority ?? "medium") as "high" | "medium" | "low",
       })),
-      verbosity,
     );
   }
 
-  protected async handleUsage(sessionId: string, content: OutgoingMessage, verbosity: DisplayVerbosity): Promise<void> {
+  protected async handleUsage(
+    sessionId: string,
+    content: OutgoingMessage,
+    verbosity: DisplayVerbosity,
+  ): Promise<void> {
     const threadId = this.getThreadId(sessionId);
     const meta = content.metadata as UsageMetadata | undefined;
-    await this.draftManager.finalize(
-      sessionId,
-      this.assistantSession?.id,
-    );
-    const tracker = this.getOrCreateTracker(sessionId, threadId);
-    await tracker.sendUsage(meta ?? {}, verbosity);
+    await this.draftManager.finalize(sessionId, this.assistantSession?.id);
+    const tracker = this.getOrCreateTracker(sessionId, threadId, verbosity);
+    await tracker.sendUsage(meta ?? {});
 
     // Notify the Notifications topic that a prompt has completed
-    if (
-      this.notificationTopicId &&
-      sessionId !== this.assistantSession?.id
-    ) {
+    if (this.notificationTopicId && sessionId !== this.assistantSession?.id) {
       const sess = this.core.sessionManager.getSession(sessionId);
       const sessionName = sess?.name || "Session";
       const chatIdStr = String(this.telegramConfig.chatId);
@@ -960,7 +994,10 @@ export class TelegramAdapter extends MessagingAdapter {
     }
   }
 
-  protected async handleAttachment(sessionId: string, content: OutgoingMessage): Promise<void> {
+  protected async handleAttachment(
+    sessionId: string,
+    content: OutgoingMessage,
+  ): Promise<void> {
     const threadId = this.getThreadId(sessionId);
     if (!content.attachment) return;
     const { attachment } = content;
@@ -1019,41 +1056,35 @@ export class TelegramAdapter extends MessagingAdapter {
     }
   }
 
-  protected async handleSessionEnd(sessionId: string, _content: OutgoingMessage): Promise<void> {
+  protected async handleSessionEnd(
+    sessionId: string,
+    _content: OutgoingMessage,
+  ): Promise<void> {
     const threadId = this.getThreadId(sessionId);
-    await this.draftManager.finalize(
-      sessionId,
-      this.assistantSession?.id,
-    );
+    await this.draftManager.finalize(sessionId, this.assistantSession?.id);
     this.draftManager.cleanup(sessionId);
-    this.toolTracker.cleanup(sessionId);
     await this.skillManager.cleanup(sessionId);
     const tracker = this.sessionTrackers.get(sessionId);
     if (tracker) {
-      await tracker.onComplete();
-      tracker.destroy();
+      await tracker.cleanup();
       this.sessionTrackers.delete(sessionId);
     } else {
       await this.sendQueue.enqueue(() =>
-        this.bot.api.sendMessage(
-          this.telegramConfig.chatId,
-          `✅ <b>Done</b>`,
-          {
-            message_thread_id: threadId,
-            parse_mode: "HTML",
-            disable_notification: true,
-          },
-        ),
+        this.bot.api.sendMessage(this.telegramConfig.chatId, `✅ <b>Done</b>`, {
+          message_thread_id: threadId,
+          parse_mode: "HTML",
+          disable_notification: true,
+        }),
       );
     }
   }
 
-  protected async handleError(sessionId: string, content: OutgoingMessage): Promise<void> {
+  protected async handleError(
+    sessionId: string,
+    content: OutgoingMessage,
+  ): Promise<void> {
     const threadId = this.getThreadId(sessionId);
-    await this.draftManager.finalize(
-      sessionId,
-      this.assistantSession?.id,
-    );
+    await this.draftManager.finalize(sessionId, this.assistantSession?.id);
     const tracker = this.sessionTrackers.get(sessionId);
     if (tracker) {
       tracker.destroy();
@@ -1072,7 +1103,10 @@ export class TelegramAdapter extends MessagingAdapter {
     );
   }
 
-  protected async handleSystem(sessionId: string, content: OutgoingMessage): Promise<void> {
+  protected async handleSystem(
+    sessionId: string,
+    content: OutgoingMessage,
+  ): Promise<void> {
     const threadId = this.getThreadId(sessionId);
     await this.sendQueue.enqueue(() =>
       this.bot.api.sendMessage(
@@ -1315,7 +1349,6 @@ export class TelegramAdapter extends MessagingAdapter {
 
     // Cleanup all trackers
     this.draftManager.cleanup(session.id);
-    this.toolTracker.cleanup(session.id);
     await this.skillManager.cleanup(session.id);
     const tracker = this.sessionTrackers.get(session.id);
     if (tracker) {

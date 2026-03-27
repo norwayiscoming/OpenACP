@@ -46,10 +46,7 @@ describe("formatUsage", () => {
   });
 
   it("displays small numbers without k suffix (high)", () => {
-    const result = formatUsage(
-      { tokensUsed: 500, contextSize: 1000 },
-      "high",
-    );
+    const result = formatUsage({ tokensUsed: 500, contextSize: 1000 }, "high");
     expect(result).toBe("📊 500 / 1k tokens\n▓▓▓▓▓░░░░░ 50%");
   });
 });

@@ -3,7 +3,11 @@ import type {
   ToolUpdateMeta,
   ViewerLinks,
 } from "../../core/adapter-primitives/format-types.js";
-import { STATUS_ICONS, KIND_ICONS } from "../../core/adapter-primitives/format-types.js";
+import type { ToolCardSnapshot } from "../../core/adapter-primitives/primitives/tool-card-state.js";
+import {
+  STATUS_ICONS,
+  KIND_ICONS,
+} from "../../core/adapter-primitives/format-types.js";
 import {
   progressBar,
   formatTokens,
@@ -103,18 +107,7 @@ export function formatToolUpdate(
   update: ToolUpdateMeta,
   verbosity: DisplayVerbosity = "medium",
 ): string {
-  const si = resolveToolIcon(update);
-  const name = update.name || "Tool";
-  const label =
-    verbosity === "low"
-      ? formatToolTitle(name, update.rawInput, update.displayTitle)
-      : formatToolSummary(name, update.rawInput, update.displaySummary);
-  let text = `${si} <b>${escapeHtml(label)}</b>`;
-  text += formatViewerLinks(update.viewerLinks, update.viewerFilePath);
-  if (verbosity === "high") {
-    text += formatHighDetails(update.rawInput, update.content, 3800);
-  }
-  return text;
+  return formatToolCall(update, verbosity);
 }
 
 function formatHighDetails(
@@ -150,17 +143,10 @@ function formatViewerLinks(links?: ViewerLinks, filePath?: string): string {
   return text;
 }
 
-export function formatPlan(
-  plan: { entries: Array<{ content: string; status: string }> },
-  verbosity: DisplayVerbosity = "medium",
-): string {
+export function formatPlan(plan: {
+  entries: Array<{ content: string; status: string }>;
+}): string {
   const { entries } = plan;
-  // medium: summary count only
-  if (verbosity === "medium") {
-    const done = entries.filter((e) => e.status === "completed").length;
-    return `📋 <b>Plan:</b> ${done}/${entries.length} steps completed`;
-  }
-  // high: full entries
   const statusIcon: Record<string, string> = {
     pending: "⬜",
     in_progress: "🔄",
@@ -206,4 +192,80 @@ export function formatSummary(summary: string, sessionName?: string): string {
 
 export function splitMessage(text: string, maxLength = 3800): string[] {
   return sharedSplitMessage(text, maxLength);
+}
+
+export function renderToolCard(snap: ToolCardSnapshot): string {
+  const sections: string[] = [];
+
+  // Header
+  const { totalVisible, completedVisible, allComplete } = snap;
+  const headerCheck = allComplete ? " ✅" : "";
+  if (totalVisible > 0) {
+    sections.push(
+      `<b>📋 Tools (${completedVisible}/${totalVisible})</b>${headerCheck}`,
+    );
+  }
+
+  // Tool entries
+  const visible = snap.entries.filter((e) => !e.hidden);
+  const completed = visible.filter(
+    (e) =>
+      e.status === "completed" || e.status === "done" || e.status === "failed",
+  );
+  const running = visible.filter(
+    (e) =>
+      e.status !== "completed" && e.status !== "done" && e.status !== "failed",
+  );
+
+  for (const entry of completed) {
+    let line = `${entry.icon} ${escapeHtml(entry.label)}`;
+    if (entry.viewerLinks) {
+      const links: string[] = [];
+      const fileName = entry.viewerFilePath?.split("/").pop() ?? "";
+      if (entry.viewerLinks.file)
+        links.push(
+          `📄 <a href="${escapeHtml(entry.viewerLinks.file)}">View ${escapeHtml(fileName || "file")}</a>`,
+        );
+      if (entry.viewerLinks.diff)
+        links.push(
+          `📝 <a href="${escapeHtml(entry.viewerLinks.diff)}">View diff</a>`,
+        );
+      if (links.length > 0) line += `\n  ${links.join(" · ")}`;
+    }
+    sections.push(line);
+  }
+
+  // Plan section (between completed and running tools)
+  if (snap.planEntries && snap.planEntries.length > 0) {
+    const planDone = snap.planEntries.filter(
+      (e) => e.status === "completed",
+    ).length;
+    const planTotal = snap.planEntries.length;
+    sections.push(`── Plan: ${planDone}/${planTotal} ──`);
+
+    const statusIcon: Record<string, string> = {
+      completed: "✅",
+      in_progress: "🔄",
+      pending: "⬜",
+    };
+    for (let i = 0; i < snap.planEntries.length; i++) {
+      const e = snap.planEntries[i];
+      const icon = statusIcon[e.status] ?? "⬜";
+      sections.push(`${icon} ${i + 1}. ${escapeHtml(e.content)}`);
+    }
+    sections.push("────");
+  }
+
+  // Running tools (after plan)
+  for (const entry of running) {
+    sections.push(`${entry.icon} ${escapeHtml(entry.label)}`);
+  }
+
+  // Usage footer
+  if (snap.usage?.tokensUsed != null) {
+    if (sections.length > 0) sections.push("───");
+    sections.push(formatUsage(snap.usage, snap.verbosity));
+  }
+
+  return sections.join("\n");
 }

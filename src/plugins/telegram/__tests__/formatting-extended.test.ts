@@ -7,7 +7,39 @@ import {
   formatPlan,
   formatUsage,
   splitMessage,
+  renderToolCard,
 } from "../formatting.js";
+import type {
+  ToolCardSnapshot,
+  ToolCardEntry,
+} from "../../../core/adapter-primitives/primitives/tool-card-state.js";
+
+function makeEntry(
+  id: string,
+  overrides?: Partial<ToolCardEntry>,
+): ToolCardEntry {
+  return {
+    id,
+    name: "Read",
+    status: "completed",
+    icon: "✅",
+    label: "📖 Read src/main.ts",
+    hidden: false,
+    ...overrides,
+  };
+}
+
+function makeSnapshot(overrides?: Partial<ToolCardSnapshot>): ToolCardSnapshot {
+  return {
+    entries: [],
+    visibleCount: 0,
+    totalVisible: 0,
+    completedVisible: 0,
+    allComplete: false,
+    verbosity: "medium",
+    ...overrides,
+  };
+}
 
 describe("escapeHtml", () => {
   it("escapes ampersand", () => {
@@ -305,46 +337,37 @@ describe("formatToolUpdate", () => {
 });
 
 describe("formatPlan", () => {
-  it("formats plan entries with status icons (high)", () => {
-    const result = formatPlan(
-      {
-        entries: [
-          { content: "Step 1", status: "completed" },
-          { content: "Step 2", status: "in_progress" },
-          { content: "Step 3", status: "pending" },
-        ],
-      },
-      "high",
-    );
+  it("formats plan entries with status icons", () => {
+    const result = formatPlan({
+      entries: [
+        { content: "Step 1", status: "completed" },
+        { content: "Step 2", status: "in_progress" },
+        { content: "Step 3", status: "pending" },
+      ],
+    });
     expect(result).toContain("<b>Plan:</b>");
     expect(result).toContain("✅ 1. Step 1");
     expect(result).toContain("🔄 2. Step 2");
     expect(result).toContain("⬜ 3. Step 3");
   });
 
-  it("handles empty entries (high)", () => {
-    const result = formatPlan({ entries: [] }, "high");
+  it("handles empty entries", () => {
+    const result = formatPlan({ entries: [] });
     expect(result).toContain("<b>Plan:</b>");
   });
 
-  it("escapes HTML in entry content (high)", () => {
-    const result = formatPlan(
-      {
-        entries: [{ content: "<script>alert(1)</script>", status: "pending" }],
-      },
-      "high",
-    );
+  it("escapes HTML in entry content", () => {
+    const result = formatPlan({
+      entries: [{ content: "<script>alert(1)</script>", status: "pending" }],
+    });
     expect(result).toContain("&lt;script&gt;");
     expect(result).not.toContain("<script>");
   });
 
-  it("uses default icon for unknown status (high)", () => {
-    const result = formatPlan(
-      {
-        entries: [{ content: "Step", status: "unknown" }],
-      },
-      "high",
-    );
+  it("uses default icon for unknown status", () => {
+    const result = formatPlan({
+      entries: [{ content: "Step", status: "unknown" }],
+    });
     expect(result).toContain("⬜");
   });
 });
@@ -532,16 +555,11 @@ describe("formatPlan verbosity", () => {
     { content: "Step 3", status: "pending" },
   ];
 
-  it("medium shows summary count", () => {
-    const result = formatPlan({ entries }, "medium");
-    expect(result).toContain("1/3 steps completed");
-    expect(result).not.toContain("Step 1");
-  });
-
-  it("high shows full entries", () => {
-    const result = formatPlan({ entries }, "high");
+  it("always shows full entries", () => {
+    const result = formatPlan({ entries });
     expect(result).toContain("Step 1");
     expect(result).toContain("Step 2");
+    expect(result).toContain("Step 3");
   });
 });
 
@@ -569,5 +587,65 @@ describe("formatUsage verbosity", () => {
     );
     expect(result).toContain("▓");
     expect(result).toContain("💰 $0.25");
+  });
+});
+
+describe("renderToolCard", () => {
+  it("renders header with HTML bold", () => {
+    const snap = makeSnapshot({
+      entries: [makeEntry("t1")],
+      visibleCount: 1,
+      totalVisible: 1,
+      completedVisible: 1,
+      allComplete: true,
+    });
+    const result = renderToolCard(snap);
+    expect(result).toContain("<b>📋 Tools (1/1)</b> ✅");
+  });
+
+  it("escapes HTML in tool labels", () => {
+    const snap = makeSnapshot({
+      entries: [makeEntry("t1", { label: "📖 Read <script>.ts" })],
+      visibleCount: 1,
+      totalVisible: 1,
+      completedVisible: 1,
+    });
+    const result = renderToolCard(snap);
+    expect(result).toContain("&lt;script&gt;");
+    expect(result).not.toContain("<script>");
+  });
+
+  it("renders viewer links as HTML anchors", () => {
+    const snap = makeSnapshot({
+      entries: [makeEntry("t1", { viewerLinks: { diff: "http://diff.url" } })],
+      visibleCount: 1,
+      totalVisible: 1,
+      completedVisible: 1,
+    });
+    const result = renderToolCard(snap);
+    expect(result).toContain('<a href="http://diff.url">');
+  });
+
+  it("renders plan section with HTML escaping", () => {
+    const snap = makeSnapshot({
+      planEntries: [
+        { content: "Step <1>", status: "completed", priority: "high" },
+      ],
+    });
+    const result = renderToolCard(snap);
+    expect(result).toContain("Step &lt;1&gt;");
+  });
+
+  it("renders usage footer", () => {
+    const snap = makeSnapshot({
+      entries: [makeEntry("t1")],
+      usage: { tokensUsed: 12500, cost: 0.05 },
+      visibleCount: 1,
+      totalVisible: 1,
+      completedVisible: 1,
+    });
+    const result = renderToolCard(snap);
+    expect(result).toContain("📊");
+    expect(result).toContain("$0.05");
   });
 });

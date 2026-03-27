@@ -1,9 +1,15 @@
 import type { Bot } from "grammy";
 import { createChildLogger } from "../../core/utils/log.js";
-import { formatUsage } from "./formatting.js";
-import type { DisplayVerbosity } from "../../core/adapter-primitives/format-types.js";
-import type { SendQueue } from "../../core/adapter-primitives/primitives/send-queue.js";
 import type { PlanEntry } from "../../core/types.js";
+import type {
+  ToolCallMeta,
+  DisplayVerbosity,
+  ViewerLinks,
+} from "../../core/adapter-primitives/format-types.js";
+import type { SendQueue } from "../../core/adapter-primitives/primitives/send-queue.js";
+import { ToolCardState } from "../../core/adapter-primitives/primitives/tool-card-state.js";
+import type { ToolCardSnapshot } from "../../core/adapter-primitives/primitives/tool-card-state.js";
+import { renderToolCard } from "./formatting.js";
 
 const log = createChildLogger({ module: "telegram:activity" });
 
@@ -76,22 +82,15 @@ export class ThinkingIndicator {
       this.sendQueue
         .enqueue(() => {
           // Re-check after waiting in queue — dismiss may have been called
-          if (this.dismissed) return Promise.resolve(undefined);
-          return this.api.sendMessage(
+          if (this.dismissed || !this.msgId) return Promise.resolve(undefined);
+          return this.api.editMessageText(
             this.chatId,
+            this.msgId,
             `💭 <i>Still thinking... (${elapsed}s)</i>`,
-            {
-              message_thread_id: this.threadId,
-              parse_mode: "HTML",
-              disable_notification: true,
-            },
+            { parse_mode: "HTML" },
           );
         })
-        .then((result) => {
-          if (result && !this.dismissed) {
-            this.msgId = result.message_id;
-          }
-        })
+        .then(() => {})
         .catch(() => {});
     }, THINKING_REFRESH_MS);
   }
@@ -104,146 +103,76 @@ export class ThinkingIndicator {
   }
 }
 
-// ─── UsageMessage ─────────────────────────────────────────────────────────────
+// ─── ToolCard ─────────────────────────────────────────────────────────────────
 
-export class UsageMessage {
+export class ToolCard {
+  private state: ToolCardState;
   private msgId?: number;
+  private lastSentText?: string;
+  private flushPromise: Promise<void> = Promise.resolve();
 
   constructor(
     private api: Bot["api"],
     private chatId: number,
     private threadId: number,
     private sendQueue: SendQueue,
-  ) {}
+    verbosity: DisplayVerbosity,
+  ) {
+    this.state = new ToolCardState({
+      verbosity,
+      onFlush: (snapshot) => {
+        this.flushPromise = this.flushPromise
+          .then(() => this._sendOrEdit(snapshot))
+          .catch(() => {});
+      },
+    });
+  }
 
-  async send(
-    usage: { tokensUsed?: number; contextSize?: number; cost?: number },
-    verbosity: DisplayVerbosity = "medium",
-  ): Promise<void> {
-    const text = formatUsage(usage, verbosity);
-    try {
-      if (this.msgId) {
-        await this.sendQueue.enqueue(() =>
-          this.api.editMessageText(this.chatId, this.msgId!, text, {
-            parse_mode: "HTML",
-          }),
-        );
-      } else {
-        const result = await this.sendQueue.enqueue(() =>
-          this.api.sendMessage(this.chatId, text, {
-            message_thread_id: this.threadId,
-            parse_mode: "HTML",
-            disable_notification: true,
-          }),
-        );
-        if (result) this.msgId = result.message_id;
-      }
-    } catch (err) {
-      log.warn({ err }, "UsageMessage.send() failed");
-    }
+  addTool(meta: ToolCallMeta, kind: string, rawInput: unknown): void {
+    this.state.addTool(meta, kind, rawInput);
+  }
+
+  updateTool(
+    id: string,
+    status: string,
+    viewerLinks?: ViewerLinks,
+    viewerFilePath?: string,
+  ): void {
+    this.state.updateTool(id, status, viewerLinks, viewerFilePath);
+  }
+
+  updatePlan(entries: PlanEntry[]): void {
+    this.state.updatePlan(entries);
+  }
+
+  appendUsage(usage: {
+    tokensUsed?: number;
+    contextSize?: number;
+    cost?: number;
+  }): void {
+    this.state.appendUsage(usage);
+  }
+
+  async finalize(): Promise<void> {
+    this.state.finalize();
+    await this.flushPromise;
+  }
+
+  destroy(): void {
+    this.state.destroy();
+  }
+
+  hasContent(): boolean {
+    return this.state.hasContent();
   }
 
   getMsgId(): number | undefined {
     return this.msgId;
   }
 
-  async delete(): Promise<void> {
-    if (!this.msgId) return;
-    const id = this.msgId;
-    this.msgId = undefined;
-    try {
-      await this.sendQueue.enqueue(() =>
-        this.api.deleteMessage(this.chatId, id),
-      );
-    } catch (err) {
-      log.warn({ err }, "UsageMessage.delete() failed");
-    }
-  }
-}
-
-// ─── PlanCard ─────────────────────────────────────────────────────────────────
-
-function formatPlanCard(
-  entries: PlanEntry[],
-  verbosity: DisplayVerbosity = "medium",
-): string {
-  if (verbosity === "medium") {
-    const done = entries.filter((e) => e.status === "completed").length;
-    return `📋 <b>Plan:</b> ${done}/${entries.length} steps completed`;
-  }
-  const statusIcon: Record<string, string> = {
-    completed: "✅",
-    in_progress: "🔄",
-    pending: "⬜",
-    failed: "❌",
-  };
-  const total = entries.length;
-  const done = entries.filter((e) => e.status === "completed").length;
-  const ratio = total > 0 ? done / total : 0;
-  const filled = Math.round(ratio * 10);
-  const bar = "▓".repeat(filled) + "░".repeat(10 - filled);
-  const pct = Math.round(ratio * 100);
-  const header = `📋 <b>Plan</b>\n${bar} ${pct}% · ${done}/${total}`;
-  const lines = entries.map((e, i) => {
-    const icon = statusIcon[e.status] ?? "⬜";
-    return `${icon} ${i + 1}. ${e.content}`;
-  });
-  return [header, ...lines].join("\n");
-}
-
-export class PlanCard {
-  private msgId?: number;
-  private flushPromise: Promise<void> = Promise.resolve();
-  private latestEntries?: PlanEntry[];
-  private lastSentText?: string;
-  private flushTimer?: ReturnType<typeof setTimeout>;
-  private verbosity: DisplayVerbosity = "medium";
-
-  constructor(
-    private api: Bot["api"],
-    private chatId: number,
-    private threadId: number,
-    private sendQueue: SendQueue,
-  ) {}
-
-  setVerbosity(v: DisplayVerbosity): void {
-    this.verbosity = v;
-  }
-
-  update(entries: PlanEntry[]): void {
-    this.latestEntries = entries;
-    if (this.flushTimer) clearTimeout(this.flushTimer);
-    this.flushTimer = setTimeout(() => {
-      this.flushTimer = undefined;
-      this.flushPromise = this.flushPromise
-        .then(() => this._flush())
-        .catch(() => {});
-    }, 3500);
-  }
-
-  async finalize(): Promise<void> {
-    if (!this.latestEntries) return;
-    if (this.flushTimer) {
-      clearTimeout(this.flushTimer);
-      this.flushTimer = undefined;
-    }
-    await this.flushPromise;
-    this.flushPromise = this.flushPromise
-      .then(() => this._flush())
-      .catch(() => {});
-    await this.flushPromise;
-  }
-
-  destroy(): void {
-    if (this.flushTimer) {
-      clearTimeout(this.flushTimer);
-      this.flushTimer = undefined;
-    }
-  }
-
-  private async _flush(): Promise<void> {
-    if (!this.latestEntries) return;
-    const text = formatPlanCard(this.latestEntries, this.verbosity);
+  private async _sendOrEdit(snapshot: ToolCardSnapshot): Promise<void> {
+    const text = renderToolCard(snapshot);
+    if (!text) return;
     if (this.msgId && text === this.lastSentText) return;
     this.lastSentText = text;
     try {
@@ -264,7 +193,7 @@ export class PlanCard {
         if (result) this.msgId = result.message_id;
       }
     } catch (err) {
-      log.warn({ err }, "PlanCard flush failed");
+      log.warn({ err }, "[ToolCard] send/edit failed");
     }
   }
 }
@@ -273,93 +202,82 @@ export class PlanCard {
 
 export class ActivityTracker {
   private isFirstEvent = true;
-  private hasPlanCard = false;
   private thinking: ThinkingIndicator;
-  private planCard: PlanCard;
-  private usage: UsageMessage;
+  private toolCard: ToolCard;
 
   constructor(
     private api: Bot["api"],
     private chatId: number,
     private threadId: number,
     private sendQueue: SendQueue,
+    verbosity: DisplayVerbosity = "medium",
   ) {
     this.thinking = new ThinkingIndicator(api, chatId, threadId, sendQueue);
-    this.planCard = new PlanCard(api, chatId, threadId, sendQueue);
-    this.usage = new UsageMessage(api, chatId, threadId, sendQueue);
+    this.toolCard = new ToolCard(api, chatId, threadId, sendQueue, verbosity);
   }
 
   async onNewPrompt(): Promise<void> {
     this.isFirstEvent = true;
-    this.hasPlanCard = false;
     this.thinking.dismiss();
     this.thinking.reset();
   }
 
   async onThought(): Promise<void> {
-    await this._firstEventGuard();
+    this.isFirstEvent = false;
     await this.thinking.show();
   }
 
-  async onPlan(
-    entries: PlanEntry[],
-    verbosity?: DisplayVerbosity,
-  ): Promise<void> {
-    await this._firstEventGuard();
+  async onTextStart(): Promise<void> {
+    this.isFirstEvent = false;
     this.thinking.dismiss();
-    this.hasPlanCard = true;
-    if (verbosity) this.planCard.setVerbosity(verbosity);
-    this.planCard.update(entries);
   }
 
-  async onToolCall(): Promise<void> {
-    await this._firstEventGuard();
+  async onToolCall(
+    meta: ToolCallMeta,
+    kind: string,
+    rawInput: unknown,
+  ): Promise<void> {
+    this.isFirstEvent = false;
     this.thinking.dismiss();
     this.thinking.reset();
+    this.toolCard.addTool(meta, kind, rawInput);
   }
 
-  async onTextStart(): Promise<void> {
-    await this._firstEventGuard();
-    this.thinking.dismiss();
-  }
-
-  async sendUsage(
-    data: { tokensUsed?: number; contextSize?: number; cost?: number },
-    verbosity: DisplayVerbosity = "medium",
+  async onToolUpdate(
+    id: string,
+    status: string,
+    viewerLinks?: ViewerLinks,
+    viewerFilePath?: string,
   ): Promise<void> {
-    await this.usage.send(data, verbosity);
+    this.toolCard.updateTool(id, status, viewerLinks, viewerFilePath);
+  }
+
+  async onPlan(entries: PlanEntry[]): Promise<void> {
+    this.isFirstEvent = false;
+    this.thinking.dismiss();
+    this.toolCard.updatePlan(entries);
+  }
+
+  async sendUsage(usage: {
+    tokensUsed?: number;
+    contextSize?: number;
+    cost?: number;
+  }): Promise<void> {
+    this.toolCard.appendUsage(usage);
   }
 
   getUsageMsgId(): number | undefined {
-    return this.usage.getMsgId();
+    return this.toolCard.getMsgId();
   }
 
-  async onComplete(): Promise<void> {
-    if (this.hasPlanCard) {
-      await this.planCard.finalize();
-    } else {
-      try {
-        await this.sendQueue.enqueue(() =>
-          this.api.sendMessage(this.chatId, "✅ <b>Done</b>", {
-            message_thread_id: this.threadId,
-            parse_mode: "HTML",
-            disable_notification: true,
-          }),
-        );
-      } catch (err) {
-        log.warn({ err }, "ActivityTracker.onComplete() Done send failed");
-      }
-    }
+  async cleanup(): Promise<void> {
+    this.thinking.dismiss();
+    await this.toolCard.finalize();
+    this.toolCard.destroy();
   }
 
   destroy(): void {
     this.thinking.dismiss();
-    this.planCard.destroy();
-  }
-
-  private async _firstEventGuard(): Promise<void> {
-    if (!this.isFirstEvent) return;
-    this.isFirstEvent = false;
-    await this.usage.delete();
+    this.toolCard.destroy();
   }
 }

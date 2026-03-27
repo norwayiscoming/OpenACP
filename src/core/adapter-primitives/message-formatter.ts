@@ -80,9 +80,9 @@ export function formatToolSummary(
     const fp = args.file_path ?? args.filePath ?? "";
     return fp ? `📝 Write ${fp}` : `🔧 ${name}`;
   }
-  if (lowerName === "bash") {
-    const cmd = String(args.command ?? "").slice(0, 60);
-    return cmd ? `▶️ Run: ${cmd}` : `🔧 ${name}`;
+  if (lowerName === "bash" || lowerName === "terminal") {
+    const cmd = String(args.command ?? args.cmd ?? "").slice(0, 60);
+    return cmd ? `▶️ Run: ${cmd}` : `▶️ Terminal`;
   }
   if (lowerName === "grep") {
     const pattern = args.pattern ?? "";
@@ -128,8 +128,8 @@ export function formatToolTitle(
   if (["read", "edit", "write"].includes(lowerName)) {
     return String(args.file_path ?? args.filePath ?? name);
   }
-  if (lowerName === "bash") {
-    return String(args.command ?? name).slice(0, 60);
+  if (lowerName === "bash" || lowerName === "terminal") {
+    return String(args.command ?? args.cmd ?? name).slice(0, 60);
   }
   if (lowerName === "grep") {
     const pattern = args.pattern ?? "";
@@ -184,7 +184,11 @@ const NOISE_RULES: NoiseRule[] = [
   },
   {
     match: (name) => name.toLowerCase() === "glob",
-    action: "collapse",
+    action: "hide",
+  },
+  {
+    match: (name) => name.toLowerCase() === "grep",
+    action: "hide",
   },
 ];
 

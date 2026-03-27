@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { TelegramToolCallTracker } from '../adapters/telegram/tool-call-tracker.js'
+import { TelegramToolCallTracker } from '../plugins/telegram/tool-call-tracker.js'
 
 function mockBot() {
   return {

@@ -21,7 +21,7 @@ import type {
   PermissionRequest,
   SetConfigOptionValue,
 } from "../types.js";
-import { FileService } from "../../plugins/file-service/file-service.js";
+import { readTextFileWithRange } from "../utils/read-text-file.js";
 import type { MiddlewareChain } from "../plugin/middleware-chain.js";
 import { PROTOCOL_VERSION } from "@agentclientprotocol/sdk";
 import { TerminalManager } from "../sessions/terminal-manager.js";
@@ -558,7 +558,7 @@ export class AgentInstance extends TypedEmitter<AgentInstanceEvents> {
           if (!result) return { content: "" }; // blocked by middleware
           p.path = result.path;
         }
-        const content = await FileService.readTextFileWithRange(p.path, {
+        const content = await readTextFileWithRange(p.path, {
           line: p.line ?? undefined,
           limit: p.limit ?? undefined,
         });

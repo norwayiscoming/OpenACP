@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { SkillCommandManager } from '../adapters/telegram/skill-command-manager.js'
+import { SkillCommandManager } from '../plugins/telegram/skill-command-manager.js'
 import type { AgentCommand } from '../core/types.js'
 
-vi.mock('../adapters/telegram/commands/index.js', () => ({
+vi.mock('../plugins/telegram/commands/index.js', () => ({
   buildSkillMessages: vi.fn((commands: AgentCommand[]) =>
     commands.length > 0 ? [`<b>Skills:</b>\n${commands.map(c => `/${c.name}`).join('\n')}`] : [],
   ),

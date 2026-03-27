@@ -3,7 +3,9 @@ import { ServiceRegistry } from './service-registry.js'
 import { MiddlewareChain } from './middleware-chain.js'
 import { ErrorTracker } from './error-tracker.js'
 import { createPluginContext } from './plugin-context.js'
-import type { OpenACPPlugin, EventBus, Logger } from './types.js'
+import type { OpenACPPlugin, EventBus, Logger, MigrateContext } from './types.js'
+import type { SettingsManager } from './settings-manager.js'
+import type { PluginRegistry } from './plugin-registry.js'
 
 const SETUP_TIMEOUT_MS = 30_000
 const TEARDOWN_TIMEOUT_MS = 10_000
@@ -65,6 +67,8 @@ export interface LifecycleManagerOpts {
   config?: unknown
   core?: unknown
   log?: Logger
+  settingsManager?: SettingsManager
+  pluginRegistry?: PluginRegistry
 }
 
 export class LifecycleManager {
@@ -78,6 +82,8 @@ export class LifecycleManager {
   private config: unknown
   private core: unknown
   private log: Logger | undefined
+  private settingsManager: SettingsManager | undefined
+  private pluginRegistry: PluginRegistry | undefined
 
   private contexts = new Map<string, ReturnType<typeof createPluginContext>>()
   private loadOrder: OpenACPPlugin[] = []
@@ -106,6 +112,15 @@ export class LifecycleManager {
     this.config = opts?.config ?? {}
     this.core = opts?.core
     this.log = opts?.log
+    this.settingsManager = opts?.settingsManager
+    this.pluginRegistry = opts?.pluginRegistry
+  }
+
+  private getPluginLogger(pluginName: string): Logger {
+    if (this.log && typeof (this.log as any).child === 'function') {
+      return (this.log as any).child({ plugin: pluginName })
+    }
+    return this.log ?? { trace() {}, debug() {}, info() {}, warn() {}, error() {}, fatal() {}, child() { return this } } as Logger
   }
 
   async boot(plugins: OpenACPPlugin[]): Promise<void> {
@@ -124,7 +139,16 @@ export class LifecycleManager {
       return
     }
 
-    this.loadOrder = sorted
+    // Append to existing loadOrder (don't overwrite — hot-reload boots single plugins)
+    for (const p of sorted) {
+      if (!this.loadOrder.some(existing => existing.name === p.name)) {
+        this.loadOrder.push(p)
+      } else {
+        // Replace in-place (hot-reload case: plugin was unloaded then re-booted)
+        const idx = this.loadOrder.findIndex(existing => existing.name === p.name)
+        this.loadOrder[idx] = p
+      }
+    }
 
     for (const plugin of sorted) {
       // Check if any required dependency failed at runtime
@@ -138,8 +162,46 @@ export class LifecycleManager {
         }
       }
 
+      // Check if disabled in registry
+      const registryEntry = this.pluginRegistry?.get(plugin.name)
+      if (registryEntry && registryEntry.enabled === false) {
+        this.eventBus?.emit('plugin:disabled', { name: plugin.name })
+        continue
+      }
+
+      // Check version mismatch → migrate
+      if (registryEntry && plugin.migrate && registryEntry.version !== plugin.version && this.settingsManager) {
+        try {
+          const oldSettings = await this.settingsManager.loadSettings(plugin.name)
+          const pluginLog = this.getPluginLogger(plugin.name)
+          const migrateCtx: MigrateContext = {
+            pluginName: plugin.name,
+            settings: this.settingsManager.createAPI(plugin.name),
+            log: pluginLog,
+          }
+          const newSettings = await plugin.migrate(migrateCtx, oldSettings, registryEntry.version)
+          if (newSettings && typeof newSettings === 'object') {
+            await migrateCtx.settings.setAll(newSettings as Record<string, unknown>)
+          }
+          this.pluginRegistry!.updateVersion(plugin.name, plugin.version)
+          await this.pluginRegistry!.save()
+        } catch (err) {
+          this.getPluginLogger(plugin.name).warn(`Migration failed, continuing with old settings: ${err}`)
+        }
+      }
+
+      // Resolve config: prefer settings.json, fallback to legacy
+      let pluginConfig: Record<string, unknown>
+      if (this.settingsManager) {
+        pluginConfig = await this.settingsManager.loadSettings(plugin.name)
+        if (Object.keys(pluginConfig).length === 0) {
+          pluginConfig = resolvePluginConfig(plugin.name, this.config)
+        }
+      } else {
+        pluginConfig = resolvePluginConfig(plugin.name, this.config)
+      }
+
       // Create context for this plugin
-      const pluginConfig = resolvePluginConfig(plugin.name, this.config)
       const ctx = createPluginContext({
         pluginName: plugin.name,
         pluginConfig,
@@ -163,9 +225,36 @@ export class LifecycleManager {
       } catch (err) {
         this._failed.add(plugin.name)
         ctx.cleanup()
+        this.getPluginLogger(plugin.name).error(`setup() failed: ${err}`)
         this.eventBus?.emit('plugin:failed', { name: plugin.name, error: String(err) })
       }
     }
+  }
+
+  async unloadPlugin(name: string): Promise<void> {
+    if (!this._loaded.has(name)) return
+
+    const plugin = this.loadOrder.find(p => p.name === name)
+
+    if (plugin?.teardown) {
+      try {
+        await withTimeout(plugin.teardown(), TEARDOWN_TIMEOUT_MS, `${name}.teardown()`)
+      } catch {
+        // Swallow teardown errors
+      }
+    }
+
+    const ctx = this.contexts.get(name)
+    if (ctx) {
+      ctx.cleanup()
+      this.contexts.delete(name)
+    }
+
+    this._loaded.delete(name)
+    this._failed.delete(name)
+    this.loadOrder = this.loadOrder.filter(p => p.name !== name)
+
+    this.eventBus?.emit('plugin:unloaded', { name })
   }
 
   async shutdown(): Promise<void> {

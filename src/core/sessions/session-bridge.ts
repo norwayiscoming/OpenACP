@@ -5,7 +5,7 @@ import type { NotificationManager } from "../../plugins/notifications/notificati
 import type { SessionManager } from "./session-manager.js";
 import type { AgentEvent, PermissionRequest, SessionStatus } from "../types.js";
 import type { EventBus } from "../event-bus.js";
-import { FileService } from "../../plugins/file-service/file-service.js";
+import type { FileServiceInterface } from "../plugin/types.js";
 import type { MiddlewareChain } from "../plugin/middleware-chain.js";
 import { createChildLogger } from "../utils/log.js";
 
@@ -16,7 +16,7 @@ export interface BridgeDeps {
   notificationManager: NotificationManager;
   sessionManager: SessionManager;
   eventBus?: EventBus;
-  fileService?: FileService;
+  fileService?: FileServiceInterface;
   middlewareChain?: MiddlewareChain;
 }
 
@@ -169,7 +169,7 @@ export class SessionBridge {
             const sid = this.session.id;
             const { data, mimeType } = event;
             const buffer = Buffer.from(data, "base64");
-            const ext = FileService.extensionFromMime(mimeType);
+            const ext = fs.extensionFromMime(mimeType);
             fs.saveFile(sid, `agent-image${ext}`, buffer, mimeType)
               .then((att) => {
                 this.sendMessage(sid, {
@@ -188,7 +188,7 @@ export class SessionBridge {
             const sid = this.session.id;
             const { data, mimeType } = event;
             const buffer = Buffer.from(data, "base64");
-            const ext = FileService.extensionFromMime(mimeType);
+            const ext = fs.extensionFromMime(mimeType);
             fs.saveFile(sid, `agent-audio${ext}`, buffer, mimeType)
               .then((att) => {
                 this.sendMessage(sid, {

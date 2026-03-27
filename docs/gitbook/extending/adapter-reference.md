@@ -147,16 +147,24 @@ interface ChannelConfig {
 }
 ```
 
-### AdapterFactory
+### Plugin Registration (replaces AdapterFactory)
 
-The export contract for plugin packages.
+Adapter plugins now implement the `OpenACPPlugin` interface. Instead of exporting an `AdapterFactory`, plugins register their adapter in the `setup()` method:
 
 ```typescript
-interface AdapterFactory {
-  name: string
-  createAdapter(core: OpenACPCore, config: ChannelConfig): ChannelAdapter
+import type { OpenACPPlugin, PluginContext } from '@openacp/plugin-sdk'
+
+const plugin: OpenACPPlugin = {
+  name: '@openacp/adapter-myplatform',
+  version: '1.0.0',
+  async setup(ctx: PluginContext) {
+    const adapter = new MyPlatformAdapter(ctx)
+    ctx.registerAdapter('myplatform', adapter)
+  },
 }
 ```
+
+Adapter implementations should extend `MessagingAdapter` (for full-featured platforms with threads/topics) or `StreamAdapter` (for simpler stream-based integrations) from `@openacp/plugin-sdk`.
 
 ---
 

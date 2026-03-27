@@ -8,7 +8,7 @@ import type { NotificationManager } from "../plugins/notifications/notification.
 import type { IChannelAdapter } from "./channel.js";
 import { Session } from "./sessions/session.js";
 import { MessageTransformer } from "./message-transformer.js";
-import type { FileService } from "../plugins/file-service/file-service.js";
+import type { FileServiceInterface } from "./plugin/types.js";
 import { JsonFileSessionStore, type SessionStore } from "./sessions/session-store.js";
 import type { UsageStore } from "../plugins/usage/usage-store.js";
 import type { UsageBudget } from "../plugins/usage/usage-budget.js";
@@ -55,8 +55,8 @@ export class OpenACPCore {
     return this.lifecycleManager.serviceRegistry.get<NotificationManager>('notifications')!;
   }
 
-  get fileService(): FileService {
-    return this.lifecycleManager.serviceRegistry.get<FileService>('file-service')!;
+  get fileService(): FileServiceInterface {
+    return this.lifecycleManager.serviceRegistry.get<FileServiceInterface>('file-service')!;
   }
 
   get speechService(): SpeechService {
@@ -112,6 +112,7 @@ export class OpenACPCore {
       config: this.configManager,
       core: this,
       storagePath: path.join(os.homedir(), ".openacp", "plugins", "data"),
+      log: createChildLogger({ module: "plugin" }),
     });
 
     // Wire middleware chain to session factory and session manager
@@ -130,26 +131,12 @@ export class OpenACPCore {
         if (configPath.startsWith("speech.")) {
           const speechSvc = this.speechService;
           if (speechSvc) {
-            const { GroqSTT, EdgeTTS } = await import("../plugins/speech/exports.js");
             const newConfig = this.configManager.get();
             const newSpeechConfig = newConfig.speech ?? {
               stt: { provider: null, providers: {} },
               tts: { provider: null, providers: {} },
             };
-            speechSvc.updateConfig(newSpeechConfig);
-            const groqCfg = newSpeechConfig.stt?.providers?.groq;
-            if (groqCfg?.apiKey) {
-              speechSvc.registerSTTProvider(
-                "groq",
-                new GroqSTT(groqCfg.apiKey, groqCfg.model),
-              );
-            }
-            // Re-register TTS providers on config change — always keep edge-tts available
-            {
-              const edgeConfig = newSpeechConfig.tts?.providers?.["edge-tts"];
-              const voice = edgeConfig?.voice as string | undefined;
-              speechSvc.registerTTSProvider("edge-tts", new EdgeTTS(voice));
-            }
+            speechSvc.refreshProviders(newSpeechConfig);
             log.info("Speech service config updated at runtime");
           }
         }

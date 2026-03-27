@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { detectAction } from "../adapters/telegram/action-detect.js";
+import { detectAction } from "../plugins/telegram/action-detect.js";
 
 describe("detectAction", () => {
   describe("command pattern detection", () => {

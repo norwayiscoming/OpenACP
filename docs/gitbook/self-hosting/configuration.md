@@ -38,6 +38,18 @@ This runs `runReconfigure()`, which loads your existing config, shows a summary,
 
 For the machine-readable schema with all field types and defaults, see the [Configuration Schema](../api-reference/configuration-schema.md). For a full list of environment variable overrides, see [Environment Variables](../api-reference/environment-variables.md).
 
+## Plugin-Specific Settings
+
+With the microkernel plugin architecture, plugin-specific settings (Telegram botToken, speech providers, tunnel config, etc.) are now stored in per-plugin settings files:
+
+```
+~/.openacp/plugins/<plugin-name>/settings.json
+```
+
+The core `config.json` only contains: `defaultAgent`, `workspace`, `security`, `logging`, `runMode`, `autoStart`, and `sessionStore`.
+
+Fields like `channels`, `tunnel`, `speech`, and `usage` in `config.json` are **legacy (auto-migrated)** — they are automatically migrated to their respective plugin `settings.json` files on startup. Existing configurations continue to work without manual changes.
+
 ## Full Configuration Reference
 
 ### `channels`

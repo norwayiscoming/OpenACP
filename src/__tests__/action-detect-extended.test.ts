@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { storeAction, getAction, removeAction, buildActionKeyboard } from '../adapters/telegram/action-detect.js'
-import type { DetectedAction } from '../adapters/telegram/action-detect.js'
+import { storeAction, getAction, removeAction, buildActionKeyboard } from '../plugins/telegram/action-detect.js'
+import type { DetectedAction } from '../plugins/telegram/action-detect.js'
 
 describe('storeAction / getAction / removeAction', () => {
   const newSessionAction: DetectedAction = {

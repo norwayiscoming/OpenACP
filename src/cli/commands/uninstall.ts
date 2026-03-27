@@ -1,4 +1,7 @@
-import { uninstallPlugin } from '../../core/plugin-manager.js'
+import { execSync } from 'node:child_process'
+import * as fs from 'node:fs'
+import * as path from 'node:path'
+import { PLUGINS_DIR } from '../../core/config/config.js'
 import { wantsHelp } from './helpers.js'
 
 export async function cmdUninstall(args: string[]): Promise<void> {
@@ -22,5 +25,12 @@ export async function cmdUninstall(args: string[]): Promise<void> {
     console.error("Usage: openacp uninstall <package>")
     process.exit(1)
   }
-  uninstallPlugin(pkg)
+  fs.mkdirSync(PLUGINS_DIR, { recursive: true })
+  const pkgPath = path.join(PLUGINS_DIR, 'package.json')
+  if (!fs.existsSync(pkgPath)) {
+    fs.writeFileSync(pkgPath, JSON.stringify({ name: 'openacp-plugins', private: true, dependencies: {} }, null, 2))
+  }
+  console.log(`Uninstalling ${pkg}...`)
+  execSync(`npm uninstall ${pkg} --prefix "${PLUGINS_DIR}"`, { stdio: 'inherit' })
+  console.log(`Plugin ${pkg} uninstalled.`)
 }

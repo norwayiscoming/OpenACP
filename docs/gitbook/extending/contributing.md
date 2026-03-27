@@ -59,7 +59,7 @@ import { ChannelAdapter } from './channel'
 ### File and Module Layout
 
 - Source lives in `src/`. Tests live in `src/**/__tests__/` or next to the file they test.
-- Core abstractions belong in `src/core/`. Adapter implementations belong in `src/adapters/<name>/`.
+- Core abstractions belong in `src/core/`. Plugin implementations (including adapters) belong in `src/plugins/<name>/`.
 - Public API exports flow through `src/index.ts` → `src/core/index.ts`.
 
 ---

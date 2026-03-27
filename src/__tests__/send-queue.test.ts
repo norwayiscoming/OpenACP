@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { SendQueue } from '../adapters/shared/primitives/send-queue.js'
+import { SendQueue } from '../core/adapter-primitives/primitives/send-queue.js'
 
 describe('SendQueue', () => {
   let queue: SendQueue

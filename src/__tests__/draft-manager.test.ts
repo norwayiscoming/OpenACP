@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { DraftManager } from '../adapters/telegram/draft-manager.js'
+import { DraftManager } from '../plugins/telegram/draft-manager.js'
 
 // Mock MessageDraft to avoid real Telegram API calls
-vi.mock('../adapters/telegram/streaming.js', () => {
+vi.mock('../plugins/telegram/streaming.js', () => {
   const MockMessageDraft = class {
     append = vi.fn()
     finalize = vi.fn().mockResolvedValue(42)
@@ -12,7 +12,7 @@ vi.mock('../adapters/telegram/streaming.js', () => {
 })
 
 // Mock action-detect module
-vi.mock('../adapters/telegram/action-detect.js', () => ({
+vi.mock('../plugins/telegram/action-detect.js', () => ({
   detectAction: vi.fn().mockReturnValue(null),
   storeAction: vi.fn().mockReturnValue('action-id'),
   buildActionKeyboard: vi.fn().mockReturnValue({ inline_keyboard: [] }),
@@ -107,7 +107,7 @@ describe('DraftManager', () => {
     })
 
     it('detects actions in assistant responses', async () => {
-      const { detectAction } = await import('../adapters/telegram/action-detect.js')
+      const { detectAction } = await import('../plugins/telegram/action-detect.js')
       ;(detectAction as any).mockReturnValue({ action: 'new_session', agent: 'claude' })
 
       manager.getOrCreate('assistant-sess', 100)
@@ -119,7 +119,7 @@ describe('DraftManager', () => {
     })
 
     it('does not detect actions for non-assistant sessions', async () => {
-      const { detectAction } = await import('../adapters/telegram/action-detect.js')
+      const { detectAction } = await import('../plugins/telegram/action-detect.js')
 
       manager.getOrCreate('regular-sess', 100)
       manager.appendText('regular-sess', '/new claude')
@@ -129,7 +129,7 @@ describe('DraftManager', () => {
     })
 
     it('handles editMessageReplyMarkup failure gracefully', async () => {
-      const { detectAction } = await import('../adapters/telegram/action-detect.js')
+      const { detectAction } = await import('../plugins/telegram/action-detect.js')
       ;(detectAction as any).mockReturnValue({ action: 'new_session' })
       bot.api.editMessageReplyMarkup.mockRejectedValue(new Error('API error'))
 

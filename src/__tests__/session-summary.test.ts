@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { Session } from "../core/sessions/session.js";
-import { handleSummary, handleSummaryCallback } from "../adapters/telegram/commands/session.js";
-import { formatSummary } from "../adapters/telegram/formatting.js";
+import { handleSummary, handleSummaryCallback } from "../plugins/telegram/commands/session.js";
+import { formatSummary } from "../plugins/telegram/formatting.js";
 
 // --- Session.generateSummary() ---
 

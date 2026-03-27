@@ -41,6 +41,12 @@ Connect messaging platforms (Telegram, Discord) to 28+ AI coding agents via ACP 
   openacp install <package>            Install adapter plugin
   openacp uninstall <package>          Remove adapter
   openacp plugins                      List installed plugins
+  openacp plugin create                Scaffold a new plugin project
+
+\x1b[1mDevelopment:\x1b[0m
+  openacp dev <plugin-path>            Run with local plugin (hot-reload)
+  openacp dev <path> --no-watch        Run without file watching
+  openacp dev <path> --verbose         Run with verbose logging
 
 \x1b[1mSession Transfer:\x1b[0m
   openacp integrate <agent>            Install handoff integration

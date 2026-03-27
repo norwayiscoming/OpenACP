@@ -1,9 +1,15 @@
 {
-  "name": "openacp",
-  "version": "0.6.10",
+  "name": "@openacp/cli",
+  "version": "2026.0326.4",
   "private": true,
   "license": "MIT",
   "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
   "bin": {
     "openacp": "dist/cli.js"
   },
@@ -17,6 +23,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "build:ui": "cd ui && pnpm install --frozen-lockfile && pnpm build",
+    "build:dev": "pnpm build && npm link --force",
     "prepare": "husky"
   },
   "homepage": "https://github.com/Open-ACP/OpenACP",

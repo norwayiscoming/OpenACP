@@ -69,6 +69,19 @@ vi.mock('../tunnel/providers/install-cloudflared.js', () => ({
   ensureCloudflared: vi.fn(() => Promise.resolve('/usr/local/bin/cloudflared')),
 }))
 
+// Track plugin install calls
+const telegramInstallFn = vi.fn()
+
+// Mock the telegram plugin module — install writes to settings via ctx
+vi.mock('../plugins/telegram/index.js', () => ({
+  default: {
+    name: '@openacp/telegram',
+    version: '1.0.0',
+    description: 'Telegram adapter with forum topics',
+    install: telegramInstallFn,
+  },
+}))
+
 import * as clack from '@clack/prompts'
 import { runSetup, runReconfigure } from '../core/setup/index.js'
 
@@ -133,6 +146,9 @@ describe('runSetup integration', () => {
       }
       return Promise.reject(new Error(`unexpected URL: ${url}`))
     }))
+
+    telegramInstallFn.mockReset()
+    telegramInstallFn.mockResolvedValue(undefined)
   })
 
   afterEach(() => {
@@ -145,18 +161,10 @@ describe('runSetup integration', () => {
     vi.restoreAllMocks()
   })
 
-  it('creates valid config file and auto-starts', { timeout: 15000 }, async () => {
-    // text() call order:
-    // 1. setupTelegram: bot token
-    // 2. setupWorkspace: workspace base dir
-    let textCallIndex = 0
-    mockedText.mockImplementation((() => {
-      const responses = [
-        '123:FAKE_TOKEN',    // bot token
-        '~/my-workspace',   // workspace dir
-      ]
-      return Promise.resolve(responses[textCallIndex++])
-    }) as any)
+  it('creates valid config file via plugin install and auto-starts', { timeout: 15000 }, async () => {
+    // text() call order (no more setupTelegram — plugin owns that):
+    // 1. setupWorkspace: workspace base dir
+    mockedText.mockResolvedValueOnce('~/my-workspace' as any)
 
     // Confirm call order:
     // 1. Claude CLI integration prompt (decline to avoid needing ClaudeIntegration mock)
@@ -168,22 +176,65 @@ describe('runSetup integration', () => {
     mockedSelect.mockResolvedValueOnce('telegram' as any)
     mockedSelect.mockResolvedValueOnce('foreground' as any)
 
+    // Create mock settingsManager and pluginRegistry
+    const pluginsDir = path.join(tmpDir, 'plugins')
+    fs.mkdirSync(pluginsDir, { recursive: true })
+
+    const mockSettingsManager = {
+      getBasePath: () => pluginsDir,
+      getSettingsPath: (name: string) => path.join(pluginsDir, name, 'settings.json'),
+      createAPI: () => ({
+        get: vi.fn(),
+        set: vi.fn(),
+        getAll: vi.fn().mockResolvedValue({}),
+        setAll: vi.fn(),
+        clear: vi.fn(),
+      }),
+    }
+
+    const registeredPlugins = new Map<string, Record<string, unknown>>()
+    const mockPluginRegistry = {
+      register: vi.fn((name: string, entry: Record<string, unknown>) => {
+        registeredPlugins.set(name, entry)
+      }),
+      get: vi.fn((name: string) => registeredPlugins.get(name)),
+      save: vi.fn().mockResolvedValue(undefined),
+    }
+
     const cm = new ConfigManager()
-    const shouldStart = await runSetup(cm)
+    const shouldStart = await runSetup(cm, {
+      settingsManager: mockSettingsManager as any,
+      pluginRegistry: mockPluginRegistry as any,
+    })
 
     expect(shouldStart).toBe(true)
     expect(fs.existsSync(configPath)).toBe(true)
 
+    // Telegram plugin install was called
+    expect(telegramInstallFn).toHaveBeenCalledOnce()
+
+    // Plugin was registered in the registry
+    expect(mockPluginRegistry.register).toHaveBeenCalledWith(
+      '@openacp/telegram',
+      expect.objectContaining({
+        version: '1.0.0',
+        source: 'builtin',
+        enabled: true,
+      }),
+    )
+
     const written = JSON.parse(fs.readFileSync(configPath, 'utf-8'))
-    expect(written.channels.telegram.enabled).toBe(true)
-    expect(written.channels.telegram.botToken).toBe('123:FAKE_TOKEN')
-    expect(written.channels.telegram.chatId).toBe(-1001234567890)
+    // Channels are now managed by plugins, core config has empty channels
+    expect(written.channels).toEqual({})
     // agents are now stored in agents.json, not config.json
     expect(written.agents).toEqual({})
     expect(written.defaultAgent).toBe('claude')
     expect(written.workspace.baseDir).toBe('~/my-workspace')
     expect(written.security.maxConcurrentSessions).toBe(20)
     expect(written.security.sessionTimeoutMinutes).toBe(60)
+
+    // Built-in plugins were auto-registered
+    expect(mockPluginRegistry.save).toHaveBeenCalled()
   })
 })
 

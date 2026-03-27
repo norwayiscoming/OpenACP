@@ -105,16 +105,26 @@ export class FileService {
     }
   }
 
+  /** Instance method — delegates to static for FileServiceInterface compliance */
+  async readTextFileWithRange(
+    filePath: string,
+    options?: { line?: number; limit?: number },
+  ): Promise<string> {
+    return FileService.readTextFileWithRange(filePath, options);
+  }
+
   static async readTextFileWithRange(
     filePath: string,
     options?: { line?: number; limit?: number },
   ): Promise<string> {
-    const content = await fs.promises.readFile(filePath, 'utf-8')
-    if (!options?.line && !options?.limit) return content
-    const lines = content.split('\n')
-    const start = Math.max(0, (options.line ?? 1) - 1)
-    const end = options.limit ? start + options.limit : lines.length
-    return lines.slice(start, end).join('\n')
+    // Delegate to core utility (canonical implementation)
+    const { readTextFileWithRange } = await import("../../core/utils/read-text-file.js");
+    return readTextFileWithRange(filePath, options);
+  }
+
+  /** Instance method — delegates to static for FileServiceInterface compliance */
+  extensionFromMime(mimeType: string): string {
+    return FileService.extensionFromMime(mimeType);
   }
 
   static extensionFromMime(mimeType: string): string {

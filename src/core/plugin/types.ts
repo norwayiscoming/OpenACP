@@ -49,6 +49,12 @@ export interface OpenACPPlugin {
   setup(ctx: PluginContext): Promise<void>
   /** Called during shutdown in reverse order. 10s timeout. */
   teardown?(): Promise<void>
+  install?(ctx: InstallContext): Promise<void>
+  uninstall?(ctx: InstallContext, opts: { purge: boolean }): Promise<void>
+  configure?(ctx: InstallContext): Promise<void>
+  migrate?(ctx: MigrateContext, oldSettings: unknown, oldVersion: string): Promise<unknown>
+  settingsSchema?: import('zod').ZodSchema
+  essential?: boolean
 }
 
 // ============================================================
@@ -63,9 +69,112 @@ export interface PluginStorage {
   getDataDir(): string
 }
 
+// ─── Settings API (per-plugin settings.json) ───
+
+export interface SettingsAPI {
+  get<T = unknown>(key: string): Promise<T | undefined>
+  set<T = unknown>(key: string, value: T): Promise<void>
+  getAll(): Promise<Record<string, unknown>>
+  setAll(settings: Record<string, unknown>): Promise<void>
+  delete(key: string): Promise<void>
+  clear(): Promise<void>
+  has(key: string): Promise<boolean>
+}
+
+// ─── Terminal I/O (interactive CLI for plugins) ───
+
+export interface TerminalIO {
+  text(opts: {
+    message: string
+    placeholder?: string
+    defaultValue?: string
+    validate?: (value: string) => string | undefined
+  }): Promise<string>
+
+  select<T>(opts: {
+    message: string
+    options: { value: T; label: string; hint?: string }[]
+  }): Promise<T>
+
+  confirm(opts: {
+    message: string
+    initialValue?: boolean
+  }): Promise<boolean>
+
+  password(opts: {
+    message: string
+    validate?: (value: string) => string | undefined
+  }): Promise<string>
+
+  multiselect<T>(opts: {
+    message: string
+    options: { value: T; label: string; hint?: string }[]
+    required?: boolean
+  }): Promise<T[]>
+
+  log: {
+    info(message: string): void
+    success(message: string): void
+    warning(message: string): void
+    error(message: string): void
+    step(message: string): void
+  }
+
+  spinner(): {
+    start(message: string): void
+    stop(message?: string): void
+    fail(message?: string): void
+  }
+
+  note(message: string, title?: string): void
+  cancel(message?: string): void
+}
+
+// ─── Install Context (for install/configure/uninstall) ───
+
+export interface InstallContext {
+  pluginName: string
+  terminal: TerminalIO
+  settings: SettingsAPI
+  legacyConfig?: Record<string, unknown>
+  dataDir: string
+  log: Logger
+}
+
+// ─── Migrate Context (for boot-time migration) ───
+
+export interface MigrateContext {
+  pluginName: string
+  settings: SettingsAPI
+  log: Logger
+}
+
+// ─── Command Response Types ───
+
+export type CommandResponse =
+  | { type: 'text'; text: string }
+  | { type: 'menu'; title: string; options: MenuOption[] }
+  | { type: 'list'; title: string; items: ListItem[] }
+  | { type: 'confirm'; question: string; onYes: string; onNo: string }
+  | { type: 'error'; message: string }
+  | { type: 'silent' }
+
+export interface MenuOption {
+  label: string
+  command: string
+  hint?: string
+}
+
+export interface ListItem {
+  label: string
+  detail?: string
+}
+
 export interface CommandArgs {
   /** Raw argument string after command name */
   raw: string
+  /** Parsed key/value options (e.g., --flag value) */
+  options?: Record<string, string>
   /** Session ID where command was invoked (null if from notification/system topic) */
   sessionId: string | null
   /** Channel ID ('telegram', 'discord', 'slack') */
@@ -73,7 +182,9 @@ export interface CommandArgs {
   /** User ID who invoked the command */
   userId: string
   /** Reply helper — sends message to the topic where command was invoked */
-  reply(content: string | OutgoingMessage): Promise<void>
+  reply(content: string | CommandResponse | OutgoingMessage): Promise<void>
+  /** Direct access to OpenACPCore instance. Available when 'kernel:access' permission is granted. */
+  coreAccess?: CoreAccess
 }
 
 export interface CommandDef {
@@ -83,8 +194,12 @@ export interface CommandDef {
   description: string
   /** Usage pattern, e.g., '<session-number>' */
   usage?: string
+  /** Whether this is a built-in system command or registered by a plugin */
+  category: 'system' | 'plugin'
+  /** Plugin that registered this command (set automatically by plugin manager) */
+  pluginName?: string
   /** Handler function */
-  handler(args: CommandArgs): Promise<void>
+  handler(args: CommandArgs): Promise<CommandResponse | void>
 }
 
 // Forward declarations for kernel types used in PluginContext.
@@ -350,6 +465,7 @@ export interface FileServiceInterface {
   saveFile(sessionId: string, fileName: string, data: Buffer, mimeType: string): Promise<Attachment>
   resolveFile(filePath: string): Promise<Attachment | null>
   readTextFileWithRange(path: string, opts?: { line?: number; limit?: number }): Promise<string>
+  extensionFromMime(mimeType: string): string
   convertOggToWav(oggData: Buffer): Promise<Buffer>
 }
 
@@ -388,11 +504,18 @@ export interface ContextService {
   registerProvider(provider: ContextProvider): void
 }
 
+export interface ViewerStoreInterface {
+  storeFile(sessionId: string, filePath: string, content: string, workingDirectory: string): string | null
+  storeDiff(sessionId: string, filePath: string, oldContent: string, newContent: string, workingDirectory: string): string | null
+}
+
 export interface TunnelServiceInterface {
-  getPublicUrl(): string | undefined
-  isConnected(): boolean
+  getPublicUrl(): string
   start(): Promise<string>
   stop(): Promise<void>
+  getStore(): ViewerStoreInterface
+  fileUrl(entryId: string): string
+  diffUrl(entryId: string): string
 }
 
 // Re-export types needed by plugin authors from types.ts

@@ -26,6 +26,20 @@ All overrides are applied before Zod schema validation, so the final config is a
 | `OPENACP_SPEECH_GROQ_API_KEY` | `speech.stt.providers.groq.apiKey` | string | API key for the Groq STT provider |
 | `OPENACP_CONFIG_PATH` | — | string | Override the config file path (default: `~/.openacp/config.json`) |
 
+## Plugin-Level Environment Variables
+
+With the plugin architecture, channel-specific and feature-specific environment variables are now handled by individual plugins in their `setup()` method. The following variables are **plugin-level** (processed by the respective plugin, not core):
+
+- **Telegram plugin:** `OPENACP_TELEGRAM_BOT_TOKEN`, `OPENACP_TELEGRAM_CHAT_ID`
+- **Discord plugin:** `OPENACP_DISCORD_BOT_TOKEN`, `OPENACP_DISCORD_GUILD_ID`
+- **Slack plugin:** `OPENACP_SLACK_BOT_TOKEN`, `OPENACP_SLACK_APP_TOKEN`, `OPENACP_SLACK_SIGNING_SECRET`
+- **Speech plugin:** `OPENACP_SPEECH_STT_PROVIDER`, `OPENACP_SPEECH_GROQ_API_KEY`
+- **Tunnel plugin:** `OPENACP_TUNNEL_ENABLED`, `OPENACP_TUNNEL_PORT`, `OPENACP_TUNNEL_PROVIDER`
+
+These remain functional for backward compatibility but are read by each plugin rather than by core config loading.
+
+**Core-level** variables (processed by OpenACPCore directly): `OPENACP_CONFIG_PATH`, `OPENACP_DEFAULT_AGENT`, `OPENACP_RUN_MODE`, `OPENACP_API_PORT`, `OPENACP_LOG_LEVEL`, `OPENACP_LOG_DIR`, `OPENACP_DEBUG`.
+
 ## Notes
 
 - **`OPENACP_DEBUG`** is a convenience shorthand. Setting `OPENACP_LOG_LEVEL=debug` is equivalent and takes precedence.

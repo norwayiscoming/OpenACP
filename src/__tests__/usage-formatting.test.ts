@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { formatUsageReport } from "../adapters/telegram/formatting.js";
+import { formatUsageReport } from "../plugins/telegram/formatting.js";
 import type { UsageSummary } from "../core/types.js";
 
 describe("formatUsageReport", () => {

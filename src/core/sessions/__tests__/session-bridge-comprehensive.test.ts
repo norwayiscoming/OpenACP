@@ -127,6 +127,7 @@ describe("SessionBridge — image_content & audio_content", () => {
         mimeType: "image/png",
         size: 1024,
       }),
+      extensionFromMime: vi.fn().mockReturnValue(".png"),
     };
 
     const deps = createMockDeps({ fileService: mockFileService as unknown as FileService });
@@ -174,6 +175,7 @@ describe("SessionBridge — image_content & audio_content", () => {
         mimeType: "audio/mpeg",
         size: 2048,
       }),
+      extensionFromMime: vi.fn().mockReturnValue(".mp3"),
     };
 
     const deps = createMockDeps({ fileService: mockFileService as unknown as FileService });

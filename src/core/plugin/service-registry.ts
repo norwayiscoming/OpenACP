@@ -28,4 +28,12 @@ export class ServiceRegistry {
   unregister(name: string): void {
     this.services.delete(name)
   }
+
+  unregisterByPlugin(pluginName: string): void {
+    for (const [name, entry] of this.services) {
+      if (entry.pluginName === pluginName) {
+        this.services.delete(name)
+      }
+    }
+  }
 }

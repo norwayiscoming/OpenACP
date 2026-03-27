@@ -1,0 +1,199 @@
+import { describe, it, expect, vi } from 'vitest'
+import { LifecycleManager } from '../lifecycle-manager.js'
+import type { OpenACPPlugin, MigrateContext } from '../types.js'
+import type { SettingsManager } from '../settings-manager.js'
+import type { PluginRegistry, PluginEntry } from '../plugin-registry.js'
+
+function makePlugin(name: string, opts?: Partial<OpenACPPlugin>): OpenACPPlugin {
+  return {
+    name,
+    version: '1.0.0',
+    permissions: [],
+    setup: vi.fn().mockResolvedValue(undefined),
+    teardown: vi.fn().mockResolvedValue(undefined),
+    ...opts,
+  }
+}
+
+function mockSettingsManager(settings: Record<string, Record<string, unknown>> = {}): SettingsManager {
+  const stored: Record<string, Record<string, unknown>> = { ...settings }
+  return {
+    basePath: '/tmp/test',
+    loadSettings: vi.fn(async (name: string) => stored[name] ?? {}),
+    createAPI: vi.fn((name: string) => ({
+      get: vi.fn(async (key: string) => (stored[name] ?? {})[key]),
+      set: vi.fn(async (key: string, value: unknown) => {
+        if (!stored[name]) stored[name] = {}
+        stored[name][key] = value
+      }),
+      getAll: vi.fn(async () => stored[name] ?? {}),
+      setAll: vi.fn(async (s: Record<string, unknown>) => { stored[name] = { ...s } }),
+      delete: vi.fn(),
+      clear: vi.fn(),
+      has: vi.fn(),
+    })),
+    validateSettings: vi.fn(() => ({ valid: true })),
+    getSettingsPath: vi.fn((name: string) => `/tmp/test/${name}/settings.json`),
+    getPluginSettings: vi.fn(async (name: string) => stored[name] ?? {}),
+    updatePluginSettings: vi.fn(),
+  } as unknown as SettingsManager
+}
+
+function mockPluginRegistry(entries: Record<string, Partial<PluginEntry>> = {}): PluginRegistry {
+  const data: Record<string, PluginEntry> = {}
+  for (const [name, partial] of Object.entries(entries)) {
+    data[name] = {
+      version: '1.0.0',
+      installedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      source: 'builtin',
+      enabled: true,
+      settingsPath: `/tmp/${name}/settings.json`,
+      ...partial,
+    }
+  }
+  return {
+    get: vi.fn((name: string) => data[name]),
+    list: vi.fn(() => new Map(Object.entries(data))),
+    register: vi.fn(),
+    remove: vi.fn(),
+    setEnabled: vi.fn(),
+    updateVersion: vi.fn((name: string, version: string) => {
+      if (data[name]) data[name].version = version
+    }),
+    listEnabled: vi.fn(),
+    listBySource: vi.fn(),
+    load: vi.fn(),
+    save: vi.fn(),
+  } as unknown as PluginRegistry
+}
+
+describe('LifecycleManager — Migration Support', () => {
+  it('calls migrate() when version mismatch detected', async () => {
+    const migrateFn = vi.fn(async (_ctx: MigrateContext, _old: unknown, _oldVer: string) => ({ migrated: true }))
+    const plugin = makePlugin('test-plugin', {
+      version: '2.0.0',
+      migrate: migrateFn,
+    })
+
+    const registry = mockPluginRegistry({ 'test-plugin': { version: '1.0.0' } })
+    const settingsMgr = mockSettingsManager({ 'test-plugin': { oldKey: 'oldValue' } })
+
+    const mgr = new LifecycleManager({
+      pluginRegistry: registry,
+      settingsManager: settingsMgr,
+    })
+    await mgr.boot([plugin])
+
+    expect(migrateFn).toHaveBeenCalledOnce()
+    expect(migrateFn).toHaveBeenCalledWith(
+      expect.objectContaining({ pluginName: 'test-plugin' }),
+      { oldKey: 'oldValue' },
+      '1.0.0',
+    )
+    expect(registry.updateVersion).toHaveBeenCalledWith('test-plugin', '2.0.0')
+    expect(registry.save).toHaveBeenCalled()
+    expect(plugin.setup).toHaveBeenCalled()
+  })
+
+  it('skips migrate() when no version mismatch', async () => {
+    const migrateFn = vi.fn()
+    const plugin = makePlugin('test-plugin', {
+      version: '1.0.0',
+      migrate: migrateFn,
+    })
+
+    const registry = mockPluginRegistry({ 'test-plugin': { version: '1.0.0' } })
+    const settingsMgr = mockSettingsManager()
+
+    const mgr = new LifecycleManager({
+      pluginRegistry: registry,
+      settingsManager: settingsMgr,
+    })
+    await mgr.boot([plugin])
+
+    expect(migrateFn).not.toHaveBeenCalled()
+    expect(plugin.setup).toHaveBeenCalled()
+  })
+
+  it('skips migrate() when plugin not in registry', async () => {
+    const migrateFn = vi.fn()
+    const plugin = makePlugin('unknown-plugin', {
+      version: '2.0.0',
+      migrate: migrateFn,
+    })
+
+    const registry = mockPluginRegistry({})
+    const settingsMgr = mockSettingsManager()
+
+    const mgr = new LifecycleManager({
+      pluginRegistry: registry,
+      settingsManager: settingsMgr,
+    })
+    await mgr.boot([plugin])
+
+    expect(migrateFn).not.toHaveBeenCalled()
+    expect(plugin.setup).toHaveBeenCalled()
+  })
+
+  it('continues boot if migrate() throws (graceful degradation)', async () => {
+    const migrateFn = vi.fn().mockRejectedValue(new Error('migration exploded'))
+    const plugin = makePlugin('test-plugin', {
+      version: '2.0.0',
+      migrate: migrateFn,
+    })
+
+    const registry = mockPluginRegistry({ 'test-plugin': { version: '1.0.0' } })
+    const settingsMgr = mockSettingsManager()
+
+    const mgr = new LifecycleManager({
+      pluginRegistry: registry,
+      settingsManager: settingsMgr,
+    })
+    await mgr.boot([plugin])
+
+    expect(migrateFn).toHaveBeenCalled()
+    // setup should still be called despite migration failure
+    expect(plugin.setup).toHaveBeenCalled()
+    expect(mgr.loadedPlugins).toContain('test-plugin')
+  })
+
+  it('reads pluginConfig from settings.json instead of config.json', async () => {
+    const plugin = makePlugin('test-plugin', {
+      setup: vi.fn(async (ctx) => {
+        expect(ctx.pluginConfig).toEqual({ fromSettings: true })
+      }),
+    })
+
+    const settingsMgr = mockSettingsManager({ 'test-plugin': { fromSettings: true } })
+
+    const mgr = new LifecycleManager({
+      settingsManager: settingsMgr,
+      config: { get: () => ({ speech: { fromConfig: true } }) } as any,
+    })
+    await mgr.boot([plugin])
+
+    expect(plugin.setup).toHaveBeenCalled()
+  })
+
+  it('skips disabled plugins (setup not called)', async () => {
+    const plugin = makePlugin('disabled-plugin')
+    const emitEvents: Array<{ event: string; payload: unknown }> = []
+
+    const registry = mockPluginRegistry({ 'disabled-plugin': { enabled: false } })
+
+    const mgr = new LifecycleManager({
+      pluginRegistry: registry,
+      eventBus: {
+        on() {},
+        off() {},
+        emit(event: string, payload: unknown) { emitEvents.push({ event, payload }) },
+      },
+    })
+    await mgr.boot([plugin])
+
+    expect(plugin.setup).not.toHaveBeenCalled()
+    expect(mgr.loadedPlugins).not.toContain('disabled-plugin')
+    expect(emitEvents.some(e => e.event === 'plugin:disabled')).toBe(true)
+  })
+})

@@ -54,13 +54,15 @@ src/
     session.ts        Session lifecycle, prompt queue, auto-naming
     agent-instance.ts ACP subprocess client — spawns and talks to agents
     channel.ts        ChannelAdapter abstract base class
-    plugin-manager.ts Plugin install/uninstall/load from ~/.openacp/plugins/
+    plugin/           Plugin system (PluginRegistry, LifecycleManager, PluginContext)
+    command-registry.ts  Central command registry with namespace resolution
+    commands/         Built-in system command handlers
     setup/            Interactive setup wizard and reconfigure flow
 
-  adapters/
-    telegram/         Built-in Telegram adapter (grammY)
-    discord/          Built-in Discord adapter
-    slack/            Built-in Slack adapter
+  plugins/
+    telegram/         Telegram adapter plugin (grammY)
+    discord/          Discord adapter plugin
+    slack/            Slack adapter plugin
 ```
 
 ---

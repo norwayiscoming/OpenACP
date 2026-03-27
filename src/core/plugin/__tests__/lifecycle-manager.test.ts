@@ -135,3 +135,63 @@ describe('LifecycleManager', () => {
     expect(plugin.setup).toHaveBeenCalled()
   })
 })
+
+describe('LifecycleManager.unloadPlugin', () => {
+  it('unloads a loaded plugin and calls teardown', async () => {
+    const plugin = makePlugin('a')
+    const mgr = new LifecycleManager()
+    await mgr.boot([plugin])
+    expect(mgr.loadedPlugins).toContain('a')
+
+    await mgr.unloadPlugin('a')
+    expect(mgr.loadedPlugins).not.toContain('a')
+    expect(plugin.teardown).toHaveBeenCalled()
+  })
+
+  it('is a no-op for unknown plugin names', async () => {
+    const mgr = new LifecycleManager()
+    await expect(mgr.unloadPlugin('nonexistent')).resolves.not.toThrow()
+  })
+
+  it('removes plugin from loadOrder', async () => {
+    const a = makePlugin('a')
+    const b = makePlugin('b')
+    const mgr = new LifecycleManager()
+    await mgr.boot([a, b])
+    expect(mgr.loadedPlugins).toEqual(['a', 'b'])
+
+    await mgr.unloadPlugin('a')
+    expect(mgr.loadedPlugins).toEqual(['b'])
+  })
+
+  it('swallows teardown errors gracefully', async () => {
+    const plugin = makePlugin('a', {
+      teardown: vi.fn().mockRejectedValue(new Error('teardown boom')),
+    })
+    const mgr = new LifecycleManager()
+    await mgr.boot([plugin])
+
+    await expect(mgr.unloadPlugin('a')).resolves.not.toThrow()
+    expect(mgr.loadedPlugins).not.toContain('a')
+  })
+
+  it('emits plugin:unloaded event', async () => {
+    const emitSpy = vi.fn()
+    const eventBus = { on: vi.fn(), off: vi.fn(), emit: emitSpy }
+    const plugin = makePlugin('a')
+    const mgr = new LifecycleManager({ eventBus })
+    await mgr.boot([plugin])
+
+    await mgr.unloadPlugin('a')
+    expect(emitSpy).toHaveBeenCalledWith('plugin:unloaded', { name: 'a' })
+  })
+
+  it('handles plugin with no teardown function', async () => {
+    const plugin = makePlugin('a', { teardown: undefined })
+    const mgr = new LifecycleManager()
+    await mgr.boot([plugin])
+
+    await expect(mgr.unloadPlugin('a')).resolves.not.toThrow()
+    expect(mgr.loadedPlugins).not.toContain('a')
+  })
+})

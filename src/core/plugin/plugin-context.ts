@@ -58,15 +58,19 @@ export function createPluginContext(opts: CreatePluginContextOpts): PluginContex
   const registeredListeners: Array<{ event: string; handler: (...args: unknown[]) => void }> = []
   const registeredCommands: CommandDef[] = []
 
-  const log: Logger = opts.log ?? {
+  const noopLog: Logger = {
     trace() {},
     debug() {},
     info() {},
     warn() {},
     error() {},
     fatal() {},
-    child() { return log },
+    child() { return noopLog },
   }
+  const baseLog: Logger = opts.log ?? noopLog
+  const log: Logger = typeof baseLog.child === 'function'
+    ? baseLog.child({ plugin: pluginName })
+    : baseLog
 
   const storageImpl = new PluginStorageImpl(storagePath)
 
@@ -136,6 +140,11 @@ export function createPluginContext(opts: CreatePluginContextOpts): PluginContex
     registerCommand(def: CommandDef): void {
       requirePermission(permissions, 'commands:register', 'registerCommand()')
       registeredCommands.push(def)
+      const registry = serviceRegistry.get<{ register(def: CommandDef, pluginName: string): void }>('command-registry')
+      if (registry && typeof registry.register === 'function') {
+        registry.register(def, pluginName)
+        log.debug(`Command '/${def.name}' registered`)
+      }
     },
 
     async sendMessage(_sessionId: string, _content: OutgoingMessage): Promise<void> {
@@ -176,6 +185,15 @@ export function createPluginContext(opts: CreatePluginContextOpts): PluginContex
 
       // Remove all middleware registered by this plugin
       middlewareChain.removeAll(pluginName)
+
+      // Unregister services owned by this plugin
+      serviceRegistry.unregisterByPlugin(pluginName)
+
+      // Unregister commands from CommandRegistry
+      const cmdRegistry = serviceRegistry.get<{ unregisterByPlugin(name: string): void }>('command-registry')
+      if (cmdRegistry && typeof cmdRegistry.unregisterByPlugin === 'function') {
+        cmdRegistry.unregisterByPlugin(pluginName)
+      }
 
       // Clear commands
       registeredCommands.length = 0

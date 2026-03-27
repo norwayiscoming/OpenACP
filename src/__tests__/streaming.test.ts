@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { MessageDraft } from '../adapters/telegram/streaming.js'
-import { SendQueue } from '../adapters/shared/primitives/send-queue.js'
+import { MessageDraft } from '../plugins/telegram/streaming.js'
+import { SendQueue } from '../core/adapter-primitives/primitives/send-queue.js'
 
 function createMockBot() {
   return {

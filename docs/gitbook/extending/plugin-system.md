@@ -1,151 +1,92 @@
 # Plugin System
 
-## What Are Plugins?
-
-Plugins are standard npm packages that add channel adapters to OpenACP. A plugin exports an `AdapterFactory` object, which OpenACP uses to instantiate and register your adapter at startup. Installing a plugin does not require modifying the OpenACP source code or rebuilding anything — the CLI handles discovery, installation, and loading automatically.
-
-Examples of what a plugin might add:
-- A Discord adapter (`@openacp/adapter-discord`)
-- A Slack adapter (`@openacp/adapter-slack`)
-- An internal chat platform connector
+> **Note:** OpenACP has been refactored to a microkernel plugin architecture. This page provides a quick overview. For the full guide, see [Architecture > Plugin System](../architecture/plugin-system.md).
 
 ---
 
-## Plugin Directory
+## What Are Plugins?
 
-All plugins are installed into a dedicated local directory:
+Plugins are modules that extend OpenACP with new capabilities. Everything beyond the core kernel is a plugin: messaging adapters (Telegram, Discord, Slack), security, speech, tunnels, usage tracking, and more.
 
-```
-~/.openacp/plugins/
-```
+Plugins can:
 
-This directory contains its own `package.json` so npm can manage plugin dependencies independently of your global Node environment. OpenACP creates this directory automatically the first time you install a plugin.
+- Register **services** that other plugins consume
+- Register **chat commands** available on all platforms
+- Register **middleware** to intercept and modify message flows
+- Subscribe to **events** for cross-plugin communication
+- Use **storage** for persistent data
 
 ---
 
 ## Installing a Plugin
 
 ```bash
-openacp install <package-name>
+openacp plugins install @community/my-plugin
 ```
 
-Example:
+If the plugin has `essential: true`, its interactive `install()` hook runs immediately. Otherwise, it's registered and available on next restart.
 
-```bash
-openacp install @openacp/adapter-discord
-```
-
-Under the hood, this runs `npm install <package-name> --prefix ~/.openacp/plugins/`. The plugin is immediately available on the next startup.
-
----
-
-## Listing Installed Plugins
+## Listing Plugins
 
 ```bash
 openacp plugins
 ```
 
-This reads the `dependencies` field from `~/.openacp/plugins/package.json` and prints each installed package name and version.
+Shows all installed plugins with their version, source (builtin/npm), and enabled state.
 
----
-
-## Uninstalling a Plugin
+## Configuring a Plugin
 
 ```bash
-openacp uninstall <package-name>
+openacp plugins configure @community/my-plugin
 ```
 
-Example:
+Runs the plugin's interactive `configure()` hook.
+
+## Disabling / Enabling
 
 ```bash
-openacp uninstall @openacp/adapter-discord
+openacp plugins disable @openacp/speech
+openacp plugins enable @openacp/speech
 ```
 
-This runs `npm uninstall <package-name> --prefix ~/.openacp/plugins/` and removes the entry from the plugins `package.json`.
+Built-in plugins cannot be uninstalled, but they can be disabled.
+
+## Uninstalling
+
+```bash
+openacp plugins uninstall @community/my-plugin
+openacp plugins uninstall @community/my-plugin --purge  # also delete settings
+```
 
 ---
 
-## How Plugins Are Loaded
-
-At startup, OpenACP reads the `dependencies` map from `~/.openacp/plugins/package.json`. For each listed package, it calls `loadAdapterFactory(packageName)`:
-
-1. Resolves the package path using a `require` rooted in the plugins directory.
-2. Dynamically `import()`s the resolved module.
-3. Looks for an `adapterFactory` named export, falling back to the `default` export.
-4. Validates that the export has a `createAdapter` function.
-5. If valid, registers the factory so the adapter can be used by `OpenACPCore`.
-
-If a plugin fails to load (missing file, invalid export), OpenACP logs an error and continues — a broken plugin does not prevent other adapters from starting.
-
----
-
-## Package Requirements
-
-A valid plugin package must:
-
-1. Export a named `adapterFactory` (or a `default` export) that conforms to the `AdapterFactory` interface:
+## Plugin Interface (Quick Reference)
 
 ```typescript
-import type { AdapterFactory } from '@openacp/cli'
+interface OpenACPPlugin {
+  name: string
+  version: string
+  description?: string
+  pluginDependencies?: Record<string, string>
+  permissions?: PluginPermission[]
+  settingsSchema?: ZodSchema
+  essential?: boolean
 
-export const adapterFactory: AdapterFactory = {
-  name: 'my-platform',
-  createAdapter(core, config) {
-    return new MyPlatformAdapter(core, config)
-  },
-}
-```
-
-2. The `createAdapter` function receives:
-   - `core: OpenACPCore` — the running core instance
-   - `config: ChannelConfig` — the adapter's config block from `~/.openacp/config.json`
-
-3. It must return a `ChannelAdapter` instance (see [Building Adapters](building-adapters.md)).
-
----
-
-## Minimal Plugin `package.json`
-
-```json
-{
-  "name": "@openacp/adapter-myplatform",
-  "version": "1.0.0",
-  "type": "module",
-  "main": "dist/index.js",
-  "exports": {
-    ".": "./dist/index.js"
-  },
-  "peerDependencies": {
-    "openacp": ">=0.6.0"
-  }
+  setup(ctx: PluginContext): Promise<void>
+  teardown?(): Promise<void>
+  install?(ctx: InstallContext): Promise<void>
+  configure?(ctx: InstallContext): Promise<void>
+  migrate?(ctx: MigrateContext, oldSettings: unknown, oldVersion: string): Promise<unknown>
+  uninstall?(ctx: InstallContext, opts: { purge: boolean }): Promise<void>
 }
 ```
 
 ---
 
-## Example Plugin Structure
+## Further Reading
 
-```
-@openacp/adapter-myplatform/
-  src/
-    index.ts          ← exports adapterFactory
-    adapter.ts        ← MyPlatformAdapter class
-    formatting.ts     ← message formatting helpers
-  dist/               ← compiled output
-  package.json
-  tsconfig.json
-```
-
-`src/index.ts`:
-
-```typescript
-import type { AdapterFactory } from 'openacp'
-import { MyPlatformAdapter } from './adapter.js'
-
-export const adapterFactory: AdapterFactory = {
-  name: 'myplatform',
-  createAdapter(core, config) {
-    return new MyPlatformAdapter(core, config)
-  },
-}
-```
+- [Architecture > Plugin System](../architecture/plugin-system.md) -- complete plugin infrastructure deep dive
+- [Architecture > Writing Plugins](../architecture/writing-plugins.md) -- step-by-step guide for plugin authors
+- [Architecture > Built-in Plugins](../architecture/built-in-plugins.md) -- reference for all 11 built-in plugins
+- [Architecture > Command System](../architecture/command-system.md) -- how chat commands work
+- [Building Adapters](building-adapters.md) -- building adapter plugins specifically

@@ -1,4 +1,4 @@
-import { readApiPort, apiCall } from '../../core/api/api-client.js'
+import { readApiPort, apiCall } from '../api-client.js'
 import { wantsHelp, buildNestedUpdateFromPath } from './helpers.js'
 
 export async function cmdConfig(args: string[] = []): Promise<void> {

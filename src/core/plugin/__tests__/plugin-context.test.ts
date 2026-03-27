@@ -92,7 +92,7 @@ describe('PluginContext permission enforcement', () => {
 
   it('throws on registerCommand without commands:register', () => {
     const { ctx } = makeContext([])
-    expect(() => ctx.registerCommand({ name: 'test', description: 'test', handler: async () => {} })).toThrow(/commands:register/)
+    expect(() => ctx.registerCommand({ name: 'test', description: 'test', category: 'plugin', handler: async () => {} })).toThrow(/commands:register/)
   })
 
   it('throws on storage.set without storage:write', () => {
@@ -172,5 +172,40 @@ describe('PluginContext cleanup', () => {
 
     ctx.cleanup()
     expect(eventBus.off).toHaveBeenCalledWith('session:created', handler)
+  })
+
+  it('unregisters services from ServiceRegistry on cleanup()', () => {
+    const { ctx, serviceRegistry } = makeContext(['services:register'])
+    ctx.registerService('my-svc', { hello: true })
+    expect(serviceRegistry.has('my-svc')).toBe(true)
+
+    ctx.cleanup()
+    expect(serviceRegistry.has('my-svc')).toBe(false)
+  })
+
+  it('unregisters commands from CommandRegistry on cleanup()', () => {
+    const { ctx, serviceRegistry } = makeContext(['services:register', 'services:use', 'commands:register'])
+
+    // Register a mock CommandRegistry as a service
+    const mockCmdRegistry = {
+      register: vi.fn(),
+      unregisterByPlugin: vi.fn(),
+    }
+    serviceRegistry.register('command-registry', mockCmdRegistry, 'system')
+
+    ctx.registerCommand({ name: 'greet', description: 'Greet', category: 'plugin', handler: async () => ({ type: 'silent' as const }) })
+    expect(mockCmdRegistry.register).toHaveBeenCalled()
+
+    ctx.cleanup()
+    expect(mockCmdRegistry.unregisterByPlugin).toHaveBeenCalledWith('test-plugin')
+  })
+
+  it('does not fail if no CommandRegistry is registered', () => {
+    const { ctx, serviceRegistry } = makeContext(['services:register'])
+    ctx.registerService('some-svc', {})
+
+    // cleanup should not throw even without command-registry
+    expect(() => ctx.cleanup()).not.toThrow()
+    expect(serviceRegistry.has('some-svc')).toBe(false)
   })
 })

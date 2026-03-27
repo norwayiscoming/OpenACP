@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { handleArchive, handleArchiveConfirm } from "../adapters/telegram/commands/session.js";
+import { handleArchive, handleArchiveConfirm } from "../plugins/telegram/commands/session.js";
 
 function mockCtx(threadId?: number) {
   return {

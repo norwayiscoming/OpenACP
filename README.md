@@ -10,7 +10,7 @@ Send a message. The agent writes code. You see everything — in real time.
 [![Node.js >= 20](https://img.shields.io/badge/Node.js-%3E%3D%2020-green.svg)](https://nodejs.org/)
 [![ACP Protocol](https://img.shields.io/badge/Protocol-ACP-purple.svg)](https://agentclientprotocol.org/)
 [![npm](https://img.shields.io/npm/v/@openacp/cli.svg)](https://www.npmjs.com/package/@openacp/cli)
-[![Twitter Follow](https://img.shields.io/twitter/follow/Open_ACP?style=social)](https://x.com/Open_ACP)
+[![Twitter Follow](https://img.shields.io/twitter/follow/openacp_ai?style=social)](https://x.com/openacp_ai)
 
 [Documentation](docs/gitbook/) · [Quick Start](#quick-start) · [Features](#features) · [Agents](#supported-agents) · [Contributing](docs/gitbook/extending/contributing.md)
 
@@ -182,7 +182,7 @@ We welcome contributions! See the [contributing guide](docs/gitbook/extending/co
 
 ## Follow Us
 
-[![Twitter Follow](https://img.shields.io/twitter/follow/Open_ACP?style=social)](https://x.com/Open_ACP)
+[![Twitter Follow](https://img.shields.io/twitter/follow/openacp_ai?style=social)](https://x.com/openacp_ai)
 
 ## License
 

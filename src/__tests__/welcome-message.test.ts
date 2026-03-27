@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildWelcomeMessage, type WelcomeContext } from "../adapters/telegram/assistant.js";
+import { buildWelcomeMessage, type WelcomeContext } from "../plugins/telegram/assistant.js";
 
 describe("buildWelcomeMessage", () => {
   it("shows no-sessions variant when totalCount is 0", () => {

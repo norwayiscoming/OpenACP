@@ -3,23 +3,24 @@ import type { Config, ConfigManager } from "../config/config.js";
 import type { OnboardSection } from "./types.js";
 import { ONBOARD_SECTION_OPTIONS } from "./types.js";
 import { guardCancel, ok, fail, printStartBanner, summarizeConfig } from "./helpers.js";
-import { setupTelegram } from "./setup-telegram.js";
-import { setupDiscord } from "./setup-discord.js";
 import { setupAgents } from "./setup-agents.js";
 import { setupWorkspace } from "./setup-workspace.js";
 import { setupRunMode } from "./setup-run-mode.js";
 import { setupIntegrations } from "./setup-integrations.js";
 import { configureChannels } from "./setup-channels.js";
-import type { DiscordChannelConfig } from "../../adapters/discord/types.js";
+import type { SettingsManager } from "../plugin/settings-manager.js";
+import type { PluginRegistry } from "../plugin/plugin-registry.js";
 
-// ─── First-run setup (unchanged flow) ───
+// ─── First-run setup ───
 
 export async function runSetup(
   configManager: ConfigManager,
-  opts?: { skipRunMode?: boolean },
+  opts?: { skipRunMode?: boolean; settingsManager?: SettingsManager; pluginRegistry?: PluginRegistry },
 ): Promise<boolean> {
   await printStartBanner();
   clack.intro("Let's set up OpenACP");
+
+  const { settingsManager, pluginRegistry } = opts ?? {};
 
   try {
     const channelChoice = guardCancel(
@@ -33,9 +34,6 @@ export async function runSetup(
       }),
     );
 
-    let telegram: Config["channels"][string] | undefined;
-    let discord: DiscordChannelConfig | undefined;
-
     // Calculate total steps dynamically: channel(s) + workspace + run mode
     const channelSteps = channelChoice === 'both' ? 2 : 1;
     const runModeSteps = opts?.skipRunMode ? 0 : 1;
@@ -45,11 +43,53 @@ export async function runSetup(
 
     if (channelChoice === 'telegram' || channelChoice === 'both') {
       currentStep++;
-      telegram = await setupTelegram({ stepNum: currentStep, totalSteps });
+      if (settingsManager && pluginRegistry) {
+        // Delegate to Telegram plugin's install() via InstallContext
+        const { createInstallContext } = await import('../plugin/install-context.js');
+        const telegramPlugin = (await import('../../plugins/telegram/index.js')).default;
+        const ctx = createInstallContext({
+          pluginName: telegramPlugin.name,
+          settingsManager,
+          basePath: settingsManager.getBasePath(),
+        });
+        await telegramPlugin.install!(ctx);
+        pluginRegistry.register(telegramPlugin.name, {
+          version: telegramPlugin.version,
+          source: 'builtin',
+          enabled: true,
+          settingsPath: settingsManager.getSettingsPath(telegramPlugin.name),
+          description: telegramPlugin.description,
+        });
+      } else {
+        // Plugin system not available — inform user
+        console.log(fail('Plugin system not initialized. Cannot set up Telegram.'));
+        return false;
+      }
     }
     if (channelChoice === 'discord' || channelChoice === 'both') {
       currentStep++;
-      discord = await setupDiscord();
+      if (settingsManager && pluginRegistry) {
+        // Delegate to Discord plugin's install() via InstallContext
+        const { createInstallContext } = await import('../plugin/install-context.js');
+        const discordPlugin = (await import('../../plugins/discord/index.js')).default;
+        const ctx = createInstallContext({
+          pluginName: discordPlugin.name,
+          settingsManager,
+          basePath: settingsManager.getBasePath(),
+        });
+        await discordPlugin.install!(ctx);
+        pluginRegistry.register(discordPlugin.name, {
+          version: discordPlugin.version,
+          source: 'builtin',
+          enabled: true,
+          settingsPath: settingsManager.getSettingsPath(discordPlugin.name),
+          description: discordPlugin.description,
+        });
+      } else {
+        // Plugin system not available — inform user
+        console.log(fail('Plugin system not initialized. Cannot set up Discord.'));
+        return false;
+      }
     }
 
     const { defaultAgent } = await setupAgents();
@@ -75,13 +115,8 @@ export async function runSetup(
       sessionTimeoutMinutes: 60,
     };
 
-    const channels: Config["channels"] = {};
-    if (telegram) channels.telegram = telegram;
-    // DiscordChannelConfig is structurally compatible with the base channel schema
-    if (discord) channels.discord = discord as Config["channels"][string];
-
     const config: Config = {
-      channels,
+      channels: {},
       agents: {},
       defaultAgent,
       workspace,
@@ -131,6 +166,12 @@ export async function runSetup(
       return false;
     }
 
+    // Auto-register remaining built-in plugins in the registry
+    if (settingsManager && pluginRegistry) {
+      await registerBuiltinPlugins(settingsManager, pluginRegistry);
+      await pluginRegistry.save();
+    }
+
     clack.outro(`Config saved to ${configManager.getConfigPath()}`);
 
     if (!opts?.skipRunMode) {
@@ -145,6 +186,38 @@ export async function runSetup(
       return false;
     }
     throw err;
+  }
+}
+
+/**
+ * Register all built-in plugins that haven't been registered yet.
+ * Called after first-run setup to populate the registry with defaults.
+ */
+async function registerBuiltinPlugins(
+  settingsManager: SettingsManager,
+  pluginRegistry: PluginRegistry,
+): Promise<void> {
+  const builtinPlugins = [
+    { name: '@openacp/security', version: '1.0.0', description: 'User access control and session limits' },
+    { name: '@openacp/file-service', version: '1.0.0', description: 'File storage and management' },
+    { name: '@openacp/context', version: '1.0.0', description: 'Conversation context management' },
+    { name: '@openacp/usage', version: '1.0.0', description: 'Token usage tracking and budget enforcement' },
+    { name: '@openacp/speech', version: '1.0.0', description: 'Text-to-speech and speech-to-text' },
+    { name: '@openacp/notifications', version: '1.0.0', description: 'Cross-session notification routing' },
+    { name: '@openacp/tunnel', version: '1.0.0', description: 'Expose local services via tunnel' },
+    { name: '@openacp/api-server', version: '1.0.0', description: 'REST API + SSE streaming server' },
+  ];
+
+  for (const p of builtinPlugins) {
+    if (!pluginRegistry.get(p.name)) {
+      pluginRegistry.register(p.name, {
+        version: p.version,
+        source: 'builtin',
+        enabled: true,
+        settingsPath: settingsManager.getSettingsPath(p.name),
+        description: p.description,
+      });
+    }
   }
 }
 

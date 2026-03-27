@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildAssistantSystemPrompt, type AssistantContext } from "../adapters/telegram/assistant.js";
+import { buildAssistantSystemPrompt, type AssistantContext } from "../plugins/telegram/assistant.js";
 
 function makeCtx(overrides?: Partial<AssistantContext>): AssistantContext {
   return {

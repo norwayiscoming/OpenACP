@@ -101,7 +101,7 @@ describe("ApiServer", () => {
   });
 
   async function startServer(portOverride?: number) {
-    const { ApiServer } = await import("../core/api/api-server.js");
+    const { ApiServer } = await import("../plugins/api-server/api-server.js");
     server = new ApiServer(
       mockCore as any,
       { port: portOverride ?? 0, host: "127.0.0.1" },
@@ -1014,7 +1014,7 @@ describe("ApiServer", () => {
     });
 
     it("serves index.html for root path", async () => {
-      const { ApiServer } = await import("../core/api/api-server.js");
+      const { ApiServer } = await import("../plugins/api-server/api-server.js");
       server = new ApiServer(
         mockCore as any,
         { port: 0, host: "127.0.0.1" },
@@ -1034,7 +1034,7 @@ describe("ApiServer", () => {
     });
 
     it("serves static assets with correct content-type", async () => {
-      const { ApiServer } = await import("../core/api/api-server.js");
+      const { ApiServer } = await import("../plugins/api-server/api-server.js");
       server = new ApiServer(
         mockCore as any,
         { port: 0, host: "127.0.0.1" },
@@ -1056,7 +1056,7 @@ describe("ApiServer", () => {
     });
 
     it("falls back to index.html for SPA routes", async () => {
-      const { ApiServer } = await import("../core/api/api-server.js");
+      const { ApiServer } = await import("../plugins/api-server/api-server.js");
       server = new ApiServer(
         mockCore as any,
         { port: 0, host: "127.0.0.1" },
@@ -1076,7 +1076,7 @@ describe("ApiServer", () => {
     });
 
     it("API routes still work when UI is enabled", async () => {
-      const { ApiServer } = await import("../core/api/api-server.js");
+      const { ApiServer } = await import("../plugins/api-server/api-server.js");
       server = new ApiServer(
         mockCore as any,
         { port: 0, host: "127.0.0.1" },
@@ -1095,7 +1095,7 @@ describe("ApiServer", () => {
     });
 
     it("returns 404 for non-API routes when UI not available", async () => {
-      const { ApiServer } = await import("../core/api/api-server.js");
+      const { ApiServer } = await import("../plugins/api-server/api-server.js");
       const nonExistentUiDir = path.join(tmpDir, "no-ui");
       server = new ApiServer(
         mockCore as any,
@@ -1178,7 +1178,7 @@ describe("ApiServer", () => {
       });
 
       it("blocks path traversal with ../ (no file leaked, SPA fallback or 404)", async () => {
-        const { ApiServer } = await import("../core/api/api-server.js");
+        const { ApiServer } = await import("../plugins/api-server/api-server.js");
         server = new ApiServer(
           mockCore as any,
           { port: 0, host: "127.0.0.1" },
@@ -1203,7 +1203,7 @@ describe("ApiServer", () => {
       });
 
       it("blocks encoded path traversal with %2e%2e (no file leaked)", async () => {
-        const { ApiServer } = await import("../core/api/api-server.js");
+        const { ApiServer } = await import("../plugins/api-server/api-server.js");
         server = new ApiServer(
           mockCore as any,
           { port: 0, host: "127.0.0.1" },
@@ -1468,7 +1468,7 @@ describe("ApiServer", () => {
         "<html><body>Test</body></html>",
       );
 
-      const { ApiServer } = await import("../core/api/api-server.js");
+      const { ApiServer } = await import("../plugins/api-server/api-server.js");
       server = new ApiServer(
         mockCore as any,
         { port: 0, host: "127.0.0.1" },

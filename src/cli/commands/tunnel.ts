@@ -1,4 +1,4 @@
-import { readApiPort, apiCall } from '../../core/api/api-client.js'
+import { readApiPort, apiCall } from '../api-client.js'
 
 export async function cmdTunnel(args: string[]): Promise<void> {
   const subCmd = args[1]

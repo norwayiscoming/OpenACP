@@ -214,21 +214,31 @@ await core.start()
 
 ---
 
-## Step 9 — Export as AdapterFactory
+## Step 9 — Package as a Plugin
 
-So your adapter can be loaded as a plugin:
+Adapter plugins implement `OpenACPPlugin` and register themselves in `setup()`:
 
 ```typescript
-import type { AdapterFactory } from 'openacp'
+import type { OpenACPPlugin, PluginContext } from '@openacp/plugin-sdk'
 import { MyPlatformAdapter } from './adapter.js'
 
-export const adapterFactory: AdapterFactory = {
-  name: 'myplatform',
-  createAdapter(core, config) {
-    return new MyPlatformAdapter(core, config)
+const plugin: OpenACPPlugin = {
+  name: '@openacp/adapter-myplatform',
+  version: '1.0.0',
+  description: 'MyPlatform adapter for OpenACP',
+  async setup(ctx: PluginContext) {
+    const settings = await ctx.settings.getAll()
+    const adapter = new MyPlatformAdapter(ctx, settings)
+    ctx.registerAdapter('myplatform', adapter)
   },
 }
+
+export default plugin
 ```
+
+Adapter implementations can extend `MessagingAdapter` (for platforms with threads/topics) or `StreamAdapter` (for simpler integrations) from `@openacp/plugin-sdk`, instead of extending `ChannelAdapter` directly.
+
+> **Note:** The previous `AdapterFactory` pattern is no longer used. All adapter registration now goes through the plugin system.
 
 ---
 

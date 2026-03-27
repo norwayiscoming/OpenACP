@@ -18,7 +18,7 @@ describe('TopicManager', () => {
     mockAdapter = {
       deleteSessionThread: vi.fn(),
     }
-    const { TopicManager } = await import('../core/topic-manager.js')
+    const { TopicManager } = await import('../plugins/telegram/topic-manager.js')
     topicManager = new TopicManager(mockSessionManager, mockAdapter, systemTopicIds)
   })
 

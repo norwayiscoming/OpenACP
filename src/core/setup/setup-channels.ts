@@ -1,11 +1,10 @@
+import * as os from "node:os";
+import * as path from "node:path";
 import * as clack from "@clack/prompts";
 import type { Config } from "../config/config.js";
 import type { ConfiguredChannelAction, ChannelId, ChannelStatus } from "./types.js";
 import { CHANNEL_META } from "./types.js";
 import { guardCancel, ok, c } from "./helpers.js";
-import { setupTelegram } from "./setup-telegram.js";
-import { setupDiscord } from "./setup-discord.js";
-import type { DiscordChannelConfig } from "../../adapters/discord/types.js";
 
 export function getChannelStatuses(config: Config): ChannelStatus[] {
   const statuses: ChannelStatus[] = [];
@@ -56,6 +55,33 @@ async function promptConfiguredAction(label: string): Promise<ConfiguredChannelA
       initialValue: "modify" as const,
     }),
   );
+}
+
+async function configureViaPlugin(channelId: ChannelId): Promise<void> {
+  const pluginMap: Record<ChannelId, { importPath: string; name: string }> = {
+    telegram: { importPath: '../../plugins/telegram/index.js', name: '@openacp/telegram' },
+    discord: { importPath: '../../plugins/discord/index.js', name: '@openacp/discord' },
+  };
+
+  const pluginInfo = pluginMap[channelId];
+  if (!pluginInfo) return;
+
+  const { SettingsManager } = await import('../plugin/settings-manager.js');
+  const { createInstallContext } = await import('../plugin/install-context.js');
+  const basePath = path.join(os.homedir(), '.openacp', 'plugins');
+  const settingsManager = new SettingsManager(basePath);
+
+  const pluginModule = await import(pluginInfo.importPath);
+  const plugin = pluginModule.default;
+
+  if (plugin?.configure) {
+    const ctx = createInstallContext({
+      pluginName: plugin.name,
+      settingsManager,
+      basePath,
+    });
+    await plugin.configure(ctx);
+  }
 }
 
 export async function configureChannels(config: Config): Promise<{ config: Config; changed: boolean }> {
@@ -116,23 +142,12 @@ export async function configureChannels(config: Config): Promise<{ config: Confi
         }
         continue;
       }
-      // action === "modify" — fall through to setup
+      // action === "modify" — fall through to plugin configure
     }
 
-    // Run channel setup (fresh or modify)
-    if (channelId === "telegram") {
-      const result = await setupTelegram({
-        existing: isConfigured ? (existing as Config["channels"][string]) : undefined,
-      });
-      next.channels.telegram = result;
-      changed = true;
-    } else if (channelId === "discord") {
-      const result = await setupDiscord({
-        existing: isConfigured ? (existing as unknown as DiscordChannelConfig) : undefined,
-      });
-      next.channels.discord = result as Config["channels"][string];
-      changed = true;
-    }
+    // Run channel configuration via plugin configure()
+    await configureViaPlugin(channelId);
+    changed = true;
   }
 
   return { config: next, changed };

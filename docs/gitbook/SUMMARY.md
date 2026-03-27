@@ -45,10 +45,22 @@
 * [Doctor Diagnostics](features/doctor.md)
 * [Assistant Mode](features/assistant-mode.md)
 
+## Architecture
+
+* [Overview](architecture/README.md)
+* [Core Design](architecture/core-design.md)
+* [Plugin System](architecture/plugin-system.md)
+* [Command System](architecture/command-system.md)
+* [Built-in Plugins](architecture/built-in-plugins.md)
+* [Writing Plugins](architecture/writing-plugins.md)
+
 ## Extending
 
 * [Overview](extending/README.md)
+* [Getting Started: Your First Plugin](extending/getting-started-plugin.md)
 * [Plugin System](extending/plugin-system.md)
+* [Plugin SDK Reference](extending/plugin-sdk-reference.md)
+* [Dev Mode](extending/dev-mode.md)
 * [Building Adapters](extending/building-adapters.md)
 * [Adapter Reference](extending/adapter-reference.md)
 * [Contributing](extending/contributing.md)

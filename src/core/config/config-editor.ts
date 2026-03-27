@@ -1,3 +1,6 @@
+import { execSync } from 'node:child_process'
+import * as os from 'node:os'
+import * as path from 'node:path'
 import * as clack from '@clack/prompts'
 import type { Config, ConfigManager } from './config.js'
 
@@ -203,6 +206,39 @@ async function validateDiscordGuild(
   }
 }
 
+const DISCORD_PACKAGE = '@openacp/adapter-discord'
+
+async function ensureDiscordPluginInstalled(): Promise<boolean> {
+  try {
+    await import(DISCORD_PACKAGE)
+    return true
+  } catch {
+    // Not installed — ask user
+    const shouldInstall = await select({
+      message: `${DISCORD_PACKAGE} is not installed. Install it now?`,
+      choices: [
+        { name: 'Yes, install now', value: 'yes' },
+        { name: 'No, skip', value: 'no' },
+      ],
+    })
+    if (shouldInstall === 'no') {
+      console.log(warn(`Discord plugin not installed. Install later with: openacp plugin add ${DISCORD_PACKAGE}`))
+      return false
+    }
+    try {
+      const pluginsDir = path.join(os.homedir(), '.openacp', 'plugins')
+      console.log(dim(`Installing ${DISCORD_PACKAGE}...`))
+      execSync(`npm install ${DISCORD_PACKAGE}`, { cwd: pluginsDir, stdio: 'pipe' })
+      console.log(ok(`${DISCORD_PACKAGE} installed`))
+      return true
+    } catch (err) {
+      console.log(warn(`Failed to install: ${(err as Error).message}`))
+      console.log(warn(`Install manually with: openacp plugin add ${DISCORD_PACKAGE}`))
+      return false
+    }
+  }
+}
+
 async function editDiscord(config: Config, updates: ConfigUpdates): Promise<void> {
   const dc = (config.channels?.discord ?? {}) as Record<string, unknown>
   const currentToken = (dc.botToken as string) ?? ''
@@ -247,12 +283,17 @@ async function editDiscord(config: Config, updates: ConfigUpdates): Promise<void
     if (choice === 'back') break
 
     if (choice === 'toggle') {
+      if (!isEnabled) {
+        // Enabling — check plugin is installed
+        if (!(await ensureDiscordPluginInstalled())) continue
+      }
       const dcUp = ensureDiscordUpdates()
       dcUp.enabled = !isEnabled
       console.log(!isEnabled ? ok('Discord enabled') : ok('Discord disabled'))
     }
 
     if (choice === 'setup') {
+      if (!(await ensureDiscordPluginInstalled())) continue
       // Step 1: Bot Token
       const token = await input({
         message: 'Bot token:',

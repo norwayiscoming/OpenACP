@@ -392,4 +392,15 @@ describe("Session - Context Injection", () => {
     await vi.waitFor(() => expect(agent.prompt).toHaveBeenCalledTimes(1));
     expect(agent.prompt.mock.calls[0][0]).toBe("hello");
   });
+
+  it("processPrompt silently returns if session is finished", async () => {
+    const agent = mockAgentInstance();
+    const session = createTestSession(agent);
+    session.activate();
+    session.finish("done");
+    const callsBefore = agent.prompt.mock.calls.length;
+    await session.enqueuePrompt("hello after finish");
+    await new Promise((r) => setTimeout(r, 50));
+    expect(agent.prompt.mock.calls.length).toBe(callsBefore);
+  });
 });

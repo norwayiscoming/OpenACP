@@ -32,7 +32,7 @@ describe("Session — State Machine Exhaustive Transitions", () => {
   // Valid transitions according to source:
   // initializing -> active, error
   // active -> error, finished, cancelled
-  // error -> active
+  // error -> active, cancelled
   // cancelled -> active
   // finished -> (nothing)
 
@@ -129,10 +129,11 @@ describe("Session — State Machine Exhaustive Transitions", () => {
       expect(() => session.finish()).toThrow("Invalid session transition: error → finished");
     });
 
-    it("error → cancelled throws", () => {
+    it("error → cancelled is valid", () => {
       const session = createTestSession();
       session.fail("oops");
-      expect(() => session.markCancelled()).toThrow("Invalid session transition: error → cancelled");
+      expect(() => session.markCancelled()).not.toThrow();
+      expect(session.status).toBe("cancelled");
     });
 
     it("cancelled → finished throws", () => {

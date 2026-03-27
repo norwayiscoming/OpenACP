@@ -268,6 +268,11 @@ export async function startServer(opts?: StartServerOptions) {
 
     core.eventBus.emit('system:ready')
   } catch (err) {
+    if (spinner) {
+      spinner.fail('Plugin boot failed')
+      spinner = undefined
+    }
+    unmuteLogger()
     log.error({ err }, 'Plugin boot failed')
   }
 

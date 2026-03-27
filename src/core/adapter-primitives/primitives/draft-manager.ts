@@ -97,6 +97,7 @@ export class DraftManager {
     const draft = this.drafts.get(sessionId)
     if (!draft) return
     await draft.finalize()
+    this.drafts.delete(sessionId)
   }
 
   async finalizeAll(): Promise<void> {

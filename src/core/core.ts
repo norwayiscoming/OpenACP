@@ -308,9 +308,15 @@ export class OpenACPCore {
     existingSessionId?: string;
     createThread?: boolean;
     initialName?: string;
+    threadId?: string;
   }): Promise<Session> {
     // 1-3. Spawn/resume agent, create Session, register in SessionManager
     const session = await this.sessionFactory.create(params);
+
+    // Set threadId early so agent events during bridge.connect() can find the thread
+    if (params.threadId) {
+      session.threadId = params.threadId;
+    }
 
     // 4. Create thread if needed
     const adapter = this.adapters.get(params.channelId);
@@ -622,8 +628,8 @@ export class OpenACPCore {
       return null;
     }
 
-    // Don't resume errored sessions (cancelled sessions can still be resumed)
-    if (record.status === "error") {
+    // Don't resume errored or cancelled sessions
+    if (record.status === "error" || record.status === "cancelled") {
       log.debug(
         {
           threadId: message.threadId,
@@ -653,6 +659,7 @@ export class OpenACPCore {
           resumeAgentSessionId: record.agentSessionId,
           existingSessionId: record.sessionId,
           initialName: record.name,
+          threadId: message.threadId,
         });
         session.threadId = message.threadId;
         session.activate();

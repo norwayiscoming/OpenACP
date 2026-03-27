@@ -96,12 +96,13 @@ describe("ToolCardState", () => {
     card.destroy();
   });
 
-  it("appendUsage sets usage and force flushes", () => {
+  it("appendUsage sets usage and schedules flush", () => {
     const onFlush = vi.fn();
     const card = new ToolCardState({ onFlush, verbosity: "medium" });
     card.addTool(makeTool("t1", "Read"), "read", { file_path: "src/a.ts" });
     onFlush.mockClear();
     card.appendUsage({ tokensUsed: 5000, cost: 0.05 });
+    vi.advanceTimersByTime(500);
     expect(onFlush).toHaveBeenCalledTimes(1);
     const state = onFlush.mock.lastCall![0];
     expect(state.usage).toEqual({ tokensUsed: 5000, cost: 0.05 });

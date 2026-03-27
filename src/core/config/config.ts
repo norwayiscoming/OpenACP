@@ -262,15 +262,17 @@ export class ConfigManager extends EventEmitter {
     changePath?: string,
   ): Promise<void> {
     const oldConfig = this.config ? structuredClone(this.config) : undefined;
-    // Read current file, merge updates, write back
+    // Read current file, merge updates
     const raw = JSON.parse(fs.readFileSync(this.configPath, "utf-8"));
     this.deepMerge(raw, updates);
-    fs.writeFileSync(this.configPath, JSON.stringify(raw, null, 2));
-    // Re-validate and update in-memory config
+    // Validate BEFORE writing to disk
     const result = ConfigSchema.safeParse(raw);
-    if (result.success) {
-      this.config = result.data;
+    if (!result.success) {
+      log.error({ errors: result.error.issues }, "Config validation failed, not saving");
+      return;
     }
+    fs.writeFileSync(this.configPath, JSON.stringify(raw, null, 2));
+    this.config = result.data;
     // Emit change event if path provided
     if (changePath) {
       const { getConfigValue } = await import("./config-registry.js");

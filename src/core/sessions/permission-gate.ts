@@ -33,6 +33,9 @@ export class PermissionGate {
       this.timeoutTimer = setTimeout(() => {
         this.reject("Permission request timed out (no response received)");
       }, this.timeoutMs);
+      if (typeof this.timeoutTimer === 'object' && 'unref' in this.timeoutTimer) {
+        (this.timeoutTimer as NodeJS.Timeout).unref();
+      }
     });
   }
 

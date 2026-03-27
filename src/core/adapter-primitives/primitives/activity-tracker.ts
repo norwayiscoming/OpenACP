@@ -72,7 +72,9 @@ export class ActivityTracker {
         return
       }
       if (Date.now() - state.startTime >= this.config.maxThinkingDuration) {
+        state.dismissed = true
         this.stopRefresh(state)
+        state.callbacks.removeThinkingIndicator().catch(() => {})
         return
       }
       state.callbacks.updateThinkingIndicator().catch(() => {})

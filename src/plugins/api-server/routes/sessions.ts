@@ -110,8 +110,9 @@ export function registerSessionRoutes(router: Router, deps: RouteDeps): void {
     const channelId = adapterId ?? "api";
 
     const resolvedAgent = agent || config.defaultAgent;
+    const agentDef = deps.core.agentCatalog.resolve(resolvedAgent);
     const resolvedWorkspace = deps.core.configManager.resolveWorkspace(
-      workspace || config.agents[resolvedAgent]?.workingDirectory,
+      workspace || agentDef?.workingDirectory,
     );
 
     const session = await deps.core.createSession({

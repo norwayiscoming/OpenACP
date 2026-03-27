@@ -38,17 +38,21 @@ export class SessionBridge {
 
   /** Send message to adapter, optionally running through message:outgoing middleware */
   private async sendMessage(sessionId: string, message: ReturnType<MessageTransformer["transform"]>): Promise<void> {
-    const mw = this.deps.middlewareChain;
-    if (mw) {
-      const result = await mw.execute('message:outgoing', { sessionId, message }, async (m) => m);
-      if (!result) return; // blocked by middleware
-      this.adapter.sendMessage(sessionId, result.message).catch((err) => {
-        log.error({ err, sessionId }, "Failed to send message to adapter");
-      });
-    } else {
-      this.adapter.sendMessage(sessionId, message).catch((err) => {
-        log.error({ err, sessionId }, "Failed to send message to adapter");
-      });
+    try {
+      const mw = this.deps.middlewareChain;
+      if (mw) {
+        const result = await mw.execute('message:outgoing', { sessionId, message }, async (m) => m);
+        if (!result) return;
+        this.adapter.sendMessage(sessionId, result.message).catch((err) => {
+          log.error({ err, sessionId }, "Failed to send message to adapter");
+        });
+      } else {
+        this.adapter.sendMessage(sessionId, message).catch((err) => {
+          log.error({ err, sessionId }, "Failed to send message to adapter");
+        });
+      }
+    } catch (err) {
+      log.error({ err, sessionId }, "Error in sendMessage middleware");
     }
   }
 

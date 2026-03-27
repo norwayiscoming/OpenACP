@@ -134,7 +134,10 @@ export class JsonFileSessionStore implements SessionStore {
       }
       log.debug({ count: this.records.size }, "Loaded session records");
     } catch (err) {
-      log.error({ err }, "Failed to load session store");
+      log.error({ err }, "Failed to load session store, backing up corrupt file");
+      try {
+        fs.renameSync(this.filePath, `${this.filePath}.bak`);
+      } catch { /* best effort */ }
     }
   }
 

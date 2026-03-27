@@ -412,18 +412,19 @@ Shows the version of the currently running daemon process.
         console.error(`Error: ${data.error}`)
         process.exit(1)
       }
+      const s = (data.session ?? data) as Record<string, unknown>
       console.log(`Session details:`)
-      console.log(`  ID             : ${data.id}`)
-      console.log(`  Agent          : ${data.agent}`)
-      console.log(`  Status         : ${data.status}`)
-      console.log(`  Name           : ${data.name ?? '(none)'}`)
-      console.log(`  Workspace      : ${data.workspace}`)
-      console.log(`  Created        : ${data.createdAt}`)
-      console.log(`  Dangerous      : ${data.dangerous}`)
-      console.log(`  Queue depth    : ${data.queueDepth}`)
-      console.log(`  Prompt active  : ${data.promptActive}`)
-      console.log(`  Channel        : ${data.channelId ?? '(none)'}`)
-      console.log(`  Thread         : ${data.threadId ?? '(none)'}`)
+      console.log(`  ID             : ${s.id}`)
+      console.log(`  Agent          : ${s.agent}`)
+      console.log(`  Status         : ${s.status}`)
+      console.log(`  Name           : ${s.name ?? '(none)'}`)
+      console.log(`  Workspace      : ${s.workspace}`)
+      console.log(`  Created        : ${s.createdAt}`)
+      console.log(`  Dangerous      : ${s.dangerousMode}`)
+      console.log(`  Queue depth    : ${s.queueDepth}`)
+      console.log(`  Prompt active  : ${s.promptRunning}`)
+      console.log(`  Channel        : ${s.channelId ?? '(none)'}`)
+      console.log(`  Thread         : ${s.threadId ?? '(none)'}`)
 
     } else if (subCmd === 'dangerous') {
       const sessionId = args[2]
@@ -456,19 +457,23 @@ Shows the version of the currently running daemon process.
         console.error(`Error: ${data.error}`)
         process.exit(1)
       }
-      const uptimeSeconds = typeof data.uptimeSeconds === 'number' ? data.uptimeSeconds : 0
+      const uptimeMs = typeof data.uptime === 'number' ? data.uptime : 0
+      const uptimeSeconds = Math.floor(uptimeMs / 1000)
       const hours = Math.floor(uptimeSeconds / 3600)
       const minutes = Math.floor((uptimeSeconds % 3600) / 60)
-      const memoryBytes = typeof data.memoryUsage === 'number' ? data.memoryUsage : 0
-      const memoryMB = (memoryBytes / 1024 / 1024).toFixed(1)
+      const mem = data.memory as Record<string, number> | undefined
+      const memoryMB = mem ? (mem.rss / 1024 / 1024).toFixed(1) : '0.0'
       const sessions = data.sessions as Record<string, unknown> ?? {}
+      const tunnel = data.tunnel as Record<string, unknown> | undefined
+      const tunnelStr = tunnel?.enabled ? `${tunnel.url}` : 'disabled'
+      const adapters = Array.isArray(data.adapters) ? data.adapters.join(', ') : String(data.adapters ?? 'none')
       console.log(`Status   : ${data.status}`)
       console.log(`Uptime   : ${hours}h ${minutes}m`)
       console.log(`Version  : ${data.version}`)
       console.log(`Memory   : ${memoryMB} MB`)
       console.log(`Sessions : ${sessions.active ?? 0} active / ${sessions.total ?? 0} total`)
-      console.log(`Adapters : ${data.adapters}`)
-      console.log(`Tunnel   : ${data.tunnel}`)
+      console.log(`Adapters : ${adapters}`)
+      console.log(`Tunnel   : ${tunnelStr}`)
 
     } else if (subCmd === 'restart') {
       const res = await apiCall(port, '/api/restart', { method: 'POST' })

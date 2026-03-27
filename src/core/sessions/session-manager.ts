@@ -118,7 +118,11 @@ export class SessionManager {
   async cancelSession(sessionId: string): Promise<void> {
     const session = this.sessions.get(sessionId);
     if (session) {
-      await session.abortPrompt();
+      try {
+        await session.abortPrompt();
+      } catch {
+        // Agent may already be dead — continue with cleanup
+      }
       session.markCancelled();
       this.sessions.delete(sessionId);
     }

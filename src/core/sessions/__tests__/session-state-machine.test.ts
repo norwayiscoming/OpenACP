@@ -85,6 +85,14 @@ describe("Session state machine", () => {
       session.activate();
       expect(session.status).toBe("active");
     });
+
+    it("error → cancelled via markCancelled()", () => {
+      const session = createSession();
+      session.activate();
+      session.fail("something broke");
+      expect(() => session.markCancelled()).not.toThrow();
+      expect(session.status).toBe("cancelled");
+    });
   });
 
   describe("invalid transitions", () => {
@@ -123,12 +131,6 @@ describe("Session state machine", () => {
       const session = createSession();
       session.fail("err");
       expect(() => session.finish("done")).toThrow();
-    });
-
-    it("error → cancelled throws", () => {
-      const session = createSession();
-      session.fail("err");
-      expect(() => session.markCancelled()).toThrow();
     });
   });
 

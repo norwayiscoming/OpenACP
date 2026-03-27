@@ -249,6 +249,18 @@ describe('SessionManager', () => {
       expect(manager.getSession('sess-cancel-mem')).toBeUndefined()
     })
 
+    it('completes cleanup even if abortPrompt throws', async () => {
+      const session = createSession({ id: 'sess-dead-agent' })
+      session.activate()
+      session.agentInstance.cancel = vi.fn().mockRejectedValue(new Error('agent dead'))
+      manager.registerSession(session)
+
+      await manager.cancelSession('sess-dead-agent')
+
+      expect(session.status).toBe('cancelled')
+      expect(manager.getSession('sess-dead-agent')).toBeUndefined()
+    })
+
     it('does not re-save if already cancelled', async () => {
       await store.save({
         sessionId: 'already-cancelled',

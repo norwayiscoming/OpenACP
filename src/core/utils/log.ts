@@ -209,6 +209,13 @@ export function createSessionLogger(sessionId: string, parentLogger: Logger): Lo
   }
 }
 
+export function closeSessionLogger(logger: Logger): void {
+  const dest = (logger as any).__sessionDest
+  if (dest && typeof dest.destroy === 'function') {
+    dest.destroy()
+  }
+}
+
 export async function shutdownLogger(): Promise<void> {
   if (!initialized) return
 

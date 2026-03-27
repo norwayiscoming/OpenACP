@@ -110,6 +110,25 @@ describe("Session TTS integration", () => {
       expect(session.voiceMode).toBe("off");
     });
 
+    it("preserves voiceMode 'next' when prompt fails", async () => {
+      const agent = mockAgent();
+      const speech = mockSpeechService(true);
+      const session = createSession(agent, speech);
+      session.setVoiceMode("next");
+
+      (agent.prompt as any).mockRejectedValue(new Error("agent crashed"));
+
+      await session.enqueuePrompt("hello");
+
+      await vi.waitFor(() => {
+        expect(agent.prompt).toHaveBeenCalled();
+      });
+
+      // Allow queue error handler to run
+      await new Promise((r) => setTimeout(r, 50));
+      expect(session.voiceMode).toBe("next");
+    });
+
     it("keeps voiceMode 'on' after prompt", async () => {
       const agent = mockAgent();
       const speech = mockSpeechService(true);

@@ -122,7 +122,7 @@ export class ToolCardState {
   appendUsage(usage: UsageData): void {
     if (this.finalized) return;
     this.usage = usage;
-    this.flush();
+    this.scheduleFlush();
   }
 
   finalize(): void {

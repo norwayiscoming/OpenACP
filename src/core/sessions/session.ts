@@ -4,7 +4,7 @@ import type { AgentCapabilities, AgentEvent, Attachment, PermissionRequest, Sess
 import { TypedEmitter } from "../utils/typed-emitter.js";
 import { PromptQueue } from "./prompt-queue.js";
 import { PermissionGate } from "./permission-gate.js";
-import { createChildLogger, createSessionLogger, type Logger } from "../utils/log.js";
+import { createChildLogger, createSessionLogger, closeSessionLogger, type Logger } from "../utils/log.js";
 import type { SpeechService } from "../../plugins/speech/exports.js";
 import type { MiddlewareChain } from "../plugin/middleware-chain.js";
 import * as fs from "node:fs";
@@ -20,7 +20,7 @@ export const TTS_TIMEOUT_MS = 30_000;
 const VALID_TRANSITIONS: Record<SessionStatus, Set<SessionStatus>> = {
   initializing: new Set(["active", "error"]),
   active: new Set(["error", "finished", "cancelled"]),
-  error: new Set(["active"]),
+  error: new Set(["active", "cancelled"]),
   cancelled: new Set(["active"]),
   finished: new Set(),
 };
@@ -174,6 +174,9 @@ export class Session extends TypedEmitter<SessionEvents> {
       return;
     }
 
+    // Don't process prompts for finished sessions (queue may still drain)
+    if (this._status === "finished") return;
+
     this.promptCount++;
 
     if (this._status === "initializing" || this._status === "cancelled" || this._status === "error") {
@@ -200,9 +203,6 @@ export class Session extends TypedEmitter<SessionEvents> {
     // TTS: inject prompt instruction
     if (ttsActive) {
       processed.text += TTS_PROMPT_INSTRUCTION;
-      if (this.voiceMode === "next") {
-        this.voiceMode = "off";
-      }
     }
 
     // TTS: set up text accumulator before prompting
@@ -233,6 +233,10 @@ export class Session extends TypedEmitter<SessionEvents> {
       // Clear context only after successful prompt — if prompt fails, context is preserved for retry
       if (contextUsed) {
         this.pendingContext = null;
+      }
+      // Reset "next" voice mode only after successful prompt
+      if (ttsActive && this.voiceMode === "next") {
+        this.voiceMode = "off";
       }
     } finally {
       if (accumulatorListener) {
@@ -500,5 +504,6 @@ export class Session extends TypedEmitter<SessionEvents> {
     // Clear queued prompts
     this.queue.clear();
     await this.agentInstance.destroy();
+    closeSessionLogger(this.log);
   }
 }

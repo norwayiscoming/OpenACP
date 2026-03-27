@@ -3,4 +3,4 @@ export type { TestPluginContext, TestContextOpts } from './testing/test-context.
 export { createTestInstallContext } from './testing/test-install-context.js'
 export type { TestInstallContextOpts } from './testing/test-install-context.js'
 export { mockServices } from './testing/mock-services.js'
-export { runAdapterConformanceTests } from '@openacp/cli'
+export { runAdapterConformanceTests } from '@openacp/cli/testing'

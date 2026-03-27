@@ -26,66 +26,95 @@ User (Telegram) → ChannelAdapter → OpenACPCore → Session → AgentInstance
 ```
 src/
   cli.ts              — CLI entry (start, install, uninstall, plugins, --version, --help)
-  main.ts             — Server startup, adapter registration
+  main.ts             — Server startup, plugin boot
   index.ts            — Public API exports
   core/               — Core modules
-    config.ts         — Zod-validated config from ~/.openacp/config.json
-    core.ts           — OpenACPCore orchestrator
-    session.ts        — Session with prompt queue, auto-naming
-    agent-instance.ts — ACP subprocess client
-    channel.ts        — ChannelAdapter abstract base
-    plugin-manager.ts — Plugin install/uninstall/load from ~/.openacp/plugins/
-    setup.ts          — Interactive first-run setup
-  adapters/
-    telegram/         — Built-in Telegram adapter (grammY)
+    config/           — Zod-validated config, migrations, editor
+    agents/           — Agent instance, catalog, installer, store
+    sessions/         — Session, session-manager, session-bridge, permission-gate
+    plugin/           — Plugin infrastructure (LifecycleManager, ServiceRegistry, MiddlewareChain, PluginContext)
+    commands/         — System chat commands (session, agents, admin, help, menu)
+    adapter-primitives/ — Shared adapter framework (MessagingAdapter, StreamAdapter, SendQueue, etc.)
+    utils/            — Logger, typed-emitter, file utilities
+    setup/            — First-run setup wizard
+  plugins/            — All plugins (adapters + services)
+    telegram/         — Telegram adapter (grammY)
+    discord/          — Discord adapter (discord.js)
+    slack/            — Slack adapter (@slack/bolt)
+    speech/           — TTS/STT (Edge TTS, Groq STT)
+    tunnel/           — Port forwarding (Cloudflare, ngrok, Bore, Tailscale)
+    security/         — Access control, rate limiting
+    usage/            — Cost tracking, budget
+    api-server/       — REST API + SSE
+    file-service/     — File I/O for agents
+    notifications/    — Cross-session alerts
+    context/          — Conversation history
+  cli/
+    commands/         — CLI commands (start, plugins, dev, etc.)
+    plugin-template/  — Scaffold templates for `openacp plugin create`
+  packages/
+    plugin-sdk/       — @openacp/plugin-sdk (types + testing utilities)
 ```
 
 ### Core Abstractions
 
-**OpenACPCore** (`core.ts`) — Registers adapters, routes messages, creates sessions, wires agent events to adapters. Enforces security (allowedUserIds, maxConcurrentSessions).
+**OpenACPCore** (`core.ts`) — Registers adapters, routes messages, creates sessions, wires agent events to adapters. Accesses services via ServiceRegistry.
 
-**Session** (`session.ts`) — Wraps an AgentInstance with a prompt queue (serial processing), auto-naming (asks agent to summarize after first prompt), and lifecycle management.
+**Session** (`session.ts`) — Wraps an AgentInstance with a prompt queue (serial processing), auto-naming, and lifecycle management.
 
 **AgentInstance** (`agent-instance.ts`) — Spawns agent subprocess, implements full ACP Client interface. Converts ACP events to AgentEvent types.
 
-**ChannelAdapter** (`channel.ts`) — Abstract base. Implementations must handle: sendMessage, sendPermissionRequest, sendNotification, createSessionThread, renameSessionThread.
+**LifecycleManager** (`plugin/lifecycle-manager.ts`) — Boots plugins in dependency order (topo-sort), manages setup/teardown, handles version migration.
 
-**ConfigManager** (`config.ts`) — Zod-validated config. Supports env overrides: `OPENACP_TELEGRAM_BOT_TOKEN`, `OPENACP_TELEGRAM_CHAT_ID`, `OPENACP_DEFAULT_AGENT`, `OPENACP_DEBUG`.
+**ServiceRegistry** (`plugin/service-registry.ts`) — Central service discovery. Plugins register services, core accesses them via typed interfaces.
 
-### Telegram Adapter Patterns
+**CommandRegistry** (`command-registry.ts`) — Central command registry for chat commands. System and plugin commands registered here, adapters dispatch via generic handler.
 
-- **Forum topics**: Each session gets its own topic. System topics: Notifications, Assistant
-- **MessageDraft** (`streaming.ts`): Buffers text chunks, sends periodic batch updates
-- **Callback routing**: Permission buttons use `p:` prefix, menu buttons use `m:` prefix. Must use `bot.callbackQuery(/^prefix/)` to avoid blocking the middleware chain
-- **Topic-first creation**: Create forum topic BEFORE `core.handleNewSession()` to prevent race condition
+**PluginContext** (`plugin/plugin-context.ts`) — Scoped API for plugins: events, services, middleware, commands, storage, logging.
+
+### Plugin System
+
+All features are plugins. Core only provides infrastructure (ServiceRegistry, MiddlewareChain, EventBus, LifecycleManager). Plugins register services, commands, and middleware in their `setup()` hook.
+
+- 18 middleware hook points (message:incoming, agent:beforePrompt, permission:beforeRequest, etc.)
+- 9 permission types (events:read, services:register, commands:register, etc.)
+- Per-plugin settings via SettingsManager (~/.openacp/plugins/<name>/settings.json)
+
+### Adapter Patterns
+
+- **Forum topics** (Telegram): Each session gets its own topic
+- **Callback routing**: Permission buttons use `p:` prefix, command buttons use `c/` prefix
+- **Response renderers**: Adapters render CommandResponse types (text, menu, list, confirm, error, silent) per platform
 
 ## npm Publishing
 
 Published as `@openacp/cli` on npm. Users install with `npm install -g @openacp/cli`.
 
-- `pnpm build:publish` bundles via tsup into `dist-publish/`
-- GitHub Action auto-publishes on tag push (`v*`)
-- Plugin system: `openacp install @openacp/adapter-discord` installs to `~/.openacp/plugins/`
+- `pnpm build:publish` bundles CLI via tsup + builds SDK via tsc
+- GitHub Action auto-publishes both `@openacp/cli` and `@openacp/plugin-sdk` on tag push (`v*`)
+- Plugin system: `openacp plugin install <name>` installs from npm to `~/.openacp/plugins/`
 
 ## Versioning
 
-Format: `YYYY.MMDD.<patch>` — ví dụ `2026.0326.1` là bản thứ nhất trong ngày 26/03/2026.
+Format: `YYYY.MDD.<patch>` — e.g. `2026.327.1` is the first patch on March 27, 2026.
 
-- `YYYY` — năm
-- `MMDD` — tháng + ngày (zero-padded)
-- `<patch>` — thứ tự phiên bản trong ngày đó, bắt đầu từ 1
+- `YYYY` — year
+- `MDD` — month + day (no leading zeros, since semver strips them). Jan 5 = `15`, Mar 27 = `327`, Dec 5 = `1205`
+- `<patch>` — sequential patch number for that day, starting from 1
 
 ## Documentation Sync
 
-Khi thay đổi code, **phải cập nhật docs tương ứng** để code và documentation luôn đồng bộ:
+When changing code, **you must update corresponding docs** to keep code and documentation in sync:
 
-- **Thêm tính năng mới**: Bắt buộc cập nhật README và `docs/` (GitBook) để mô tả tính năng, cách dùng, config nếu có.
-- **Cập nhật tính năng**: Cập nhật lại phần docs liên quan để phản ánh thay đổi.
-- **Fix bug**: Nếu bug liên quan đến behavior đã document, cập nhật docs nếu cần. Không bắt buộc nếu docs vẫn chính xác.
-- **Nguyên tắc chung**: Không merge code mà docs chưa được cập nhật cho feature mới/thay đổi. README dành cho user, `docs/` dành cho cả user lẫn contributor.
+- **New features**: Must update README and `docs/` (GitBook) to describe the feature, usage, and config if applicable.
+- **Feature updates**: Update related docs to reflect changes.
+- **Bug fixes**: Update docs if the bug relates to documented behavior. Not required if docs are still accurate.
+- **General rule**: Do not merge code without updating docs for new features or changes. README is for users, `docs/` is for both users and contributors.
+- **Plugin Template Sync**: When changing plugin API, architecture, PluginContext, CommandDef, middleware hooks, permissions, or anything affecting how plugins are written → **must update plugin template** at `src/cli/plugin-template/` (especially `claude-md.ts` and `plugin-guide.ts`) so templates always reflect the current API. These templates are the primary reference for both AI agents and plugin developers.
 
 ## Conventions
 
+- **English only**: All code, comments, commit messages, documentation, specs, plans, and any text in the repository must be written in English. No exceptions.
 - ESM-only (`"type": "module"`), all imports use `.js` extension
 - TypeScript strict mode, target ES2022, NodeNext module resolution
 
@@ -134,15 +163,15 @@ function mockAgentInstance() {
 
 - `src/core/__tests__/` — Core module tests (session, bridge, queue, permissions, store, etc.)
 - `src/__tests__/` — Integration tests and adapter-level tests
-- `src/adapters/*/` — Adapter-specific unit tests (formatting, streaming, etc.)
+- `src/plugins/*/` — Plugin-specific unit tests
 - Name files descriptively: `session-lifecycle.test.ts`, `session-bridge-autoapprove.test.ts`
 
 ## Backward Compatibility
 
-Users đã cài và chạy các version cũ sẽ có config, data, storage ở trạng thái cũ. Khi thêm hoặc thay đổi bất kỳ thứ gì liên quan, **phải đảm bảo tương thích ngược**:
+Users who installed and ran older versions will have config, data, and storage in the old format. When adding or changing anything related, **you must ensure backward compatibility**:
 
-- **Config** (`~/.openacp/config.json`): Khi thêm field mới vào Zod schema, luôn đặt `.default()` hoặc `.optional()` để config cũ không bị validation error. Không bao giờ đổi tên hoặc xóa field mà không có migration.
-- **Storage / Data files** (`~/.openacp/`): Khi thay đổi format dữ liệu (sessions, topics, state...), phải handle được format cũ — đọc được data cũ và tự động migrate sang format mới nếu cần. Không được crash khi gặp data từ version trước.
-- **CLI flags & commands**: Không xóa hoặc đổi tên command/flag đang có. Nếu deprecate thì vẫn giữ hoạt động và log warning.
-- **Plugin API**: Khi thay đổi interface mà plugin dùng, phải giữ backward compat hoặc bump major version.
-- **Nguyên tắc chung**: Code mới phải chạy được với data/config cũ mà không cần user làm gì thêm. Nếu cần migration, tự động chạy khi khởi động.
+- **Config** (`~/.openacp/config.json`): When adding new fields to Zod schema, always use `.default()` or `.optional()` so old configs don't fail validation. Never rename or remove fields without migration.
+- **Storage / Data files** (`~/.openacp/`): When changing data format (sessions, topics, state...), must handle old format — read old data and auto-migrate to new format if needed. Must not crash on data from previous versions.
+- **CLI flags & commands**: Do not remove or rename existing commands/flags. If deprecating, keep them working and log a warning.
+- **Plugin API**: When changing interfaces that plugins use, must maintain backward compat or bump major version.
+- **General rule**: New code must work with old data/config without requiring user action. If migration is needed, run it automatically on startup.

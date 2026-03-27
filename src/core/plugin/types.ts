@@ -8,7 +8,6 @@ import type {
   ConfigOption,
   NotificationMessage,
   UsageRecord,
-  UsageSummary,
 } from '../types.js'
 import type { IChannelAdapter } from '../channel.js'
 
@@ -477,7 +476,6 @@ export interface NotificationService {
 export interface UsageService {
   trackUsage(record: UsageRecord): Promise<void>
   checkBudget(sessionId: string): Promise<{ ok: boolean; percent: number; warning?: string }>
-  getSummary(period: string): Promise<UsageSummary>
 }
 
 export interface TTSProvider {
@@ -529,5 +527,4 @@ export type {
   ConfigOption,
   NotificationMessage,
   UsageRecord,
-  UsageSummary,
 }

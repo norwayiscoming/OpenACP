@@ -1,5 +1,5 @@
 import { TypedEmitter } from "./utils/typed-emitter.js";
-import type { AgentEvent, PermissionRequest, SessionStatus } from "./types.js";
+import type { AgentEvent, PermissionRequest, SessionStatus, UsageRecordEvent } from "./types.js";
 
 export interface EventBusEvents {
   "session:created": (data: {
@@ -49,6 +49,9 @@ export interface EventBusEvents {
     text: string;
     attachments?: unknown[];
   }) => void;
+
+  // Usage tracking (consumed by usage plugin)
+  "usage:recorded": (data: UsageRecordEvent) => void;
 }
 
 export class EventBus extends TypedEmitter<EventBusEvents> {}

@@ -158,24 +158,20 @@ describe("SessionFactory", () => {
   });
 
   describe("wireSideEffects()", () => {
-    it("hooks usage tracking on agent_event", async () => {
+    it("emits usage:recorded event on usage agent_event", async () => {
       const session = await factory.create({
         channelId: "telegram",
         agentName: "claude",
         workingDirectory: "/tmp/test",
       });
 
-      const usageStore = { append: vi.fn() };
-      const usageBudget = {
-        check: vi.fn().mockReturnValue({ ok: true, message: null }),
-      };
+      const mockEventBus = { emit: vi.fn() };
       const notificationManager = {
         notifyAll: vi.fn().mockResolvedValue(undefined),
       };
 
       factory.wireSideEffects(session, {
-        usageStore: usageStore as any,
-        usageBudget: usageBudget as any,
+        eventBus: mockEventBus as any,
         notificationManager: notificationManager as any,
       });
 
@@ -187,7 +183,8 @@ describe("SessionFactory", () => {
         cost: { amount: 0.01, currency: "USD" },
       } as AgentEvent);
 
-      expect(usageStore.append).toHaveBeenCalledWith(
+      expect(mockEventBus.emit).toHaveBeenCalledWith(
+        "usage:recorded",
         expect.objectContaining({
           sessionId: session.id,
           agentName: "claude",
@@ -198,69 +195,29 @@ describe("SessionFactory", () => {
       );
     });
 
-    it("sends budget warning when budget check returns message", async () => {
+    it("does not emit usage:recorded for non-usage events", async () => {
       const session = await factory.create({
         channelId: "telegram",
         agentName: "claude",
         workingDirectory: "/tmp/test",
       });
 
-      const usageStore = { append: vi.fn() };
-      const usageBudget = {
-        check: vi
-          .fn()
-          .mockReturnValue({ ok: false, message: "Budget exceeded!" }),
-      };
+      const mockEventBus = { emit: vi.fn() };
       const notificationManager = {
         notifyAll: vi.fn().mockResolvedValue(undefined),
       };
 
       factory.wireSideEffects(session, {
-        usageStore: usageStore as any,
-        usageBudget: usageBudget as any,
+        eventBus: mockEventBus as any,
         notificationManager: notificationManager as any,
       });
 
       session.emit("agent_event", {
-        type: "usage",
-        tokensUsed: 100,
-        contextSize: 500,
-        cost: { amount: 0.01, currency: "USD" },
+        type: "text",
+        content: "hello",
       } as AgentEvent);
 
-      expect(notificationManager.notifyAll).toHaveBeenCalledWith(
-        expect.objectContaining({
-          type: "budget_warning",
-          summary: "Budget exceeded!",
-        }),
-      );
-    });
-
-    it("does not hook usage tracking when usageStore is null", async () => {
-      const session = await factory.create({
-        channelId: "telegram",
-        agentName: "claude",
-        workingDirectory: "/tmp/test",
-      });
-
-      const notificationManager = {
-        notifyAll: vi.fn().mockResolvedValue(undefined),
-      };
-
-      // Should not throw
-      factory.wireSideEffects(session, {
-        usageStore: null,
-        notificationManager: notificationManager as any,
-      });
-
-      // Emit usage event — no crash
-      session.emit("agent_event", {
-        type: "usage",
-        tokensUsed: 100,
-      } as AgentEvent);
-
-      // notifyAll should not have been called for budget
-      expect(notificationManager.notifyAll).not.toHaveBeenCalled();
+      expect(mockEventBus.emit).not.toHaveBeenCalledWith("usage:recorded", expect.anything());
     });
 
     it("cleans up tunnels when session ends", async () => {
@@ -270,6 +227,7 @@ describe("SessionFactory", () => {
         workingDirectory: "/tmp/test",
       });
 
+      const mockEventBus = { emit: vi.fn() };
       const tunnelService = {
         stopBySession: vi.fn().mockResolvedValue([
           { port: 3000, label: "dev-server" },
@@ -280,6 +238,7 @@ describe("SessionFactory", () => {
       };
 
       factory.wireSideEffects(session, {
+        eventBus: mockEventBus as any,
         notificationManager: notificationManager as any,
         tunnelService: tunnelService as any,
       });

@@ -196,19 +196,19 @@ describe("SessionFactory — Comprehensive Tests", () => {
   });
 
   describe("wireSideEffects()", () => {
-    describe("usage tracking", () => {
-      it("records usage events to usageStore", async () => {
+    describe("usage tracking via event bus", () => {
+      it("emits usage:recorded event on usage agent events", async () => {
         const session = await factory.create({
           channelId: "telegram",
           agentName: "claude",
           workingDirectory: "/workspace",
         });
 
-        const usageStore = { append: vi.fn() } as any;
+        const mockEventBus = { emit: vi.fn() } as any;
         const notificationManager = { notifyAll: vi.fn() } as any;
 
         factory.wireSideEffects(session, {
-          usageStore,
+          eventBus: mockEventBus,
           notificationManager,
         });
 
@@ -219,7 +219,8 @@ describe("SessionFactory — Comprehensive Tests", () => {
           cost: { amount: 0.05, currency: "USD" },
         });
 
-        expect(usageStore.append).toHaveBeenCalledWith(
+        expect(mockEventBus.emit).toHaveBeenCalledWith(
+          "usage:recorded",
           expect.objectContaining({
             sessionId: session.id,
             agentName: "claude",
@@ -237,100 +238,18 @@ describe("SessionFactory — Comprehensive Tests", () => {
           workingDirectory: "/workspace",
         });
 
-        const usageStore = { append: vi.fn() } as any;
+        const mockEventBus = { emit: vi.fn() } as any;
         const notificationManager = { notifyAll: vi.fn() } as any;
 
         factory.wireSideEffects(session, {
-          usageStore,
+          eventBus: mockEventBus,
           notificationManager,
         });
 
         session.emit("agent_event", { type: "text", content: "hello" });
         session.emit("agent_event", { type: "thought", content: "thinking" });
 
-        expect(usageStore.append).not.toHaveBeenCalled();
-      });
-
-      it("skips usage tracking when usageStore is null", async () => {
-        const session = await factory.create({
-          channelId: "telegram",
-          agentName: "claude",
-          workingDirectory: "/workspace",
-        });
-
-        const notificationManager = { notifyAll: vi.fn() } as any;
-
-        // Should not throw
-        expect(() =>
-          factory.wireSideEffects(session, {
-            usageStore: null,
-            notificationManager,
-          }),
-        ).not.toThrow();
-
-        // Emitting usage event should not cause error
-        session.emit("agent_event", { type: "usage", tokensUsed: 100 });
-      });
-    });
-
-    describe("budget warnings", () => {
-      it("sends budget warning notification when budget check returns message", async () => {
-        const session = await factory.create({
-          channelId: "telegram",
-          agentName: "claude",
-          workingDirectory: "/workspace",
-        });
-
-        const usageStore = { append: vi.fn() } as any;
-        const usageBudget = {
-          check: vi.fn().mockReturnValue({
-            status: "warning",
-            message: "Budget warning: 85%",
-          }),
-        } as any;
-        const notificationManager = {
-          notifyAll: vi.fn().mockResolvedValue(undefined),
-        } as any;
-
-        factory.wireSideEffects(session, {
-          usageStore,
-          usageBudget,
-          notificationManager,
-        });
-
-        session.emit("agent_event", { type: "usage", tokensUsed: 100 });
-
-        expect(usageBudget.check).toHaveBeenCalled();
-        expect(notificationManager.notifyAll).toHaveBeenCalledWith(
-          expect.objectContaining({
-            type: "budget_warning",
-            summary: "Budget warning: 85%",
-          }),
-        );
-      });
-
-      it("does not send notification when budget check returns no message", async () => {
-        const session = await factory.create({
-          channelId: "telegram",
-          agentName: "claude",
-          workingDirectory: "/workspace",
-        });
-
-        const usageStore = { append: vi.fn() } as any;
-        const usageBudget = {
-          check: vi.fn().mockReturnValue({ status: "ok" }),
-        } as any;
-        const notificationManager = { notifyAll: vi.fn() } as any;
-
-        factory.wireSideEffects(session, {
-          usageStore,
-          usageBudget,
-          notificationManager,
-        });
-
-        session.emit("agent_event", { type: "usage", tokensUsed: 100 });
-
-        expect(notificationManager.notifyAll).not.toHaveBeenCalled();
+        expect(mockEventBus.emit).not.toHaveBeenCalledWith("usage:recorded", expect.anything());
       });
     });
 
@@ -342,6 +261,7 @@ describe("SessionFactory — Comprehensive Tests", () => {
           workingDirectory: "/workspace",
         });
 
+        const mockEventBus = { emit: vi.fn() } as any;
         const tunnelService = {
           stopBySession: vi.fn().mockResolvedValue([
             { port: 3000, label: "dev server" },
@@ -352,6 +272,7 @@ describe("SessionFactory — Comprehensive Tests", () => {
         } as any;
 
         factory.wireSideEffects(session, {
+          eventBus: mockEventBus,
           notificationManager,
           tunnelService,
         });
@@ -377,12 +298,14 @@ describe("SessionFactory — Comprehensive Tests", () => {
           workingDirectory: "/workspace",
         });
 
+        const mockEventBus = { emit: vi.fn() } as any;
         const tunnelService = {
           stopBySession: vi.fn().mockResolvedValue([]),
         } as any;
         const notificationManager = { notifyAll: vi.fn() } as any;
 
         factory.wireSideEffects(session, {
+          eventBus: mockEventBus,
           notificationManager,
           tunnelService,
         });
@@ -402,10 +325,12 @@ describe("SessionFactory — Comprehensive Tests", () => {
           workingDirectory: "/workspace",
         });
 
+        const mockEventBus = { emit: vi.fn() } as any;
         const tunnelService = { stopBySession: vi.fn() } as any;
         const notificationManager = { notifyAll: vi.fn() } as any;
 
         factory.wireSideEffects(session, {
+          eventBus: mockEventBus,
           notificationManager,
           tunnelService,
         });
@@ -424,9 +349,11 @@ describe("SessionFactory — Comprehensive Tests", () => {
           workingDirectory: "/workspace",
         });
 
+        const mockEventBus = { emit: vi.fn() } as any;
         const notificationManager = { notifyAll: vi.fn() } as any;
 
         factory.wireSideEffects(session, {
+          eventBus: mockEventBus,
           notificationManager,
         });
 

@@ -1,13 +1,10 @@
-import { nanoid } from "nanoid";
 import type { AgentManager } from "../agents/agent-manager.js";
 import type { SessionManager } from "./session-manager.js";
 import type { SpeechService } from "../../plugins/speech/exports.js";
 import type { EventBus } from "../event-bus.js";
-import type { UsageStore } from "../../plugins/usage/usage-store.js";
-import type { UsageBudget } from "../../plugins/usage/usage-budget.js";
 import type { NotificationManager } from "../../plugins/notifications/notification.js";
 import type { TunnelService } from "../../plugins/tunnel/tunnel-service.js";
-import type { AgentEvent, UsageRecord } from "../types.js";
+import type { AgentEvent } from "../types.js";
 import type { MiddlewareChain } from "../plugin/middleware-chain.js";
 import { Session } from "./session.js";
 import { createChildLogger } from "../utils/log.js";
@@ -24,8 +21,7 @@ export interface SessionCreateParams {
 }
 
 export interface SideEffectDeps {
-  usageStore?: UsageStore | null;
-  usageBudget?: UsageBudget | null;
+  eventBus: EventBus;
   notificationManager: NotificationManager;
   tunnelService?: TunnelService;
 }
@@ -110,38 +106,18 @@ export class SessionFactory {
   }
 
   wireSideEffects(session: Session, deps: SideEffectDeps): void {
-    // Wire usage tracking
-    if (deps.usageStore) {
-      const usageStore = deps.usageStore;
-      const usageBudget = deps.usageBudget;
-      const notificationManager = deps.notificationManager;
-
-      session.on("agent_event", (event: AgentEvent) => {
-        if (event.type !== "usage") return;
-        const record: UsageRecord = {
-          id: nanoid(),
-          sessionId: session.id,
-          agentName: session.agentName,
-          tokensUsed: event.tokensUsed ?? 0,
-          contextSize: event.contextSize ?? 0,
-          cost: event.cost,
-          timestamp: new Date().toISOString(),
-        };
-        usageStore.append(record);
-
-        if (usageBudget) {
-          const result = usageBudget.check();
-          if (result.message) {
-            notificationManager.notifyAll({
-              sessionId: session.id,
-              sessionName: session.name,
-              type: "budget_warning",
-              summary: result.message,
-            });
-          }
-        }
+    // Wire usage tracking via event bus (consumed by usage plugin)
+    session.on("agent_event", (event: AgentEvent) => {
+      if (event.type !== "usage") return;
+      deps.eventBus.emit("usage:recorded", {
+        sessionId: session.id,
+        agentName: session.agentName,
+        timestamp: new Date().toISOString(),
+        tokensUsed: event.tokensUsed ?? 0,
+        contextSize: event.contextSize ?? 0,
+        cost: event.cost,
       });
-    }
+    });
 
     // Clean up user tunnels when session ends
     session.on("status_change", (_from, to) => {

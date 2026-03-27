@@ -332,7 +332,6 @@ async function autoRegisterBuiltinPlugins(
       import('./plugins/security/index.js'),
       import('./plugins/file-service/index.js'),
       import('./plugins/context/index.js'),
-      import('./plugins/usage/index.js'),
       import('./plugins/speech/index.js'),
       import('./plugins/notifications/index.js'),
       import('./plugins/tunnel/index.js'),

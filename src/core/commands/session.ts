@@ -74,15 +74,6 @@ export function registerSessionCommands(registry: CommandRegistry, _core: unknow
   })
 
   registry.register({
-    name: 'summary',
-    description: 'Show session summary',
-    category: 'system',
-    handler: async () => {
-      return { type: 'silent' } satisfies CommandResponse
-    },
-  })
-
-  registry.register({
     name: 'handoff',
     description: 'Hand off session to another agent',
     usage: '<agent-name>',

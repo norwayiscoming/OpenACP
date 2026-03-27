@@ -26,7 +26,6 @@ describe('Built-in plugin wrappers', () => {
     expect(names).toContain('@openacp/security')
     expect(names).toContain('@openacp/file-service')
     expect(names).toContain('@openacp/notifications')
-    expect(names).toContain('@openacp/usage')
     expect(names).toContain('@openacp/speech')
     expect(names).toContain('@openacp/context')
     expect(names).toContain('@openacp/tunnel')

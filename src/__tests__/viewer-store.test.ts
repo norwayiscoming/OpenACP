@@ -56,6 +56,33 @@ describe('ViewerStore', () => {
       expect(id).toBeNull()
     })
 
+    it('rejects files in sibling directories', () => {
+      // sibling directory should NOT be accessible — only workspace contents
+      const id = store.storeFile('sess-1', '/home/user/projects/other-repo/secret.env', 'code', '/home/user/projects/openacp')
+      expect(id).toBeNull()
+    })
+
+    it('rejects files in parent directory', () => {
+      const id = store.storeFile('sess-1', '/home/user/projects/.env', 'secret', '/home/user/projects/myapp')
+      expect(id).toBeNull()
+    })
+
+    it('rejects when workspace is shallow (parent would be too broad)', () => {
+      // workspace=/home/user, parent=/home — should NOT expose /home
+      const id = store.storeFile('sess-1', '/home/other-user/.ssh/id_rsa', 'key', '/home/user')
+      expect(id).toBeNull()
+    })
+
+    it('allows relative file paths resolved against workingDirectory', () => {
+      const id = store.storeFile('sess-1', 'src/foo.ts', 'code', '/workspace')
+      expect(id).toBeTruthy()
+    })
+
+    it('rejects relative path traversal', () => {
+      const id = store.storeFile('sess-1', '../../../etc/passwd', 'bad', '/workspace/sub')
+      expect(id).toBeNull()
+    })
+
     it('rejects content exceeding 1MB', () => {
       const bigContent = 'x'.repeat(1_000_001)
       const id = store.storeFile('sess-1', '/workspace/big.txt', bigContent, '/workspace')
@@ -93,6 +120,16 @@ describe('ViewerStore', () => {
     it('rejects paths outside workspace', () => {
       const id = store.storeDiff('sess-1', '/etc/hosts', 'old', 'new', '/workspace')
       expect(id).toBeNull()
+    })
+
+    it('rejects sibling directory paths', () => {
+      const id = store.storeDiff('sess-1', '/home/user/other-repo/file.ts', 'old', 'new', '/home/user/myapp')
+      expect(id).toBeNull()
+    })
+
+    it('allows relative file paths', () => {
+      const id = store.storeDiff('sess-1', 'src/file.ts', 'old', 'new', '/workspace')
+      expect(id).toBeTruthy()
     })
 
     it('rejects when combined size exceeds 1MB', () => {

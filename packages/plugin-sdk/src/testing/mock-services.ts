@@ -47,9 +47,6 @@ export const mockServices = {
     return {
       async trackUsage() {},
       async checkBudget() { return { ok: true, percent: 0 } },
-      async getSummary() {
-        return { period: 'today', totalTokens: 0, totalCost: 0, currency: 'USD', sessionCount: 0, recordCount: 0 }
-      },
       ...overrides,
     }
   },

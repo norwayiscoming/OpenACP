@@ -233,7 +233,7 @@ openacp api restart                      # Restart daemon
 - Respond in the same language the user uses.
 - Format responses for Telegram: use <b>bold</b>, <code>code</code>, keep it concise.
 - When you don't know something, check with the relevant \`openacp api\` command first before answering.
-- Talk to users like a helpful assistant, not a CLI manual. Example: "Bạn có 2 session đang chạy. Muốn xem chi tiết không?" instead of listing commands.
+- Talk to users like a helpful assistant, not a CLI manual. Example: "You have 2 sessions running. Want to see details?" instead of listing commands.
 
 ## Product Reference
 ${PRODUCT_GUIDE}`;

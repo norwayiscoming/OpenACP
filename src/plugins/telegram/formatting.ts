@@ -1,4 +1,3 @@
-import type { UsageSummary } from "../../core/types.js";
 import type {
   ToolCallMeta,
   ToolUpdateMeta,
@@ -196,52 +195,6 @@ export function formatUsage(
   let text = `${emoji} ${formatTokens(tokensUsed)} / ${formatTokens(contextSize)} tokens\n${bar} ${pct}%`;
   if (cost != null) text += `\n💰 $${cost.toFixed(2)}`;
   return text;
-}
-
-const PERIOD_LABEL: Record<string, string> = {
-  today: "Today",
-  week: "This Week",
-  month: "This Month",
-  all: "All Time",
-};
-
-export function formatUsageReport(
-  summaries: UsageSummary[],
-  budgetStatus: {
-    status: string;
-    used: number;
-    budget: number;
-    percent: number;
-  },
-): string {
-  const hasData = summaries.some((s) => s.recordCount > 0);
-  if (!hasData) {
-    return "📊 <b>Usage Report</b>\n\nNo usage data yet.";
-  }
-
-  const formatCost = (n: number) => `$${n.toFixed(2)}`;
-  const lines: string[] = ["📊 <b>Usage Report</b>"];
-
-  for (const summary of summaries) {
-    lines.push("");
-    lines.push(
-      `── <b>${PERIOD_LABEL[summary.period] ?? summary.period}</b> ──`,
-    );
-    lines.push(
-      `💰 ${formatCost(summary.totalCost)} · 🔤 ${formatTokens(summary.totalTokens)} tokens · 📋 ${summary.sessionCount} sessions`,
-    );
-
-    // Show budget bar only on the month section
-    if (summary.period === "month" && budgetStatus.budget > 0) {
-      const bar = progressBar(budgetStatus.used / budgetStatus.budget);
-      lines.push(
-        `Budget: ${formatCost(budgetStatus.used)} / ${formatCost(budgetStatus.budget)} (${budgetStatus.percent}%)`,
-      );
-      lines.push(`${bar} ${budgetStatus.percent}%`);
-    }
-  }
-
-  return lines.join("\n");
 }
 
 export function formatSummary(summary: string, sessionName?: string): string {

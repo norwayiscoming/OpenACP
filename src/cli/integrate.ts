@@ -109,7 +109,7 @@ User wants to:
 - **Share their local app** — "share this on my phone", "let my friend see this", "preview on mobile"
 - **Expose a port** — "expose port 3000", "map port 5173", "make port 8080 public"
 - **Get a public URL** — "give me a public URL", "I need an external link", "make localhost accessible"
-- **Open a tunnel** — "open tunnel", "start tunnel", "tunnel this", "bật tunnel"
+- **Open a tunnel** — "open tunnel", "start tunnel", "tunnel this"
 - **Forward/proxy a port** — "forward port 3000", "proxy my server"
 - **Deploy preview** — "deploy preview", "share a preview link"
 - **Access remotely** — "access from my phone", "access from outside"

@@ -1,3 +1,4 @@
+import * as fs from 'node:fs'
 import * as path from 'node:path'
 import { nanoid } from 'nanoid'
 import { createChildLogger } from '../../core/utils/log.js'
@@ -121,8 +122,18 @@ export class ViewerStore {
   }
 
   private isPathAllowed(filePath: string, workingDirectory: string): boolean {
-    const resolved = path.resolve(workingDirectory, filePath)
-    return resolved.startsWith(path.resolve(workingDirectory))
+    try {
+      // realpathSync resolves symlinks AND returns canonical case on
+      // case-insensitive filesystems (macOS HFS+/APFS, Windows NTFS)
+      const resolved = fs.realpathSync(path.resolve(workingDirectory, filePath))
+      const workspace = fs.realpathSync(path.resolve(workingDirectory))
+      return resolved.startsWith(workspace + path.sep) || resolved === workspace
+    } catch {
+      // File doesn't exist yet — fall back to path-only check
+      const resolved = path.resolve(workingDirectory, filePath)
+      const workspace = path.resolve(workingDirectory)
+      return resolved.startsWith(workspace + path.sep) || resolved === workspace
+    }
   }
 
   private detectLanguage(filePath: string): string | undefined {

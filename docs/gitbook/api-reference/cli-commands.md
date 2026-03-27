@@ -341,16 +341,19 @@ openacp doctor [--dry-run]
 
 ## install
 
-Installs an adapter plugin from npm into `~/.openacp/plugins/`.
+Installs a plugin from npm into `~/.openacp/plugins/`. Supports built-in plugins, community npm packages, and pinning a specific version with `@version` syntax.
 
 **Usage**
 ```
-openacp install <package>
+openacp install <package>[@version]
 ```
 
 ```bash
 openacp install @openacp/adapter-discord
+openacp install @myorg/translator@1.2.0
 ```
+
+This is an alias for `openacp plugin add`. See [plugin install](#plugin-install) for details.
 
 ---
 
@@ -410,7 +413,7 @@ Runs an interactive wizard that prompts for:
 - Author
 - License
 
-Creates a directory with `src/index.ts`, `src/__tests__/index.test.ts`, `package.json`, `tsconfig.json`, and config files.
+Creates a directory with `src/index.ts`, `src/__tests__/index.test.ts`, `package.json`, `tsconfig.json`, `CLAUDE.md` (AI agent context), `PLUGIN_GUIDE.md` (developer guide), and config files.
 
 **Example**
 ```bash
@@ -423,6 +426,27 @@ npm test
 ```
 
 See [Getting Started: Your First Plugin](../extending/getting-started-plugin.md) for a full walkthrough.
+
+---
+
+## plugin install
+
+Installs a plugin package. Works with both built-in plugins and community plugins published to npm. Supports `@version` syntax to pin a specific version. After npm install, checks the plugin's `engines.openacp` field and warns if the installed CLI version is older than the minimum required.
+
+**Usage**
+```
+openacp plugin add <package>[@version]
+openacp plugin install <package>[@version]
+```
+
+**Examples**
+```bash
+openacp plugin add @openacp/adapter-discord
+openacp plugin add @myorg/translator@1.2.0
+openacp plugin install my-plugin
+```
+
+Community plugins are installed via `npm install` into `~/.openacp/plugins/node_modules/`. The plugin's `install()` hook is called if defined.
 
 ---
 

@@ -67,11 +67,18 @@ hello-world/
   .npmignore
   .editorconfig
   README.md
+  CLAUDE.md                   # AI agent context (for Claude, Cursor, etc.)
+  PLUGIN_GUIDE.md             # Human-readable developer guide
 ```
 
 ---
 
 ## Step 2: Explore the Template
+
+The scaffold generates two documentation files to help you (and your tools) work with the plugin:
+
+- **CLAUDE.md** — A comprehensive technical reference for AI coding agents. Contains the full plugin API, all 18 middleware hooks, permissions, testing utilities, and code patterns. An agent with zero prior context can read this file and write a complete plugin.
+- **PLUGIN_GUIDE.md** — A shorter, practical guide for human developers. Covers the development workflow, code examples for common tasks (commands, services, middleware, settings), testing, and publishing.
 
 ### package.json
 
@@ -90,8 +97,11 @@ Key fields in the generated `package.json`:
     "test": "vitest",
     "prepublishOnly": "npm run build"
   },
+  "engines": {
+    "openacp": ">=2026.0327.1"
+  },
   "peerDependencies": {
-    "@openacp/plugin-sdk": "^1.0.0"
+    "@openacp/cli": ">=2026.0327.1"
   },
   "devDependencies": {
     "@openacp/plugin-sdk": "^1.0.0",
@@ -100,6 +110,8 @@ Key fields in the generated `package.json`:
   }
 }
 ```
+
+The `engines.openacp` field declares the minimum OpenACP CLI version required by your plugin. When users install your plugin, OpenACP checks this field and warns if their CLI version is too old. The `peerDependencies` on `@openacp/cli` serves the same purpose for npm's dependency resolver.
 
 The `@openacp/plugin-sdk` package provides all types, base classes, and testing utilities you need.
 
@@ -416,10 +428,20 @@ npm publish --access public
 ### How users install your plugin
 
 ```bash
-openacp plugin add @myorg/hello-world
+openacp plugin install @myorg/hello-world
 ```
 
 This downloads from npm into `~/.openacp/plugins/`, validates the plugin interface, and runs `install()` if defined.
+
+### List your plugin in the registry
+
+After publishing to npm, add your plugin to the [OpenACP Plugin Registry](https://github.com/Open-ACP/plugin-registry) so users can discover it via `openacp plugin search`:
+
+1. Fork [Open-ACP/plugin-registry](https://github.com/Open-ACP/plugin-registry)
+2. Create `plugins/myorg--hello-world.json` with your plugin metadata
+3. Submit a PR — CI auto-validates and auto-merges
+
+See [Contributing > Publishing a Plugin to the Registry](contributing.md#publishing-a-plugin-to-the-registry) for the full guide.
 
 ---
 

@@ -180,6 +180,75 @@ afterEach(async () => {
 
 ---
 
+## Publishing a Plugin to the Registry
+
+Built a plugin? Share it with the community by adding it to the [OpenACP Plugin Registry](https://github.com/Open-ACP/plugin-registry).
+
+### Step 1: Publish to npm
+
+```bash
+cd my-plugin
+npm run build
+npm publish --access=public
+```
+
+### Step 2: Create a registry entry
+
+Fork [Open-ACP/plugin-registry](https://github.com/Open-ACP/plugin-registry) and create a JSON file in `plugins/`:
+
+**Filename:** your npm package name with `@` removed and `/` replaced by `--`.
+- `@yourname/openacp-translator` → `yourname--openacp-translator.json`
+- `openacp-plugin-tts` → `openacp-plugin-tts.json`
+
+**Content:**
+
+```json
+{
+  "name": "my-plugin",
+  "displayName": "My Awesome Plugin",
+  "description": "What your plugin does in one line",
+  "npm": "@yourname/openacp-my-plugin",
+  "repository": "https://github.com/yourname/openacp-my-plugin",
+  "author": {
+    "name": "yourname",
+    "github": "yourname"
+  },
+  "version": "1.0.0",
+  "minCliVersion": "2026.0326.0",
+  "category": "utility",
+  "tags": ["keyword1", "keyword2"],
+  "icon": "🔧",
+  "license": "MIT",
+  "verified": false,
+  "featured": false,
+  "createdAt": "2026-03-27T00:00:00Z"
+}
+```
+
+**Categories:** `adapter`, `utility`, `integration`, `ai`, `security`, `media`
+
+### Step 3: Submit a Pull Request
+
+Submit your PR to the registry repo. CI will automatically:
+1. Validate your JSON format
+2. Verify your npm package exists
+3. Auto-merge if everything passes
+
+### After submission
+
+- Your plugin appears in `openacp plugin search` within minutes
+- A daily CI job keeps the version synced with npm — no need to update manually
+- Maintainers may review your plugin and mark it as **verified** (✓)
+
+### Requirements
+
+- Plugin **must be published on npm** before submitting
+- Plugin **must export a valid `OpenACPPlugin` interface**
+- Plugin **must have a README** with installation instructions
+- Plugin **must specify a license**
+
+---
+
 ## Code Style
 
 - Follow the patterns of the file you are editing — consistency within a file takes priority.

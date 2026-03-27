@@ -54,7 +54,7 @@ export async function cmdPlugin(args: string[] = []): Promise<void> {
 \x1b[1mUsage:\x1b[0m
   openacp plugin list                    List all plugins with status
   openacp plugin search <query>          Search the plugin registry
-  openacp plugin add <package>           Install a plugin package
+  openacp plugin add <package>[@version]  Install a plugin package
   openacp plugin install <package>       Alias for add
   openacp plugin remove <package>        Remove a plugin package
   openacp plugin uninstall <package>     Alias for remove (--purge to delete data)
@@ -67,6 +67,7 @@ export async function cmdPlugin(args: string[] = []): Promise<void> {
   openacp plugin list
   openacp plugin search telegram
   openacp plugin add @openacp/adapter-discord
+  openacp plugin add translator@1.2.0
   openacp plugin enable @openacp/adapter-discord
   openacp plugin configure @openacp/adapter-discord
   openacp plugin remove @openacp/adapter-discord --purge
@@ -196,68 +197,155 @@ async function configurePlugin(name: string): Promise<void> {
   }
 }
 
-async function installPlugin(pkg: string): Promise<void> {
-  console.log(`Installing ${pkg}...`)
+async function installPlugin(input: string): Promise<void> {
+  const os = await import('node:os')
+  const path = await import('node:path')
+  const { execSync } = await import('node:child_process')
+  const { getCurrentVersion } = await import('../version.js')
+  const { SettingsManager } = await import('../../core/plugin/settings-manager.js')
+  const { createInstallContext } = await import('../../core/plugin/install-context.js')
+  const { PluginRegistry } = await import('../../core/plugin/plugin-registry.js')
+
+  // Parse input: "translator", "translator@1.2.0", "@lucas/pkg@2.0.0"
+  let pkgName: string
+  let pkgVersion: string | undefined
+
+  // Handle scoped packages: @scope/name@version
+  if (input.startsWith('@')) {
+    const afterScope = input.indexOf('/', 1)
+    if (afterScope === -1) {
+      pkgName = input
+    } else {
+      const rest = input.slice(afterScope + 1)
+      const atIdx = rest.indexOf('@')
+      if (atIdx !== -1) {
+        pkgName = input.slice(0, afterScope + 1 + atIdx)
+        pkgVersion = rest.slice(atIdx + 1)
+      } else {
+        pkgName = input
+      }
+    }
+  } else {
+    const atIdx = input.lastIndexOf('@')
+    if (atIdx > 0) {
+      pkgName = input.slice(0, atIdx)
+      pkgVersion = input.slice(atIdx + 1)
+    } else {
+      pkgName = input
+    }
+  }
 
   // Try resolve from registry
   const { RegistryClient } = await import('../../core/plugin/registry-client.js')
   const client = new RegistryClient()
-  try {
-    const npmName = await client.resolve(pkg)
-    if (npmName) {
-      console.log(`Resolved from registry: ${pkg} → ${npmName}`)
-      pkg = npmName  // use resolved npm name
-    }
-  } catch {
-    // Registry unavailable, continue with original name
-  }
-
-  // Check if plugin is verified
+  let registryPlugin: any = null
   try {
     const registry = await client.getRegistry()
-    const regPlugin = registry.plugins.find(p => p.npm === pkg || p.name === pkg)
-    if (regPlugin && !regPlugin.verified) {
-      console.log('⚠️  This plugin is not verified by the OpenACP team.')
+    registryPlugin = registry.plugins.find(p => p.name === pkgName || p.npm === pkgName)
+    if (registryPlugin) {
+      console.log(`Resolved from registry: ${pkgName} → ${registryPlugin.npm}`)
+      pkgName = registryPlugin.npm
+
+      if (!registryPlugin.verified) {
+        console.log('⚠️  This plugin is not verified by the OpenACP team.')
+      }
     }
-  } catch { /* ignore */ }
+  } catch {
+    // Registry unavailable
+  }
 
-  // Check if it's a built-in plugin
+  const installSpec = pkgVersion ? `${pkgName}@${pkgVersion}` : pkgName
+  console.log(`Installing ${installSpec}...`)
+
+  // Check if built-in plugin
   const { corePlugins } = await import('../../plugins/core-plugins.js')
-  const plugin = corePlugins.find(p => p.name === pkg)
+  const builtinPlugin = corePlugins.find(p => p.name === pkgName)
 
-  if (!plugin) {
-    console.error(`Plugin "${pkg}" not found. Community plugin install coming soon.`)
+  const basePath = path.join(os.homedir(), '.openacp', 'plugins')
+  const settingsManager = new SettingsManager(basePath)
+  const registryPath = path.join(os.homedir(), '.openacp', 'plugins.json')
+  const pluginRegistry = new PluginRegistry(registryPath)
+  await pluginRegistry.load()
+
+  if (builtinPlugin) {
+    // Built-in plugin — run install hook directly
+    if (builtinPlugin.install) {
+      const ctx = createInstallContext({ pluginName: builtinPlugin.name, settingsManager, basePath })
+      await builtinPlugin.install(ctx)
+    }
+
+    pluginRegistry.register(builtinPlugin.name, {
+      version: builtinPlugin.version,
+      source: 'builtin',
+      enabled: true,
+      settingsPath: settingsManager.getSettingsPath(builtinPlugin.name),
+      description: builtinPlugin.description,
+    })
+    await pluginRegistry.save()
+    console.log(`✓ ${builtinPlugin.name} installed! Restart to activate.`)
     return
   }
 
-  if (plugin.install) {
-    const os = await import('node:os')
-    const path = await import('node:path')
-    const { SettingsManager } = await import('../../core/plugin/settings-manager.js')
-    const { createInstallContext } = await import('../../core/plugin/install-context.js')
-    const { PluginRegistry } = await import('../../core/plugin/plugin-registry.js')
+  // Community plugin — npm install to ~/.openacp/plugins/
+  const pluginsDir = path.join(os.homedir(), '.openacp', 'plugins')
+  const nodeModulesDir = path.join(pluginsDir, 'node_modules')
 
-    const basePath = path.join(os.homedir(), '.openacp', 'plugins')
-    const settingsManager = new SettingsManager(basePath)
-    const registryPath = path.join(os.homedir(), '.openacp', 'plugins.json')
-    const registry = new PluginRegistry(registryPath)
-    await registry.load()
-
-    const ctx = createInstallContext({ pluginName: plugin.name, settingsManager, basePath })
-    await plugin.install(ctx)
-
-    registry.register(plugin.name, {
-      version: plugin.version,
-      source: 'builtin',
-      enabled: true,
-      settingsPath: settingsManager.getSettingsPath(plugin.name),
-      description: plugin.description,
+  try {
+    execSync(`npm install ${installSpec} --prefix "${pluginsDir}" --save`, {
+      stdio: 'inherit',
+      timeout: 60000,
     })
-    await registry.save()
+  } catch {
+    console.error(`Failed to install ${installSpec}. Check the package name and try again.`)
+    process.exit(1)
+  }
 
-    console.log(`Plugin ${plugin.name} installed! Restart to activate.`)
-  } else {
-    console.log(`Plugin ${plugin.name} has no install hook. Nothing to do.`)
+  // Read installed plugin's package.json for compatibility check
+  const cliVersion = getCurrentVersion()
+  try {
+    const installedPkgPath = path.join(nodeModulesDir, pkgName, 'package.json')
+    const { readFileSync } = await import('node:fs')
+    const installedPkg = JSON.parse(readFileSync(installedPkgPath, 'utf-8'))
+
+    // Check engines.openacp compatibility
+    const minVersion = installedPkg.engines?.openacp?.replace(/[>=^~\s]/g, '')
+    if (minVersion) {
+      const { compareVersions } = await import('../version.js')
+      if (compareVersions(cliVersion, minVersion) < 0) {
+        console.log(`\n⚠️  This plugin requires OpenACP >= ${minVersion}. You have ${cliVersion}.`)
+        console.log(`   Run 'openacp update' to get the latest version.\n`)
+      }
+    }
+
+    // Try to load and run install hook
+    const pluginModule = await import(path.join(nodeModulesDir, pkgName, installedPkg.main ?? 'dist/index.js'))
+    const plugin = pluginModule.default
+
+    if (plugin?.install) {
+      const ctx = createInstallContext({ pluginName: plugin.name ?? pkgName, settingsManager, basePath })
+      await plugin.install(ctx)
+    }
+
+    pluginRegistry.register(plugin?.name ?? pkgName, {
+      version: installedPkg.version,
+      source: 'npm',
+      enabled: true,
+      settingsPath: settingsManager.getSettingsPath(plugin?.name ?? pkgName),
+      description: plugin?.description ?? installedPkg.description,
+    })
+    await pluginRegistry.save()
+
+    console.log(`✓ ${plugin?.name ?? pkgName} installed! Restart to activate.`)
+  } catch (err) {
+    // Plugin installed via npm but no install hook or failed to load — still register
+    pluginRegistry.register(pkgName, {
+      version: pkgVersion ?? 'unknown',
+      source: 'npm',
+      enabled: true,
+      settingsPath: settingsManager.getSettingsPath(pkgName),
+    })
+    await pluginRegistry.save()
+    console.log(`✓ ${pkgName} installed (npm only). Restart to activate.`)
   }
 }
 

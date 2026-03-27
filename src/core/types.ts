@@ -242,14 +242,15 @@ export interface UsageRecord {
   timestamp: string;
 }
 
-export interface UsageSummary {
-  period: "today" | "week" | "month" | "all";
-  totalTokens: number;
-  totalCost: number;
-  currency: string;
-  sessionCount: number;
-  recordCount: number;
+export interface UsageRecordEvent {
+  sessionId: string;
+  agentName: string;
+  timestamp: string;
+  tokensUsed: number;
+  contextSize: number;
+  cost?: { amount: number; currency: string };
 }
+
 
 export interface DiscordPlatformData {
   threadId: string;

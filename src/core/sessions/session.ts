@@ -386,37 +386,6 @@ export class Session extends TypedEmitter<SessionEvents> {
     }
   }
 
-  async generateSummary(timeoutMs = 15000): Promise<string> {
-    let summary = "";
-    let timer: ReturnType<typeof setTimeout> | undefined;
-
-    const captureHandler = (event: AgentEvent) => {
-      if (event.type === "text") summary += event.content;
-    };
-
-    this.pause((event) => event !== "agent_event");
-    this.agentInstance.on("agent_event", captureHandler);
-
-    try {
-      const promptPromise = this.agentInstance.prompt(
-        "Summarize what you've accomplished so far in this session in 2-3 sentences. Include: key files changed, decisions made, and current status. Reply ONLY with the summary, nothing else.",
-      );
-      const timeoutPromise = new Promise<void>((_, reject) => {
-        timer = setTimeout(() => reject(new Error("summary timeout")), timeoutMs);
-      });
-      await Promise.race([promptPromise, timeoutPromise]);
-      return summary.trim().slice(0, 500);
-    } catch {
-      this.log.warn("Failed to generate session summary");
-      return "";
-    } finally {
-      if (timer) clearTimeout(timer);
-      this.agentInstance.off("agent_event", captureHandler);
-      this.clearBuffer();
-      this.resume();
-    }
-  }
-
   /** Fire-and-forget warm-up: primes model cache while user types their first message */
   async warmup(): Promise<void> {
     // Route through PromptQueue to prevent concurrent prompt execution.

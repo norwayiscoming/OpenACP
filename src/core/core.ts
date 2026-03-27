@@ -10,8 +10,6 @@ import { Session } from "./sessions/session.js";
 import { MessageTransformer } from "./message-transformer.js";
 import type { FileServiceInterface } from "./plugin/types.js";
 import { JsonFileSessionStore, type SessionStore } from "./sessions/session-store.js";
-import type { UsageStore } from "../plugins/usage/usage-store.js";
-import type { UsageBudget } from "../plugins/usage/usage-budget.js";
 import type { SecurityGuard } from "../plugins/security/security-guard.js";
 import { SessionFactory } from "./sessions/session-factory.js";
 import type { IncomingMessage } from "./types.js";
@@ -65,16 +63,6 @@ export class OpenACPCore {
 
   get contextManager(): ContextManager {
     return this.lifecycleManager.serviceRegistry.get<ContextManager>('context')!;
-  }
-
-  get usageStore(): UsageStore | null {
-    const usage = this.lifecycleManager.serviceRegistry.get<{ store: UsageStore; budget: UsageBudget }>('usage');
-    return usage?.store ?? null;
-  }
-
-  get usageBudget(): UsageBudget | null {
-    const usage = this.lifecycleManager.serviceRegistry.get<{ store: UsageStore; budget: UsageBudget }>('usage');
-    return usage?.budget ?? null;
   }
 
   constructor(configManager: ConfigManager) {
@@ -186,65 +174,6 @@ export class OpenACPCore {
       await adapter.stop();
     }
 
-    // 4. Cleanup usage store
-    if (this.usageStore) {
-      this.usageStore.destroy();
-    }
-  }
-
-  // --- Summary ---
-
-  async summarizeSession(sessionId: string): Promise<{ ok: true; summary: string } | { ok: false; error: string }> {
-    // Active session — summarize directly
-    const session = this.sessionManager.getSession(sessionId);
-    if (session && session.status === "active") {
-      try {
-        const summary = await session.generateSummary();
-        if (!summary) return { ok: false, error: "Agent could not generate summary" };
-        return { ok: true, summary };
-      } catch (err) {
-        return { ok: false, error: (err as Error).message };
-      }
-    }
-
-    // Ended session — respawn agent temporarily with conversation history
-    const record = this.sessionManager.getSessionRecord(sessionId);
-    if (!record?.agentSessionId) {
-      return { ok: false, error: "Session not found or has no agent history" };
-    }
-
-    const caps = getAgentCapabilities(record.agentName);
-    if (!caps.supportsResume) {
-      return { ok: false, error: `Agent "${record.agentName}" does not support resume — cannot summarize ended session` };
-    }
-
-    let tempSession: Session | undefined;
-    try {
-      const agentInstance = await this.agentManager.resume(
-        record.agentName,
-        record.workingDir,
-        record.agentSessionId,
-      );
-
-      tempSession = new Session({
-        id: `summary-${sessionId}`,
-        channelId: record.channelId,
-        agentName: record.agentName,
-        workingDirectory: record.workingDir,
-        agentInstance,
-      });
-      tempSession.activate();
-
-      const summary = await tempSession.generateSummary();
-      if (!summary) return { ok: false, error: "Agent could not generate summary" };
-      return { ok: true, summary };
-    } catch (err) {
-      return { ok: false, error: (err as Error).message };
-    } finally {
-      if (tempSession) {
-        try { await tempSession.destroy(); } catch { /* best effort */ }
-      }
-    }
   }
 
   // --- Archive ---
@@ -393,8 +322,7 @@ export class OpenACPCore {
 
     // 5b-5c. Wire usage tracking and tunnel cleanup
     this.sessionFactory.wireSideEffects(session, {
-      usageStore: this.usageStore,
-      usageBudget: this.usageBudget,
+      eventBus: this.eventBus,
       notificationManager: this.notificationManager,
       tunnelService: this._tunnelService,
     });

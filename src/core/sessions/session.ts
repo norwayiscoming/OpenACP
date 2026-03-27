@@ -176,16 +176,16 @@ export class Session extends TypedEmitter<SessionEvents> {
 
     this.promptCount++;
 
-    if (this._status === "initializing") {
+    if (this._status === "initializing" || this._status === "cancelled" || this._status === "error") {
       this.activate();
     }
     const promptStart = Date.now();
     this.log.debug("Prompt execution started");
 
     // Context injection: prepend on first real prompt only
-    if (this.pendingContext) {
-      text = `[CONVERSATION HISTORY - This is context from previous sessions, not current conversation]\n\n${this.pendingContext}\n\n[END CONVERSATION HISTORY]\n\n${text}`;
-      this.pendingContext = null;
+    const contextUsed = this.pendingContext;
+    if (contextUsed) {
+      text = `[CONVERSATION HISTORY - This is context from previous sessions, not current conversation]\n\n${contextUsed}\n\n[END CONVERSATION HISTORY]\n\n${text}`;
       this.log.debug("Context injected into prompt");
     }
 
@@ -229,6 +229,10 @@ export class Session extends TypedEmitter<SessionEvents> {
       const response = await this.agentInstance.prompt(processed.text, processed.attachments);
       if (response && typeof response === 'object' && 'stopReason' in response) {
         stopReason = (response as { stopReason?: string }).stopReason ?? 'end_turn';
+      }
+      // Clear context only after successful prompt — if prompt fails, context is preserved for retry
+      if (contextUsed) {
+        this.pendingContext = null;
       }
     } finally {
       if (accumulatorListener) {
@@ -331,20 +335,25 @@ export class Session extends TypedEmitter<SessionEvents> {
     }
 
     try {
-      const timeoutPromise = new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error("TTS synthesis timed out")), TTS_TIMEOUT_MS),
-      );
-      const result = await Promise.race([
-        this.speechService!.synthesize(ttsText),
-        timeoutPromise,
-      ]);
-      const base64 = result.audioBuffer.toString("base64");
-      this.emit("agent_event", {
-        type: "audio_content",
-        data: base64,
-        mimeType: result.mimeType,
+      let ttsTimer: ReturnType<typeof setTimeout>;
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        ttsTimer = setTimeout(() => reject(new Error("TTS synthesis timed out")), TTS_TIMEOUT_MS);
       });
-      this.log.info("TTS synthesis completed");
+      try {
+        const result = await Promise.race([
+          this.speechService!.synthesize(ttsText),
+          timeoutPromise,
+        ]);
+        const base64 = result.audioBuffer.toString("base64");
+        this.emit("agent_event", {
+          type: "audio_content",
+          data: base64,
+          mimeType: result.mimeType,
+        });
+        this.log.info("TTS synthesis completed");
+      } finally {
+        clearTimeout(ttsTimer!);
+      }
     } catch (err) {
       this.log.warn({ err }, "TTS synthesis failed, skipping");
     }
@@ -484,6 +493,12 @@ export class Session extends TypedEmitter<SessionEvents> {
 
   async destroy(): Promise<void> {
     this.log.info("Session destroyed");
+    // Reject any pending permission promise so callers don't hang
+    if (this.permissionGate.isPending) {
+      this.permissionGate.reject("Session destroyed");
+    }
+    // Clear queued prompts
+    this.queue.clear();
     await this.agentInstance.destroy();
   }
 }

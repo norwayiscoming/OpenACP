@@ -479,7 +479,7 @@ describe("SessionBridge — Auto-Disconnect on Terminal States", () => {
     expect(adapter.sendMessage).not.toHaveBeenCalled();
   });
 
-  it("auto-disconnects after cancelled via microtask", async () => {
+  it("stays connected after cancelled (session can resume)", async () => {
     const agent = createMockAgentInstance();
     const session = createSession(agent);
     const adapter = createMockAdapter();
@@ -495,7 +495,8 @@ describe("SessionBridge — Auto-Disconnect on Terminal States", () => {
 
     vi.mocked(adapter.sendMessage).mockClear();
     session.emit("agent_event", { type: "text", content: "after cancel" });
-    expect(adapter.sendMessage).not.toHaveBeenCalled();
+    // Bridge stays connected so events still reach adapter
+    expect(adapter.sendMessage).toHaveBeenCalled();
   });
 
   it("does NOT auto-disconnect on error (recoverable)", () => {

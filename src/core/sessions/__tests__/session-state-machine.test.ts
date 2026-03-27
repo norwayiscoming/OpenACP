@@ -222,6 +222,28 @@ describe("Session state machine", () => {
     });
   });
 
+  describe("auto-activate on prompt from cancelled/error", () => {
+    it("cancelled → active when processPrompt runs", async () => {
+      const session = createSession();
+      session.activate();
+      session.markCancelled();
+      expect(session.status).toBe("cancelled");
+
+      // Enqueue a prompt — processPrompt should auto-activate
+      await session.enqueuePrompt("hello");
+      expect(session.status).toBe("active");
+    });
+
+    it("error → active when processPrompt runs", async () => {
+      const session = createSession();
+      session.fail("crash");
+      expect(session.status).toBe("error");
+
+      await session.enqueuePrompt("recover");
+      expect(session.status).toBe("active");
+    });
+  });
+
   describe("finish() backward compat", () => {
     it("emits both status_change and session_end", () => {
       const session = createSession();

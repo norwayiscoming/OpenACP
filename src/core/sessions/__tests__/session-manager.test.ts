@@ -238,6 +238,17 @@ describe('SessionManager', () => {
       await manager.cancelSession('nonexistent')
     })
 
+    it('removes cancelled session from in-memory map', async () => {
+      const session = createSession({ id: 'sess-cancel-mem' })
+      session.activate()
+      manager.registerSession(session)
+
+      expect(manager.listSessions()).toHaveLength(1)
+      await manager.cancelSession('sess-cancel-mem')
+      expect(manager.listSessions()).toHaveLength(0)
+      expect(manager.getSession('sess-cancel-mem')).toBeUndefined()
+    })
+
     it('does not re-save if already cancelled', async () => {
       await store.save({
         sessionId: 'already-cancelled',

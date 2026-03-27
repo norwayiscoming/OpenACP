@@ -183,6 +183,22 @@ describe('CommandRegistry', () => {
     expect(result).toEqual({ type: 'silent' })
   })
 
+  // 13b. unregister by qualified name removes both qualified and short name
+  it('unregister by qualified name removes both qualified and short name', () => {
+    registry.register(makeDef({ name: 'notify', pluginName: '@openacp/alerts' }), '@openacp/alerts')
+
+    // Both short and qualified should be resolvable before unregister
+    expect(registry.get('notify')).toBeDefined()
+    expect(registry.get('alerts:notify')).toBeDefined()
+
+    // Unregister using the qualified name
+    registry.unregister('alerts:notify')
+
+    // Both should now be gone
+    expect(registry.get('alerts:notify')).toBeUndefined()
+    expect(registry.get('notify')).toBeUndefined()
+  })
+
   // 14. execute: prefers adapter-specific handler when channelId matches pluginName
   it('execute prefers adapter-specific handler when channelId matches pluginName', async () => {
     const defaultHandler = vi.fn(async () => ({ type: 'text' as const, text: 'default' }))

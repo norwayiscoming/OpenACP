@@ -61,6 +61,7 @@ export class ActivityTracker {
     if (!state) return
     state.dismissed = true
     this.stopRefresh(state)
+    state.callbacks.removeThinkingIndicator().catch(() => {})
     this.sessions.delete(sessionId)
   }
 

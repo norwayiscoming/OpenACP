@@ -235,6 +235,54 @@ describe('Session - Lifecycle & Prompt Processing', () => {
 
       expect(agent.destroy).toHaveBeenCalled()
     })
+
+    it('rejects pending permission promise on destroy', async () => {
+      const agent = mockAgentInstance()
+      const session = createTestSession(agent)
+
+      // Set up a pending permission gate
+      const permissionPromise = session.permissionGate.setPending({
+        id: 'req-1',
+        description: 'Run a command',
+        options: [{ id: 'allow', label: 'Allow', isAllow: true }, { id: 'deny', label: 'Deny', isAllow: false }],
+      })
+
+      expect(session.permissionGate.isPending).toBe(true)
+
+      // destroy() should reject the pending permission promise
+      await session.destroy()
+
+      await expect(permissionPromise).rejects.toThrow('Session destroyed')
+      expect(session.permissionGate.isPending).toBe(false)
+      expect(agent.destroy).toHaveBeenCalled()
+    })
+
+    it('clears queued prompts on destroy', async () => {
+      let resolvePrompt!: () => void
+      const agent = mockAgentInstance()
+      // Block the first prompt so we can queue a second
+      agent.prompt.mockImplementation(async () => {
+        await new Promise<void>((r) => { resolvePrompt = r })
+      })
+
+      const session = createTestSession(agent)
+      session.name = 'skip-autoname'
+
+      // Start first prompt (will be blocked)
+      const p1 = session.enqueuePrompt('first')
+      // Queue a second prompt while first is running
+      const p2 = session.enqueuePrompt('second')
+
+      expect(session.queueDepth).toBe(1)
+
+      // Destroy clears the queue; both promises should resolve without hanging
+      await session.destroy()
+      resolvePrompt()
+
+      await expect(Promise.all([p1, p2])).resolves.not.toThrow()
+      // Only the first prompt should have been sent to agent
+      expect(agent.prompt).toHaveBeenCalledTimes(1)
+    })
   })
 
   describe('permissionGate', () => {

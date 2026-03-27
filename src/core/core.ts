@@ -45,24 +45,30 @@ export class OpenACPCore {
 
   // --- Lazy getters: resolve from ServiceRegistry (populated by plugins during boot) ---
 
+  private getService<T>(name: string): T {
+    const svc = this.lifecycleManager.serviceRegistry.get<T>(name);
+    if (!svc) throw new Error(`Service '${name}' not registered — is the ${name} plugin loaded?`);
+    return svc;
+  }
+
   get securityGuard(): SecurityGuard {
-    return this.lifecycleManager.serviceRegistry.get<SecurityGuard>('security')!;
+    return this.getService<SecurityGuard>('security');
   }
 
   get notificationManager(): NotificationManager {
-    return this.lifecycleManager.serviceRegistry.get<NotificationManager>('notifications')!;
+    return this.getService<NotificationManager>('notifications');
   }
 
   get fileService(): FileServiceInterface {
-    return this.lifecycleManager.serviceRegistry.get<FileServiceInterface>('file-service')!;
+    return this.getService<FileServiceInterface>('file-service');
   }
 
   get speechService(): SpeechService {
-    return this.lifecycleManager.serviceRegistry.get<SpeechService>('speech')!;
+    return this.getService<SpeechService>('speech');
   }
 
   get contextManager(): ContextManager {
-    return this.lifecycleManager.serviceRegistry.get<ContextManager>('context')!;
+    return this.getService<ContextManager>('context');
   }
 
   constructor(configManager: ConfigManager) {
@@ -155,13 +161,16 @@ export class OpenACPCore {
   }
 
   async stop(): Promise<void> {
-    // 1. Notify users
+    // 1. Notify users (best effort — service may not be available)
     try {
-      await this.notificationManager.notifyAll({
-        sessionId: "system",
-        type: "error",
-        summary: "OpenACP is shutting down",
-      });
+      const nm = this.lifecycleManager.serviceRegistry.get<NotificationManager>('notifications');
+      if (nm) {
+        await nm.notifyAll({
+          sessionId: "system",
+          type: "error",
+          summary: "OpenACP is shutting down",
+        });
+      }
     } catch {
       /* best effort */
     }
@@ -173,7 +182,6 @@ export class OpenACPCore {
     for (const adapter of this.adapters.values()) {
       await adapter.stop();
     }
-
   }
 
   // --- Archive ---

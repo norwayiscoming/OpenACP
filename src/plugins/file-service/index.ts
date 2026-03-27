@@ -55,8 +55,13 @@ function createFileServicePlugin(): OpenACPPlugin {
     async setup(ctx) {
       const config = ctx.pluginConfig as Record<string, unknown>
       const baseDir = (config.baseDir as string) ?? path.join(os.homedir(), '.openacp', 'files')
+      const retentionDays = (config.retentionDays as number) ?? 30
       const service = new FileService(baseDir)
       ctx.registerService('file-service', service)
+      // Cleanup old session files in background (fire-and-forget)
+      service.cleanupOldFiles(retentionDays).then((count) => {
+        if (count > 0) ctx.log.info(`Cleaned up ${count} old session files`)
+      }).catch(() => {})
       ctx.log.info('File service ready')
     },
   }

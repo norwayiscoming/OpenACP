@@ -254,7 +254,7 @@ export class ConfigManager extends EventEmitter {
   }
 
   get(): Config {
-    return this.config;
+    return structuredClone(this.config);
   }
 
   async save(

@@ -60,4 +60,15 @@ describe('PluginStorage', () => {
     expect(await storage.get('b')).toBe(2)
     expect(await storage.get('c')).toBe(3)
   })
+
+  it('creates base directory if it does not exist, allowing set() without ENOENT', async () => {
+    const nonExistentDir = path.join(os.tmpdir(), `plugin-storage-new-${Date.now()}`)
+    try {
+      const s = new PluginStorageImpl(nonExistentDir)
+      await expect(s.set('key', 'value')).resolves.not.toThrow()
+      expect(await s.get('key')).toBe('value')
+    } finally {
+      fs.rmSync(nonExistentDir, { recursive: true, force: true })
+    }
+  })
 })

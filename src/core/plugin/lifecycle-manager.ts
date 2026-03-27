@@ -143,8 +143,8 @@ export class LifecycleManager {
     try {
       sorted = resolveLoadOrder(allForResolution)
     } catch (err) {
-      // Circular dependency or other fatal error in resolution
-      // Mark all as failed
+      const error = err instanceof Error ? err : new Error(String(err))
+      this.log?.error(`Plugin dependency resolution failed: ${error.message}`)
       for (const p of plugins) {
         this._failed.add(p.name)
       }
@@ -194,7 +194,11 @@ export class LifecycleManager {
             settings: this.settingsManager.createAPI(plugin.name),
             log: pluginLog,
           }
-          const newSettings = await plugin.migrate(migrateCtx, oldSettings, registryEntry.version)
+          const newSettings = await withTimeout(
+            plugin.migrate(migrateCtx, oldSettings, registryEntry.version),
+            SETUP_TIMEOUT_MS,
+            `${plugin.name}.migrate()`,
+          )
           if (newSettings && typeof newSettings === 'object') {
             await migrateCtx.settings.setAll(newSettings as Record<string, unknown>)
           }

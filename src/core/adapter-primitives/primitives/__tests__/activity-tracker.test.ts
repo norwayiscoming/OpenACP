@@ -115,4 +115,18 @@ describe('ActivityTracker', () => {
     await vi.advanceTimersByTimeAsync(30000)
     expect(cbs.updateThinkingIndicator).not.toHaveBeenCalled()
   })
+
+  it('calls removeThinkingIndicator on onSessionEnd even without onTextStart', async () => {
+    const tracker = new ActivityTracker({
+      thinkingRefreshInterval: 15000,
+      maxThinkingDuration: 180000,
+    })
+    const cbs = makeCallbacks()
+    tracker.onThinkingStart('s1', cbs)
+    await vi.advanceTimersByTimeAsync(0)
+
+    // End session without calling onTextStart
+    tracker.onSessionEnd('s1')
+    expect(cbs.removeThinkingIndicator).toHaveBeenCalledOnce()
+  })
 })

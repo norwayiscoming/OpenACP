@@ -47,6 +47,34 @@ function classifyMime(mimeType: string): Attachment["type"] {
 export class FileService {
   constructor(private baseDir: string) {}
 
+  /**
+   * Remove session file directories older than maxAgeDays.
+   * Called on startup to prevent unbounded disk growth.
+   */
+  async cleanupOldFiles(maxAgeDays: number): Promise<number> {
+    const cutoff = Date.now() - maxAgeDays * 24 * 60 * 60 * 1000;
+    let removed = 0;
+    try {
+      const entries = await fs.promises.readdir(this.baseDir, { withFileTypes: true });
+      for (const entry of entries) {
+        if (!entry.isDirectory()) continue;
+        const dirPath = path.join(this.baseDir, entry.name);
+        try {
+          const stat = await fs.promises.stat(dirPath);
+          if (stat.mtimeMs < cutoff) {
+            await fs.promises.rm(dirPath, { recursive: true, force: true });
+            removed++;
+          }
+        } catch {
+          // Skip inaccessible directories
+        }
+      }
+    } catch {
+      // Base dir doesn't exist yet — nothing to clean
+    }
+    return removed;
+  }
+
   async saveFile(
     sessionId: string,
     fileName: string,

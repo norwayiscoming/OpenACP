@@ -283,9 +283,27 @@ export async function startServer(opts?: StartServerOptions) {
     log.info({ signal, exitCode }, 'Signal received, shutting down')
 
     try {
-      // Lifecycle teardown stops all plugins (adapters, api-server, tunnel, etc.)
+      // 1. Send shutdown notification while plugins are still running
+      try {
+        const nm = serviceRegistry.get<import('./plugins/notifications/notification.js').NotificationManager>('notifications')
+        if (nm) {
+          await nm.notifyAll({
+            sessionId: 'system',
+            type: 'error',
+            summary: 'OpenACP is shutting down',
+          })
+        }
+      } catch {
+        /* best effort */
+      }
+
+      // 2. Destroy all sessions while plugins are still running
+      await core.sessionManager.destroyAll()
+
+      // 3. Lifecycle teardown stops all plugins (adapters, api-server, tunnel, etc.)
       await core.lifecycleManager.shutdown()
-      await core.stop()
+      // Note: do NOT call core.stop() here — it would double-stop adapters and
+      // try to use the notification plugin after it has already been torn down.
     } catch (err) {
       log.error({ err }, 'Error during shutdown')
     }

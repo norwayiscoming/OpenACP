@@ -31,11 +31,18 @@ export async function importFromDir(packageName: string, dir: string): Promise<a
   return import(pathToFileURL(entryPath).href)
 }
 
+/** Valid npm package name: optional @scope/, alphanumeric/hyphens/dots, optional @version */
+const VALID_NPM_NAME = /^(@[a-z0-9][\w.-]*\/)?[a-z0-9][\w.-]*(@[\w.^~>=<|-]+)?$/i;
+
 /**
  * Install an npm package to the plugins directory and return the loaded module.
  * Tries to import first; if not installed, runs npm install asynchronously.
  */
 export async function installNpmPlugin(packageName: string, pluginsDir?: string): Promise<any> {
+  if (!VALID_NPM_NAME.test(packageName)) {
+    throw new Error(`Invalid package name: "${packageName}". Must be a valid npm package name.`);
+  }
+
   const dir = pluginsDir ?? path.join(os.homedir(), '.openacp', 'plugins')
 
   // Try import from plugins dir first — already installed

@@ -570,9 +570,20 @@ export class TelegramAdapter extends MessagingAdapter {
   }
 
   async stop(): Promise<void> {
+    // Cleanup activity trackers (interval timers)
+    for (const tracker of this.sessionTrackers.values()) {
+      tracker.destroy();
+    }
+    this.sessionTrackers.clear();
+
+    // Clear send queue
+    this.sendQueue.clear();
+
+    // Destroy assistant session
     if (this.assistantSession) {
       await this.assistantSession.destroy();
     }
+
     await this.bot.stop();
     log.info("Telegram bot stopped");
   }

@@ -87,15 +87,15 @@ export class MiddlewareChain {
         }
 
         let handlerResult: T | null
+        let timeoutTimer: ReturnType<typeof setTimeout> | undefined
         try {
           const timeoutPromise = new Promise<never>((_, reject) => {
-            const timer = setTimeout(
+            timeoutTimer = setTimeout(
               () => reject(new Error(`Middleware timeout: ${entry.pluginName} on hook ${hook}`)),
               MIDDLEWARE_TIMEOUT_MS,
             )
-            // Allow the timer to be garbage collected (non-blocking)
-            if (typeof timer === 'object' && timer !== null && 'unref' in timer) {
-              ;(timer as NodeJS.Timeout).unref()
+            if (typeof timeoutTimer === 'object' && timeoutTimer !== null && 'unref' in timeoutTimer) {
+              ;(timeoutTimer as NodeJS.Timeout).unref()
             }
           })
 
@@ -112,6 +112,8 @@ export class MiddlewareChain {
           this.errorTracker?.increment(entry.pluginName)
           // Skip this handler — pass ORIGINAL payload to next
           return nextFn()
+        } finally {
+          clearTimeout(timeoutTimer!)
         }
 
         // Handler returned null — block

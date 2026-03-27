@@ -81,13 +81,15 @@ export class CommandRegistry {
     if (!cmd) return
     this.commands.delete(name)
     if (cmd.scope) {
-      this.commands.delete(`${cmd.scope}:${name}`)
+      // If we deleted by short name, also delete qualified name
+      this.commands.delete(`${cmd.scope}:${cmd.name}`)
+      // If we deleted by qualified name, also delete short name
+      this.commands.delete(cmd.name)
     }
   }
 
   /** Remove all commands registered by a given plugin. */
   unregisterByPlugin(pluginName: string): void {
-    const scope = CommandRegistry.extractScope(pluginName)
     const toDelete: string[] = []
 
     for (const [key, cmd] of this.commands) {

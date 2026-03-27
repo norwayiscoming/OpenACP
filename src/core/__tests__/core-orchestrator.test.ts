@@ -323,4 +323,16 @@ describe("OpenACPCore", () => {
       expect(bridge).toBeDefined();
     });
   });
+
+  describe("lazy service getters", () => {
+    it("throws descriptive error when service not registered", () => {
+      // Create a fresh core with no services registered (no plugins booted)
+      const bareCore = new OpenACPCore(mockConfigManager());
+      expect(() => bareCore.securityGuard).toThrow(/security.*not registered/i);
+      expect(() => bareCore.notificationManager).toThrow(/notifications.*not registered/i);
+      expect(() => bareCore.fileService).toThrow(/file-service.*not registered/i);
+      expect(() => bareCore.speechService).toThrow(/speech.*not registered/i);
+      expect(() => bareCore.contextManager).toThrow(/context.*not registered/i);
+    });
+  });
 });

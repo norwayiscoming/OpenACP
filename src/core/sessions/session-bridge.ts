@@ -42,9 +42,13 @@ export class SessionBridge {
     if (mw) {
       const result = await mw.execute('message:outgoing', { sessionId, message }, async (m) => m);
       if (!result) return; // blocked by middleware
-      this.adapter.sendMessage(sessionId, result.message);
+      this.adapter.sendMessage(sessionId, result.message).catch((err) => {
+        log.error({ err, sessionId }, "Failed to send message to adapter");
+      });
     } else {
-      this.adapter.sendMessage(sessionId, message);
+      this.adapter.sendMessage(sessionId, message).catch((err) => {
+        log.error({ err, sessionId }, "Failed to send message to adapter");
+      });
     }
   }
 
@@ -114,7 +118,11 @@ export class SessionBridge {
           }
         });
       } else {
-        this.handleAgentEvent(event);
+        try {
+          this.handleAgentEvent(event);
+        } catch (err) {
+          log.error({ err, sessionId: this.session.id }, "Error handling agent event");
+        }
       }
     };
 
@@ -366,8 +374,8 @@ export class SessionBridge {
         status: to,
       });
 
-      // Auto-disconnect on terminal states
-      if (to === "finished" || to === "cancelled") {
+      // Auto-disconnect on terminal states (finished only — cancelled sessions can resume)
+      if (to === "finished") {
         // Disconnect on next tick so current event handlers can complete
         queueMicrotask(() => this.disconnect());
       }

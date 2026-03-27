@@ -254,7 +254,7 @@ describe("SessionBridge", () => {
       expect(adapter.sendMessage).not.toHaveBeenCalled();
     });
 
-    it("auto-disconnects on terminal status (cancelled)", async () => {
+    it("stays connected on cancelled (session can resume)", async () => {
       bridge.connect();
       session.activate();
       session.markCancelled();
@@ -264,7 +264,8 @@ describe("SessionBridge", () => {
       vi.mocked(adapter.sendMessage).mockClear();
 
       session.emit("agent_event", { type: "text", content: "after" });
-      expect(adapter.sendMessage).not.toHaveBeenCalled();
+      // Bridge stays connected so cancelled sessions can resume
+      expect(adapter.sendMessage).toHaveBeenCalled();
     });
   });
 });

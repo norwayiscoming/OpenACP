@@ -26,8 +26,8 @@ describe('logger', () => {
 
     log.info('hello from test')
 
-    // pino transports run in worker threads, need time to flush
-    await new Promise(r => setTimeout(r, 1500))
+    // Flush by shutting down transport (proper flush instead of setTimeout)
+    await shutdownLogger()
 
     expect(fs.existsSync(logDir)).toBe(true)
     const files = fs.readdirSync(logDir)
@@ -41,7 +41,7 @@ describe('logger', () => {
     const childLog = createChildLogger({ module: 'test-module' })
     childLog.info('child message')
 
-    await new Promise(r => setTimeout(r, 500))
+    await shutdownLogger()
 
     const files = fs.readdirSync(logDir).filter(f => f.startsWith('openacp'))
     expect(files.length).toBeGreaterThan(0)
@@ -59,7 +59,7 @@ describe('logger', () => {
 
     log.info('loaded from', '/some/path')
 
-    await new Promise(r => setTimeout(r, 500))
+    await shutdownLogger()
 
     const files = fs.readdirSync(logDir).filter(f => f.startsWith('openacp'))
     expect(files.length).toBeGreaterThan(0)
@@ -75,7 +75,7 @@ describe('logger', () => {
     log.info('should not appear')
     log.warn('should appear')
 
-    await new Promise(r => setTimeout(r, 500))
+    await shutdownLogger()
 
     const files = fs.readdirSync(logDir).filter(f => f.startsWith('openacp'))
     expect(files.length).toBeGreaterThan(0)

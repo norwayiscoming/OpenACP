@@ -120,6 +120,7 @@ export class SessionManager {
     if (session) {
       await session.abortPrompt();
       session.markCancelled();
+      this.sessions.delete(sessionId);
     }
     if (this.store) {
       const record = this.store.get(sessionId);

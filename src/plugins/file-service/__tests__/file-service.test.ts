@@ -64,6 +64,39 @@ describe("FileService", () => {
     });
   });
 
+  describe("cleanupOldFiles", () => {
+    it("removes directories older than maxAgeDays", async () => {
+      // Create session dirs with old timestamps
+      const oldDir = path.join(tmpDir, "old-session");
+      const newDir = path.join(tmpDir, "new-session");
+      fs.mkdirSync(oldDir);
+      fs.mkdirSync(newDir);
+      fs.writeFileSync(path.join(oldDir, "file.txt"), "data");
+      fs.writeFileSync(path.join(newDir, "file.txt"), "data");
+
+      // Set oldDir mtime to 60 days ago
+      const pastDate = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000);
+      fs.utimesSync(oldDir, pastDate, pastDate);
+
+      const removed = await service.cleanupOldFiles(30);
+      expect(removed).toBe(1);
+      expect(fs.existsSync(oldDir)).toBe(false);
+      expect(fs.existsSync(newDir)).toBe(true);
+    });
+
+    it("returns 0 when baseDir does not exist", async () => {
+      const nonexistent = new FileService("/tmp/nonexistent-" + Date.now());
+      const removed = await nonexistent.cleanupOldFiles(30);
+      expect(removed).toBe(0);
+    });
+
+    it("skips non-directory entries", async () => {
+      fs.writeFileSync(path.join(tmpDir, "regular-file.txt"), "data");
+      const removed = await service.cleanupOldFiles(0);
+      expect(removed).toBe(0);
+    });
+  });
+
   describe("extensionFromMime", () => {
     it("maps common image types", () => {
       expect(FileService.extensionFromMime("image/jpeg")).toBe(".jpg");

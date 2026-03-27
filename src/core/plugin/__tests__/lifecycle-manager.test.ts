@@ -136,6 +136,31 @@ describe('LifecycleManager', () => {
   })
 })
 
+describe('LifecycleManager — circular dependency handling', () => {
+  it('marks all plugins as failed and calls log.error on circular dependency', async () => {
+    const a = makePlugin('a', { pluginDependencies: { 'b': '^1.0.0' } })
+    const b = makePlugin('b', { pluginDependencies: { 'a': '^1.0.0' } })
+
+    const errorSpy = vi.fn()
+    const mockLog = {
+      trace: vi.fn(),
+      debug: vi.fn(),
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: errorSpy,
+      fatal: vi.fn(),
+      child: vi.fn().mockReturnThis(),
+    } as any
+
+    const mgr = new LifecycleManager({ log: mockLog })
+    await mgr.boot([a, b])
+
+    expect(mgr.failedPlugins).toContain('a')
+    expect(mgr.failedPlugins).toContain('b')
+    expect(errorSpy).toHaveBeenCalled()
+  })
+})
+
 describe('LifecycleManager.unloadPlugin', () => {
   it('unloads a loaded plugin and calls teardown', async () => {
     const plugin = makePlugin('a')

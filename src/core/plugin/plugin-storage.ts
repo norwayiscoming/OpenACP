@@ -10,6 +10,7 @@ export class PluginStorageImpl implements PluginStorage {
   constructor(baseDir: string) {
     this.dataDir = path.join(baseDir, 'data')
     this.kvPath = path.join(baseDir, 'kv.json')
+    fs.mkdirSync(baseDir, { recursive: true })
   }
 
   private readKv(): Record<string, unknown> {

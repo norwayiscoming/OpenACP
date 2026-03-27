@@ -43,6 +43,8 @@ export {
 } from "./sessions/session-factory.js";
 export { OpenACPCore } from "./core.js";
 export { EventBus, type EventBusEvents } from "./event-bus.js";
+export { CommandRegistry } from "./command-registry.js";
+export { DoctorEngine, type DoctorReport, type PendingFix } from "./doctor/index.js";
 export {
   CONFIG_REGISTRY,
   getFieldDef,
@@ -117,7 +119,4 @@ export type {
   SecurityService, NotificationService, UsageService,
   SpeechServiceInterface, TunnelServiceInterface, ContextService,
 } from './plugin/types.js'
-export { CommandRegistry } from './command-registry.js'
-export { DoctorEngine } from './doctor/index.js'
-export type { DoctorReport, PendingFix } from './doctor/types.js'
 export { PRODUCT_GUIDE } from '../data/product-guide.js'

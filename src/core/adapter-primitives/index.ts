@@ -5,8 +5,8 @@ export { SendQueue, DraftManager, Draft, ToolCallTracker, ActivityTracker } from
 export type { SendQueueConfig, DraftConfig, TrackedToolCall, ActivityConfig, ActivityCallbacks } from './primitives/index.js'
 
 export type { DisplayVerbosity, ToolCallMeta, ToolUpdateMeta, FormattedMessage, MessageMetadata, ViewerLinks } from './format-types.js'
+export { STATUS_ICONS, KIND_ICONS } from './format-types.js'
 export { progressBar, formatTokens, truncateContent, stripCodeFences, splitMessage } from './format-utils.js'
 export { extractContentText, formatToolSummary, formatToolTitle, resolveToolIcon } from './message-formatter.js'
-export { STATUS_ICONS, KIND_ICONS } from './format-types.js'
 // Note: runAdapterConformanceTests is exported from the separate './testing' entry
 // point to avoid pulling vitest into the main runtime bundle.

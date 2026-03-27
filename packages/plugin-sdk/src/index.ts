@@ -7,56 +7,51 @@
 //   @openacp/plugin-sdk/testing    — test helpers, conformance tests
 // ============================================================
 
-// --- @stable: Plugin interfaces ---
+// --- Plugin interfaces ---
 export type {
   OpenACPPlugin, PluginContext, PluginPermission, PluginStorage,
   InstallContext, MigrateContext, TerminalIO, SettingsAPI,
 } from '@openacp/cli'
 
-// --- @stable: Command types ---
+// --- Command types ---
 export type {
   CommandDef, CommandArgs, CommandResponse, MenuOption, ListItem,
 } from '@openacp/cli'
 
-// --- @stable: Service interfaces ---
+// --- Service interfaces ---
 export type {
   SecurityService, FileServiceInterface, NotificationService,
   UsageService, SpeechServiceInterface, TunnelServiceInterface, ContextService,
 } from '@openacp/cli'
 
-// --- @stable: Adapter types ---
+// --- Adapter types ---
 export type {
   IChannelAdapter, AdapterCapabilities, OutgoingMessage, PermissionRequest,
   PermissionOption, NotificationMessage, AgentCommand,
+  MessagingAdapterConfig, IRenderer, RenderedMessage,
 } from '@openacp/cli'
 
-// --- @stable: Adapter base classes ---
+// --- Adapter base classes (runtime) ---
 export { MessagingAdapter, StreamAdapter, BaseRenderer } from '@openacp/cli'
 export type { MessagingAdapterConfig, IRenderer, RenderedMessage } from '@openacp/cli'
 
-// --- @stable: Adapter primitives ---
+// --- Adapter primitives (runtime) ---
 export { SendQueue, DraftManager, ToolCallTracker, ActivityTracker } from '@openacp/cli'
 
-// --- @stable: Core classes ---
-export { OpenACPCore } from '@openacp/cli'
-export { Session } from '@openacp/cli'
-export type { SessionEvents } from '@openacp/cli'
-export { SessionManager } from '@openacp/cli'
-export { CommandRegistry } from '@openacp/cli'
-
-// --- @stable: Logging ---
-export { log, createChildLogger } from '@openacp/cli'
-
-// --- @stable: Data ---
-export { PRODUCT_GUIDE } from '@openacp/cli'
-
-// --- @stable: Core types ---
+// --- Core types ---
 export type {
+  OpenACPCore, Session, SessionEvents, SessionManager, CommandRegistry,
   Attachment, PlanEntry, StopReason, SessionStatus, ConfigOption,
   UsageRecord, InstallProgress,
+  DisplayVerbosity, ToolCallMeta, ToolUpdateMeta, ViewerLinks,
   TelegramPlatformData,
 } from '@openacp/cli'
 
-// --- Re-exports from sub-paths for convenience (prefer direct sub-path imports) ---
-export * from './formatting.js'
-export * from './config.js'
+// --- Logging (runtime) ---
+export { log, createChildLogger } from '@openacp/cli'
+
+// --- Data (runtime) ---
+export { PRODUCT_GUIDE } from '@openacp/cli'
+
+// --- Sub-path re-exports (types only — use sub-path imports for values) ---
+export type { ConfigFieldDef, DoctorReport, PendingFix } from './config.js'

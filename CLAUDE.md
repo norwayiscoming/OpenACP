@@ -83,6 +83,7 @@ Khi thay đổi code, **phải cập nhật docs tương ứng** để code và 
 - **Cập nhật tính năng**: Cập nhật lại phần docs liên quan để phản ánh thay đổi.
 - **Fix bug**: Nếu bug liên quan đến behavior đã document, cập nhật docs nếu cần. Không bắt buộc nếu docs vẫn chính xác.
 - **Nguyên tắc chung**: Không merge code mà docs chưa được cập nhật cho feature mới/thay đổi. README dành cho user, `docs/` dành cho cả user lẫn contributor.
+- **Plugin Template Sync**: Khi thay đổi plugin API, kiến trúc plugin, PluginContext, CommandDef, middleware hooks, permissions, hoặc bất kỳ thứ gì ảnh hưởng đến cách viết plugin → **phải cập nhật plugin template** tại `src/cli/plugin-template/` (đặc biệt `claude-md.ts` và `plugin-guide.ts`) để template luôn phản ánh đúng API hiện tại. Template này là nguồn tham chiếu chính cho cả AI agents lẫn plugin developers.
 
 ## Conventions
 

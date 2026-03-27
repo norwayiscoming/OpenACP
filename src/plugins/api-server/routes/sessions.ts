@@ -60,12 +60,14 @@ export function registerSessionRoutes(router: Router, deps: RouteDeps): void {
     const body = await deps.readBody(req);
     let agent: string | undefined;
     let workspace: string | undefined;
+    let channel: string | undefined;
 
     if (body) {
       try {
         const parsed = JSON.parse(body);
         agent = parsed.agent;
         workspace = parsed.workspace;
+        channel = parsed.channel;
       } catch {
         deps.sendJson(res, 400, { error: "Invalid JSON body" });
         return;
@@ -84,11 +86,27 @@ export function registerSessionRoutes(router: Router, deps: RouteDeps): void {
       return;
     }
 
-    // Use the first registered adapter (e.g. Telegram) so API sessions appear in the channel
-    const [adapterId, adapter] = deps.core.adapters.entries().next().value ?? [
-      null,
-      null,
-    ];
+    // Resolve adapter: use explicit channel if provided, otherwise fall back to first registered adapter
+    let adapterId: string | null = null;
+    let adapter: InstanceType<any> | null = null;
+
+    if (channel) {
+      if (!deps.core.adapters.has(channel)) {
+        const available = Array.from(deps.core.adapters.keys()).join(", ") || "none";
+        deps.sendJson(res, 400, {
+          error: `Adapter '${channel}' is not connected. Available: ${available}`,
+        });
+        return;
+      }
+      adapterId = channel;
+      adapter = deps.core.adapters.get(channel) ?? null;
+    } else {
+      const firstEntry = deps.core.adapters.entries().next().value;
+      if (firstEntry) {
+        [adapterId, adapter] = firstEntry;
+      }
+    }
+
     const channelId = adapterId ?? "api";
 
     const resolvedAgent = agent || config.defaultAgent;

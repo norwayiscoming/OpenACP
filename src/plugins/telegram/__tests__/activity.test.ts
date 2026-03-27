@@ -65,15 +65,29 @@ describe("ThinkingIndicator", () => {
     expect(api.sendMessage).toHaveBeenCalledOnce();
   });
 
-  it("dismiss() clears state without calling Telegram API", async () => {
+  it("dismiss() deletes the Telegram message when msgId exists", async () => {
     await indicator.show();
-    indicator.dismiss();
+    await indicator.dismiss();
+    expect(api.deleteMessage).toHaveBeenCalledOnce();
+    expect(api.deleteMessage).toHaveBeenCalledWith(100, 42);
+  });
+
+  it("dismiss() does not call deleteMessage when no message was sent", async () => {
+    await indicator.dismiss();
     expect(api.deleteMessage).not.toHaveBeenCalled();
+  });
+
+  it("dismiss() swallows errors from deleteMessage", async () => {
+    api.deleteMessage.mockRejectedValueOnce(new Error("already deleted"));
+    await indicator.show();
+    // Should not throw
+    await indicator.dismiss();
+    expect(api.deleteMessage).toHaveBeenCalledOnce();
   });
 
   it("show() works again after dismiss() + reset()", async () => {
     await indicator.show();
-    indicator.dismiss();
+    await indicator.dismiss();
     indicator.reset();
     await indicator.show();
     expect(api.sendMessage).toHaveBeenCalledTimes(2);
@@ -81,9 +95,40 @@ describe("ThinkingIndicator", () => {
 
   it("show() is blocked after dismiss() without reset()", async () => {
     await indicator.show();
-    indicator.dismiss();
+    await indicator.dismiss();
     await indicator.show();
     expect(api.sendMessage).toHaveBeenCalledOnce();
+  });
+
+  it("show() deletes just-sent message if dismissed during queue wait (C17)", async () => {
+    // Simulate a slow queue: enqueue holds the promise until we resolve it
+    let resolveEnqueue!: (val: unknown) => void;
+    const slowQueue = {
+      enqueue: vi.fn(
+        (fn: () => Promise<unknown>) =>
+          new Promise((resolve) => {
+            resolveEnqueue = async () => {
+              const result = await fn();
+              resolve(result);
+            };
+          }),
+      ),
+      onRateLimited: vi.fn(),
+    } as unknown as SendQueue;
+
+    const ind = new ThinkingIndicator(api as never, 100, 200, slowQueue);
+    const showPromise = ind.show();
+
+    // dismiss() while show() is waiting in the queue
+    await ind.dismiss();
+
+    // Now resolve the queue — sendMessage returns the message
+    await resolveEnqueue(undefined);
+    await showPromise;
+
+    // The message was sent but should be immediately deleted
+    expect(api.sendMessage).toHaveBeenCalledOnce();
+    expect(api.deleteMessage).toHaveBeenCalledWith(100, 42);
   });
 });
 
@@ -180,16 +225,16 @@ describe("ActivityTracker", () => {
     expect(api.sendMessage).toHaveBeenCalledOnce();
   });
 
-  it("onToolCall() dismisses thinking (no deleteMessage API call)", async () => {
+  it("onToolCall() dismisses thinking and deletes message", async () => {
     await tracker.onThought();
     await tracker.onToolCall(makeMeta(), "file_read", { path: "/tmp/foo" });
-    expect(api.deleteMessage).not.toHaveBeenCalled();
+    expect(api.deleteMessage).toHaveBeenCalledWith(100, 42);
   });
 
-  it("onTextStart() dismisses thinking (no deleteMessage API call)", async () => {
+  it("onTextStart() dismisses thinking and deletes message", async () => {
     await tracker.onThought();
     await tracker.onTextStart();
-    expect(api.deleteMessage).not.toHaveBeenCalled();
+    expect(api.deleteMessage).toHaveBeenCalledWith(100, 42);
   });
 
   it("sendUsage() is a no-op (usage is sent as separate message by adapter)", async () => {
@@ -199,10 +244,10 @@ describe("ActivityTracker", () => {
     expect(api.sendMessage).not.toHaveBeenCalled();
   });
 
-  it("onNewPrompt() resets state", async () => {
+  it("onNewPrompt() dismisses thinking and deletes message", async () => {
     await tracker.onThought();
     await tracker.onNewPrompt();
-    expect(api.deleteMessage).not.toHaveBeenCalled();
+    expect(api.deleteMessage).toHaveBeenCalledWith(100, 42);
   });
 
   it("cleanup() finalizes toolCard and dismisses thinking", async () => {
@@ -214,11 +259,11 @@ describe("ActivityTracker", () => {
     expect(true).toBe(true);
   });
 
-  it("onNewPrompt() dismisses thinking without API call", async () => {
+  it("onNewPrompt() deletes thinking message", async () => {
     await tracker.onThought();
     expect(api.sendMessage).toHaveBeenCalledOnce();
     await tracker.onNewPrompt();
-    expect(api.deleteMessage).not.toHaveBeenCalled();
+    expect(api.deleteMessage).toHaveBeenCalledWith(100, 42);
   });
 
   it("getToolCardMsgId() returns undefined when no tool content", () => {

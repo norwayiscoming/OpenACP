@@ -44,9 +44,18 @@ export class ThinkingIndicator {
           disable_notification: true,
         }),
       );
-      if (result && !this.dismissed) {
-        this.msgId = result.message_id;
-        this.startRefreshTimer();
+      if (result) {
+        if (this.dismissed) {
+          // dismissed during queue wait — delete the just-sent message
+          try {
+            await this.api.deleteMessage(this.chatId, result.message_id);
+          } catch {
+            // Message may already be deleted
+          }
+        } else {
+          this.msgId = result.message_id;
+          this.startRefreshTimer();
+        }
       }
     } catch (err) {
       log.warn({ err }, "ThinkingIndicator.show() failed");
@@ -55,11 +64,20 @@ export class ThinkingIndicator {
     }
   }
 
-  /** Clear state — stops refresh timer, no Telegram API call */
-  dismiss(): void {
+  /** Dismiss indicator: stops refresh timer and deletes the Telegram message */
+  async dismiss(): Promise<void> {
+    if (this.dismissed) return;
     this.dismissed = true;
-    this.msgId = undefined;
     this.stopRefreshTimer();
+    const msgId = this.msgId;
+    this.msgId = undefined;
+    if (msgId) {
+      try {
+        await this.api.deleteMessage(this.chatId, msgId);
+      } catch {
+        // Message may already be deleted
+      }
+    }
   }
 
   /** Reset for a new prompt cycle */
@@ -241,7 +259,7 @@ export class ActivityTracker {
 
   async onNewPrompt(): Promise<void> {
     this.isFirstEvent = true;
-    this.thinking.dismiss();
+    await this.thinking.dismiss();
     this.thinking.reset();
 
     // Finalize old tool card (flush pending state) and create a fresh one
@@ -265,7 +283,7 @@ export class ActivityTracker {
 
   async onTextStart(): Promise<void> {
     this.isFirstEvent = false;
-    this.thinking.dismiss();
+    await this.thinking.dismiss();
     // If tool card has content, finalize it — text interrupts the tool sequence
     await this.sealToolCardIfNeeded();
   }
@@ -276,7 +294,7 @@ export class ActivityTracker {
     rawInput: unknown,
   ): Promise<void> {
     this.isFirstEvent = false;
-    this.thinking.dismiss();
+    await this.thinking.dismiss();
     this.thinking.reset();
     this.toolCard.addTool(meta, kind, rawInput);
   }
@@ -305,7 +323,7 @@ export class ActivityTracker {
 
   async onPlan(entries: PlanEntry[]): Promise<void> {
     this.isFirstEvent = false;
-    this.thinking.dismiss();
+    await this.thinking.dismiss();
     this.toolCard.updatePlan(entries);
   }
 
@@ -323,13 +341,13 @@ export class ActivityTracker {
   }
 
   async cleanup(): Promise<void> {
-    this.thinking.dismiss();
+    await this.thinking.dismiss();
     await this.toolCard.finalize();
     this.toolCard.destroy();
   }
 
   destroy(): void {
-    this.thinking.dismiss();
+    void this.thinking.dismiss();
     this.toolCard.destroy();
   }
 }

@@ -1,5 +1,6 @@
-import type { OpenACPPlugin, InstallContext } from '../../core/plugin/types.js'
+import type { OpenACPPlugin, InstallContext, PluginContext } from '../../core/plugin/types.js'
 import type { OpenACPCore } from '../../core/core.js'
+import type { Session } from '../../core/sessions/session.js'
 import { SpeechService, GroqSTT } from './exports.js'
 import type { SpeechServiceConfig } from './exports.js'
 import { installNpmPlugin } from '../../core/plugin/plugin-installer.js'
@@ -144,7 +145,7 @@ const speechPlugin: OpenACPPlugin = {
         providers: groqApiKey ? { groq: { apiKey: groqApiKey } } : {},
       },
       tts: {
-        provider: 'edge-tts',
+        provider: (config.ttsProvider as string) ?? 'edge-tts',
         providers: {},
       },
     }
@@ -170,16 +171,30 @@ const speechPlugin: OpenACPPlugin = {
 
     ctx.registerService('speech', service)
 
+    // Helper to look up the session and set voiceMode
+    const setSessionVoiceMode = (pluginCtx: PluginContext, sessionId: string | null, voiceMode: 'off' | 'next' | 'on'): void => {
+      if (!sessionId) return
+      try {
+        const sessionManager = pluginCtx.sessions as { getSession(id: string): Session | undefined }
+        const session = sessionManager.getSession(sessionId)
+        if (session) {
+          session.setVoiceMode(voiceMode)
+        }
+      } catch {
+        // Session lookup may fail if kernel:access is unavailable; silently ignore
+      }
+    }
+
     ctx.registerCommand({
       name: 'tts',
       description: 'Toggle text-to-speech',
-      usage: 'on|off|install',
+      usage: 'on|off|next|install',
       category: 'plugin',
       handler: async (args) => {
         const mode = args.raw.trim().toLowerCase()
 
         // Check if TTS provider is available
-        if ((mode === 'on' || mode === '') && !service.isTTSAvailable()) {
+        if ((mode === 'on' || mode === '' || mode === 'next') && !service.isTTSAvailable()) {
           return {
             type: 'menu' as const,
             title: 'TTS provider not installed. Install Edge TTS plugin?',
@@ -215,11 +230,22 @@ const speechPlugin: OpenACPPlugin = {
           }
         }
 
-        if (mode === 'on') return { type: 'text' as const, text: 'Text-to-speech enabled' }
-        if (mode === 'off') return { type: 'text' as const, text: 'Text-to-speech disabled' }
+        if (mode === 'on') {
+          setSessionVoiceMode(ctx, args.sessionId, 'on')
+          return { type: 'text' as const, text: 'Text-to-speech enabled' }
+        }
+        if (mode === 'off') {
+          setSessionVoiceMode(ctx, args.sessionId, 'off')
+          return { type: 'text' as const, text: 'Text-to-speech disabled' }
+        }
+        if (mode === 'next') {
+          setSessionVoiceMode(ctx, args.sessionId, 'next')
+          return { type: 'text' as const, text: 'Text-to-speech enabled for next message' }
+        }
         return { type: 'menu' as const, title: 'Text to Speech', options: [
           { label: 'Enable', command: '/tts on' },
           { label: 'Disable', command: '/tts off' },
+          { label: 'Next message only', command: '/tts next' },
         ]}
       },
     })

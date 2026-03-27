@@ -149,40 +149,112 @@ describe('/tts command', () => {
   })
 
   describe('when TTS provider is available', () => {
-    async function setupWithTTS() {
+    function makeMockSession(id: string) {
+      return {
+        id,
+        voiceMode: 'off' as 'off' | 'next' | 'on',
+        setVoiceMode(mode: 'off' | 'next' | 'on') {
+          this.voiceMode = mode
+        },
+      }
+    }
+
+    function makeMockSessionManager(sessions: Map<string, ReturnType<typeof makeMockSession>>) {
+      return {
+        getSession(id: string) {
+          return sessions.get(id)
+        },
+      }
+    }
+
+    async function setupWithTTS(opts?: { sessions?: Map<string, ReturnType<typeof makeMockSession>> }) {
+      const sessions = opts?.sessions ?? new Map()
+      const sessionManager = makeMockSessionManager(sessions)
+
       const ctx = createTestContext({
         pluginName: '@openacp/speech',
         pluginConfig: {},
         permissions: speechPlugin.permissions,
       })
+      // Provide session manager via ctx.sessions (kernel:access)
+      ;(ctx as any).sessions = sessionManager
+
       await speechPlugin.setup(ctx as any)
 
       // Retrieve the speech service and inject a TTS provider so isTTSAvailable() returns true
       const service = ctx.registeredServices.get('speech') as any
       service.registerTTSProvider('edge-tts', makeMockTTSProvider('edge-tts'))
 
-      return ctx
+      return { ctx, sessions, sessionManager }
     }
 
     it('returns text response confirming enabled when /tts on', async () => {
-      const ctx = await setupWithTTS()
-      const response = await ctx.executeCommand('tts', { raw: 'on' })
+      const mockSession = makeMockSession('sess-1')
+      const sessions = new Map([['sess-1', mockSession]])
+      const { ctx } = await setupWithTTS({ sessions })
+      const response = await ctx.executeCommand('tts', { raw: 'on', sessionId: 'sess-1' })
       expect(response?.type).toBe('text')
       expect((response as any)?.text).toMatch(/enabled/)
     })
 
     it('returns text response confirming disabled when /tts off', async () => {
-      const ctx = await setupWithTTS()
-      const response = await ctx.executeCommand('tts', { raw: 'off' })
+      const mockSession = makeMockSession('sess-1')
+      const sessions = new Map([['sess-1', mockSession]])
+      const { ctx } = await setupWithTTS({ sessions })
+      const response = await ctx.executeCommand('tts', { raw: 'off', sessionId: 'sess-1' })
       expect(response?.type).toBe('text')
       expect((response as any)?.text).toMatch(/disabled/)
     })
 
-    it('returns a status menu when /tts is called with no args', async () => {
-      const ctx = await setupWithTTS()
-      const response = await ctx.executeCommand('tts', { raw: '' })
+    it('returns a status menu when /tts is called with no args and TTS is available', async () => {
+      const mockSession = makeMockSession('sess-1')
+      const sessions = new Map([['sess-1', mockSession]])
+      const { ctx } = await setupWithTTS({ sessions })
+      const response = await ctx.executeCommand('tts', { raw: '', sessionId: 'sess-1' })
       // With TTS available and empty arg, falls through to the status menu
       expect(response?.type).toBe('menu')
+    })
+
+    it('sets session voiceMode to "on" when /tts on is called with a valid sessionId', async () => {
+      const mockSession = makeMockSession('sess-1')
+      const sessions = new Map([['sess-1', mockSession]])
+      const { ctx } = await setupWithTTS({ sessions })
+
+      await ctx.executeCommand('tts', { raw: 'on', sessionId: 'sess-1' })
+      expect(mockSession.voiceMode).toBe('on')
+    })
+
+    it('sets session voiceMode to "off" when /tts off is called with a valid sessionId', async () => {
+      const mockSession = makeMockSession('sess-1')
+      mockSession.voiceMode = 'on'
+      const sessions = new Map([['sess-1', mockSession]])
+      const { ctx } = await setupWithTTS({ sessions })
+
+      await ctx.executeCommand('tts', { raw: 'off', sessionId: 'sess-1' })
+      expect(mockSession.voiceMode).toBe('off')
+    })
+
+    it('sets session voiceMode to "next" when /tts next is called with a valid sessionId', async () => {
+      const mockSession = makeMockSession('sess-1')
+      const sessions = new Map([['sess-1', mockSession]])
+      const { ctx } = await setupWithTTS({ sessions })
+
+      await ctx.executeCommand('tts', { raw: 'next', sessionId: 'sess-1' })
+      expect(mockSession.voiceMode).toBe('next')
+    })
+
+    it('does not crash when sessionId is null (no session context)', async () => {
+      const { ctx } = await setupWithTTS()
+      const response = await ctx.executeCommand('tts', { raw: 'on', sessionId: null })
+      expect(response?.type).toBe('text')
+      expect((response as any)?.text).toMatch(/enabled/)
+    })
+
+    it('does not crash when session is not found for sessionId', async () => {
+      const { ctx } = await setupWithTTS()
+      const response = await ctx.executeCommand('tts', { raw: 'on', sessionId: 'nonexistent' })
+      expect(response?.type).toBe('text')
+      expect((response as any)?.text).toMatch(/enabled/)
     })
   })
 
@@ -231,6 +303,31 @@ describe('/tts command', () => {
 
       const service = ctx.registeredServices.get('speech') as any
       expect(service.isSTTAvailable()).toBe(false)
+    })
+
+    it('reads ttsProvider from pluginConfig instead of hardcoding edge-tts', async () => {
+      const ctx = createTestContext({
+        pluginName: '@openacp/speech',
+        pluginConfig: { ttsProvider: 'custom-tts' },
+        permissions: speechPlugin.permissions,
+      })
+      await speechPlugin.setup(ctx as any)
+
+      const service = ctx.registeredServices.get('speech') as any
+      // The config should reflect the custom provider name
+      expect(service.config.tts.provider).toBe('custom-tts')
+    })
+
+    it('defaults ttsProvider to edge-tts when not specified in pluginConfig', async () => {
+      const ctx = createTestContext({
+        pluginName: '@openacp/speech',
+        pluginConfig: {},
+        permissions: speechPlugin.permissions,
+      })
+      await speechPlugin.setup(ctx as any)
+
+      const service = ctx.registeredServices.get('speech') as any
+      expect(service.config.tts.provider).toBe('edge-tts')
     })
   })
 })

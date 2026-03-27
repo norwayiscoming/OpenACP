@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
+import { z } from 'zod'
 import { LifecycleManager } from '../lifecycle-manager.js'
 import type { OpenACPPlugin, MigrateContext } from '../types.js'
 import type { SettingsManager } from '../settings-manager.js'
@@ -195,5 +196,154 @@ describe('LifecycleManager — Migration Support', () => {
     expect(plugin.setup).not.toHaveBeenCalled()
     expect(mgr.loadedPlugins).not.toContain('disabled-plugin')
     expect(emitEvents.some(e => e.event === 'plugin:disabled')).toBe(true)
+  })
+})
+
+describe('LifecycleManager — Settings Validation', () => {
+  it('skips plugin when settingsSchema validation fails (setup not called)', async () => {
+    const schema = z.object({
+      apiKey: z.string().min(1),
+      port: z.number().int().positive(),
+    })
+
+    const plugin = makePlugin('validated-plugin', {
+      settingsSchema: schema,
+    })
+
+    // Invalid settings: missing apiKey, port is a string
+    const settingsMgr = mockSettingsManager({ 'validated-plugin': { port: 'not-a-number' } })
+    // Make validateSettings actually validate against the schema
+    ;(settingsMgr.validateSettings as ReturnType<typeof vi.fn>).mockImplementation(
+      (_name: string, settings: unknown, s?: z.ZodSchema) => {
+        if (!s) return { valid: true }
+        const result = s.safeParse(settings)
+        if (result.success) return { valid: true }
+        return {
+          valid: false,
+          errors: result.error.errors.map(
+            (e: { path: (string | number)[]; message: string }) => `${e.path.join('.')}: ${e.message}`,
+          ),
+        }
+      },
+    )
+
+    const emitEvents: Array<{ event: string; payload: unknown }> = []
+
+    const mgr = new LifecycleManager({
+      settingsManager: settingsMgr,
+      eventBus: {
+        on() {},
+        off() {},
+        emit(event: string, payload: unknown) { emitEvents.push({ event, payload }) },
+      },
+    })
+    await mgr.boot([plugin])
+
+    expect(plugin.setup).not.toHaveBeenCalled()
+    expect(mgr.loadedPlugins).not.toContain('validated-plugin')
+    expect(mgr.failedPlugins).toContain('validated-plugin')
+    expect(emitEvents.some(e => e.event === 'plugin:failed')).toBe(true)
+  })
+
+  it('proceeds with setup when settingsSchema validation passes', async () => {
+    const schema = z.object({
+      apiKey: z.string().min(1),
+      port: z.number().int().positive(),
+    })
+
+    const plugin = makePlugin('validated-plugin', {
+      settingsSchema: schema,
+    })
+
+    const settingsMgr = mockSettingsManager({ 'validated-plugin': { apiKey: 'abc123', port: 8080 } })
+    ;(settingsMgr.validateSettings as ReturnType<typeof vi.fn>).mockImplementation(
+      (_name: string, settings: unknown, s?: z.ZodSchema) => {
+        if (!s) return { valid: true }
+        const result = s.safeParse(settings)
+        if (result.success) return { valid: true }
+        return {
+          valid: false,
+          errors: result.error.errors.map(
+            (e: { path: (string | number)[]; message: string }) => `${e.path.join('.')}: ${e.message}`,
+          ),
+        }
+      },
+    )
+
+    const mgr = new LifecycleManager({
+      settingsManager: settingsMgr,
+    })
+    await mgr.boot([plugin])
+
+    expect(plugin.setup).toHaveBeenCalled()
+    expect(mgr.loadedPlugins).toContain('validated-plugin')
+  })
+
+  it('skips validation when plugin has no settingsSchema', async () => {
+    const plugin = makePlugin('no-schema-plugin')
+
+    const settingsMgr = mockSettingsManager({ 'no-schema-plugin': { anything: 'goes' } })
+
+    const mgr = new LifecycleManager({
+      settingsManager: settingsMgr,
+    })
+    await mgr.boot([plugin])
+
+    expect(settingsMgr.validateSettings).not.toHaveBeenCalled()
+    expect(plugin.setup).toHaveBeenCalled()
+    expect(mgr.loadedPlugins).toContain('no-schema-plugin')
+  })
+
+  it('skips validation when no settingsManager is available', async () => {
+    const schema = z.object({ key: z.string() })
+    const plugin = makePlugin('no-mgr-plugin', { settingsSchema: schema })
+
+    const mgr = new LifecycleManager({})
+    await mgr.boot([plugin])
+
+    expect(plugin.setup).toHaveBeenCalled()
+    expect(mgr.loadedPlugins).toContain('no-mgr-plugin')
+  })
+
+  it('validates settings after migration completes', async () => {
+    const schema = z.object({
+      apiKey: z.string().min(1),
+    })
+
+    const migrateFn = vi.fn(async (_ctx: MigrateContext, _old: unknown, _oldVer: string) => ({
+      apiKey: '', // Returns invalid settings after migration
+    }))
+
+    const plugin = makePlugin('migrate-validate-plugin', {
+      version: '2.0.0',
+      migrate: migrateFn,
+      settingsSchema: schema,
+    })
+
+    const registry = mockPluginRegistry({ 'migrate-validate-plugin': { version: '1.0.0' } })
+    const settingsMgr = mockSettingsManager({ 'migrate-validate-plugin': { apiKey: '' } })
+    ;(settingsMgr.validateSettings as ReturnType<typeof vi.fn>).mockImplementation(
+      (_name: string, settings: unknown, s?: z.ZodSchema) => {
+        if (!s) return { valid: true }
+        const result = s.safeParse(settings)
+        if (result.success) return { valid: true }
+        return {
+          valid: false,
+          errors: result.error.errors.map(
+            (e: { path: (string | number)[]; message: string }) => `${e.path.join('.')}: ${e.message}`,
+          ),
+        }
+      },
+    )
+
+    const mgr = new LifecycleManager({
+      pluginRegistry: registry,
+      settingsManager: settingsMgr,
+    })
+    await mgr.boot([plugin])
+
+    expect(migrateFn).toHaveBeenCalled()
+    expect(plugin.setup).not.toHaveBeenCalled()
+    expect(mgr.failedPlugins).toContain('migrate-validate-plugin')
   })
 })

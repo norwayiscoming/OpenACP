@@ -223,6 +223,17 @@ export class LifecycleManager {
         this.getPluginLogger(plugin.name).debug('No settingsManager, using legacy config')
       }
 
+      // Validate settings against schema if plugin provides one
+      if (plugin.settingsSchema && this.settingsManager) {
+        const validation = this.settingsManager.validateSettings(plugin.name, pluginConfig, plugin.settingsSchema)
+        if (!validation.valid) {
+          this._failed.add(plugin.name)
+          this.getPluginLogger(plugin.name).error(`Settings validation failed: ${validation.errors?.join('; ')}`)
+          this.eventBus?.emit('plugin:failed', { name: plugin.name, error: `Settings validation failed: ${validation.errors?.join('; ')}` })
+          continue
+        }
+      }
+
       // Create context for this plugin
       const ctx = createPluginContext({
         pluginName: plugin.name,

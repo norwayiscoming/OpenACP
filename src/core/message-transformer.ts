@@ -63,7 +63,7 @@ export class MessageTransformer {
           metadata: {
             tokensUsed: event.tokensUsed,
             contextSize: event.contextSize,
-            cost: event.cost,
+            cost: event.cost?.amount,
           },
         };
       case "session_end":

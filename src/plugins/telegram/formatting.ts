@@ -161,26 +161,17 @@ export function formatPlan(plan: {
 
 export function formatUsage(
   usage: { tokensUsed?: number; contextSize?: number; cost?: number },
-  verbosity: DisplayVerbosity = "medium",
+  _verbosity: DisplayVerbosity = "medium",
 ): string {
-  const { tokensUsed, contextSize, cost } = usage;
+  const { tokensUsed, contextSize } = usage;
   if (tokensUsed == null) return "📊 Usage data unavailable";
-
-  // medium: compact one-line
-  if (verbosity === "medium") {
-    const costStr = cost != null ? ` · $${cost.toFixed(2)}` : "";
-    return `📊 ${formatTokens(tokensUsed)} tokens${costStr}`;
-  }
-
-  // high: full progress bar + cost
   if (contextSize == null) return `📊 ${formatTokens(tokensUsed)} tokens`;
+
   const ratio = tokensUsed / contextSize;
   const pct = Math.round(ratio * 100);
   const bar = progressBar(ratio);
   const emoji = pct >= 85 ? "⚠️" : "📊";
-  let text = `${emoji} ${formatTokens(tokensUsed)} / ${formatTokens(contextSize)} tokens\n${bar} ${pct}%`;
-  if (cost != null) text += `\n💰 $${cost.toFixed(2)}`;
-  return text;
+  return `${emoji} ${formatTokens(tokensUsed)} / ${formatTokens(contextSize)} tokens\n${bar} ${pct}%`;
 }
 
 export function formatSummary(summary: string, sessionName?: string): string {
@@ -224,13 +215,13 @@ export function renderToolCard(snap: ToolCardSnapshot): string {
       const fileName = entry.viewerFilePath?.split("/").pop() ?? "";
       if (entry.viewerLinks.file)
         links.push(
-          `📄 <a href="${escapeHtml(entry.viewerLinks.file)}">View ${escapeHtml(fileName || "file")}</a>`,
+          `<a href="${escapeHtml(entry.viewerLinks.file)}">View ${escapeHtml(fileName || "file")}</a>`,
         );
       if (entry.viewerLinks.diff)
         links.push(
-          `📝 <a href="${escapeHtml(entry.viewerLinks.diff)}">View diff</a>`,
+          `<a href="${escapeHtml(entry.viewerLinks.diff)}">View diff</a>`,
         );
-      if (links.length > 0) line += `\n  ${links.join(" · ")}`;
+      if (links.length > 0) line += `\n    ${links.join(" · ")}`;
     }
     sections.push(line);
   }
@@ -261,11 +252,31 @@ export function renderToolCard(snap: ToolCardSnapshot): string {
     sections.push(`${entry.icon} ${escapeHtml(entry.label)}`);
   }
 
-  // Usage footer
-  if (snap.usage?.tokensUsed != null) {
-    if (sections.length > 0) sections.push("───");
-    sections.push(formatUsage(snap.usage, snap.verbosity));
-  }
+  return sections.join("\n\n");
+}
 
-  return sections.join("\n");
+const TELEGRAM_MAX_LENGTH = 4096;
+
+/**
+ * Split a tool card into multiple chunks at entry boundaries.
+ * Each chunk stays under the Telegram message length limit.
+ */
+export function splitToolCardText(text: string): string[] {
+  if (text.length <= TELEGRAM_MAX_LENGTH) return [text];
+
+  const sections = text.split("\n\n");
+  const chunks: string[] = [];
+  let current = "";
+
+  for (const section of sections) {
+    const candidate = current ? `${current}\n\n${section}` : section;
+    if (candidate.length > TELEGRAM_MAX_LENGTH && current) {
+      chunks.push(current);
+      current = section;
+    } else {
+      current = candidate;
+    }
+  }
+  if (current) chunks.push(current);
+  return chunks;
 }

@@ -175,8 +175,8 @@ export class OpenACPCore {
       /* best effort */
     }
 
-    // 2. Destroy all sessions
-    await this.sessionManager.destroyAll();
+    // 2. Persist session state (don't kill agents — they exit with parent)
+    await this.sessionManager.shutdownAll();
 
     // 3. Stop adapters
     for (const adapter of this.adapters.values()) {

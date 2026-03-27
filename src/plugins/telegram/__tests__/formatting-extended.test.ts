@@ -569,24 +569,27 @@ describe("formatUsage verbosity", () => {
       { tokensUsed: 5000, contextSize: 200000 },
       "medium",
     );
-    expect(result).toBe("📊 5k tokens");
+    expect(result).toContain("📊 5k / 200k tokens");
+    expect(result).toContain("3%");
   });
 
-  it("medium includes cost", () => {
+  it("medium shows progress bar without cost", () => {
     const result = formatUsage(
       { tokensUsed: 5000, contextSize: 200000, cost: 0.15 },
       "medium",
     );
-    expect(result).toContain("$0.15");
+    expect(result).toContain("5k / 200k tokens");
+    expect(result).not.toContain("$");
   });
 
-  it("high shows progress bar + cost", () => {
+  it("high shows same format as medium", () => {
     const result = formatUsage(
       { tokensUsed: 28000, contextSize: 200000, cost: 0.25 },
       "high",
     );
-    expect(result).toContain("▓");
-    expect(result).toContain("💰 $0.25");
+    expect(result).toContain("28k / 200k tokens");
+    expect(result).toContain("14%");
+    expect(result).not.toContain("$");
   });
 });
 
@@ -636,16 +639,16 @@ describe("renderToolCard", () => {
     expect(result).toContain("Step &lt;1&gt;");
   });
 
-  it("renders usage footer", () => {
+  it("does not render usage in tool card (usage is a separate message)", () => {
     const snap = makeSnapshot({
       entries: [makeEntry("t1")],
-      usage: { tokensUsed: 12500, cost: 0.05 },
+      usage: { tokensUsed: 12500, contextSize: 200000 },
       visibleCount: 1,
       totalVisible: 1,
       completedVisible: 1,
     });
     const result = renderToolCard(snap);
-    expect(result).toContain("📊");
-    expect(result).toContain("$0.05");
+    expect(result).not.toContain("📊");
+    expect(result).not.toContain("tokens");
   });
 });

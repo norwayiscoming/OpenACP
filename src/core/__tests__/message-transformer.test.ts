@@ -91,7 +91,7 @@ describe('MessageTransformer', () => {
     expect(result.metadata).toMatchObject({
       tokensUsed: 1000,
       contextSize: 50000,
-      cost: { amount: 0.05, currency: 'USD' },
+      cost: 0.05,
     })
   })
 

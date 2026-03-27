@@ -297,8 +297,8 @@ export async function startServer(opts?: StartServerOptions) {
         /* best effort */
       }
 
-      // 2. Destroy all sessions while plugins are still running
-      await core.sessionManager.destroyAll()
+      // 2. Persist session state (don't kill agent subprocesses — they exit with parent)
+      await core.sessionManager.shutdownAll()
 
       // 3. Lifecycle teardown stops all plugins (adapters, api-server, tunnel, etc.)
       await core.lifecycleManager.shutdown()

@@ -192,27 +192,11 @@ describe("ActivityTracker", () => {
     expect(api.deleteMessage).not.toHaveBeenCalled();
   });
 
-  it("sendUsage() sends standalone usage message when no tool content", async () => {
+  it("sendUsage() is a no-op (usage is sent as separate message by adapter)", async () => {
     await tracker.sendUsage({ tokensUsed: 1000, contextSize: 10000 });
     await flushMicrotasks();
-    expect(api.sendMessage).toHaveBeenCalledOnce();
-    const text = (api.sendMessage as ReturnType<typeof vi.fn>).mock
-      .calls[0][1] as string;
-    expect(text).toContain("📊");
-  });
-
-  it("sendUsage() appends usage when tool content exists", async () => {
-    await tracker.onToolCall(makeMeta(), "file_read", { path: "/tmp/foo" });
-    await flushMicrotasks();
-    const callCountBefore = (api.sendMessage as ReturnType<typeof vi.fn>).mock
-      .calls.length;
-    await tracker.sendUsage({ tokensUsed: 1000, contextSize: 10000 });
-    await flushMicrotasks();
-    // Should trigger a flush (send or edit)
-    const totalCalls =
-      (api.sendMessage as ReturnType<typeof vi.fn>).mock.calls.length +
-      (api.editMessageText as ReturnType<typeof vi.fn>).mock.calls.length;
-    expect(totalCalls).toBeGreaterThan(callCountBefore);
+    // sendUsage no longer triggers any Telegram API calls — adapter handles it
+    expect(api.sendMessage).not.toHaveBeenCalled();
   });
 
   it("onNewPrompt() resets state", async () => {
@@ -237,16 +221,13 @@ describe("ActivityTracker", () => {
     expect(api.deleteMessage).not.toHaveBeenCalled();
   });
 
-  it("getUsageMsgId() returns undefined when no tool content", () => {
-    expect(tracker.getUsageMsgId()).toBeUndefined();
+  it("getToolCardMsgId() returns undefined when no tool content", () => {
+    expect(tracker.getToolCardMsgId()).toBeUndefined();
   });
 
-  it("getUsageMsgId() returns msgId after tool call and usage", async () => {
+  it("getToolCardMsgId() returns msgId after tool call", async () => {
     await tracker.onToolCall(makeMeta(), "file_read", { path: "/tmp/foo" });
     await flushMicrotasks();
-    await tracker.sendUsage({ tokensUsed: 1000 });
-    await flushMicrotasks();
-    // msgId should be set from the first sendMessage call
-    expect(tracker.getUsageMsgId()).toBe(42);
+    expect(tracker.getToolCardMsgId()).toBe(42);
   });
 });

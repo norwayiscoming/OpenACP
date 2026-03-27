@@ -157,6 +157,26 @@ export class SessionManager {
     this.eventBus?.emit("session:deleted", { sessionId });
   }
 
+  /**
+   * Graceful shutdown: persist session state without killing agent subprocesses.
+   * Agent processes will exit naturally when the parent process terminates.
+   */
+  async shutdownAll(): Promise<void> {
+    if (this.store) {
+      for (const session of this.sessions.values()) {
+        const record = this.store.get(session.id);
+        if (record) {
+          await this.store.save({ ...record, status: "finished" });
+        }
+      }
+    }
+    this.sessions.clear();
+  }
+
+  /**
+   * Forcefully destroy all sessions (kill agent subprocesses).
+   * Use only when sessions must be fully torn down (e.g. archive).
+   */
   async destroyAll(): Promise<void> {
     if (this.store) {
       for (const session of this.sessions.values()) {

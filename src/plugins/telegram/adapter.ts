@@ -40,7 +40,7 @@ import {
   buildWelcomeMessage,
   type SpawnAssistantResult,
 } from "./assistant.js";
-import { escapeHtml } from "./formatting.js";
+import { escapeHtml, formatUsage } from "./formatting.js";
 import { ActivityTracker } from "./activity.js";
 import { SendQueue } from "../../core/adapter-primitives/primitives/send-queue.js";
 import { setupActionCallbacks } from "./action-detect.js";
@@ -977,8 +977,22 @@ export class TelegramAdapter extends MessagingAdapter {
     const threadId = this.getThreadId(sessionId);
     const meta = content.metadata as UsageMetadata | undefined;
     await this.draftManager.finalize(sessionId, this.assistantSession?.id);
-    const tracker = this.getOrCreateTracker(sessionId, threadId, verbosity);
-    await tracker.sendUsage(meta ?? {});
+
+    // Send usage as a separate message (not part of the tool card)
+    const usageText = formatUsage(meta ?? {}, verbosity);
+    let usageMsgId: number | undefined;
+    try {
+      const result = await this.sendQueue.enqueue(() =>
+        this.bot.api.sendMessage(this.telegramConfig.chatId, usageText, {
+          message_thread_id: threadId,
+          parse_mode: "HTML",
+          disable_notification: true,
+        }),
+      );
+      usageMsgId = result?.message_id;
+    } catch (err) {
+      log.warn({ err, sessionId }, "Failed to send usage message");
+    }
 
     // Notify the Notifications topic that a prompt has completed
     if (this.notificationTopicId && sessionId !== this.assistantSession?.id) {
@@ -988,7 +1002,6 @@ export class TelegramAdapter extends MessagingAdapter {
       const numericId = chatIdStr.startsWith("-100")
         ? chatIdStr.slice(4)
         : chatIdStr.replace("-", "");
-      const usageMsgId = tracker.getUsageMsgId();
       const deepLink = usageMsgId
         ? `https://t.me/c/${numericId}/${threadId}/${usageMsgId}`
         : `https://t.me/c/${numericId}/${threadId}`;

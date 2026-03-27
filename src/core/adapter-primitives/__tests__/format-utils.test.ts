@@ -25,9 +25,14 @@ describe("progressBar", () => {
 });
 
 describe("formatTokens", () => {
-  it("formats thousands with k suffix (rounded)", () => {
-    expect(formatTokens(12345)).toBe("12k");
+  it("formats thousands with k suffix (1 decimal)", () => {
+    expect(formatTokens(12345)).toBe("12.3k");
+    expect(formatTokens(12500)).toBe("12.5k");
     expect(formatTokens(28000)).toBe("28k");
+  });
+  it("formats millions with M suffix", () => {
+    expect(formatTokens(1000000)).toBe("1M");
+    expect(formatTokens(1500000)).toBe("1.5M");
   });
   it("formats small numbers without suffix", () => {
     expect(formatTokens(500)).toBe("500");

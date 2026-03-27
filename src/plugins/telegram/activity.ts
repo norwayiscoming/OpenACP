@@ -9,7 +9,7 @@ import type {
 import type { SendQueue } from "../../core/adapter-primitives/primitives/send-queue.js";
 import { ToolCardState } from "../../core/adapter-primitives/primitives/tool-card-state.js";
 import type { ToolCardSnapshot } from "../../core/adapter-primitives/primitives/tool-card-state.js";
-import { renderToolCard } from "./formatting.js";
+import { renderToolCard, splitToolCardText } from "./formatting.js";
 
 const log = createChildLogger({ module: "telegram:activity" });
 
@@ -110,6 +110,7 @@ export class ToolCard {
   private msgId?: number;
   private lastSentText?: string;
   private flushPromise: Promise<void> = Promise.resolve();
+  private overflowCount = 0;
 
   constructor(
     private api: Bot["api"],
@@ -171,26 +172,46 @@ export class ToolCard {
   }
 
   private async _sendOrEdit(snapshot: ToolCardSnapshot): Promise<void> {
-    const text = renderToolCard(snapshot);
-    if (!text) return;
-    if (this.msgId && text === this.lastSentText) return;
-    this.lastSentText = text;
+    const fullText = renderToolCard(snapshot);
+    if (!fullText) return;
+    if (this.msgId && fullText === this.lastSentText) return;
+    this.lastSentText = fullText;
+
+    const chunks = splitToolCardText(fullText);
+
     try {
+      // First chunk: edit existing message or send new
+      const firstChunk = chunks[0];
       if (this.msgId) {
         await this.sendQueue.enqueue(() =>
-          this.api.editMessageText(this.chatId, this.msgId!, text, {
+          this.api.editMessageText(this.chatId, this.msgId!, firstChunk, {
             parse_mode: "HTML",
           }),
         );
       } else {
         const result = await this.sendQueue.enqueue(() =>
-          this.api.sendMessage(this.chatId, text, {
+          this.api.sendMessage(this.chatId, firstChunk, {
             message_thread_id: this.threadId,
             parse_mode: "HTML",
             disable_notification: true,
           }),
         );
         if (result) this.msgId = result.message_id;
+      }
+
+      // Overflow chunks: always send as new messages
+      for (let i = 1; i < chunks.length; i++) {
+        // Only send overflow chunks that haven't been sent yet
+        if (i > this.overflowCount) {
+          await this.sendQueue.enqueue(() =>
+            this.api.sendMessage(this.chatId, chunks[i], {
+              message_thread_id: this.threadId,
+              parse_mode: "HTML",
+              disable_notification: true,
+            }),
+          );
+          this.overflowCount = i;
+        }
       }
     } catch (err) {
       log.warn({ err }, "[ToolCard] send/edit failed");
@@ -204,6 +225,7 @@ export class ActivityTracker {
   private isFirstEvent = true;
   private thinking: ThinkingIndicator;
   private toolCard: ToolCard;
+  private verbosity: DisplayVerbosity;
 
   constructor(
     private api: Bot["api"],
@@ -212,6 +234,7 @@ export class ActivityTracker {
     private sendQueue: SendQueue,
     verbosity: DisplayVerbosity = "medium",
   ) {
+    this.verbosity = verbosity;
     this.thinking = new ThinkingIndicator(api, chatId, threadId, sendQueue);
     this.toolCard = new ToolCard(api, chatId, threadId, sendQueue, verbosity);
   }
@@ -220,16 +243,31 @@ export class ActivityTracker {
     this.isFirstEvent = true;
     this.thinking.dismiss();
     this.thinking.reset();
+
+    // Finalize old tool card (flush pending state) and create a fresh one
+    // so the new prompt gets its own tool card message instead of editing the old one.
+    await this.toolCard.finalize();
+    this.toolCard = new ToolCard(
+      this.api,
+      this.chatId,
+      this.threadId,
+      this.sendQueue,
+      this.verbosity,
+    );
   }
 
   async onThought(): Promise<void> {
     this.isFirstEvent = false;
+    // If tool card has content, finalize it — thought interrupts the tool sequence
+    await this.sealToolCardIfNeeded();
     await this.thinking.show();
   }
 
   async onTextStart(): Promise<void> {
     this.isFirstEvent = false;
     this.thinking.dismiss();
+    // If tool card has content, finalize it — text interrupts the tool sequence
+    await this.sealToolCardIfNeeded();
   }
 
   async onToolCall(
@@ -241,6 +279,19 @@ export class ActivityTracker {
     this.thinking.dismiss();
     this.thinking.reset();
     this.toolCard.addTool(meta, kind, rawInput);
+  }
+
+  /** Finalize current tool card and create a fresh one (when interrupted by text/thought) */
+  private async sealToolCardIfNeeded(): Promise<void> {
+    if (!this.toolCard.hasContent()) return;
+    await this.toolCard.finalize();
+    this.toolCard = new ToolCard(
+      this.api,
+      this.chatId,
+      this.threadId,
+      this.sendQueue,
+      this.verbosity,
+    );
   }
 
   async onToolUpdate(
@@ -258,15 +309,16 @@ export class ActivityTracker {
     this.toolCard.updatePlan(entries);
   }
 
-  async sendUsage(usage: {
+  /** @deprecated Usage is now sent as a separate message by the adapter */
+  async sendUsage(_usage: {
     tokensUsed?: number;
     contextSize?: number;
     cost?: number;
   }): Promise<void> {
-    this.toolCard.appendUsage(usage);
+    // no-op — adapter sends usage as a standalone message
   }
 
-  getUsageMsgId(): number | undefined {
+  getToolCardMsgId(): number | undefined {
     return this.toolCard.getMsgId();
   }
 

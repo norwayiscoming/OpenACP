@@ -12,4 +12,4 @@ ui/node_modules/
 ui/dist/
 test/
 built-in-plugins/
-
+plugin-registry/

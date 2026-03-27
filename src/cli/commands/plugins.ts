@@ -53,6 +53,7 @@ export async function cmdPlugin(args: string[] = []): Promise<void> {
 
 \x1b[1mUsage:\x1b[0m
   openacp plugin list                    List all plugins with status
+  openacp plugin search <query>          Search the plugin registry
   openacp plugin add <package>           Install a plugin package
   openacp plugin install <package>       Alias for add
   openacp plugin remove <package>        Remove a plugin package
@@ -64,6 +65,7 @@ export async function cmdPlugin(args: string[] = []): Promise<void> {
 
 \x1b[1mExamples:\x1b[0m
   openacp plugin list
+  openacp plugin search telegram
   openacp plugin add @openacp/adapter-discord
   openacp plugin enable @openacp/adapter-discord
   openacp plugin configure @openacp/adapter-discord
@@ -75,6 +77,12 @@ export async function cmdPlugin(args: string[] = []): Promise<void> {
   switch (subcommand) {
     case 'list':
       return cmdPlugins(args.slice(1))
+
+    case 'search': {
+      const { cmdPluginSearch } = await import('./plugin-search.js')
+      await cmdPluginSearch(args.slice(2))
+      return
+    }
 
     case 'add':
     case 'install': {
@@ -190,8 +198,30 @@ async function configurePlugin(name: string): Promise<void> {
 
 async function installPlugin(pkg: string): Promise<void> {
   console.log(`Installing ${pkg}...`)
-  // TODO: npm install to ~/.openacp/plugins/node_modules/
-  // For now, check if it's a built-in plugin
+
+  // Try resolve from registry
+  const { RegistryClient } = await import('../../core/plugin/registry-client.js')
+  const client = new RegistryClient()
+  try {
+    const npmName = await client.resolve(pkg)
+    if (npmName) {
+      console.log(`Resolved from registry: ${pkg} → ${npmName}`)
+      pkg = npmName  // use resolved npm name
+    }
+  } catch {
+    // Registry unavailable, continue with original name
+  }
+
+  // Check if plugin is verified
+  try {
+    const registry = await client.getRegistry()
+    const regPlugin = registry.plugins.find(p => p.npm === pkg || p.name === pkg)
+    if (regPlugin && !regPlugin.verified) {
+      console.log('⚠️  This plugin is not verified by the OpenACP team.')
+    }
+  } catch { /* ignore */ }
+
+  // Check if it's a built-in plugin
   const { corePlugins } = await import('../../plugins/core-plugins.js')
   const plugin = corePlugins.find(p => p.name === pkg)
 

@@ -4,7 +4,7 @@
 
 **Goal:** Extract the Discord adapter from OpenACP's built-in plugins into a standalone npm package `@openacp/adapter-discord`.
 
-**Architecture:** Copy all 29 files from `src/plugins/discord/` to the standalone repo at `/Users/lab3/Documents/lab3/discord-plugin/`. Extend `@openacp/plugin-sdk` to re-export all symbols the Discord plugin needs. Replace all `../../core/` imports with `@openacp/plugin-sdk`. Remove Discord from OpenACP's built-in plugins.
+**Architecture:** Copy all 29 files from `src/plugins/discord/` to the standalone repo at `../discord-plugin/`. Extend `@openacp/plugin-sdk` to re-export all symbols the Discord plugin needs. Replace all `../../core/` imports with `@openacp/plugin-sdk`. Remove Discord from OpenACP's built-in plugins.
 
 **Tech Stack:** TypeScript, ESM, vitest, discord.js ^14.x, @openacp/plugin-sdk
 
@@ -223,10 +223,10 @@ git commit -m "fix(plugin): add @openacp/adapter-discord migration alias for bac
 ### Task 4: Set up standalone discord-plugin project
 
 **Files:**
-- Create: `/Users/lab3/Documents/lab3/discord-plugin/package.json`
-- Create: `/Users/lab3/Documents/lab3/discord-plugin/tsconfig.json`
-- Create: `/Users/lab3/Documents/lab3/discord-plugin/.gitignore`
-- Create: `/Users/lab3/Documents/lab3/discord-plugin/.npmignore`
+- Create: `../discord-plugin/package.json`
+- Create: `../discord-plugin/tsconfig.json`
+- Create: `../discord-plugin/.gitignore`
+- Create: `../discord-plugin/.npmignore`
 
 - [ ] **Step 1: Create package.json**
 
@@ -313,7 +313,7 @@ __tests__/
 - [ ] **Step 5: Commit**
 
 ```bash
-cd /Users/lab3/Documents/lab3/discord-plugin
+cd ../discord-plugin
 git add package.json tsconfig.json .gitignore .npmignore
 git commit -m "chore: add project scaffolding (package.json, tsconfig, gitignore)"
 ```
@@ -331,7 +331,7 @@ Copy all source files from `src/plugins/discord/` to the standalone repo and rep
 
 ```bash
 # From OpenACP repo
-cp -r src/plugins/discord/* /Users/lab3/Documents/lab3/discord-plugin/src/
+cp -r src/plugins/discord/* ../discord-plugin/src/
 ```
 
 This copies: `index.ts`, `adapter.ts`, `renderer.ts`, `formatting.ts`, `streaming.ts`, `draft-manager.ts`, `tool-call-tracker.ts`, `skill-command-manager.ts`, `activity.ts`, `permissions.ts`, `forums.ts`, `assistant.ts`, `action-detect.ts`, `media.ts`, `types.ts`, `validators.ts`, `commands/` (10 files), `__tests__/` (3 files).
@@ -482,7 +482,7 @@ import type { PlanEntry } from '@openacp/plugin-sdk'
 - [ ] **Step 8: Commit**
 
 ```bash
-cd /Users/lab3/Documents/lab3/discord-plugin
+cd ../discord-plugin
 git add src/
 git commit -m "feat: copy Discord plugin source and refactor imports to @openacp/plugin-sdk"
 ```
@@ -492,21 +492,21 @@ git commit -m "feat: copy Discord plugin source and refactor imports to @openacp
 ### Task 6: Install dependencies and verify build
 
 **Files:**
-- Working in: `/Users/lab3/Documents/lab3/discord-plugin/`
+- Working in: `../discord-plugin/`
 
 - [ ] **Step 1: Install dependencies**
 
 ```bash
-cd /Users/lab3/Documents/lab3/discord-plugin
+cd ../discord-plugin
 npm install
 ```
 
 Note: `@openacp/plugin-sdk` and `@openacp/cli` will need to be linked locally since they're not published yet with the new exports. Use:
 
 ```bash
-cd /Users/lab3/Documents/lab3/OpenACP/packages/plugin-sdk && npm link
-cd /Users/lab3/Documents/lab3/OpenACP && npm link
-cd /Users/lab3/Documents/lab3/discord-plugin && npm link @openacp/plugin-sdk @openacp/cli
+cd ./packages/plugin-sdk && npm link
+cd . && npm link
+cd ../discord-plugin && npm link @openacp/plugin-sdk @openacp/cli
 ```
 
 - [ ] **Step 2: Build**
@@ -589,7 +589,7 @@ git commit -m "feat: remove built-in Discord plugin (now available as @openacp/a
 ### Task 8: Update README in discord-plugin repo
 
 **Files:**
-- Modify: `/Users/lab3/Documents/lab3/discord-plugin/README.md`
+- Modify: `../discord-plugin/README.md`
 
 - [ ] **Step 1: Write README**
 
@@ -629,7 +629,7 @@ After installing the plugin, run `openacp plugin configure @openacp/adapter-disc
 - [ ] **Step 2: Commit**
 
 ```bash
-cd /Users/lab3/Documents/lab3/discord-plugin
+cd ../discord-plugin
 git add README.md
 git commit -m "docs: add README with installation and development instructions"
 ```
@@ -641,13 +641,13 @@ git commit -m "docs: add README with installation and development instructions"
 - [ ] **Step 1: Push discord-plugin**
 
 ```bash
-cd /Users/lab3/Documents/lab3/discord-plugin
+cd ../discord-plugin
 git push origin main
 ```
 
 - [ ] **Step 2: Push OpenACP changes**
 
 ```bash
-cd /Users/lab3/Documents/lab3/OpenACP
+cd .
 git push origin redesign/microkernel-plugin-architecture
 ```

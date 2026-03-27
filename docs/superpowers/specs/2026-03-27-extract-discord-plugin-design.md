@@ -10,7 +10,7 @@ Extract `src/plugins/discord/` from the OpenACP monorepo into a standalone packa
 
 ## Target Repository
 
-`/Users/lab3/Documents/lab3/discord-plugin/` → published as `@openacp/adapter-discord` on npm.
+`discord-plugin/` → published as `@openacp/adapter-discord` on npm.
 
 **Note on naming:** The current built-in plugin is named `@openacp/discord`. The extracted plugin will be renamed to `@openacp/adapter-discord`. The legacy migration map in `lifecycle-manager.ts` (`'@openacp/discord': 'channels.discord'`) must be updated to also match the new name to preserve backward compatibility for config migration.
 

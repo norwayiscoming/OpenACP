@@ -37,7 +37,7 @@
 
 Run:
 ```bash
-cd /Users/lab3/Documents/lab3/OpenACP && pnpm add -D vitest --filter @openacp/core
+cd . && pnpm add -D vitest --filter @openacp/core
 ```
 
 - [ ] **Step 2: Create vitest config**
@@ -67,7 +67,7 @@ In `packages/core/package.json`, add to `"scripts"`:
 
 Run:
 ```bash
-cd /Users/lab3/Documents/lab3/OpenACP && pnpm --filter @openacp/core test
+cd . && pnpm --filter @openacp/core test
 ```
 Expected: exits with "No test files found" or similar (no error).
 
@@ -198,7 +198,7 @@ describe('ConfigManager new methods', () => {
 
 Run:
 ```bash
-cd /Users/lab3/Documents/lab3/OpenACP && pnpm --filter @openacp/core test
+cd . && pnpm --filter @openacp/core test
 ```
 Expected: FAIL — `exists`, `getConfigPath`, `writeNew` are not defined on `ConfigManager`.
 
@@ -226,7 +226,7 @@ In `packages/core/src/config.ts`, add these methods to the `ConfigManager` class
 
 Run:
 ```bash
-cd /Users/lab3/Documents/lab3/OpenACP && pnpm --filter @openacp/core test
+cd . && pnpm --filter @openacp/core test
 ```
 Expected: All 5 tests PASS.
 
@@ -248,14 +248,14 @@ git commit -m "feat: add exists(), getConfigPath(), writeNew() to ConfigManager"
 
 Run:
 ```bash
-cd /Users/lab3/Documents/lab3/OpenACP && pnpm add @inquirer/prompts --filter @openacp/core
+cd . && pnpm add @inquirer/prompts --filter @openacp/core
 ```
 
 - [ ] **Step 2: Verify it installed**
 
 Run:
 ```bash
-cd /Users/lab3/Documents/lab3/OpenACP && node -e "import('@inquirer/prompts').then(() => console.log('OK'))"
+cd . && node -e "import('@inquirer/prompts').then(() => console.log('OK'))"
 ```
 Expected: `OK`
 
@@ -418,7 +418,7 @@ describe('validateAgentCommand', () => {
 
 Run:
 ```bash
-cd /Users/lab3/Documents/lab3/OpenACP && pnpm --filter @openacp/core test
+cd . && pnpm --filter @openacp/core test
 ```
 Expected: FAIL — `setup.js` does not exist yet.
 
@@ -509,7 +509,7 @@ export async function validateAgentCommand(command: string): Promise<boolean> {
 
 Run:
 ```bash
-cd /Users/lab3/Documents/lab3/OpenACP && pnpm --filter @openacp/core test
+cd . && pnpm --filter @openacp/core test
 ```
 Expected: All validation tests PASS.
 
@@ -761,7 +761,7 @@ export async function setupSecurity(): Promise<Config['security']> {
 
 Run:
 ```bash
-cd /Users/lab3/Documents/lab3/OpenACP && pnpm --filter @openacp/core build
+cd . && pnpm --filter @openacp/core build
 ```
 Expected: no type errors.
 
@@ -873,7 +873,7 @@ export async function runSetup(configManager: ConfigManager): Promise<boolean> {
 
 Run:
 ```bash
-cd /Users/lab3/Documents/lab3/OpenACP && pnpm --filter @openacp/core build
+cd . && pnpm --filter @openacp/core build
 ```
 Expected: no type errors.
 
@@ -932,7 +932,7 @@ Note: Also change `configManager['configPath']` to `configManager.getConfigPath(
 
 Run:
 ```bash
-cd /Users/lab3/Documents/lab3/OpenACP && pnpm --filter @openacp/core build
+cd . && pnpm --filter @openacp/core build
 ```
 Expected: no type errors.
 
@@ -1101,7 +1101,7 @@ describe('runSetup integration', () => {
 
 Run:
 ```bash
-cd /Users/lab3/Documents/lab3/OpenACP && pnpm --filter @openacp/core test
+cd . && pnpm --filter @openacp/core test
 ```
 Expected: All tests PASS including the integration tests.
 
@@ -1122,7 +1122,7 @@ This task verifies the full flow works by temporarily moving any existing config
 
 Run:
 ```bash
-cd /Users/lab3/Documents/lab3/OpenACP && pnpm build
+cd . && pnpm build
 ```
 
 - [ ] **Step 2: Backup existing config if present**
@@ -1136,7 +1136,7 @@ Run:
 
 Run:
 ```bash
-cd /Users/lab3/Documents/lab3/OpenACP && node packages/core/dist/main.js
+cd . && node packages/core/dist/main.js
 ```
 
 Expected: Welcome banner appears, setup wizard starts with Telegram token prompt.
@@ -1163,6 +1163,6 @@ Run:
 
 Run:
 ```bash
-cd /Users/lab3/Documents/lab3/OpenACP && pnpm --filter @openacp/core test
+cd . && pnpm --filter @openacp/core test
 ```
 Expected: All tests pass.

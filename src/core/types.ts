@@ -252,11 +252,6 @@ export interface UsageRecordEvent {
 }
 
 
-export interface DiscordPlatformData {
-  threadId: string;
-  skillMsgId?: string;
-}
-
 // --- ACP Protocol Types (Phase 2) ---
 
 // Session Modes

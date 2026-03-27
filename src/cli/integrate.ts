@@ -146,11 +146,10 @@ ${sidVar} and ${cwdVar}, then run:
 bash ${hooksDir}openacp-handoff.sh <${sidVar}> <${cwdVar}> <args if any>
 
 Usage: /openacp:handoff [channel]
-  channel: telegram, discord, or omit for default adapter
+  channel: name of a registered adapter (e.g. telegram), or omit for default
 
 Examples:
   /openacp:handoff
-  /openacp:handoff discord
   /openacp:handoff telegram
 `;
 }

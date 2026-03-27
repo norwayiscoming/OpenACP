@@ -54,7 +54,7 @@ export { PRODUCT_GUIDE } from '@openacp/cli'
 export type {
   Attachment, PlanEntry, StopReason, SessionStatus, ConfigOption,
   UsageRecord, InstallProgress,
-  DiscordPlatformData, TelegramPlatformData,
+  TelegramPlatformData,
 } from '@openacp/cli'
 
 // --- Re-exports from sub-paths for convenience (prefer direct sub-path imports) ---

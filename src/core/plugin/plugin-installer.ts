@@ -1,6 +1,6 @@
 import { exec } from 'node:child_process'
 import { promisify } from 'node:util'
-import { createRequire } from 'node:module'
+import * as fs from 'node:fs'
 import * as os from 'node:os'
 import * as path from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -9,12 +9,26 @@ const execAsync = promisify(exec)
 
 /**
  * Import a package resolved from a specific directory (not the project root).
- * Uses createRequire to resolve from the pluginsDir/node_modules.
+ * Reads the package's package.json to find the ESM entry point, then imports by file path.
  */
-export function importFromDir(packageName: string, dir: string): Promise<any> {
-  const require = createRequire(path.join(dir, 'node_modules', '_placeholder.js'))
-  const resolved = require.resolve(packageName)
-  return import(pathToFileURL(resolved).href)
+export async function importFromDir(packageName: string, dir: string): Promise<any> {
+  const pkgDir = path.join(dir, 'node_modules', ...packageName.split('/'))
+  const pkgJsonPath = path.join(pkgDir, 'package.json')
+  const pkgJson = JSON.parse(fs.readFileSync(pkgJsonPath, 'utf-8'))
+
+  // Resolve entry: exports["."].import > main > index.js
+  let entry: string
+  const exportsMain = pkgJson.exports?.['.']
+  if (typeof exportsMain === 'string') {
+    entry = exportsMain
+  } else if (exportsMain?.import) {
+    entry = exportsMain.import
+  } else {
+    entry = pkgJson.main ?? 'index.js'
+  }
+
+  const entryPath = path.join(pkgDir, entry)
+  return import(pathToFileURL(entryPath).href)
 }
 
 /**

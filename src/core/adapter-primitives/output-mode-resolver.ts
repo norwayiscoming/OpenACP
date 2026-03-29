@@ -9,6 +9,11 @@ interface SessionManagerLike {
   getSession(id: string): { record?: { outputMode?: OutputMode } } | undefined;
 }
 
+const VALID_MODES = new Set<string>(["low", "medium", "high"]);
+function toOutputMode(v: unknown): OutputMode | undefined {
+  return typeof v === "string" && VALID_MODES.has(v) ? (v as OutputMode) : undefined;
+}
+
 export class OutputModeResolver {
   resolve(
     configManager: ConfigManagerLike,
@@ -18,11 +23,12 @@ export class OutputModeResolver {
   ): OutputMode {
     const config = configManager.get();
     // 1. Global default
-    let mode: OutputMode = (config.outputMode as OutputMode | undefined) ?? "medium";
+    let mode: OutputMode = toOutputMode(config.outputMode) ?? "medium";
     // 2. Per-adapter override
     const channels = config.channels as Record<string, unknown> | undefined;
     const channelCfg = channels?.[adapterName] as Record<string, unknown> | undefined;
-    if (channelCfg?.outputMode) mode = channelCfg.outputMode as OutputMode;
+    const adapterMode = toOutputMode(channelCfg?.outputMode);
+    if (adapterMode) mode = adapterMode;
     // 3. Per-session override (most specific)
     if (sessionId && sessionManager) {
       const session = sessionManager.getSession(sessionId);

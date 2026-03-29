@@ -42,6 +42,16 @@ describe("OutputModeResolver", () => {
     expect(result).toBe("high");
   });
 
+  it("skips session override when sessionManager not provided", () => {
+    const result = resolver.resolve(
+      makeConfig("low", "medium"),
+      "telegram",
+      "sess1",
+      undefined, // no sessionManager
+    );
+    expect(result).toBe("medium");
+  });
+
   it("skips session override when sessionId not provided", () => {
     const result = resolver.resolve(
       makeConfig("low", "medium"),

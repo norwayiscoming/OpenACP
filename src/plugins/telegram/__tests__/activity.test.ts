@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { ThinkingIndicator, ToolCard, ActivityTracker } from "../activity.js";
 import type { SendQueue } from "../../../core/adapter-primitives/primitives/send-queue.js";
 import type { ToolCallMeta } from "../../../core/adapter-primitives/format-types.js";
+import type { ToolDisplaySpec } from "../../../core/adapter-primitives/display-spec-builder.js";
 
 // Flush the microtask queue multiple times to let promise chains resolve
 async function flushMicrotasks(ticks = 5): Promise<void> {
@@ -37,6 +38,23 @@ function makeMeta(overrides: Partial<ToolCallMeta> = {}): ToolCallMeta {
   };
 }
 
+function makeSpec(overrides: Partial<ToolDisplaySpec> = {}): ToolDisplaySpec {
+  return {
+    id: "tool-1",
+    icon: "📄",
+    title: "read_file",
+    description: null,
+    command: null,
+    outputSummary: null,
+    outputContent: null,
+    diffStats: null,
+    status: "running",
+    isNoise: false,
+    isHidden: false,
+    ...overrides,
+  };
+}
+
 describe("ThinkingIndicator", () => {
   let api: ReturnType<typeof makeMockApi>;
   let queue: SendQueue;
@@ -48,35 +66,39 @@ describe("ThinkingIndicator", () => {
     indicator = new ThinkingIndicator(api as never, 100, 200, queue);
   });
 
-  it("sends thinking message on first show()", async () => {
+  afterEach(() => {
+    void indicator.dismiss();
+  });
+
+  it("show() sends a thinking message", async () => {
     await indicator.show();
-    expect(api.sendMessage).toHaveBeenCalledOnce();
     expect(api.sendMessage).toHaveBeenCalledWith(
       100,
       "💭 <i>Thinking...</i>",
-      expect.objectContaining({ message_thread_id: 200 }),
+      expect.objectContaining({ message_thread_id: 200, parse_mode: "HTML" }),
     );
   });
 
-  it("does not send again on subsequent show() calls", async () => {
-    await indicator.show();
+  it("show() called twice only sends one message", async () => {
     await indicator.show();
     await indicator.show();
     expect(api.sendMessage).toHaveBeenCalledOnce();
   });
 
-  it("dismiss() leaves message in chat (no deleteMessage to save API calls)", async () => {
+  it("dismiss() after show stops refresh and leaves message in chat", async () => {
     await indicator.show();
     await indicator.dismiss();
     expect(api.deleteMessage).not.toHaveBeenCalled();
   });
 
-  it("dismiss() is safe when no message was sent", async () => {
+  it("dismiss() called twice is idempotent", async () => {
+    await indicator.show();
     await indicator.dismiss();
-    expect(api.deleteMessage).not.toHaveBeenCalled();
+    await indicator.dismiss();
+    expect(api.sendMessage).toHaveBeenCalledOnce();
   });
 
-  it("show() works again after dismiss() + reset()", async () => {
+  it("reset() allows show() to work again after dismiss", async () => {
     await indicator.show();
     await indicator.dismiss();
     indicator.reset();
@@ -84,17 +106,9 @@ describe("ThinkingIndicator", () => {
     expect(api.sendMessage).toHaveBeenCalledTimes(2);
   });
 
-  it("show() is blocked after dismiss() without reset()", async () => {
-    await indicator.show();
-    await indicator.dismiss();
-    await indicator.show();
-    expect(api.sendMessage).toHaveBeenCalledOnce();
-  });
-
-  it("show() leaves just-sent message if dismissed during queue wait", async () => {
-    // Simulate a slow queue: enqueue holds the promise until we resolve it
-    let resolveEnqueue!: (val: unknown) => void;
-    const slowQueue = {
+  it("show() while dismissed (race: dismiss during queue wait) does not set msgId", async () => {
+    let resolveEnqueue!: (v: unknown) => void;
+    const slowQueue: SendQueue = {
       enqueue: vi.fn(
         (fn: () => Promise<unknown>) =>
           new Promise((resolve) => {
@@ -131,7 +145,7 @@ describe("ToolCard", () => {
   beforeEach(() => {
     api = makeMockApi();
     queue = makeMockQueue();
-    card = new ToolCard(api as never, 100, 200, queue, "medium");
+    card = new ToolCard(api as never, 100, 200, queue);
     vi.useFakeTimers();
   });
 
@@ -140,32 +154,32 @@ describe("ToolCard", () => {
     card.destroy();
   });
 
-  it("hasContent() returns false before any tool added", () => {
+  it("hasContent() returns false before any spec added", () => {
     expect(card.hasContent()).toBe(false);
   });
 
-  it("hasContent() returns true after addTool()", async () => {
-    card.addTool(makeMeta(), "file_read", { path: "/tmp/foo" });
+  it("hasContent() returns true after updateFromSpec()", async () => {
+    card.updateFromSpec(makeSpec());
     await flushMicrotasks();
     expect(card.hasContent()).toBe(true);
   });
 
-  it("sends message on addTool() (immediate first flush)", async () => {
-    card.addTool(makeMeta(), "file_read", { path: "/tmp/foo" });
+  it("sends message on updateFromSpec() (immediate first flush)", async () => {
+    card.updateFromSpec(makeSpec());
     await flushMicrotasks();
     expect(api.sendMessage).toHaveBeenCalledOnce();
   });
 
   it("getMsgId() returns the message id after first send", async () => {
-    card.addTool(makeMeta(), "file_read", { path: "/tmp/foo" });
+    card.updateFromSpec(makeSpec());
     await flushMicrotasks();
     expect(card.getMsgId()).toBe(42);
   });
 
   it("finalize() flushes pending state", async () => {
-    card.addTool(makeMeta(), "file_read", { path: "/tmp/foo" });
+    card.updateFromSpec(makeSpec());
     await flushMicrotasks();
-    card.updateTool("tool-1", "completed");
+    card.updateFromSpec(makeSpec({ status: "completed" }));
     // Debounce not fired yet
     expect(api.editMessageText).not.toHaveBeenCalled();
     await card.finalize();
@@ -173,9 +187,9 @@ describe("ToolCard", () => {
   });
 
   it("destroy() cancels pending debounce", async () => {
-    card.addTool(makeMeta(), "file_read", { path: "/tmp/foo" });
+    card.updateFromSpec(makeSpec());
     await flushMicrotasks();
-    card.updateTool("tool-1", "completed");
+    card.updateFromSpec(makeSpec({ status: "completed" }));
     card.destroy();
     await vi.advanceTimersByTimeAsync(1000);
     // Should not have edited after destroy
@@ -201,7 +215,7 @@ describe("ActivityTracker", () => {
   });
 
   it("onThought() shows thinking indicator", async () => {
-    await tracker.onThought();
+    await tracker.onThought("thinking...");
     expect(api.sendMessage).toHaveBeenCalledWith(
       100,
       "💭 <i>Thinking...</i>",
@@ -210,20 +224,20 @@ describe("ActivityTracker", () => {
   });
 
   it("onThought() called multiple times only sends one message", async () => {
-    await tracker.onThought();
-    await tracker.onThought();
-    await tracker.onThought();
+    await tracker.onThought("a");
+    await tracker.onThought("b");
+    await tracker.onThought("c");
     expect(api.sendMessage).toHaveBeenCalledOnce();
   });
 
   it("onToolCall() dismisses thinking (no delete)", async () => {
-    await tracker.onThought();
+    await tracker.onThought("thinking...");
     await tracker.onToolCall(makeMeta(), "file_read", { path: "/tmp/foo" });
     expect(api.deleteMessage).not.toHaveBeenCalled();
   });
 
   it("onTextStart() dismisses thinking (no delete)", async () => {
-    await tracker.onThought();
+    await tracker.onThought("thinking...");
     await tracker.onTextStart();
     expect(api.deleteMessage).not.toHaveBeenCalled();
   });
@@ -236,13 +250,13 @@ describe("ActivityTracker", () => {
   });
 
   it("onNewPrompt() dismisses thinking (no delete)", async () => {
-    await tracker.onThought();
+    await tracker.onThought("thinking...");
     await tracker.onNewPrompt();
     expect(api.deleteMessage).not.toHaveBeenCalled();
   });
 
   it("cleanup() finalizes toolCard and dismisses thinking", async () => {
-    await tracker.onThought();
+    await tracker.onThought("thinking...");
     await tracker.onToolCall(makeMeta(), "file_read", { path: "/tmp/foo" });
     await flushMicrotasks();
     await tracker.cleanup();
@@ -251,7 +265,7 @@ describe("ActivityTracker", () => {
   });
 
   it("onNewPrompt() dismisses thinking (message left in chat)", async () => {
-    await tracker.onThought();
+    await tracker.onThought("thinking...");
     expect(api.sendMessage).toHaveBeenCalledOnce();
     await tracker.onNewPrompt();
     expect(api.deleteMessage).not.toHaveBeenCalled();

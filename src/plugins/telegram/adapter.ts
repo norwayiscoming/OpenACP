@@ -907,13 +907,13 @@ export class TelegramAdapter extends MessagingAdapter {
 
   protected async handleThought(
     sessionId: string,
-    _content: OutgoingMessage,
+    content: OutgoingMessage,
     _verbosity: DisplayVerbosity,
   ): Promise<void> {
     this.getTracer(sessionId)?.log("telegram", { action: "handle:thought", sessionId });
     const threadId = this.getThreadId(sessionId);
     const tracker = this.getOrCreateTracker(sessionId, threadId);
-    await tracker.onThought();
+    await tracker.onThought(content.text);
   }
 
   protected async handleText(

@@ -5,7 +5,7 @@ import type { CommandsAssistantContext } from "../types.js";
 // Domain modules
 import { handleNew, handleNewChat, setupNewSessionCallbacks, createSessionDirect } from './new-session.js'
 import { handleCancel, handleStatus, handleTopics, handleArchive, handleArchiveConfirm, setupSessionCallbacks } from './session.js'
-import { handleEnableDangerous, handleDisableDangerous, handleUpdate, handleRestart, handleTTS, handleVerbosity } from './admin.js'
+import { handleEnableDangerous, handleDisableDangerous, handleUpdate, handleRestart, handleTTS, handleVerbosity, handleOutputMode } from './admin.js'
 import { handleMenu, handleHelp, handleClear, buildMenuKeyboard } from './menu.js'
 import { handleAgents, handleInstall, handleAgentCallback } from "./agents.js";
 import { handleIntegrate } from "./integrate.js";
@@ -45,6 +45,7 @@ export function setupCommands(
   bot.command("archive", (ctx) => handleArchive(ctx, core));
   bot.command("text_to_speech", (ctx) => handleTTS(ctx, core));
   bot.command("verbosity", (ctx) => handleVerbosity(ctx, core));
+  bot.command("outputmode", (ctx) => handleOutputMode(ctx, core));
   bot.command("resume", (ctx) => handleResume(ctx, core, chatId, assistant));
 }
 
@@ -154,6 +155,7 @@ export {
   buildSessionControlKeyboard,
   handleTTS,
   handleVerbosity,
+  handleOutputMode,
 } from "./admin.js";
 export { setupIntegrateCallbacks } from "./integrate.js";
 export { setupSettingsCallbacks } from "./settings.js";
@@ -189,5 +191,6 @@ export const STATIC_COMMANDS = [
   { command: 'archive', description: 'Archive session topic (recreate with clean history)' },
   { command: 'text_to_speech', description: 'Toggle Text to Speech (/text_to_speech on, /text_to_speech off)' },
   { command: 'verbosity', description: 'Set display verbosity (/verbosity low|medium|high)' },
+  { command: "outputmode", description: "Control output display level (low/medium/high)" },
   { command: 'resume', description: 'Resume with conversation history from Entire checkpoints' },
 ];

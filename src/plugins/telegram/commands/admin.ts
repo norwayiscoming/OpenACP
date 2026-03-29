@@ -332,39 +332,93 @@ export async function handleTTS(
   }
 }
 
-// ─── Verbosity ─────────────────────────────────────────────────────────────
-
-const VERBOSITY_LABELS: Record<string, string> = {
-  low: "🔇 Low",
-  medium: "📊 Medium",
-  high: "📖 High",
-};
+// ─── Verbosity (deprecated alias) ──────────────────────────────────────────
 
 export async function handleVerbosity(
   ctx: Context,
   core: OpenACPCore,
 ): Promise<void> {
-  const args = ctx.message?.text?.split(/\s+/).slice(1) ?? [];
-  const arg = args[0]?.toLowerCase();
+  // Deprecated — alias for /outputmode
+  await ctx.reply("⚠️ <code>/verbosity</code> is deprecated. Use <code>/outputmode</code> instead.", { parse_mode: "HTML" });
+  await handleOutputMode(ctx, core);
+}
 
-  if (arg === "low" || arg === "medium" || arg === "high") {
+// ─── Output Mode ────────────────────────────────────────────────────────────
+
+const OUTPUT_MODE_LABELS: Record<string, string> = {
+  low: "🔇 Low",
+  medium: "📊 Medium",
+  high: "🔍 High",
+};
+
+export async function handleOutputMode(
+  ctx: Context,
+  core: OpenACPCore,
+): Promise<void> {
+  const args = ctx.message?.text?.split(/\s+/).slice(1) ?? [];
+  const arg0 = args[0]?.toLowerCase();
+  const arg1 = args[1]?.toLowerCase();
+
+  // /outputmode session [low|medium|high|reset]
+  if (arg0 === "session") {
+    const chatId = ctx.chat?.id;
+    const threadId = ctx.message?.message_thread_id;
+    if (!chatId || threadId === undefined) {
+      await ctx.reply("⚠️ This command must be used in a session topic.", { parse_mode: "HTML" });
+      return;
+    }
+
+    const session = core.sessionManager.getSessionByThread(
+      "telegram",
+      String(threadId),
+    );
+
+    if (!session) {
+      await ctx.reply("⚠️ No active session found for this topic.", { parse_mode: "HTML" });
+      return;
+    }
+
+    if (arg1 === "reset") {
+      await core.sessionManager.patchRecord(session.id, { outputMode: undefined });
+      await ctx.reply("🔄 Session output mode reset to adapter default.", { parse_mode: "HTML" });
+    } else if (arg1 === "low" || arg1 === "medium" || arg1 === "high") {
+      await core.sessionManager.patchRecord(session.id, { outputMode: arg1 });
+      await ctx.reply(
+        `${OUTPUT_MODE_LABELS[arg1]} Session output mode set to <b>${arg1}</b>.`,
+        { parse_mode: "HTML" },
+      );
+    } else {
+      const record = core.sessionManager.getSessionRecord(session.id);
+      const current = record?.outputMode ?? "(adapter default)";
+      await ctx.reply(
+        `📊 Session output mode: <b>${current}</b>\n\nUsage: <code>/outputmode session low|medium|high|reset</code>`,
+        { parse_mode: "HTML" },
+      );
+    }
+    return;
+  }
+
+  // /outputmode [low|medium|high] — adapter-level
+  if (arg0 === "low" || arg0 === "medium" || arg0 === "high") {
     await core.configManager.save(
-      { channels: { telegram: { displayVerbosity: arg } } },
-      "channels.telegram.displayVerbosity",
+      { channels: { telegram: { outputMode: arg0 } } },
+      "channels.telegram.outputMode",
     );
     await ctx.reply(
-      `${VERBOSITY_LABELS[arg]} Display verbosity set to <b>${arg}</b>.`,
+      `${OUTPUT_MODE_LABELS[arg0]} Output mode set to <b>${arg0}</b>.`,
       { parse_mode: "HTML" },
     );
   } else {
     const current =
-      (
-        core.configManager.get().channels?.telegram as
-          | Record<string, unknown>
-          | undefined
-      )?.displayVerbosity ?? "medium";
+      (core.configManager.get().channels?.telegram as Record<string, unknown> | undefined)
+        ?.outputMode ?? "medium";
     await ctx.reply(
-      `📊 Current verbosity: <b>${current}</b>\n\nUsage: <code>/verbosity low|medium|high</code>\n\n• <b>low</b> — minimal output, title only\n• <b>medium</b> — balanced (default)\n• <b>high</b> — full detail with content`,
+      `📊 Current output mode: <b>${current}</b>\n\n` +
+        `Usage: <code>/outputmode low|medium|high</code>\n` +
+        `Session override: <code>/outputmode session low|medium|high|reset</code>\n\n` +
+        `• <b>low</b> — minimal: title only\n` +
+        `• <b>medium</b> — balanced: description + output summary (default)\n` +
+        `• <b>high</b> — full detail: inline output, IN/OUT blocks`,
       { parse_mode: "HTML" },
     );
   }
@@ -382,7 +436,7 @@ export function setupVerbosityCallbacks(bot: Bot, core: OpenACPCore): void {
 
     try {
       await ctx.answerCallbackQuery({
-        text: `${VERBOSITY_LABELS[level]} Verbosity: ${level}`,
+        text: `${OUTPUT_MODE_LABELS[level]} Verbosity: ${level}`,
       });
     } catch {}
   });

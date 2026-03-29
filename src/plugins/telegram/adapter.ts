@@ -959,7 +959,7 @@ export class TelegramAdapter extends MessagingAdapter {
   protected async handleToolCall(
     sessionId: string,
     content: OutgoingMessage,
-    verbosity: DisplayVerbosity,
+    _verbosity: DisplayVerbosity,
   ): Promise<void> {
     const threadId = this.getThreadId(sessionId);
     const meta = (content.metadata ?? {}) as Partial<ToolCallMeta>;
@@ -995,7 +995,7 @@ export class TelegramAdapter extends MessagingAdapter {
   protected async handleToolUpdate(
     sessionId: string,
     content: OutgoingMessage,
-    verbosity: DisplayVerbosity,
+    _verbosity: DisplayVerbosity,
   ): Promise<void> {
     const threadId = this.getThreadId(sessionId);
     const meta = (content.metadata ?? {}) as Partial<ToolUpdateMeta>;
@@ -1021,7 +1021,7 @@ export class TelegramAdapter extends MessagingAdapter {
   protected async handlePlan(
     sessionId: string,
     content: OutgoingMessage,
-    verbosity: DisplayVerbosity,
+    _verbosity: DisplayVerbosity,
   ): Promise<void> {
     const threadId = this.getThreadId(sessionId);
     const meta = (content.metadata ?? {}) as Partial<PlanMetadata>;

@@ -65,24 +65,15 @@ describe("ThinkingIndicator", () => {
     expect(api.sendMessage).toHaveBeenCalledOnce();
   });
 
-  it("dismiss() deletes the Telegram message when msgId exists", async () => {
+  it("dismiss() leaves message in chat (no deleteMessage to save API calls)", async () => {
     await indicator.show();
-    await indicator.dismiss();
-    expect(api.deleteMessage).toHaveBeenCalledOnce();
-    expect(api.deleteMessage).toHaveBeenCalledWith(100, 42);
-  });
-
-  it("dismiss() does not call deleteMessage when no message was sent", async () => {
     await indicator.dismiss();
     expect(api.deleteMessage).not.toHaveBeenCalled();
   });
 
-  it("dismiss() swallows errors from deleteMessage", async () => {
-    api.deleteMessage.mockRejectedValueOnce(new Error("already deleted"));
-    await indicator.show();
-    // Should not throw
+  it("dismiss() is safe when no message was sent", async () => {
     await indicator.dismiss();
-    expect(api.deleteMessage).toHaveBeenCalledOnce();
+    expect(api.deleteMessage).not.toHaveBeenCalled();
   });
 
   it("show() works again after dismiss() + reset()", async () => {
@@ -100,7 +91,7 @@ describe("ThinkingIndicator", () => {
     expect(api.sendMessage).toHaveBeenCalledOnce();
   });
 
-  it("show() deletes just-sent message if dismissed during queue wait (C17)", async () => {
+  it("show() leaves just-sent message if dismissed during queue wait", async () => {
     // Simulate a slow queue: enqueue holds the promise until we resolve it
     let resolveEnqueue!: (val: unknown) => void;
     const slowQueue = {
@@ -126,9 +117,9 @@ describe("ThinkingIndicator", () => {
     await resolveEnqueue(undefined);
     await showPromise;
 
-    // The message was sent but should be immediately deleted
+    // The message was sent but NOT deleted (saves API calls)
     expect(api.sendMessage).toHaveBeenCalledOnce();
-    expect(api.deleteMessage).toHaveBeenCalledWith(100, 42);
+    expect(api.deleteMessage).not.toHaveBeenCalled();
   });
 });
 
@@ -225,16 +216,16 @@ describe("ActivityTracker", () => {
     expect(api.sendMessage).toHaveBeenCalledOnce();
   });
 
-  it("onToolCall() dismisses thinking and deletes message", async () => {
+  it("onToolCall() dismisses thinking (no delete)", async () => {
     await tracker.onThought();
     await tracker.onToolCall(makeMeta(), "file_read", { path: "/tmp/foo" });
-    expect(api.deleteMessage).toHaveBeenCalledWith(100, 42);
+    expect(api.deleteMessage).not.toHaveBeenCalled();
   });
 
-  it("onTextStart() dismisses thinking and deletes message", async () => {
+  it("onTextStart() dismisses thinking (no delete)", async () => {
     await tracker.onThought();
     await tracker.onTextStart();
-    expect(api.deleteMessage).toHaveBeenCalledWith(100, 42);
+    expect(api.deleteMessage).not.toHaveBeenCalled();
   });
 
   it("sendUsage() is a no-op (usage is sent as separate message by adapter)", async () => {
@@ -244,10 +235,10 @@ describe("ActivityTracker", () => {
     expect(api.sendMessage).not.toHaveBeenCalled();
   });
 
-  it("onNewPrompt() dismisses thinking and deletes message", async () => {
+  it("onNewPrompt() dismisses thinking (no delete)", async () => {
     await tracker.onThought();
     await tracker.onNewPrompt();
-    expect(api.deleteMessage).toHaveBeenCalledWith(100, 42);
+    expect(api.deleteMessage).not.toHaveBeenCalled();
   });
 
   it("cleanup() finalizes toolCard and dismisses thinking", async () => {
@@ -259,11 +250,11 @@ describe("ActivityTracker", () => {
     expect(true).toBe(true);
   });
 
-  it("onNewPrompt() deletes thinking message", async () => {
+  it("onNewPrompt() dismisses thinking (message left in chat)", async () => {
     await tracker.onThought();
     expect(api.sendMessage).toHaveBeenCalledOnce();
     await tracker.onNewPrompt();
-    expect(api.deleteMessage).toHaveBeenCalledWith(100, 42);
+    expect(api.deleteMessage).not.toHaveBeenCalled();
   });
 
   it("getToolCardMsgId() returns undefined when no tool content", () => {

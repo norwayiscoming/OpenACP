@@ -847,6 +847,16 @@ export class TelegramAdapter extends MessagingAdapter {
 
   // --- MessagingAdapter overrides ---
 
+  /**
+   * Per-session serial dispatch queues.
+   * SessionBridge fires sendMessage() as fire-and-forget, so multiple events
+   * (tool_call, tool_update, text) can arrive concurrently. Without serialization,
+   * fast handlers (tool_update) overtake slow ones (tool_call with draftManager.finalize),
+   * causing out-of-order processing where a tool's completion update is processed before
+   * its creation event. This queue ensures events are processed in the order they arrive.
+   */
+  private _dispatchQueues = new Map<string, Promise<void>>();
+
   async sendMessage(
     sessionId: string,
     content: OutgoingMessage,
@@ -869,13 +879,20 @@ export class TelegramAdapter extends MessagingAdapter {
       return;
     }
 
-    // Store threadId for handlers to use (keyed by sessionId for concurrency safety)
-    this._sessionThreadIds.set(sessionId, threadId);
-    try {
-      await super.sendMessage(sessionId, content);
-    } finally {
-      this._sessionThreadIds.delete(sessionId);
-    }
+    // Serialize dispatch per session to preserve event ordering
+    const prev = this._dispatchQueues.get(sessionId) ?? Promise.resolve();
+    const next = prev.then(async () => {
+      this._sessionThreadIds.set(sessionId, threadId);
+      try {
+        await super.sendMessage(sessionId, content);
+      } finally {
+        this._sessionThreadIds.delete(sessionId);
+      }
+    }).catch((err) => {
+      log.warn({ err, sessionId }, "Dispatch queue error");
+    });
+    this._dispatchQueues.set(sessionId, next);
+    await next;
   }
 
   protected async handleThought(
@@ -893,13 +910,10 @@ export class TelegramAdapter extends MessagingAdapter {
     content: OutgoingMessage,
   ): Promise<void> {
     const threadId = this.getThreadId(sessionId);
-    // CRITICAL: This handler must be fully synchronous to preserve text ordering.
-    // sendMessage() is not awaited in wireSessionEvents, so multiple text events
-    // run concurrently. Any await here creates a gap where subsequent text events
-    // process first, causing out-of-order buffer accumulation.
+    // Per-session dispatch queue serializes all events, so we can safely await here.
     if (!this.draftManager.hasDraft(sessionId)) {
       const tracker = this.getOrCreateTracker(sessionId, threadId);
-      tracker.onTextStart().catch(() => {}); // Fire-and-forget, no await
+      await tracker.onTextStart();
     }
     const draft = this.draftManager.getOrCreate(sessionId, threadId);
     draft.append(content.text);

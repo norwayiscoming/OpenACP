@@ -46,12 +46,7 @@ export class ThinkingIndicator {
       );
       if (result) {
         if (this.dismissed) {
-          // dismissed during queue wait — delete the just-sent message
-          try {
-            await this.api.deleteMessage(this.chatId, result.message_id);
-          } catch {
-            // Message may already be deleted
-          }
+          // dismissed during queue wait — message stays in chat (no delete to save API calls)
         } else {
           this.msgId = result.message_id;
           this.startRefreshTimer();
@@ -64,20 +59,12 @@ export class ThinkingIndicator {
     }
   }
 
-  /** Dismiss indicator: stops refresh timer and deletes the Telegram message */
+  /** Dismiss indicator: stops refresh timer. Message is left in chat to reduce API calls. */
   async dismiss(): Promise<void> {
     if (this.dismissed) return;
     this.dismissed = true;
     this.stopRefreshTimer();
-    const msgId = this.msgId;
     this.msgId = undefined;
-    if (msgId) {
-      try {
-        await this.api.deleteMessage(this.chatId, msgId);
-      } catch {
-        // Message may already be deleted
-      }
-    }
   }
 
   /** Reset for a new prompt cycle */
@@ -128,7 +115,7 @@ export class ToolCard {
   private msgId?: number;
   private lastSentText?: string;
   private flushPromise: Promise<void> = Promise.resolve();
-  private overflowCount = 0;
+  private overflowMsgIds: number[] = [];
 
   constructor(
     private api: Bot["api"],
@@ -217,18 +204,29 @@ export class ToolCard {
         if (result) this.msgId = result.message_id;
       }
 
-      // Overflow chunks: always send as new messages
+      // Overflow chunks: edit existing overflow messages or send new ones
       for (let i = 1; i < chunks.length; i++) {
-        // Only send overflow chunks that haven't been sent yet
-        if (i > this.overflowCount) {
+        const overflowIdx = i - 1; // index into overflowMsgIds
+        if (overflowIdx < this.overflowMsgIds.length) {
+          // Edit existing overflow message
           await this.sendQueue.enqueue(() =>
+            this.api.editMessageText(
+              this.chatId,
+              this.overflowMsgIds[overflowIdx],
+              chunks[i],
+              { parse_mode: "HTML" },
+            ),
+          );
+        } else {
+          // Send new overflow message
+          const result = await this.sendQueue.enqueue(() =>
             this.api.sendMessage(this.chatId, chunks[i], {
               message_thread_id: this.threadId,
               parse_mode: "HTML",
               disable_notification: true,
             }),
           );
-          this.overflowCount = i;
+          if (result) this.overflowMsgIds.push(result.message_id);
         }
       }
     } catch (err) {
@@ -243,6 +241,7 @@ export class ActivityTracker {
   private isFirstEvent = true;
   private thinking: ThinkingIndicator;
   private toolCard: ToolCard;
+  private previousToolCard?: ToolCard;
   private verbosity: DisplayVerbosity;
 
   constructor(
@@ -303,6 +302,9 @@ export class ActivityTracker {
   private async sealToolCardIfNeeded(): Promise<void> {
     if (!this.toolCard.hasContent()) return;
     await this.toolCard.finalize();
+    // Keep reference so late tool_updates (e.g. last tool completing after text starts)
+    // can still reach the sealed card and update its status.
+    this.previousToolCard = this.toolCard;
     this.toolCard = new ToolCard(
       this.api,
       this.chatId,
@@ -319,6 +321,9 @@ export class ActivityTracker {
     viewerFilePath?: string,
   ): Promise<void> {
     this.toolCard.updateTool(id, status, viewerLinks, viewerFilePath);
+    // Forward to previous sealed card — the tool may belong there if text/thought
+    // started before this tool's completion update arrived.
+    this.previousToolCard?.updateTool(id, status, viewerLinks, viewerFilePath);
   }
 
   async onPlan(entries: PlanEntry[]): Promise<void> {

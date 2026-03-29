@@ -9,7 +9,6 @@ import {
   formatToolSummary,
   resolveToolIcon,
 } from "../message-formatter.js";
-
 const DEBOUNCE_MS = 500;
 
 export interface ToolCardEntry {
@@ -55,6 +54,8 @@ export class ToolCardState {
   private debounceTimer?: ReturnType<typeof setTimeout>;
   private verbosity: DisplayVerbosity;
   private onFlush: (snapshot: ToolCardSnapshot) => void;
+  /** Buffer for tool updates that arrive before their tool_call (out-of-order dispatch) */
+  private pendingUpdates = new Map<string, { status: string; viewerLinks?: ViewerLinks; viewerFilePath?: string }>();
 
   constructor(config: ToolCardStateConfig) {
     this.verbosity = config.verbosity;
@@ -78,6 +79,17 @@ export class ToolCardState {
       viewerFilePath: meta.viewerFilePath,
       hidden,
     };
+
+    // Apply buffered updates that arrived before this tool_call (out-of-order dispatch)
+    const pending = this.pendingUpdates.get(meta.id);
+    if (pending) {
+      entry.status = pending.status;
+      entry.icon = resolveToolIcon({ status: pending.status, kind });
+      if (pending.viewerLinks) entry.viewerLinks = pending.viewerLinks;
+      if (pending.viewerFilePath) entry.viewerFilePath = pending.viewerFilePath;
+      this.pendingUpdates.delete(meta.id);
+    }
+
     this.entries.push(entry);
 
     if (this.isFirstFlush) {
@@ -94,16 +106,24 @@ export class ToolCardState {
     viewerLinks?: ViewerLinks,
     viewerFilePath?: string,
   ): void {
-    if (this.finalized) return;
-
     const entry = this.entries.find((e) => e.id === id);
-    if (!entry) return;
+    if (!entry) {
+      // Buffer the update — tool_call may arrive later (out-of-order concurrent dispatch)
+      this.pendingUpdates.set(id, { status, viewerLinks, viewerFilePath });
+      return;
+    }
 
     entry.status = status;
     entry.icon = resolveToolIcon({ status, kind: entry.kind });
     if (viewerLinks) entry.viewerLinks = viewerLinks;
     if (viewerFilePath) entry.viewerFilePath = viewerFilePath;
 
+    if (this.finalized) {
+      // Post-finalize update (e.g. last tool completed after card was sealed):
+      // flush immediately so the final status is rendered.
+      this.onFlush(this.snapshot());
+      return;
+    }
     this.scheduleFlush();
   }
 
@@ -143,8 +163,9 @@ export class ToolCardState {
 
   private snapshot(): ToolCardSnapshot {
     const visible = this.entries.filter((e) => !e.hidden);
+    const DONE_STATUSES = new Set(["completed", "done", "failed", "error"]);
     const completedVisible = visible.filter(
-      (e) => e.status === "completed" || e.status === "done",
+      (e) => DONE_STATUSES.has(e.status),
     ).length;
     const allComplete =
       visible.length > 0 && completedVisible === visible.length;

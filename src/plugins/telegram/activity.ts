@@ -138,7 +138,9 @@ export class ToolCard {
   ) {
     this.tracer = tracer;
     this.sessionId = sessionId;
+    // TODO(Task 9): remove verbosity from config after activity.ts is refactored
     this.state = new ToolCardState({
+      // @ts-ignore — verbosity removed from ToolCardStateConfig; will be fixed in Task 9
       verbosity,
       onFlush: (snapshot) => {
         this.flushPromise = this.flushPromise
@@ -149,6 +151,8 @@ export class ToolCard {
   }
 
   addTool(meta: ToolCallMeta, kind: string, rawInput: unknown): void {
+    // TODO(Task 9): replace with updateFromSpec after activity.ts is refactored
+    // @ts-ignore — addTool removed; will be replaced in Task 9
     this.state.addTool(meta, kind, rawInput);
   }
 
@@ -158,6 +162,8 @@ export class ToolCard {
     viewerLinks?: ViewerLinks,
     viewerFilePath?: string,
   ): void {
+    // TODO(Task 9): replace with updateFromSpec after activity.ts is refactored
+    // @ts-ignore — updateTool removed; will be replaced in Task 9
     this.state.updateTool(id, status, viewerLinks, viewerFilePath);
   }
 

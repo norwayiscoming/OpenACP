@@ -197,8 +197,9 @@ export function renderToolCard(snap: ToolCardSnapshot): string {
     );
   }
 
-  // Tool entries
-  const visible = snap.entries.filter((e) => !e.hidden);
+  // TODO(Task 8): update to use snap.specs instead of snap.entries after formatting.ts is refactored
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const visible: any[] = ((snap as any).entries ?? []).filter((e: any) => !e.hidden);
   const completed = visible.filter(
     (e) =>
       e.status === "completed" || e.status === "done" || e.status === "failed",

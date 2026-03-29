@@ -14,7 +14,7 @@ export {
 export {
   ToolCardState,
   type ToolCardSnapshot,
-  type ToolCardEntry,
+  type ToolDisplaySpec,
   type UsageData,
   type ToolCardStateConfig,
 } from "./tool-card-state.js";

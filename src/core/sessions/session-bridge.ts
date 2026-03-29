@@ -7,6 +7,7 @@ import type { AgentEvent, PermissionRequest, SessionStatus } from "../types.js";
 import type { EventBus } from "../event-bus.js";
 import type { FileServiceInterface } from "../plugin/types.js";
 import type { MiddlewareChain } from "../plugin/middleware-chain.js";
+import type { DebugTracer } from "../utils/debug-tracer.js";
 import { createChildLogger } from "../utils/log.js";
 
 const log = createChildLogger({ module: "session-bridge" });
@@ -36,17 +37,24 @@ export class SessionBridge {
     private deps: BridgeDeps,
   ) {}
 
+  private get tracer(): DebugTracer | null {
+    return this.session.agentInstance.debugTracer ?? null;
+  }
+
   /** Send message to adapter, optionally running through message:outgoing middleware */
   private async sendMessage(sessionId: string, message: ReturnType<MessageTransformer["transform"]>): Promise<void> {
     try {
       const mw = this.deps.middlewareChain;
       if (mw) {
         const result = await mw.execute('message:outgoing', { sessionId, message }, async (m) => m);
+        this.tracer?.log("core", { step: "middleware:outgoing", sessionId, hook: "message:outgoing", blocked: !result });
         if (!result) return;
+        this.tracer?.log("core", { step: "dispatch", sessionId, messageType: result.message.type });
         this.adapter.sendMessage(sessionId, result.message).catch((err) => {
           log.error({ err, sessionId }, "Failed to send message to adapter");
         });
       } else {
+        this.tracer?.log("core", { step: "dispatch", sessionId, messageType: message.type });
         this.adapter.sendMessage(sessionId, message).catch((err) => {
           log.error({ err, sessionId }, "Failed to send message to adapter");
         });
@@ -96,10 +104,12 @@ export class SessionBridge {
 
   private wireSessionToAdapter(): void {
     this.sessionEventHandler = (event: AgentEvent) => {
+      this.tracer?.log("core", { step: "agent_event", sessionId: this.session.id, eventType: event.type });
       // Hook: agent:beforeEvent — modifiable, can block
       const mw = this.deps.middlewareChain;
       if (mw) {
         mw.execute('agent:beforeEvent', { sessionId: this.session.id, event }, async (e) => e).then((result) => {
+          this.tracer?.log("core", { step: "middleware:before", sessionId: this.session.id, hook: "agent:beforeEvent", blocked: !result });
           if (!result) return; // blocked by middleware
           try {
             const transformedEvent = result.event;
@@ -154,6 +164,7 @@ export class SessionBridge {
         case "plan":
         case "usage":
           outgoing = this.deps.messageTransformer.transform(event, ctx);
+          this.tracer?.log("core", { step: "transform", sessionId: this.session.id, inputType: event.type, outputType: outgoing.type });
           this.sendMessage(this.session.id, outgoing);
           break;
 

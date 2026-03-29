@@ -1,6 +1,7 @@
 import type { Bot } from 'grammy'
 import { markdownToTelegramHtml, splitMessage } from './formatting.js'
 import type { SendQueue } from '../../core/adapter-primitives/primitives/send-queue.js'
+import type { DebugTracer } from '../../core/utils/debug-tracer.js'
 
 const FLUSH_INTERVAL = 5000
 
@@ -12,6 +13,7 @@ export class MessageDraft {
   private flushPromise: Promise<void> = Promise.resolve()
   private lastSentBuffer: string = ''
   private displayTruncated = false
+  private tracer: DebugTracer | null
 
   constructor(
     private bot: Bot,
@@ -19,7 +21,10 @@ export class MessageDraft {
     private threadId: number,
     private sendQueue: SendQueue,
     private sessionId: string,
-  ) {}
+    tracer: DebugTracer | null = null,
+  ) {
+    this.tracer = tracer
+  }
 
   append(text: string): void {
     if (!text) return
@@ -75,6 +80,7 @@ export class MessageDraft {
         )
         if (result) {
           this.messageId = result.message_id
+          this.tracer?.log("telegram", { action: "draft:send", sessionId: this.sessionId, msgId: result.message_id, textLen: snapshot.length, truncated })
           if (!truncated) {
             this.lastSentBuffer = snapshot
             this.displayTruncated = false
@@ -97,6 +103,7 @@ export class MessageDraft {
         )
         // Only mark as sent if the edit was actually executed (not dropped by dedup/rate-limit)
         if (result !== undefined) {
+          this.tracer?.log("telegram", { action: "draft:edit", sessionId: this.sessionId, msgId: this.messageId, textLen: snapshot.length, truncated })
           if (!truncated) {
             this.lastSentBuffer = snapshot
             this.displayTruncated = false
@@ -113,6 +120,7 @@ export class MessageDraft {
   }
 
   async finalize(): Promise<number | undefined> {
+    this.tracer?.log("telegram", { action: "draft:finalize", sessionId: this.sessionId, bufferLen: this.buffer.length, msgId: this.messageId })
     if (this.flushTimer) {
       clearTimeout(this.flushTimer)
       this.flushTimer = undefined
@@ -141,6 +149,7 @@ export class MessageDraft {
             }),
             { type: 'other' },
           )
+          this.tracer?.log("telegram", { action: "draft:finalize:edit", sessionId: this.sessionId, msgId: this.messageId })
         } else {
           const msg = await this.sendQueue.enqueue(
             () => this.bot.api.sendMessage(this.chatId, fullHtml, {
@@ -151,6 +160,7 @@ export class MessageDraft {
             { type: 'other' },
           )
           if (msg) this.messageId = msg.message_id
+          this.tracer?.log("telegram", { action: "draft:finalize:send", sessionId: this.sessionId, msgId: msg?.message_id })
         }
         return this.messageId
       } catch {
@@ -208,6 +218,7 @@ export class MessageDraft {
     // All chunks are now in the queue — any items enqueued by concurrent handlers
     // (usage, session_end) will go AFTER our chunks. Safe to await.
     await Promise.all(chunkPromises)
+    this.tracer?.log("telegram", { action: "draft:finalize:split", sessionId: this.sessionId, chunks: mdChunks.length })
 
     return this.messageId
   }

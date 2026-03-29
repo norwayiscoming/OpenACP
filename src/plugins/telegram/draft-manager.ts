@@ -1,6 +1,7 @@
 import type { Bot } from "grammy";
 import { MessageDraft } from "./streaming.js";
 import type { SendQueue } from "../../core/adapter-primitives/primitives/send-queue.js";
+import type { DebugTracer } from "../../core/utils/debug-tracer.js";
 import {
   detectAction,
   storeAction,
@@ -23,7 +24,7 @@ export class DraftManager {
     private sendQueue: SendQueue,
   ) {}
 
-  getOrCreate(sessionId: string, threadId: number): MessageDraft {
+  getOrCreate(sessionId: string, threadId: number, tracer: DebugTracer | null = null): MessageDraft {
     let draft = this.drafts.get(sessionId);
     if (!draft) {
       draft = new MessageDraft(
@@ -32,6 +33,7 @@ export class DraftManager {
         threadId,
         this.sendQueue,
         sessionId,
+        tracer,
       );
       this.drafts.set(sessionId, draft);
     }

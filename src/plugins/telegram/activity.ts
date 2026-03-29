@@ -7,6 +7,7 @@ import type {
   ViewerLinks,
 } from "../../core/adapter-primitives/format-types.js";
 import type { SendQueue } from "../../core/adapter-primitives/primitives/send-queue.js";
+import type { DebugTracer } from "../../core/utils/debug-tracer.js";
 import { ToolCardState } from "../../core/adapter-primitives/primitives/tool-card-state.js";
 import type { ToolCardSnapshot } from "../../core/adapter-primitives/primitives/tool-card-state.js";
 import { renderToolCard, splitToolCardText } from "./formatting.js";
@@ -24,13 +25,18 @@ export class ThinkingIndicator {
   private dismissed = false;
   private refreshTimer?: ReturnType<typeof setInterval>;
   private showTime = 0;
+  private tracer: DebugTracer | null;
 
   constructor(
     private api: Bot["api"],
     private chatId: number,
     private threadId: number,
     private sendQueue: SendQueue,
-  ) {}
+    private sessionId: string = "",
+    tracer: DebugTracer | null = null,
+  ) {
+    this.tracer = tracer;
+  }
 
   async show(): Promise<void> {
     if (this.msgId || this.sending || this.dismissed) return;
@@ -45,6 +51,7 @@ export class ThinkingIndicator {
         }),
       );
       if (result) {
+        this.tracer?.log("telegram", { action: "thinking:show", sessionId: this.sessionId, msgId: result.message_id });
         if (this.dismissed) {
           // dismissed during queue wait — message stays in chat (no delete to save API calls)
         } else {
@@ -63,6 +70,7 @@ export class ThinkingIndicator {
   async dismiss(): Promise<void> {
     if (this.dismissed) return;
     this.dismissed = true;
+    this.tracer?.log("telegram", { action: "thinking:dismiss", sessionId: this.sessionId });
     this.stopRefreshTimer();
     this.msgId = undefined;
   }
@@ -116,6 +124,8 @@ export class ToolCard {
   private lastSentText?: string;
   private flushPromise: Promise<void> = Promise.resolve();
   private overflowMsgIds: number[] = [];
+  private tracer: DebugTracer | null;
+  private sessionId: string;
 
   constructor(
     private api: Bot["api"],
@@ -123,7 +133,11 @@ export class ToolCard {
     private threadId: number,
     private sendQueue: SendQueue,
     verbosity: DisplayVerbosity,
+    sessionId: string = "",
+    tracer: DebugTracer | null = null,
   ) {
+    this.tracer = tracer;
+    this.sessionId = sessionId;
     this.state = new ToolCardState({
       verbosity,
       onFlush: (snapshot) => {
@@ -183,6 +197,7 @@ export class ToolCard {
     this.lastSentText = fullText;
 
     const chunks = splitToolCardText(fullText);
+    this.tracer?.log("telegram", { action: "toolCard:render", sessionId: this.sessionId, chunks: chunks.length, total: snapshot.totalVisible, completed: snapshot.completedVisible, allComplete: snapshot.allComplete, msgId: this.msgId });
 
     try {
       // First chunk: edit existing message or send new
@@ -193,6 +208,7 @@ export class ToolCard {
             parse_mode: "HTML",
           }),
         );
+        this.tracer?.log("telegram", { action: "telegram:edit", sessionId: this.sessionId, msgId: this.msgId });
       } else {
         const result = await this.sendQueue.enqueue(() =>
           this.api.sendMessage(this.chatId, firstChunk, {
@@ -202,6 +218,7 @@ export class ToolCard {
           }),
         );
         if (result) this.msgId = result.message_id;
+        this.tracer?.log("telegram", { action: "telegram:send", sessionId: this.sessionId, msgId: result?.message_id });
       }
 
       // Overflow chunks: edit existing overflow messages or send new ones
@@ -217,6 +234,7 @@ export class ToolCard {
               { parse_mode: "HTML" },
             ),
           );
+          this.tracer?.log("telegram", { action: "telegram:edit:overflow", sessionId: this.sessionId, msgId: this.overflowMsgIds[overflowIdx] });
         } else {
           // Send new overflow message
           const result = await this.sendQueue.enqueue(() =>
@@ -227,6 +245,7 @@ export class ToolCard {
             }),
           );
           if (result) this.overflowMsgIds.push(result.message_id);
+          this.tracer?.log("telegram", { action: "telegram:send:overflow", sessionId: this.sessionId, msgId: result?.message_id });
         }
       }
     } catch (err) {
@@ -243,6 +262,8 @@ export class ActivityTracker {
   private toolCard: ToolCard;
   private previousToolCard?: ToolCard;
   private verbosity: DisplayVerbosity;
+  private tracer: DebugTracer | null;
+  private sessionId: string;
 
   constructor(
     private api: Bot["api"],
@@ -250,13 +271,18 @@ export class ActivityTracker {
     private threadId: number,
     private sendQueue: SendQueue,
     verbosity: DisplayVerbosity = "medium",
+    sessionId: string = "",
+    tracer: DebugTracer | null = null,
   ) {
     this.verbosity = verbosity;
-    this.thinking = new ThinkingIndicator(api, chatId, threadId, sendQueue);
-    this.toolCard = new ToolCard(api, chatId, threadId, sendQueue, verbosity);
+    this.tracer = tracer;
+    this.sessionId = sessionId;
+    this.thinking = new ThinkingIndicator(api, chatId, threadId, sendQueue, sessionId, tracer);
+    this.toolCard = new ToolCard(api, chatId, threadId, sendQueue, verbosity, sessionId, tracer);
   }
 
   async onNewPrompt(): Promise<void> {
+    this.tracer?.log("telegram", { action: "tracker:newPrompt", sessionId: this.sessionId });
     this.isFirstEvent = true;
     await this.thinking.dismiss();
     this.thinking.reset();
@@ -270,10 +296,13 @@ export class ActivityTracker {
       this.threadId,
       this.sendQueue,
       this.verbosity,
+      this.sessionId,
+      this.tracer,
     );
   }
 
   async onThought(): Promise<void> {
+    this.tracer?.log("telegram", { action: "tracker:thought", sessionId: this.sessionId });
     this.isFirstEvent = false;
     // If tool card has content, finalize it — thought interrupts the tool sequence
     await this.sealToolCardIfNeeded();
@@ -281,6 +310,7 @@ export class ActivityTracker {
   }
 
   async onTextStart(): Promise<void> {
+    this.tracer?.log("telegram", { action: "tracker:textStart", sessionId: this.sessionId });
     this.isFirstEvent = false;
     await this.thinking.dismiss();
     // If tool card has content, finalize it — text interrupts the tool sequence
@@ -292,6 +322,7 @@ export class ActivityTracker {
     kind: string,
     rawInput: unknown,
   ): Promise<void> {
+    this.tracer?.log("telegram", { action: "tracker:toolCall", sessionId: this.sessionId, toolId: meta.id, toolName: meta.name, status: meta.status });
     this.isFirstEvent = false;
     await this.thinking.dismiss();
     this.thinking.reset();
@@ -301,6 +332,7 @@ export class ActivityTracker {
   /** Finalize current tool card and create a fresh one (when interrupted by text/thought) */
   private async sealToolCardIfNeeded(): Promise<void> {
     if (!this.toolCard.hasContent()) return;
+    this.tracer?.log("telegram", { action: "tracker:seal", sessionId: this.sessionId });
     await this.toolCard.finalize();
     // Keep reference so late tool_updates (e.g. last tool completing after text starts)
     // can still reach the sealed card and update its status.
@@ -311,6 +343,8 @@ export class ActivityTracker {
       this.threadId,
       this.sendQueue,
       this.verbosity,
+      this.sessionId,
+      this.tracer,
     );
   }
 
@@ -320,6 +354,7 @@ export class ActivityTracker {
     viewerLinks?: ViewerLinks,
     viewerFilePath?: string,
   ): Promise<void> {
+    this.tracer?.log("telegram", { action: "tracker:toolUpdate", sessionId: this.sessionId, toolId: id, status, hasPrevCard: !!this.previousToolCard });
     this.toolCard.updateTool(id, status, viewerLinks, viewerFilePath);
     // Forward to previous sealed card — the tool may belong there if text/thought
     // started before this tool's completion update arrived.
@@ -327,6 +362,7 @@ export class ActivityTracker {
   }
 
   async onPlan(entries: PlanEntry[]): Promise<void> {
+    this.tracer?.log("telegram", { action: "tracker:plan", sessionId: this.sessionId, entryCount: entries.length });
     this.isFirstEvent = false;
     await this.thinking.dismiss();
     this.toolCard.updatePlan(entries);

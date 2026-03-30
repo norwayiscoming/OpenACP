@@ -246,6 +246,11 @@ export interface TelegramPlatformData {
   skillMsgId?: number;
 }
 
+export interface DiscordPlatformData {
+  threadId: string;
+  skillMsgId?: string;
+}
+
 export interface UsageRecord {
   id: string;
   sessionId: string;

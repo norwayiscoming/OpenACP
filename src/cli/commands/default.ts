@@ -2,6 +2,7 @@ import { checkAndPromptUpdate } from '../version.js'
 import { printHelp } from './help.js'
 import path from 'node:path'
 import os from 'node:os'
+import { createInstanceContext, getGlobalRoot } from '../../core/instance-context.js'
 
 export async function cmdDefault(command: string | undefined, instanceRoot?: string): Promise<void> {
   const root = instanceRoot ?? path.join(os.homedir(), '.openacp')
@@ -58,5 +59,10 @@ export async function cmdDefault(command: string | undefined, instanceRoot?: str
   const { markRunning } = await import('../daemon.js')
   markRunning(root)
   const { startServer } = await import('../../main.js')
-  await startServer()
+  const ctx = createInstanceContext({
+    id: 'default',
+    root,
+    isGlobal: root === getGlobalRoot(),
+  })
+  await startServer({ instanceContext: ctx })
 }

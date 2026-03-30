@@ -3,6 +3,7 @@
 import { setDefaultAutoSelectFamily } from "node:net";
 setDefaultAutoSelectFamily(false);
 
+import path from 'node:path'
 import {
   printHelp,
   cmdVersion,
@@ -107,8 +108,13 @@ const commands: Record<string, () => Promise<void>> = {
     const envRoot = process.env.OPENACP_INSTANCE_ROOT
     if (envRoot) {
       const { createInstanceContext, getGlobalRoot: getGlobal } = await import('./core/instance-context.js')
+      const { InstanceRegistry } = await import('./core/instance-registry.js')
+      const registry = new InstanceRegistry(path.join(getGlobal(), 'instances.json'))
+      await registry.load()
+      const entry = registry.getByRoot(envRoot)
+      const id = entry?.id ?? 'unknown'
       const ctx = createInstanceContext({
-        id: 'unknown',
+        id,
         root: envRoot,
         isGlobal: envRoot === getGlobal(),
       })

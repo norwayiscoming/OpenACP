@@ -38,7 +38,7 @@ export async function startServer(opts?: StartServerOptions) {
     const { writePidFile, readPidFile, shouldAutoStart } = await import('./cli/daemon.js')
 
     // Only auto-start if the daemon was previously running (user started it)
-    if (!shouldAutoStart()) {
+    if (!shouldAutoStart(ctx.root)) {
       process.exit(0)
     }
 

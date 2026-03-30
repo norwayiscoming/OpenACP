@@ -19,11 +19,6 @@ const BaseChannelSchema = z
   })
   .passthrough();
 
-export const OPENACP_DIR = path.join(os.homedir(), ".openacp");
-export const PLUGINS_DIR = path.join(OPENACP_DIR, "plugins");
-export const PLUGINS_DATA_DIR = path.join(OPENACP_DIR, "plugins", "data");
-export const REGISTRY_PATH = path.join(OPENACP_DIR, "plugins.json");
-
 const AgentSchema = z.object({
   command: z.string(),
   args: z.array(z.string()).default([]),
@@ -107,6 +102,7 @@ const SpeechSchema = z
   .default({});
 
 export const ConfigSchema = z.object({
+  instanceName: z.string().optional(),
   channels: z
     .object({})
     .catchall(BaseChannelSchema),
@@ -210,10 +206,10 @@ export class ConfigManager extends EventEmitter {
   private config!: Config;
   private configPath: string;
 
-  constructor() {
+  constructor(configPath?: string) {
     super();
     this.configPath =
-      process.env.OPENACP_CONFIG_PATH || expandHome("~/.openacp/config.json");
+      process.env.OPENACP_CONFIG_PATH || configPath || expandHome("~/.openacp/config.json");
   }
 
   async load(): Promise<void> {

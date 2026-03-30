@@ -1,7 +1,13 @@
 #!/usr/bin/env node
 
 import path from 'node:path'
-import { ConfigManager, OPENACP_DIR, PLUGINS_DATA_DIR, REGISTRY_PATH } from './core/config/config.js'
+import os from 'node:os'
+import { ConfigManager } from './core/config/config.js'
+
+// Temporary — will be replaced by InstanceContext in Task 5
+const OPENACP_DIR = path.join(os.homedir(), '.openacp')
+const PLUGINS_DATA_DIR = path.join(OPENACP_DIR, 'plugins', 'data')
+const REGISTRY_PATH = path.join(OPENACP_DIR, 'plugins.json')
 import { OpenACPCore } from './core/core.js'
 import { initLogger, shutdownLogger, cleanupOldSessionLogs, log, muteLogger, unmuteLogger } from './core/utils/log.js'
 import { corePlugins } from './plugins/core-plugins.js'

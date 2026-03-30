@@ -1,7 +1,9 @@
 import { execSync } from 'node:child_process'
 import * as fs from 'node:fs'
 import * as path from 'node:path'
-import { PLUGINS_DIR } from '../../core/config/config.js'
+import * as os from 'node:os'
+
+const PLUGINS_DIR = path.join(os.homedir(), '.openacp', 'plugins')
 import { wantsHelp } from './helpers.js'
 
 export async function cmdInstall(args: string[]): Promise<void> {

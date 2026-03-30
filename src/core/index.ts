@@ -24,7 +24,6 @@ export {
   type Config,
   type LoggingConfig,
   type UsageConfig,
-  PLUGINS_DIR,
 } from "./config/config.js";
 export { AgentInstance } from "./agents/agent-instance.js";
 export { AgentManager } from "./agents/agent-manager.js";

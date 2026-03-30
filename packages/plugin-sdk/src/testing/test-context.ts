@@ -8,6 +8,7 @@ export interface TestContextOpts {
   pluginConfig?: Record<string, unknown>
   permissions?: string[]
   services?: Record<string, unknown>
+  instanceRoot?: string
 }
 
 export interface TestPluginContext extends PluginContext {
@@ -76,6 +77,7 @@ export function createTestContext(opts: TestContextOpts): TestPluginContext {
   const ctx: TestPluginContext = {
     pluginName: opts.pluginName,
     pluginConfig: opts.pluginConfig ?? {},
+    instanceRoot: opts.instanceRoot ?? '/tmp/openacp-test',
 
     // Events
     on(event: string, handler: (...args: unknown[]) => void): void {

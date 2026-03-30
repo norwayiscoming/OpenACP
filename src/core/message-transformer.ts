@@ -5,6 +5,37 @@ import { createChildLogger } from "./utils/log.js";
 
 const log = createChildLogger({ module: "message-transformer" });
 
+/**
+ * Compute actual line-level diff by stripping common prefix/suffix lines.
+ * This avoids counting unchanged context lines as added/removed.
+ */
+function computeLineDiff(oldStr: string, newStr: string): { added: number; removed: number } {
+  const oldLines = oldStr ? oldStr.split("\n") : [];
+  const newLines = newStr ? newStr.split("\n") : [];
+
+  // Find common prefix
+  let prefixLen = 0;
+  const minLen = Math.min(oldLines.length, newLines.length);
+  while (prefixLen < minLen && oldLines[prefixLen] === newLines[prefixLen]) {
+    prefixLen++;
+  }
+
+  // Find common suffix (not overlapping with prefix)
+  let suffixLen = 0;
+  const maxSuffix = minLen - prefixLen;
+  while (
+    suffixLen < maxSuffix &&
+    oldLines[oldLines.length - 1 - suffixLen] === newLines[newLines.length - 1 - suffixLen]
+  ) {
+    suffixLen++;
+  }
+
+  return {
+    added: Math.max(0, newLines.length - prefixLen - suffixLen),
+    removed: Math.max(0, oldLines.length - prefixLen - suffixLen),
+  };
+}
+
 export class MessageTransformer {
   tunnelService?: TunnelServiceInterface;
   /** Cache rawInput from tool_call so it's available in tool_update (which often lacks it) */
@@ -181,12 +212,14 @@ export class MessageTransformer {
         const oldStr = typeof ri.old_string === "string" ? ri.old_string : typeof ri.oldText === "string" ? ri.oldText : null;
         const newStr = typeof ri.new_string === "string" ? ri.new_string : typeof ri.newText === "string" ? ri.newText : typeof ri.content === "string" ? ri.content : null;
         if (oldStr !== null && newStr !== null) {
-          // For edits: old_string is fully removed, new_string is fully added
-          const removed = oldStr ? oldStr.split("\n").length : 0;
-          const added = newStr ? newStr.split("\n").length : 0;
-          if (added > 0 || removed > 0) {
-            metadata.diffStats = { added, removed };
+          const stats = computeLineDiff(oldStr, newStr);
+          if (stats.added > 0 || stats.removed > 0) {
+            metadata.diffStats = stats;
           }
+        } else if (oldStr === null && newStr !== null && kind === "write") {
+          // New file creation — no old content, count all new lines as added
+          const added = newStr.split("\n").length;
+          if (added > 0) metadata.diffStats = { added, removed: 0 };
         }
       }
     }
@@ -247,12 +280,9 @@ export class MessageTransformer {
 
       // Compute diff stats from full file content only if not already set from rawInput
       if (!metadata.diffStats) {
-        const oldLines = fileInfo.oldContent.split("\n").length;
-        const newLines = fileInfo.content.split("\n").length;
-        const added = Math.max(0, newLines - oldLines);
-        const removed = Math.max(0, oldLines - newLines);
-        if (added > 0 || removed > 0) {
-          metadata.diffStats = { added, removed };
+        const stats = computeLineDiff(fileInfo.oldContent, fileInfo.content);
+        if (stats.added > 0 || stats.removed > 0) {
+          metadata.diffStats = stats;
         }
       }
     }

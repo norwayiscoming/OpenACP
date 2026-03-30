@@ -6,7 +6,7 @@ import type { SendQueue } from "../../core/adapter-primitives/primitives/send-qu
 import type { DebugTracer } from "../../core/utils/debug-tracer.js";
 import { ToolCardState } from "../../core/adapter-primitives/primitives/tool-card-state.js";
 import type { ToolCardSnapshot } from "../../core/adapter-primitives/primitives/tool-card-state.js";
-import { renderToolCard, splitToolCardText } from "./formatting.js";
+import { escapeHtml, renderToolCard, splitToolCardText } from "./formatting.js";
 import { ToolStateMap } from "../../core/adapter-primitives/stream-accumulator.js";
 import { ThoughtBuffer } from "../../core/adapter-primitives/stream-accumulator.js";
 import { DisplaySpecBuilder } from "../../core/adapter-primitives/display-spec-builder.js";
@@ -41,12 +41,14 @@ export class ThinkingIndicator {
   }
 
   async show(): Promise<void> {
-    if (this.msgId || this.sending || this.dismissed) return;
+    if (this.sending || this.dismissed) return;
+    if (this.msgId) return;
     this.sending = true;
     this.showTime = Date.now();
+    const text = "💭 <i>Thinking...</i>";
     try {
       const result = await this.sendQueue.enqueue(() =>
-        this.api.sendMessage(this.chatId, "💭 <i>Thinking...</i>", {
+        this.api.sendMessage(this.chatId, text, {
           message_thread_id: this.threadId,
           parse_mode: "HTML",
           disable_notification: true,
@@ -66,6 +68,22 @@ export class ThinkingIndicator {
     } finally {
       this.sending = false;
     }
+  }
+
+  /** Edit the indicator message to append a viewer link, then dismiss. */
+  async finalizeWithViewerLink(url: string): Promise<void> {
+    this.stopRefreshTimer();
+    if (this.msgId && !this.dismissed) {
+      const text = `💭 <i>Thinking...</i>      <a href="${escapeHtml(url)}">View thinking</a>`;
+      await this.sendQueue
+        .enqueue(() => {
+          if (!this.msgId) return Promise.resolve(undefined);
+          return this.api.editMessageText(this.chatId, this.msgId, text, { parse_mode: "HTML" });
+        })
+        .catch(() => {});
+    }
+    this.dismissed = true;
+    this.msgId = undefined;
   }
 
   /** Dismiss indicator: stops refresh timer. Message is left in chat to reduce API calls. */
@@ -94,6 +112,7 @@ export class ThinkingIndicator {
         return;
       }
       const elapsed = Math.round((Date.now() - this.showTime) / 1000);
+      const refreshText = `💭 <i>Still thinking... (${elapsed}s)</i>`;
       this.sendQueue
         .enqueue(() => {
           // Re-check after waiting in queue — dismiss may have been called
@@ -101,7 +120,7 @@ export class ThinkingIndicator {
           return this.api.editMessageText(
             this.chatId,
             this.msgId,
-            `💭 <i>Still thinking... (${elapsed}s)</i>`,
+            refreshText,
             { parse_mode: "HTML" },
           );
         })
@@ -253,7 +272,7 @@ export class ActivityTracker {
   private previousToolStateMap?: ToolStateMap;
   private specBuilder: DisplaySpecBuilder;
   private thoughtBuffer: ThoughtBuffer;
-  private outputMode: OutputMode;
+  private _outputMode: OutputMode;
   private tracer: DebugTracer | null;
   private sessionId: string;
   private sessionContext?: { id: string; workingDirectory: string };
@@ -270,7 +289,7 @@ export class ActivityTracker {
     tunnelService?: TunnelServiceInterface,
     sessionContext?: { id: string; workingDirectory: string },
   ) {
-    this.outputMode = outputMode;
+    this._outputMode = outputMode;
     this.tracer = tracer;
     this.sessionId = sessionId;
     this.sessionContext = sessionContext;
@@ -280,6 +299,10 @@ export class ActivityTracker {
     this.thoughtBuffer = new ThoughtBuffer();
     this.thinking = new ThinkingIndicator(api, chatId, threadId, sendQueue, sessionId, tracer);
     this.toolCard = new ToolCard(api, chatId, threadId, sendQueue, sessionId, tracer);
+  }
+
+  setOutputMode(mode: OutputMode): void {
+    this._outputMode = mode;
   }
 
   async onNewPrompt(): Promise<void> {
@@ -308,7 +331,28 @@ export class ActivityTracker {
     this.tracer?.log("telegram", { action: "tracker:textStart", sessionId: this.sessionId });
     this.isFirstEvent = false;
     this.thoughtBuffer.seal();
-    await this.thinking.dismiss();
+
+    // In high mode with tunnel: store thought content and show a viewer link before dismissing
+    if (this._outputMode === "high" && this.tunnelService && this.sessionContext) {
+      const thoughtText = this.thoughtBuffer.getText();
+      if (thoughtText.trim().length > 0) {
+        const id = this.tunnelService.getStore().storeOutput(
+          this.sessionContext.id,
+          "thinking",
+          thoughtText,
+        );
+        if (id !== null) {
+          await this.thinking.finalizeWithViewerLink(this.tunnelService.outputUrl(id));
+        } else {
+          await this.thinking.dismiss();
+        }
+      } else {
+        await this.thinking.dismiss();
+      }
+    } else {
+      await this.thinking.dismiss();
+    }
+
     await this.sealToolCardIfNeeded();
   }
 
@@ -323,7 +367,7 @@ export class ActivityTracker {
     this.thinking.reset();
 
     const entry = this.toolStateMap.upsert(meta, kind, rawInput);
-    const spec = this.specBuilder.buildToolSpec(entry, this.outputMode, this.sessionContext);
+    const spec = this.specBuilder.buildToolSpec(entry, this._outputMode, this.sessionContext);
     this.toolCard.updateFromSpec(spec);
   }
 
@@ -343,7 +387,7 @@ export class ActivityTracker {
       this.previousToolStateMap.merge(id, status, rawInput, content, viewerLinks, diffStats);
       const prevEntry = this.previousToolStateMap.get(id);
       if (prevEntry) {
-        const prevSpec = this.specBuilder.buildToolSpec(prevEntry, this.outputMode, this.sessionContext);
+        const prevSpec = this.specBuilder.buildToolSpec(prevEntry, this._outputMode, this.sessionContext);
         this.previousToolCard?.updateFromSpec(prevSpec);
       }
     }
@@ -356,7 +400,7 @@ export class ActivityTracker {
     if (viewerLinks || entry.viewerLinks) {
       log.debug({ toolId: id, status, hasIncomingLinks: !!viewerLinks, hasEntryLinks: !!entry.viewerLinks, entryLinks: entry.viewerLinks }, "toolUpdate: viewer links trace");
     }
-    const spec = this.specBuilder.buildToolSpec(entry, this.outputMode, this.sessionContext);
+    const spec = this.specBuilder.buildToolSpec(entry, this._outputMode, this.sessionContext);
     this.toolCard.updateFromSpec(spec);
   }
 

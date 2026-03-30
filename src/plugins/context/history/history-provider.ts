@@ -48,12 +48,10 @@ export class HistoryProvider implements ContextProvider {
     let estimatedTokens = 0;
 
     for (const record of candidates) {
-      if (!(await this.store.exists(record.sessionId))) continue;
-
       const history = await this.store.read(record.sessionId);
-      const turnCount = history?.turns.length ?? 0;
+      if (!history) continue;
+      const turnCount = history.turns.length;
       const tokenEstimate = turnCount * TOKENS_PER_TURN_ESTIMATE;
-
       sessions.push(this.toSessionInfo(record, turnCount));
       estimatedTokens += tokenEstimate;
     }
@@ -107,7 +105,7 @@ export class HistoryProvider implements ContextProvider {
     let truncated = false;
     let activeSessions = [...loaded];
     while (tokenEstimate > maxTokens && activeSessions.length > 1) {
-      // Remove the oldest session (first in list, sorted newest-first)
+      // Remove the oldest session (last in list, sorted newest-first)
       activeSessions = activeSessions.slice(0, activeSessions.length - 1);
       markdown = this.buildMergedMarkdown(activeSessions, mode, query);
       tokenEstimate = estimateTokens(markdown);
@@ -172,7 +170,7 @@ export class HistoryProvider implements ContextProvider {
     if (sessions.length === 0) return "";
 
     const totalTurns = sessions.reduce((sum, s) => sum + s.history.turns.length, 0);
-    const title = query.type === "session" ? query.value : `${sessions.length} sessions`;
+    const title = query.type === "session" ? query.value : `latest ${sessions.length} sessions`;
 
     const parts: string[] = [];
     parts.push(`# Conversation History — ${title}`);

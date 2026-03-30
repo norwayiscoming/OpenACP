@@ -127,6 +127,10 @@ export class ThoughtBuffer {
     return this.chunks.join("");
   }
 
+  getText(): string {
+    return this.chunks.join("");
+  }
+
   isSealed(): boolean {
     return this.sealed;
   }

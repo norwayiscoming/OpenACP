@@ -98,7 +98,7 @@ describe("ContextManager", () => {
 
     it("delegates to available provider", async () => {
       const expectedResult: SessionListResult = {
-        sessions: [],
+        sessions: [{ sessionId: "s1", checkpointId: "", sessionIndex: "", transcriptPath: "", createdAt: "", endedAt: "", branch: "", agent: "claude", turnCount: 1, filesTouched: [] }],
         estimatedTokens: 2000,
       };
       const provider = makeProvider("entire", true);
@@ -114,13 +114,18 @@ describe("ContextManager", () => {
     it("uses first available provider when multiple registered", async () => {
       const providerA = makeProvider("entire", false);
       const providerB = makeProvider("cursor", true);
+      vi.mocked(providerB.listSessions).mockResolvedValue({
+        sessions: [{ sessionId: "s1", checkpointId: "", sessionIndex: "", transcriptPath: "", createdAt: "", endedAt: "", branch: "", agent: "claude", turnCount: 1, filesTouched: [] }],
+        estimatedTokens: 100,
+      });
       manager.register(providerA);
       manager.register(providerB);
 
-      await manager.listSessions(query);
+      const result = await manager.listSessions(query);
 
       expect(providerA.listSessions).not.toHaveBeenCalled();
       expect(providerB.listSessions).toHaveBeenCalledWith(query);
+      expect(result?.sessions).toHaveLength(1);
     });
   });
 
@@ -220,5 +225,96 @@ describe("ContextManager", () => {
       const provider = await manager.getProvider("/repo");
       expect(provider).toBe(p3);
     });
+  });
+});
+
+describe("ContextManager — provider cascade", () => {
+  function makeCascadeProvider(name: string, overrides?: Partial<ContextProvider>): ContextProvider {
+    return {
+      name,
+      isAvailable: vi.fn().mockResolvedValue(true),
+      listSessions: vi.fn().mockResolvedValue({ sessions: [], estimatedTokens: 0 }),
+      buildContext: vi.fn().mockResolvedValue({ markdown: "", tokenEstimate: 0, sessionCount: 0, totalTurns: 0, mode: "full" as const, truncated: false, timeRange: { start: "", end: "" } }),
+      ...overrides,
+    };
+  }
+
+  const QUERY: ContextQuery = { repoPath: "/repo", type: "session", value: "s1" };
+
+  beforeEach(() => {
+    mockCacheGet = vi.fn<() => ContextResult | null>().mockReturnValue(null);
+    mockCacheSet = vi.fn();
+  });
+
+  it("buildContext skips provider that returns empty markdown and tries next", async () => {
+    const first = makeCascadeProvider("first"); // returns empty markdown
+    const second = makeCascadeProvider("second", {
+      buildContext: vi.fn().mockResolvedValue({
+        markdown: "# History",
+        tokenEstimate: 100,
+        sessionCount: 1,
+        totalTurns: 2,
+        mode: "full" as const,
+        truncated: false,
+        timeRange: { start: "2026-01-01", end: "2026-01-02" },
+      }),
+    });
+
+    const manager = new ContextManager();
+    manager.register(first);
+    manager.register(second);
+
+    const result = await manager.buildContext(QUERY);
+    expect(result?.markdown).toBe("# History");
+    expect(second.buildContext).toHaveBeenCalled();
+  });
+
+  it("buildContext returns first non-empty result without calling later providers", async () => {
+    const first = makeCascadeProvider("first", {
+      buildContext: vi.fn().mockResolvedValue({
+        markdown: "# First",
+        tokenEstimate: 50,
+        sessionCount: 1,
+        totalTurns: 1,
+        mode: "full" as const,
+        truncated: false,
+        timeRange: { start: "", end: "" },
+      }),
+    });
+    const second = makeCascadeProvider("second");
+
+    const manager = new ContextManager();
+    manager.register(first);
+    manager.register(second);
+
+    const result = await manager.buildContext(QUERY);
+    expect(result?.markdown).toBe("# First");
+    expect(second.buildContext).not.toHaveBeenCalled();
+  });
+
+  it("listSessions skips provider that returns empty and tries next", async () => {
+    const first = makeCascadeProvider("first"); // returns empty sessions
+    const second = makeCascadeProvider("second", {
+      listSessions: vi.fn().mockResolvedValue({
+        sessions: [{ sessionId: "s1", checkpointId: "", sessionIndex: "", transcriptPath: "", createdAt: "", endedAt: "", branch: "", agent: "claude", turnCount: 3, filesTouched: [] }],
+        estimatedTokens: 300,
+      }),
+    });
+
+    const manager = new ContextManager();
+    manager.register(first);
+    manager.register(second);
+
+    const result = await manager.listSessions(QUERY);
+    expect(result?.sessions).toHaveLength(1);
+    expect(second.listSessions).toHaveBeenCalled();
+  });
+
+  it("returns null when all providers return empty", async () => {
+    const manager = new ContextManager();
+    manager.register(makeCascadeProvider("only"));
+
+    const result = await manager.buildContext(QUERY);
+    expect(result).toBeNull();
   });
 });

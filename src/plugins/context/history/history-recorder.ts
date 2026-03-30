@@ -2,6 +2,8 @@ import type { AgentEvent, Attachment } from "../../../core/types.js";
 import type { HistoryStore } from "./history-store.js";
 import type {
   HistoryAttachment,
+  ResourceLinkStep,
+  ResourceStep,
   SessionHistory,
   Step,
   ToolCallStep,
@@ -210,25 +212,25 @@ export class HistoryRecorder {
       }
 
       case "resource_content": {
-        const step: Step = {
+        const step: ResourceStep = {
           type: "resource",
           uri: event.uri,
           name: event.name,
         };
-        if (event.text !== undefined) (step as any).text = event.text;
+        if (event.text !== undefined) step.text = event.text;
         steps.push(step);
         break;
       }
 
       case "resource_link": {
-        const step: Step = {
+        const step: ResourceLinkStep = {
           type: "resource_link",
           uri: event.uri,
           name: event.name,
         };
-        if (event.title !== undefined) (step as any).title = event.title;
+        if (event.title !== undefined) step.title = event.title;
         if (event.description !== undefined)
-          (step as any).description = event.description;
+          step.description = event.description;
         steps.push(step);
         break;
       }

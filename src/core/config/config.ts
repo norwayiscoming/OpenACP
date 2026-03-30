@@ -13,7 +13,6 @@ const BaseChannelSchema = z
     adapter: z.string().optional(), // package name for plugin adapters
     displayVerbosity: z
       .enum(["low", "medium", "high"])
-      .default("medium")
       .optional(),
     outputMode: z.enum(["low", "medium", "high"]).optional(),
   })

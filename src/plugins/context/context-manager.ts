@@ -23,9 +23,12 @@ export class ContextManager {
   }
 
   async listSessions(query: ContextQuery): Promise<SessionListResult | null> {
-    const provider = await this.getProvider(query.repoPath);
-    if (!provider) return null;
-    return provider.listSessions(query);
+    for (const provider of this.providers) {
+      if (!(await provider.isAvailable(query.repoPath))) continue;
+      const result = await provider.listSessions(query);
+      if (result.sessions.length > 0) return result;
+    }
+    return null;
   }
 
   async buildContext(query: ContextQuery, options?: ContextOptions): Promise<ContextResult | null> {
@@ -33,10 +36,14 @@ export class ContextManager {
     const cached = this.cache.get(query.repoPath, queryKey);
     if (cached) return cached;
 
-    const provider = await this.getProvider(query.repoPath);
-    if (!provider) return null;
-    const result = await provider.buildContext(query, options);
-    if (result) this.cache.set(query.repoPath, queryKey, result);
-    return result;
+    for (const provider of this.providers) {
+      if (!(await provider.isAvailable(query.repoPath))) continue;
+      const result = await provider.buildContext(query, options);
+      if (result && result.markdown) {
+        this.cache.set(query.repoPath, queryKey, result);
+        return result;
+      }
+    }
+    return null;
   }
 }

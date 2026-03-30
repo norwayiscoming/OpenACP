@@ -392,6 +392,17 @@ describe("HistoryProvider", () => {
       expect(result.markdown).toContain("outdated information");
     });
 
+    it("uses 'latest N sessions' title for latest query type", async () => {
+      const records = [makeSessionRecord("title-1"), makeSessionRecord("title-2")];
+      await store.write(makeHistory("title-1", 2));
+      await store.write(makeHistory("title-2", 2));
+
+      const provider = new HistoryProvider(store, () => records);
+      const result = await provider.buildContext({ repoPath: "/repo", type: "latest", value: "2" });
+
+      expect(result.markdown).toContain("latest 2 sessions");
+    });
+
     it("respects limit option from ContextOptions", async () => {
       const records = [
         makeSessionRecord("lim-1", { lastActiveAt: "2026-01-01T00:00:00.000Z" }),

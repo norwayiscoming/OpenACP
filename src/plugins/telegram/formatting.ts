@@ -229,11 +229,10 @@ const FILE_KINDS = new Set(["read", "edit", "write", "delete"]);
 /** Shorten absolute file paths to just filename (+ line range if present) */
 function shortenTitle(title: string, kind: string): string {
   if (!FILE_KINDS.has(kind) || !title.includes("/")) return title;
-  // Separate optional :lineRange suffix (e.g. ":10-50" or ":10")
-  const colonIdx = title.lastIndexOf(":");
-  const hasRange = colonIdx > 0 && /^\d/.test(title.slice(colonIdx + 1));
-  const pathPart = hasRange ? title.slice(0, colonIdx) : title;
-  const rangePart = hasRange ? title.slice(colonIdx) : "";
+  // Separate optional parenthesized suffix (e.g. " (lines 10–50)" or " (from line 10)")
+  const parenIdx = title.indexOf(" (");
+  const pathPart = parenIdx > 0 ? title.slice(0, parenIdx) : title;
+  const rangePart = parenIdx > 0 ? title.slice(parenIdx) : "";
   const fileName = pathPart.split("/").pop() || pathPart;
   return fileName + rangePart;
 }
@@ -274,19 +273,25 @@ function renderSpecSection(spec: ToolDisplaySpec): string {
 
   if (spec.description) lines.push(`   <i>${escapeHtml(spec.description)}</i>`);
   if (spec.command) lines.push(`   <code>${escapeHtml(spec.command)}</code>`);
+  if (spec.inputContent) {
+    const truncated = spec.inputContent.length > 800 ? spec.inputContent.slice(0, 797) + "…" : spec.inputContent;
+    lines.push(`   <pre><code>${escapeHtml(truncated)}</code></pre>`);
+  }
   if (spec.outputSummary) lines.push(`   · ${escapeHtml(spec.outputSummary)}`);
-  if (spec.outputContent) {
+  if (spec.outputContent || spec.outputFallbackContent) {
+    const raw = spec.outputContent ?? spec.outputFallbackContent!;
     const truncated =
-      spec.outputContent.length > 800
-        ? spec.outputContent.slice(0, 797) + "…"
-        : spec.outputContent;
+      raw.length > 800
+        ? raw.slice(0, 797) + "…"
+        : raw;
     lines.push(`   <pre><code>${escapeHtml(truncated)}</code></pre>`);
   }
 
   if (spec.viewerLinks?.file || spec.viewerLinks?.diff || spec.outputViewerLink) {
     const linkParts: string[] = [];
+    const shortName = displayTitle || kindLabel || spec.kind;
     if (spec.viewerLinks?.file)
-      linkParts.push(`<a href="${escapeHtml(spec.viewerLinks.file)}">View file</a>`);
+      linkParts.push(`<a href="${escapeHtml(spec.viewerLinks.file)}">View ${escapeHtml(shortName)}</a>`);
     if (spec.viewerLinks?.diff)
       linkParts.push(`<a href="${escapeHtml(spec.viewerLinks.diff)}">View diff</a>`);
     if (spec.outputViewerLink)

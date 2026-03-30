@@ -164,6 +164,8 @@ export class TelegramAdapter extends MessagingAdapter {
         sessionContext,
       );
       this.sessionTrackers.set(sessionId, tracker);
+    } else {
+      tracker.setOutputMode(outputMode);
     }
     return tracker;
   }

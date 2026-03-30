@@ -1,22 +1,141 @@
-import { wantsHelp } from './helpers.js'
+import { InstanceRegistry } from '../../core/instance-registry.js'
+import { getGlobalRoot } from '../../core/instance-context.js'
+import fs from 'node:fs'
+import path from 'node:path'
+import os from 'node:os'
 
-export async function cmdStatus(args: string[] = []): Promise<void> {
-  if (wantsHelp(args)) {
-    console.log(`
-\x1b[1mopenacp status\x1b[0m — Show daemon status
-
-\x1b[1mUsage:\x1b[0m
-  openacp status
-
-Shows whether the OpenACP daemon is running and its PID.
-`)
+export async function cmdStatus(args: string[] = [], instanceRoot?: string): Promise<void> {
+  // Handle --all flag
+  if (args.includes('--all')) {
+    await showAllInstances()
     return
   }
-  const { getStatus } = await import('../daemon.js')
-  const status = getStatus()
-  if (status.running) {
-    console.log(`OpenACP is running (PID ${status.pid})`)
-  } else {
-    console.log('OpenACP is not running')
+
+  // Handle --id flag
+  const idIdx = args.indexOf('--id')
+  if (idIdx !== -1 && args[idIdx + 1]) {
+    await showInstanceById(args[idIdx + 1]!)
+    return
   }
+
+  // Default: show status of current/specified instance
+  const root = instanceRoot ?? getGlobalRoot()
+  await showSingleInstance(root)
+}
+
+async function showAllInstances(): Promise<void> {
+  const registryPath = path.join(getGlobalRoot(), 'instances.json')
+  const registry = new InstanceRegistry(registryPath)
+  await registry.load()
+  const instances = registry.list()
+
+  if (instances.length === 0) {
+    console.log('No instances registered.')
+    return
+  }
+
+  // Print table header
+  console.log('')
+  console.log('  Status     ID               Name             Directory            Mode     Channels   API    Tunnel')
+  console.log('  ' + '─'.repeat(100))
+
+  for (const entry of instances) {
+    const info = readInstanceInfo(entry.root)
+    const status = info.pid ? '● online' : '○ offline'
+    const mode = info.pid ? (info.runMode === 'daemon' ? 'daemon' : 'fg') : '—'
+    const api = info.apiPort ? String(info.apiPort) : '—'
+    const tunnel = info.tunnelPort ? String(info.tunnelPort) : '—'
+    const dir = entry.root.replace(/\/.openacp$/, '').replace(os.homedir(), '~')
+    const channels = info.channels.join(', ') || '—'
+    const name = info.name ?? entry.id
+
+    console.log(`  ${status.padEnd(10)} ${entry.id.padEnd(16)} ${name.padEnd(16)} ${dir.padEnd(20)} ${mode.padEnd(8)} ${channels.padEnd(10)} ${api.padEnd(6)} ${tunnel}`)
+  }
+  console.log('')
+}
+
+async function showInstanceById(id: string): Promise<void> {
+  const registryPath = path.join(getGlobalRoot(), 'instances.json')
+  const registry = new InstanceRegistry(registryPath)
+  await registry.load()
+  const entry = registry.get(id)
+  if (!entry) {
+    console.error(`Instance "${id}" not found.`)
+    process.exit(1)
+  }
+  await showSingleInstance(entry.root)
+}
+
+async function showSingleInstance(root: string): Promise<void> {
+  // Read PID and check if running
+  const info = readInstanceInfo(root)
+
+  if (info.pid) {
+    console.log(`OpenACP is running (PID ${info.pid})`)
+    if (info.name) console.log(`  Name: ${info.name}`)
+    if (info.apiPort) console.log(`  API: port ${info.apiPort}`)
+    if (info.tunnelPort) console.log(`  Tunnel: port ${info.tunnelPort}`)
+    if (info.channels.length > 0) console.log(`  Channels: ${info.channels.join(', ')}`)
+  } else {
+    console.log('OpenACP is not running.')
+  }
+}
+
+interface InstanceInfo {
+  name: string | null
+  pid: number | null
+  apiPort: number | null
+  tunnelPort: number | null
+  runMode: string | null
+  channels: string[]
+}
+
+function readInstanceInfo(root: string): InstanceInfo {
+  const result: InstanceInfo = {
+    name: null, pid: null, apiPort: null,
+    tunnelPort: null, runMode: null, channels: [],
+  }
+
+  // Read name and runMode from config
+  try {
+    const config = JSON.parse(fs.readFileSync(path.join(root, 'config.json'), 'utf-8'))
+    result.name = config.instanceName ?? null
+    result.runMode = config.runMode ?? null
+  } catch {}
+
+  // Read PID and check if alive
+  try {
+    const pid = parseInt(fs.readFileSync(path.join(root, 'openacp.pid'), 'utf-8').trim())
+    if (!isNaN(pid)) {
+      process.kill(pid, 0) // throws if process doesn't exist
+      result.pid = pid
+    }
+  } catch {}
+
+  // Read API port
+  try {
+    const port = parseInt(fs.readFileSync(path.join(root, 'api.port'), 'utf-8').trim())
+    if (!isNaN(port)) result.apiPort = port
+  } catch {}
+
+  // Read tunnel port from tunnels.json
+  try {
+    const tunnels = JSON.parse(fs.readFileSync(path.join(root, 'tunnels.json'), 'utf-8'))
+    const entries = Object.values(tunnels) as any[]
+    const systemEntry = entries.find((t: any) => t.type === 'system')
+    if (systemEntry?.port) result.tunnelPort = systemEntry.port
+  } catch {}
+
+  // Read enabled channels from plugins.json
+  try {
+    const plugins = JSON.parse(fs.readFileSync(path.join(root, 'plugins.json'), 'utf-8'))
+    const adapters = ['@openacp/telegram', '@openacp/discord', '@openacp/slack']
+    for (const name of adapters) {
+      if (plugins.installed?.[name] && plugins.installed[name].enabled !== false) {
+        result.channels.push(name.replace('@openacp/', ''))
+      }
+    }
+  } catch {}
+
+  return result
 }

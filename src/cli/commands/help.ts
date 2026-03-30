@@ -71,6 +71,13 @@ Connect messaging platforms (Telegram, Discord) to 28+ AI coding agents via ACP 
   openacp api health                   System health check
   openacp api restart                  Restart daemon
 
+\x1b[1mInstance Flags:\x1b[0m
+  --local              Use setup in current directory
+  --global             Use main setup (~/.openacp)
+  --dir <path>         Use setup in specified directory
+  --from <path>        Copy settings from existing setup (on create)
+  --name <name>        Set instance name (on create)
+
 \x1b[2mMore info: https://github.com/Open-ACP/OpenACP\x1b[0m
 `)
 }

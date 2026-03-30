@@ -27,9 +27,54 @@ import {
   cmdOnboard,
   cmdDev,
 } from './cli/commands/index.js'
+import { resolveInstanceRoot } from './core/instance-context.js'
 
-const args = process.argv.slice(2);
-const command = args[0];
+export interface InstanceFlags {
+  local: boolean
+  global: boolean
+  dir?: string
+  from?: string
+  name?: string
+}
+
+function extractInstanceFlags(args: string[]): { flags: InstanceFlags; remaining: string[] } {
+  const flags: InstanceFlags = { local: false, global: false }
+  const remaining: string[] = []
+  let i = 0
+  while (i < args.length) {
+    if (args[i] === '--local') { flags.local = true; i++ }
+    else if (args[i] === '--global') { flags.global = true; i++ }
+    else if (args[i] === '--dir' && args[i + 1]) { flags.dir = args[i + 1]; i += 2 }
+    else if (args[i] === '--from' && args[i + 1]) { flags.from = args[i + 1]; i += 2 }
+    else if (args[i] === '--name' && args[i + 1]) { flags.name = args[i + 1]; i += 2 }
+    else { remaining.push(args[i]!); i++ }
+  }
+  return { flags, remaining }
+}
+
+let resolvedInstanceRoot: string | null = null
+let instanceFlags: InstanceFlags = { local: false, global: false }
+
+export function getResolvedInstanceRoot(): string | null {
+  return resolvedInstanceRoot
+}
+
+export function getInstanceFlags(): InstanceFlags {
+  return instanceFlags
+}
+
+const allArgs = process.argv.slice(2)
+const { flags, remaining } = extractInstanceFlags(allArgs)
+instanceFlags = flags
+const [command, ...args] = remaining
+
+// Resolve instance root from flags
+resolvedInstanceRoot = resolveInstanceRoot({
+  dir: flags.dir,
+  local: flags.local,
+  global: flags.global,
+  cwd: process.cwd(),
+})
 
 const commands: Record<string, () => Promise<void>> = {
   '--help': async () => printHelp(),

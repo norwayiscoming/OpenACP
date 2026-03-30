@@ -98,6 +98,15 @@ export const migrations: Migration[] = [
     },
   },
   {
+    name: "add-instance-name",
+    apply(raw) {
+      if (raw.instanceName) return false;
+      raw.instanceName = "Main";
+      log.info("Added instanceName to config");
+      return true;
+    },
+  },
+  {
     name: "migrate-display-verbosity-to-output-mode",
     apply(raw) {
       const channels = raw.channels as Record<string, unknown> | undefined;

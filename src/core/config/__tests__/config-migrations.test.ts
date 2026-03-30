@@ -97,6 +97,7 @@ describe('Config Migrations', () => {
         agents: { claude: { command: 'claude-agent-acp', args: [] } },
         defaultAgent: 'claude',
         tunnel: { enabled: true, port: 3100, provider: 'cloudflare', options: {}, storeTtlMinutes: 60, auth: { enabled: false } },
+        instanceName: 'Main',
       }
       const { changed } = applyMigrations(raw)
 

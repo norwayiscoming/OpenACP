@@ -13,6 +13,7 @@ import { CommandRegistry } from './core/command-registry.js'
 import { registerSystemCommands } from './core/commands/index.js'
 import type { IChannelAdapter } from './core/channel.js'
 import type { TunnelService } from './plugins/tunnel/tunnel-service.js'
+import { InstanceRegistry } from './core/instance-registry.js'
 import fs from 'node:fs'
 
 export const RESTART_EXIT_CODE = 75
@@ -385,6 +386,20 @@ export async function startServer(opts?: StartServerOptions) {
   })
 
   await core.start()
+
+  // Auto-register this instance in the global instance registry (backward compat for existing installs)
+  try {
+    const globalRoot = getGlobalRoot()
+    const registryPath = path.join(globalRoot, 'instances.json')
+    const instanceReg = new InstanceRegistry(registryPath)
+    await instanceReg.load()
+    if (!instanceReg.getByRoot(ctx.root)) {
+      instanceReg.register(ctx.id, ctx.root)
+      await instanceReg.save()
+    }
+  } catch {
+    // Non-critical — don't fail startup if registry write fails
+  }
 
   // 6. Log ready
   if (isForegroundTTY) {

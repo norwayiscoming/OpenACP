@@ -402,6 +402,19 @@ export interface MiddlewarePayloadMap {
     sessionId: string
     reason?: string
   }
+
+  // === Agent switch ===
+  'agent:beforeSwitch': {
+    sessionId: string
+    fromAgent: string
+    toAgent: string
+  }
+  'agent:afterSwitch': {
+    sessionId: string
+    fromAgent: string
+    toAgent: string
+    resumed: boolean
+  }
 }
 
 export type MiddlewareHook = keyof MiddlewarePayloadMap

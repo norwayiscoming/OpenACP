@@ -215,6 +215,13 @@ export type SessionStatus =
   | "finished"
   | "error";
 
+export interface AgentSwitchEntry {
+  agentName: string;
+  agentSessionId: string;
+  switchedAt: string;
+  promptCount: number;
+}
+
 export interface SessionRecord<P = Record<string, unknown>> {
   sessionId: string;
   agentSessionId: string;
@@ -229,6 +236,9 @@ export interface SessionRecord<P = Record<string, unknown>> {
   dangerousMode?: boolean;
   outputMode?: OutputMode;
   platform: P;
+  firstAgent?: string;
+  currentPromptCount?: number;
+  agentSwitchHistory?: AgentSwitchEntry[];
 }
 
 export interface TelegramPlatformData {

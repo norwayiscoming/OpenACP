@@ -73,11 +73,19 @@ export class JsonFileSessionStore implements SessionStore {
   }
 
   findByAgentSessionId(agentSessionId: string): SessionRecord | undefined {
-    return [...this.records.values()].find(
-      (r) =>
-        r.agentSessionId === agentSessionId ||
-        r.originalAgentSessionId === agentSessionId,
-    );
+    for (const record of this.records.values()) {
+      if (
+        record.agentSessionId === agentSessionId ||
+        record.originalAgentSessionId === agentSessionId
+      ) {
+        return record;
+      }
+      // Also search switch history
+      if (record.agentSwitchHistory?.some((e) => e.agentSessionId === agentSessionId)) {
+        return record;
+      }
+    }
+    return undefined;
   }
 
   list(channelId?: string): SessionRecord[] {

@@ -622,6 +622,12 @@ export class OpenACPCore {
     const bridge = this.bridges.get(sessionId);
     if (bridge) bridge.disconnect();
 
+    // Clear old agent's skill commands so they don't linger in the UI
+    const switchAdapter = this.adapters.get(session.channelId);
+    if (switchAdapter?.sendSkillCommands) {
+      await switchAdapter.sendSkillCommands(session.id, []);
+    }
+
     // Capture pre-switch state for rollback
     const fromAgentSessionId = session.agentSessionId;
 

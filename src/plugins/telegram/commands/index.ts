@@ -17,6 +17,7 @@ import {
 import { handleSettings, setupSettingsCallbacks } from "./settings.js";
 import { handleDoctor, setupDoctorCallbacks } from "./doctor.js";
 import { handleTunnel, handleTunnels, setupTunnelCallbacks } from "./tunnel.js";
+import { handleSwitch, setupSwitchCallbacks } from "./switch.js";
 
 export function setupCommands(
   bot: Bot,
@@ -47,6 +48,7 @@ export function setupCommands(
   bot.command("verbosity", (ctx) => handleVerbosity(ctx, core));
   bot.command("outputmode", (ctx) => handleOutputMode(ctx, core));
   bot.command("resume", (ctx) => handleResume(ctx, core, chatId, assistant));
+  bot.command("switch", (ctx) => handleSwitch(ctx, core));
 }
 
 export function setupAllCallbacks(
@@ -71,6 +73,9 @@ export function setupAllCallbacks(
 
   // Tunnel callbacks — must be before broad m: handler
   setupTunnelCallbacks(bot, core);
+
+  // Switch agent callbacks — must be before broad m: handler
+  setupSwitchCallbacks(bot, core);
 
   // Agent callbacks (install + pagination) — must be before broad m: handler
   bot.callbackQuery(/^ag:/, (ctx) => handleAgentCallback(ctx, core));
@@ -193,4 +198,5 @@ export const STATIC_COMMANDS = [
   { command: 'verbosity', description: 'Deprecated: use /outputmode instead' },
   { command: "outputmode", description: "Control output display level (low/medium/high)" },
   { command: 'resume', description: 'Resume with conversation history from Entire checkpoints' },
+  { command: 'switch', description: 'Switch agent in current session' },
 ];

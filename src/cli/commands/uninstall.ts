@@ -2,11 +2,11 @@ import { execSync } from 'node:child_process'
 import * as fs from 'node:fs'
 import * as path from 'node:path'
 import * as os from 'node:os'
-
-const PLUGINS_DIR = path.join(os.homedir(), '.openacp', 'plugins')
 import { wantsHelp } from './helpers.js'
 
-export async function cmdUninstall(args: string[]): Promise<void> {
+export async function cmdUninstall(args: string[], instanceRoot?: string): Promise<void> {
+  const root = instanceRoot ?? path.join(os.homedir(), '.openacp')
+  const pluginsDir = path.join(root, 'plugins')
   if (wantsHelp(args)) {
     console.log(`
 \x1b[1mopenacp uninstall\x1b[0m — Remove a plugin adapter
@@ -27,12 +27,12 @@ export async function cmdUninstall(args: string[]): Promise<void> {
     console.error("Usage: openacp uninstall <package>")
     process.exit(1)
   }
-  fs.mkdirSync(PLUGINS_DIR, { recursive: true })
-  const pkgPath = path.join(PLUGINS_DIR, 'package.json')
+  fs.mkdirSync(pluginsDir, { recursive: true })
+  const pkgPath = path.join(pluginsDir, 'package.json')
   if (!fs.existsSync(pkgPath)) {
     fs.writeFileSync(pkgPath, JSON.stringify({ name: 'openacp-plugins', private: true, dependencies: {} }, null, 2))
   }
   console.log(`Uninstalling ${pkg}...`)
-  execSync(`npm uninstall ${pkg} --prefix "${PLUGINS_DIR}"`, { stdio: 'inherit' })
+  execSync(`npm uninstall ${pkg} --prefix "${pluginsDir}"`, { stdio: 'inherit' })
   console.log(`Plugin ${pkg} uninstalled.`)
 }

@@ -1,6 +1,6 @@
 import { wantsHelp } from './helpers.js'
 
-export async function cmdReset(args: string[] = []): Promise<void> {
+export async function cmdReset(args: string[] = [], instanceRoot?: string): Promise<void> {
   if (wantsHelp(args)) {
     console.log(`
 \x1b[1mopenacp reset\x1b[0m — Re-run setup wizard
@@ -15,8 +15,12 @@ start fresh with the setup wizard. The daemon must be stopped first.
 `)
     return
   }
-  const { getStatus } = await import('../daemon.js')
-  const status = getStatus()
+  const os = await import('node:os')
+  const path = await import('node:path')
+  const root = instanceRoot ?? path.join(os.homedir(), '.openacp')
+
+  const { getStatus, getPidPath } = await import('../daemon.js')
+  const status = getStatus(getPidPath(root))
   if (status.running) {
     console.error('OpenACP is running. Stop it first: openacp stop')
     process.exit(1)
@@ -36,10 +40,7 @@ start fresh with the setup wizard. The daemon must be stopped first.
   uninstallAutoStart()
 
   const fs = await import('node:fs')
-  const os = await import('node:os')
-  const path = await import('node:path')
-  const openacpDir = path.join(os.homedir(), '.openacp')
-  fs.rmSync(openacpDir, { recursive: true, force: true })
+  fs.rmSync(root, { recursive: true, force: true })
 
   console.log('Reset complete. Run `openacp` to set up again.')
 }

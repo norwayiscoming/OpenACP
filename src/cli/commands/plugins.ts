@@ -1,6 +1,6 @@
 import { wantsHelp } from './helpers.js'
 
-export async function cmdPlugins(args: string[] = []): Promise<void> {
+export async function cmdPlugins(args: string[] = [], instanceRoot?: string): Promise<void> {
   if (wantsHelp(args)) {
     console.log(`
 \x1b[1mopenacp plugins\x1b[0m — List installed plugins
@@ -17,7 +17,8 @@ Shows all plugins registered in the plugin registry.
   const path = await import('node:path')
   const { PluginRegistry } = await import('../../core/plugin/plugin-registry.js')
 
-  const registryPath = path.join(os.homedir(), '.openacp', 'plugins.json')
+  const root = instanceRoot ?? path.join(os.homedir(), '.openacp')
+  const registryPath = path.join(root, 'plugins.json')
   const registry = new PluginRegistry(registryPath)
   await registry.load()
 
@@ -44,7 +45,7 @@ Shows all plugins registered in the plugin registry.
  *   disable <name>      — Disable a plugin
  *   configure <name>    — Run interactive configuration for a plugin
  */
-export async function cmdPlugin(args: string[] = []): Promise<void> {
+export async function cmdPlugin(args: string[] = [], instanceRoot?: string): Promise<void> {
   const subcommand = args[1] // args[0] is 'plugin'
 
   if (wantsHelp(args) || !subcommand) {
@@ -77,7 +78,7 @@ export async function cmdPlugin(args: string[] = []): Promise<void> {
 
   switch (subcommand) {
     case 'list':
-      return cmdPlugins(args.slice(1))
+      return cmdPlugins(args.slice(1), instanceRoot)
 
     case 'search': {
       const { cmdPluginSearch } = await import('./plugin-search.js')
@@ -92,7 +93,7 @@ export async function cmdPlugin(args: string[] = []): Promise<void> {
         console.error('Error: missing package name. Usage: openacp plugin add <package>')
         process.exit(1)
       }
-      await installPlugin(pkg)
+      await installPlugin(pkg, instanceRoot)
       return
     }
 
@@ -104,7 +105,7 @@ export async function cmdPlugin(args: string[] = []): Promise<void> {
         process.exit(1)
       }
       const purge = args.includes('--purge')
-      await uninstallPlugin(pkg, purge)
+      await uninstallPlugin(pkg, purge, instanceRoot)
       return
     }
 
@@ -114,7 +115,7 @@ export async function cmdPlugin(args: string[] = []): Promise<void> {
         console.error('Error: missing plugin name. Usage: openacp plugin enable <name>')
         process.exit(1)
       }
-      await setPluginEnabled(name, true)
+      await setPluginEnabled(name, true, instanceRoot)
       return
     }
 
@@ -124,7 +125,7 @@ export async function cmdPlugin(args: string[] = []): Promise<void> {
         console.error('Error: missing plugin name. Usage: openacp plugin disable <name>')
         process.exit(1)
       }
-      await setPluginEnabled(name, false)
+      await setPluginEnabled(name, false, instanceRoot)
       return
     }
 
@@ -134,7 +135,7 @@ export async function cmdPlugin(args: string[] = []): Promise<void> {
         console.error('Error: missing plugin name. Usage: openacp plugin configure <name>')
         process.exit(1)
       }
-      await configurePlugin(name)
+      await configurePlugin(name, instanceRoot)
       return
     }
 
@@ -151,12 +152,13 @@ export async function cmdPlugin(args: string[] = []): Promise<void> {
   }
 }
 
-async function setPluginEnabled(name: string, enabled: boolean): Promise<void> {
+async function setPluginEnabled(name: string, enabled: boolean, instanceRoot?: string): Promise<void> {
   const os = await import('node:os')
   const path = await import('node:path')
   const { PluginRegistry } = await import('../../core/plugin/plugin-registry.js')
 
-  const registryPath = path.join(os.homedir(), '.openacp', 'plugins.json')
+  const root = instanceRoot ?? path.join(os.homedir(), '.openacp')
+  const registryPath = path.join(root, 'plugins.json')
   const registry = new PluginRegistry(registryPath)
   await registry.load()
 
@@ -171,7 +173,7 @@ async function setPluginEnabled(name: string, enabled: boolean): Promise<void> {
   console.log(`Plugin ${name} ${enabled ? 'enabled' : 'disabled'}. Restart to apply.`)
 }
 
-async function configurePlugin(name: string): Promise<void> {
+async function configurePlugin(name: string, instanceRoot?: string): Promise<void> {
   const os = await import('node:os')
   const path = await import('node:path')
   const { corePlugins } = await import('../../plugins/core-plugins.js')
@@ -184,7 +186,8 @@ async function configurePlugin(name: string): Promise<void> {
     process.exit(1)
   }
 
-  const basePath = path.join(os.homedir(), '.openacp', 'plugins', 'data')
+  const root = instanceRoot ?? path.join(os.homedir(), '.openacp')
+  const basePath = path.join(root, 'plugins', 'data')
   const settingsManager = new SettingsManager(basePath)
   const ctx = createInstallContext({ pluginName: name, settingsManager, basePath })
 
@@ -197,7 +200,7 @@ async function configurePlugin(name: string): Promise<void> {
   }
 }
 
-async function installPlugin(input: string): Promise<void> {
+async function installPlugin(input: string, instanceRoot?: string): Promise<void> {
   const os = await import('node:os')
   const path = await import('node:path')
   const { execFileSync } = await import('node:child_process')
@@ -205,6 +208,8 @@ async function installPlugin(input: string): Promise<void> {
   const { SettingsManager } = await import('../../core/plugin/settings-manager.js')
   const { createInstallContext } = await import('../../core/plugin/install-context.js')
   const { PluginRegistry } = await import('../../core/plugin/plugin-registry.js')
+
+  const root = instanceRoot ?? path.join(os.homedir(), '.openacp')
 
   // Parse input: "translator", "translator@1.2.0", "@lucas/pkg@2.0.0"
   let pkgName: string
@@ -261,9 +266,9 @@ async function installPlugin(input: string): Promise<void> {
   const { corePlugins } = await import('../../plugins/core-plugins.js')
   const builtinPlugin = corePlugins.find(p => p.name === pkgName)
 
-  const basePath = path.join(os.homedir(), '.openacp', 'plugins', 'data')
+  const basePath = path.join(root, 'plugins', 'data')
   const settingsManager = new SettingsManager(basePath)
-  const registryPath = path.join(os.homedir(), '.openacp', 'plugins.json')
+  const registryPath = path.join(root, 'plugins.json')
   const pluginRegistry = new PluginRegistry(registryPath)
   await pluginRegistry.load()
 
@@ -286,8 +291,8 @@ async function installPlugin(input: string): Promise<void> {
     return
   }
 
-  // Community plugin — npm install to ~/.openacp/plugins/
-  const pluginsDir = path.join(os.homedir(), '.openacp', 'plugins')
+  // Community plugin — npm install to plugins/
+  const pluginsDir = path.join(root, 'plugins')
   const nodeModulesDir = path.join(pluginsDir, 'node_modules')
 
   try {
@@ -351,13 +356,14 @@ async function installPlugin(input: string): Promise<void> {
   }
 }
 
-async function uninstallPlugin(name: string, purge: boolean): Promise<void> {
+async function uninstallPlugin(name: string, purge: boolean, instanceRoot?: string): Promise<void> {
   const os = await import('node:os')
   const path = await import('node:path')
   const fs = await import('node:fs')
   const { PluginRegistry } = await import('../../core/plugin/plugin-registry.js')
 
-  const registryPath = path.join(os.homedir(), '.openacp', 'plugins.json')
+  const root = instanceRoot ?? path.join(os.homedir(), '.openacp')
+  const registryPath = path.join(root, 'plugins.json')
   const registry = new PluginRegistry(registryPath)
   await registry.load()
 
@@ -379,7 +385,7 @@ async function uninstallPlugin(name: string, purge: boolean): Promise<void> {
     if (plugin?.uninstall) {
       const { SettingsManager } = await import('../../core/plugin/settings-manager.js')
       const { createInstallContext } = await import('../../core/plugin/install-context.js')
-      const basePath = path.join(os.homedir(), '.openacp', 'plugins', 'data')
+      const basePath = path.join(root, 'plugins', 'data')
       const settingsManager = new SettingsManager(basePath)
       const ctx = createInstallContext({ pluginName: name, settingsManager, basePath })
       await plugin.uninstall(ctx, { purge })
@@ -389,7 +395,7 @@ async function uninstallPlugin(name: string, purge: boolean): Promise<void> {
   }
 
   if (purge) {
-    const pluginDir = path.join(os.homedir(), '.openacp', 'plugins', name)
+    const pluginDir = path.join(root, 'plugins', name)
     fs.rmSync(pluginDir, { recursive: true, force: true })
   }
 

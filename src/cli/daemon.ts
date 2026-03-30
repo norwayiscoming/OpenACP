@@ -4,9 +4,22 @@ import * as path from 'node:path'
 import * as os from 'node:os'
 import { expandHome } from '../core/config/config.js'
 
-const DEFAULT_PID_PATH = path.join(os.homedir(), '.openacp', 'openacp.pid')
-const DEFAULT_LOG_DIR = path.join(os.homedir(), '.openacp', 'logs')
-const RUNNING_MARKER = path.join(os.homedir(), '.openacp', 'running')
+const DEFAULT_ROOT = path.join(os.homedir(), '.openacp')
+
+export function getPidPath(root?: string): string {
+  const base = root ?? DEFAULT_ROOT
+  return path.join(base, 'openacp.pid')
+}
+
+export function getLogDir(root?: string): string {
+  const base = root ?? DEFAULT_ROOT
+  return path.join(base, 'logs')
+}
+
+export function getRunningMarker(root?: string): string {
+  const base = root ?? DEFAULT_ROOT
+  return path.join(base, 'running')
+}
 
 export function writePidFile(pidPath: string, pid: number): void {
   const dir = path.dirname(pidPath)
@@ -45,7 +58,7 @@ export function isProcessRunning(pidPath: string): boolean {
   }
 }
 
-export function getStatus(pidPath: string = DEFAULT_PID_PATH): { running: boolean; pid?: number } {
+export function getStatus(pidPath: string = getPidPath()): { running: boolean; pid?: number } {
   const pid = readPidFile(pidPath)
   if (pid === null) return { running: false }
   try {
@@ -57,9 +70,9 @@ export function getStatus(pidPath: string = DEFAULT_PID_PATH): { running: boolea
   }
 }
 
-export function startDaemon(pidPath: string = DEFAULT_PID_PATH, logDir?: string): { pid: number } | { error: string } {
+export function startDaemon(pidPath: string = getPidPath(), logDir?: string, instanceRoot?: string): { pid: number } | { error: string } {
   // Mark as running so auto-start works on next boot
-  markRunning()
+  markRunning(instanceRoot)
 
   // Check if already running
   if (isProcessRunning(pidPath)) {
@@ -67,7 +80,7 @@ export function startDaemon(pidPath: string = DEFAULT_PID_PATH, logDir?: string)
     return { error: `Already running (PID ${pid})` }
   }
 
-  const resolvedLogDir = logDir ? expandHome(logDir) : DEFAULT_LOG_DIR
+  const resolvedLogDir = logDir ? expandHome(logDir) : getLogDir(instanceRoot)
   fs.mkdirSync(resolvedLogDir, { recursive: true })
   const logFile = path.join(resolvedLogDir, 'openacp.log')
 
@@ -81,6 +94,10 @@ export function startDaemon(pidPath: string = DEFAULT_PID_PATH, logDir?: string)
   const child = spawn(nodePath, [cliPath, '--daemon-child'], {
     detached: true,
     stdio: ['ignore', out, err],
+    env: {
+      ...process.env,
+      ...(instanceRoot ? { OPENACP_INSTANCE_ROOT: instanceRoot } : {}),
+    },
   })
 
   // Close file descriptors in parent — child has its own copies
@@ -116,7 +133,7 @@ function isProcessAlive(pid: number): 'alive' | 'dead' | 'eperm' {
   }
 }
 
-export async function stopDaemon(pidPath: string = DEFAULT_PID_PATH): Promise<{ stopped: boolean; pid?: number; error?: string }> {
+export async function stopDaemon(pidPath: string = getPidPath(), instanceRoot?: string): Promise<{ stopped: boolean; pid?: number; error?: string }> {
   const pid = readPidFile(pidPath)
   if (pid === null) return { stopped: false, error: 'Not running (no PID file)' }
 
@@ -136,7 +153,7 @@ export async function stopDaemon(pidPath: string = DEFAULT_PID_PATH): Promise<{ 
     return { stopped: false, error: `Failed to stop: ${(e as Error).message}` }
   }
 
-  clearRunning()
+  clearRunning(instanceRoot)
 
   const POLL_INTERVAL = 100
   const TIMEOUT = 5000
@@ -174,22 +191,19 @@ export async function stopDaemon(pidPath: string = DEFAULT_PID_PATH): Promise<{ 
   return { stopped: false, pid, error: 'Process did not exit after SIGKILL (possible uninterruptible I/O). PID file retained.' }
 }
 
-export function getPidPath(): string {
-  return DEFAULT_PID_PATH
-}
-
 /** Mark that the daemon should auto-start on boot */
-export function markRunning(): void {
-  fs.mkdirSync(path.dirname(RUNNING_MARKER), { recursive: true })
-  fs.writeFileSync(RUNNING_MARKER, '')
+export function markRunning(root?: string): void {
+  const marker = getRunningMarker(root)
+  fs.mkdirSync(path.dirname(marker), { recursive: true })
+  fs.writeFileSync(marker, '')
 }
 
 /** Remove running marker — daemon won't auto-start on boot */
-export function clearRunning(): void {
-  try { fs.unlinkSync(RUNNING_MARKER) } catch { /* ignore */ }
+export function clearRunning(root?: string): void {
+  try { fs.unlinkSync(getRunningMarker(root)) } catch { /* ignore */ }
 }
 
 /** Check if the daemon was running before (should auto-start on boot) */
-export function shouldAutoStart(): boolean {
-  return fs.existsSync(RUNNING_MARKER)
+export function shouldAutoStart(root?: string): boolean {
+  return fs.existsSync(getRunningMarker(root))
 }

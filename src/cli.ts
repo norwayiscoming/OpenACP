@@ -27,7 +27,7 @@ import {
   cmdOnboard,
   cmdDev,
 } from './cli/commands/index.js'
-import { resolveInstanceRoot } from './core/instance-context.js'
+import { resolveInstanceRoot, getGlobalRoot } from './core/instance-context.js'
 
 export interface InstanceFlags {
   local: boolean
@@ -76,22 +76,24 @@ resolvedInstanceRoot = resolveInstanceRoot({
   cwd: process.cwd(),
 })
 
+const root = resolvedInstanceRoot ?? getGlobalRoot()
+
 const commands: Record<string, () => Promise<void>> = {
   '--help': async () => printHelp(),
   '-h': async () => printHelp(),
   '--version': () => cmdVersion(),
   '-v': () => cmdVersion(),
-  'install': () => cmdInstall(args),
-  'uninstall': () => cmdUninstall(args),
-  'plugins': () => cmdPlugins(args),
-  'plugin': () => cmdPlugin(args),
+  'install': () => cmdInstall(args, root),
+  'uninstall': () => cmdUninstall(args, root),
+  'plugins': () => cmdPlugins(args, root),
+  'plugin': () => cmdPlugin(args, root),
   'api': () => cmdApi(args),
-  'start': () => cmdStart(args),
-  'stop': () => cmdStop(args),
+  'start': () => cmdStart(args, root),
+  'stop': () => cmdStop(args, root),
   'status': () => cmdStatus(args),
   'logs': () => cmdLogs(args),
   'config': () => cmdConfig(args),
-  'reset': () => cmdReset(args),
+  'reset': () => cmdReset(args, root),
   'update': () => cmdUpdate(args),
   'adopt': () => cmdAdopt(args),
   'integrate': () => cmdIntegrate(args),
@@ -102,7 +104,18 @@ const commands: Record<string, () => Promise<void>> = {
   'dev': () => cmdDev(args),
   '--daemon-child': async () => {
     const { startServer } = await import('./main.js')
-    await startServer()
+    const envRoot = process.env.OPENACP_INSTANCE_ROOT
+    if (envRoot) {
+      const { createInstanceContext, getGlobalRoot: getGlobal } = await import('./core/instance-context.js')
+      const ctx = createInstanceContext({
+        id: 'unknown',
+        root: envRoot,
+        isGlobal: envRoot === getGlobal(),
+      })
+      await startServer({ instanceContext: ctx })
+    } else {
+      await startServer()
+    }
   },
 }
 
@@ -111,7 +124,7 @@ async function main() {
   if (handler) {
     await handler()
   } else {
-    await cmdDefault(command)
+    await cmdDefault(command, root)
   }
 }
 

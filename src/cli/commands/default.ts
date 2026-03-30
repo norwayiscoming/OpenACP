@@ -3,11 +3,10 @@ import { printHelp } from './help.js'
 import path from 'node:path'
 import os from 'node:os'
 
-const OPENACP_DIR = path.join(os.homedir(), '.openacp')
-const PLUGINS_DATA_DIR = path.join(OPENACP_DIR, 'plugins', 'data')
-const REGISTRY_PATH = path.join(OPENACP_DIR, 'plugins.json')
-
-export async function cmdDefault(command: string | undefined): Promise<void> {
+export async function cmdDefault(command: string | undefined, instanceRoot?: string): Promise<void> {
+  const root = instanceRoot ?? path.join(os.homedir(), '.openacp')
+  const pluginsDataDir = path.join(root, 'plugins', 'data')
+  const registryPath = path.join(root, 'plugins.json')
   const forceForeground = command === '--foreground'
 
   // Reject unknown commands
@@ -33,8 +32,8 @@ export async function cmdDefault(command: string | undefined): Promise<void> {
   if (!(await cm.exists())) {
     const { SettingsManager } = await import('../../core/plugin/settings-manager.js')
     const { PluginRegistry } = await import('../../core/plugin/plugin-registry.js')
-    const settingsManager = new SettingsManager(PLUGINS_DATA_DIR)
-    const pluginRegistry = new PluginRegistry(REGISTRY_PATH)
+    const settingsManager = new SettingsManager(pluginsDataDir)
+    const pluginRegistry = new PluginRegistry(registryPath)
     await pluginRegistry.load()
 
     const { runSetup } = await import('../../core/setup/index.js')
@@ -47,7 +46,7 @@ export async function cmdDefault(command: string | undefined): Promise<void> {
 
   if (!forceForeground && config.runMode === 'daemon') {
     const { startDaemon, getPidPath } = await import('../daemon.js')
-    const result = startDaemon(getPidPath(), config.logging.logDir)
+    const result = startDaemon(getPidPath(root), config.logging.logDir, root)
     if ('error' in result) {
       console.error(result.error)
       process.exit(1)
@@ -57,7 +56,7 @@ export async function cmdDefault(command: string | undefined): Promise<void> {
   }
 
   const { markRunning } = await import('../daemon.js')
-  markRunning()
+  markRunning(root)
   const { startServer } = await import('../../main.js')
   await startServer()
 }

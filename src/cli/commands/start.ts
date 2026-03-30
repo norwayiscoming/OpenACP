@@ -1,7 +1,10 @@
 import { checkAndPromptUpdate } from '../version.js'
 import { wantsHelp } from './helpers.js'
+import path from 'node:path'
+import os from 'node:os'
 
-export async function cmdStart(args: string[] = []): Promise<void> {
+export async function cmdStart(args: string[] = [], instanceRoot?: string): Promise<void> {
+  const root = instanceRoot ?? path.join(os.homedir(), '.openacp')
   if (wantsHelp(args)) {
     console.log(`
 \x1b[1mopenacp start\x1b[0m — Start OpenACP as a background daemon
@@ -26,7 +29,7 @@ Requires an existing config — run 'openacp' first to set up.
   if (await cm.exists()) {
     await cm.load()
     const config = cm.get()
-    const result = startDaemon(getPidPath(), config.logging.logDir)
+    const result = startDaemon(getPidPath(root), config.logging.logDir, root)
     if ('error' in result) {
       console.error(result.error)
       process.exit(1)

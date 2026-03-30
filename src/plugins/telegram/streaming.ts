@@ -80,7 +80,7 @@ export class MessageDraft {
         )
         if (result) {
           this.messageId = result.message_id
-          this.tracer?.log("telegram", { action: "draft:send", sessionId: this.sessionId, msgId: result.message_id, textLen: snapshot.length, truncated })
+          this.tracer?.log("telegram", { action: "draft:send", sessionId: this.sessionId, msgId: result.message_id, textLen: snapshot.length, truncated, text: snapshot })
           if (!truncated) {
             this.lastSentBuffer = snapshot
             this.displayTruncated = false
@@ -103,7 +103,7 @@ export class MessageDraft {
         )
         // Only mark as sent if the edit was actually executed (not dropped by dedup/rate-limit)
         if (result !== undefined) {
-          this.tracer?.log("telegram", { action: "draft:edit", sessionId: this.sessionId, msgId: this.messageId, textLen: snapshot.length, truncated })
+          this.tracer?.log("telegram", { action: "draft:edit", sessionId: this.sessionId, msgId: this.messageId, textLen: snapshot.length, truncated, text: snapshot })
           if (!truncated) {
             this.lastSentBuffer = snapshot
             this.displayTruncated = false

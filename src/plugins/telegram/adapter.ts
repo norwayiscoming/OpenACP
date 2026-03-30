@@ -764,7 +764,7 @@ export class TelegramAdapter extends MessagingAdapter {
         String(threadId),
       )?.id;
       if (sessionId) {
-        this.getTracer(sessionId)?.log("telegram", { action: "incoming:message", sessionId, userId: String(ctx.from?.id), text: ctx.message?.text?.slice(0, 100) });
+        this.getTracer(sessionId)?.log("telegram", { action: "incoming:message", sessionId, userId: String(ctx.from?.id), text: ctx.message?.text });
         await this.draftManager.finalize(sessionId, this.assistantSession?.id);
       }
       if (sessionId) {
@@ -903,7 +903,7 @@ export class TelegramAdapter extends MessagingAdapter {
     // Serialize dispatch per session to preserve event ordering
     const prev = this._dispatchQueues.get(sessionId) ?? Promise.resolve();
     const next = prev.then(async () => {
-      this.getTracer(sessionId)?.log("telegram", { action: "dispatch:enter", sessionId, type: content.type });
+      this.getTracer(sessionId)?.log("telegram", { action: "dispatch:enter", sessionId, message: content });
       this._sessionThreadIds.set(sessionId, threadId);
       try {
         await super.sendMessage(sessionId, content);
@@ -922,7 +922,7 @@ export class TelegramAdapter extends MessagingAdapter {
     content: OutgoingMessage,
     _verbosity: DisplayVerbosity,
   ): Promise<void> {
-    this.getTracer(sessionId)?.log("telegram", { action: "handle:thought", sessionId });
+    this.getTracer(sessionId)?.log("telegram", { action: "handle:thought", sessionId, text: content.text });
     const threadId = this.getThreadId(sessionId);
     const mode = this.outputModeResolver.resolve(
       this.context.configManager,
@@ -938,7 +938,7 @@ export class TelegramAdapter extends MessagingAdapter {
     sessionId: string,
     content: OutgoingMessage,
   ): Promise<void> {
-    this.getTracer(sessionId)?.log("telegram", { action: "handle:text", sessionId, textLen: content.text.length });
+    this.getTracer(sessionId)?.log("telegram", { action: "handle:text", sessionId, text: content.text });
     const threadId = this.getThreadId(sessionId);
     // Per-session dispatch queue serializes all events, so we can safely await here.
     if (!this.draftManager.hasDraft(sessionId)) {
@@ -963,7 +963,7 @@ export class TelegramAdapter extends MessagingAdapter {
   ): Promise<void> {
     const threadId = this.getThreadId(sessionId);
     const meta = (content.metadata ?? {}) as Partial<ToolCallMeta>;
-    this.getTracer(sessionId)?.log("telegram", { action: "handle:toolCall", sessionId, toolId: meta.id, toolName: meta.name, status: meta.status });
+    this.getTracer(sessionId)?.log("telegram", { action: "handle:toolCall", sessionId, toolId: meta.id, toolName: meta.name, kind: meta.kind, status: meta.status, displaySummary: meta.displaySummary, rawInput: meta.rawInput });
 
     const mode = this.outputModeResolver.resolve(
       this.context.configManager,
@@ -999,7 +999,7 @@ export class TelegramAdapter extends MessagingAdapter {
   ): Promise<void> {
     const threadId = this.getThreadId(sessionId);
     const meta = (content.metadata ?? {}) as Partial<ToolUpdateMeta>;
-    this.getTracer(sessionId)?.log("telegram", { action: "handle:toolUpdate", sessionId, toolId: meta.id, status: meta.status });
+    this.getTracer(sessionId)?.log("telegram", { action: "handle:toolUpdate", sessionId, toolId: meta.id, name: meta.name, kind: meta.kind, status: meta.status, viewerLinks: meta.viewerLinks, viewerFilePath: meta.viewerFilePath });
     const mode = this.outputModeResolver.resolve(
       this.context.configManager,
       this.name,
@@ -1050,7 +1050,7 @@ export class TelegramAdapter extends MessagingAdapter {
   ): Promise<void> {
     const threadId = this.getThreadId(sessionId);
     const meta = content.metadata as UsageMetadata | undefined;
-    this.getTracer(sessionId)?.log("telegram", { action: "handle:usage", sessionId, tokensUsed: meta?.tokensUsed, contextSize: meta?.contextSize });
+    this.getTracer(sessionId)?.log("telegram", { action: "handle:usage", sessionId, tokensUsed: meta?.tokensUsed, contextSize: meta?.contextSize, cost: (meta as Record<string, unknown>)?.cost });
     await this.draftManager.finalize(sessionId, this.assistantSession?.id);
 
     // Send usage as a separate message (not part of the tool card)
@@ -1209,7 +1209,7 @@ export class TelegramAdapter extends MessagingAdapter {
     sessionId: string,
     content: OutgoingMessage,
   ): Promise<void> {
-    this.getTracer(sessionId)?.log("telegram", { action: "handle:system", sessionId, text: content.text?.slice(0, 100) });
+    this.getTracer(sessionId)?.log("telegram", { action: "handle:system", sessionId, text: content.text });
     const threadId = this.getThreadId(sessionId);
     await this.sendQueue.enqueue(() =>
       this.bot.api.sendMessage(

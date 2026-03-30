@@ -196,7 +196,7 @@ export class ToolCard {
     this.lastSentText = fullText;
 
     const chunks = splitToolCardText(fullText);
-    this.tracer?.log("telegram", { action: "toolCard:render", sessionId: this.sessionId, chunks: chunks.length, total: snapshot.totalVisible, completed: snapshot.completedVisible, allComplete: snapshot.allComplete, msgId: this.msgId });
+    this.tracer?.log("telegram", { action: "toolCard:render", sessionId: this.sessionId, chunks: chunks.length, total: snapshot.totalVisible, completed: snapshot.completedVisible, allComplete: snapshot.allComplete, msgId: this.msgId, entries: snapshot.specs.map(s => ({ id: s.id, kind: s.kind, icon: s.icon, title: s.title })), html: fullText });
 
     try {
       const firstChunk = chunks[0];
@@ -204,7 +204,7 @@ export class ToolCard {
         await this.sendQueue.enqueue(() =>
           this.api.editMessageText(this.chatId, this.msgId!, firstChunk, { parse_mode: "HTML" }),
         );
-        this.tracer?.log("telegram", { action: "telegram:edit", sessionId: this.sessionId, msgId: this.msgId });
+        this.tracer?.log("telegram", { action: "telegram:edit", sessionId: this.sessionId, msgId: this.msgId, html: firstChunk });
       } else {
         const result = await this.sendQueue.enqueue(() =>
           this.api.sendMessage(this.chatId, firstChunk, {
@@ -214,7 +214,7 @@ export class ToolCard {
           }),
         );
         if (result) this.msgId = result.message_id;
-        this.tracer?.log("telegram", { action: "telegram:send", sessionId: this.sessionId, msgId: result?.message_id });
+        this.tracer?.log("telegram", { action: "telegram:send", sessionId: this.sessionId, msgId: result?.message_id, html: firstChunk });
       }
 
       for (let i = 1; i < chunks.length; i++) {
@@ -317,7 +317,7 @@ export class ActivityTracker {
     kind: string,
     rawInput: unknown,
   ): Promise<void> {
-    this.tracer?.log("telegram", { action: "tracker:toolCall", sessionId: this.sessionId, toolId: meta.id, toolName: meta.name, status: meta.status });
+    this.tracer?.log("telegram", { action: "tracker:toolCall", sessionId: this.sessionId, meta, kind, rawInput });
     this.isFirstEvent = false;
     await this.thinking.dismiss();
     this.thinking.reset();
@@ -336,7 +336,7 @@ export class ActivityTracker {
     rawInput?: unknown,
     diffStats?: { added: number; removed: number },
   ): Promise<void> {
-    this.tracer?.log("telegram", { action: "tracker:toolUpdate", sessionId: this.sessionId, toolId: id, status, hasPrevCard: !!this.previousToolCard });
+    this.tracer?.log("telegram", { action: "tracker:toolUpdate", sessionId: this.sessionId, toolId: id, status, viewerLinks, viewerFilePath, hasPrevCard: !!this.previousToolCard });
 
     // Forward to previous card first if the tool originated there (out-of-order update after seal)
     if (this.previousToolStateMap?.get(id)) {
@@ -361,7 +361,7 @@ export class ActivityTracker {
   }
 
   async onPlan(entries: PlanEntry[]): Promise<void> {
-    this.tracer?.log("telegram", { action: "tracker:plan", sessionId: this.sessionId, entryCount: entries.length });
+    this.tracer?.log("telegram", { action: "tracker:plan", sessionId: this.sessionId, entries });
     this.isFirstEvent = false;
     await this.thinking.dismiss();
     this.toolCard.updatePlan(entries);

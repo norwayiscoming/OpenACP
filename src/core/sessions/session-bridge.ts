@@ -49,12 +49,12 @@ export class SessionBridge {
         const result = await mw.execute('message:outgoing', { sessionId, message }, async (m) => m);
         this.tracer?.log("core", { step: "middleware:outgoing", sessionId, hook: "message:outgoing", blocked: !result });
         if (!result) return;
-        this.tracer?.log("core", { step: "dispatch", sessionId, messageType: result.message.type });
+        this.tracer?.log("core", { step: "dispatch", sessionId, message: result.message });
         this.adapter.sendMessage(sessionId, result.message).catch((err) => {
           log.error({ err, sessionId }, "Failed to send message to adapter");
         });
       } else {
-        this.tracer?.log("core", { step: "dispatch", sessionId, messageType: message.type });
+        this.tracer?.log("core", { step: "dispatch", sessionId, message });
         this.adapter.sendMessage(sessionId, message).catch((err) => {
           log.error({ err, sessionId }, "Failed to send message to adapter");
         });
@@ -104,7 +104,7 @@ export class SessionBridge {
 
   private wireSessionToAdapter(): void {
     this.sessionEventHandler = (event: AgentEvent) => {
-      this.tracer?.log("core", { step: "agent_event", sessionId: this.session.id, eventType: event.type });
+      this.tracer?.log("core", { step: "agent_event", sessionId: this.session.id, event });
       // Hook: agent:beforeEvent — modifiable, can block
       const mw = this.deps.middlewareChain;
       if (mw) {
@@ -164,7 +164,7 @@ export class SessionBridge {
         case "plan":
         case "usage":
           outgoing = this.deps.messageTransformer.transform(event, ctx);
-          this.tracer?.log("core", { step: "transform", sessionId: this.session.id, inputType: event.type, outputType: outgoing.type });
+          this.tracer?.log("core", { step: "transform", sessionId: this.session.id, input: event, output: outgoing });
           this.sendMessage(this.session.id, outgoing);
           break;
 

@@ -215,7 +215,7 @@ Declare in \`permissions\` array. Only request what you need.
 
 Calling a method without the required permission throws \`PluginPermissionError\`.
 
-## Middleware Hooks (18 total)
+## Middleware Hooks (20 total)
 
 Register with \`ctx.registerMiddleware(hook, { priority?, handler })\`. Return \`null\` to block the flow, call \`next()\` to continue.
 
@@ -253,6 +253,8 @@ Register with \`ctx.registerMiddleware(hook, { priority?, handler })\`. Return \
 - \`config:beforeChange\` — before config change (sessionId, configId, oldValue, newValue)
 - \`model:beforeChange\` — before model change (sessionId, fromModel, toModel)
 - \`agent:beforeCancel\` — before agent cancellation (sessionId, reason)
+- \`agent:beforeSwitch\` — **blocking** before agent switch (sessionId, fromAgent, toAgent). Return null/false to block.
+- \`agent:afterSwitch\` — **fire-and-forget** after agent switch (sessionId, fromAgent, toAgent, resumed). Observational only.
 
 ## Plugin Events (subscribe with ctx.on)
 

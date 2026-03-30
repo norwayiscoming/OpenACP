@@ -72,6 +72,8 @@ export interface LifecycleManagerOpts {
   log?: Logger
   settingsManager?: SettingsManager
   pluginRegistry?: PluginRegistry
+  /** Root directory for this OpenACP instance (default: ~/.openacp) */
+  instanceRoot?: string
 }
 
 export class LifecycleManager {
@@ -87,6 +89,7 @@ export class LifecycleManager {
   private log: Logger | undefined
   private settingsManager: SettingsManager | undefined
   private pluginRegistry: PluginRegistry | undefined
+  private instanceRoot: string | undefined
 
   private contexts = new Map<string, ReturnType<typeof createPluginContext>>()
   private loadOrder: OpenACPPlugin[] = []
@@ -121,6 +124,7 @@ export class LifecycleManager {
     this.log = opts?.log
     this.settingsManager = opts?.settingsManager
     this.pluginRegistry = opts?.pluginRegistry
+    this.instanceRoot = opts?.instanceRoot
   }
 
   private getPluginLogger(pluginName: string): Logger {
@@ -248,6 +252,7 @@ export class LifecycleManager {
         config: this.config,
         core: this.core,
         log: this.log,
+        instanceRoot: this.instanceRoot,
       })
 
       try {

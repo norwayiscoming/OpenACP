@@ -1,3 +1,4 @@
+import path from 'node:path'
 import type { OpenACPPlugin, InstallContext } from '../../core/plugin/types.js'
 import type { OpenACPCore } from '../../core/core.js'
 import type { ApiConfig } from './api-server.js'
@@ -78,6 +79,8 @@ function createApiServerPlugin(): OpenACPPlugin {
       }
     },
 
+    inheritableKeys: ['host'],
+
     async setup(ctx) {
       const config = ctx.pluginConfig as Record<string, unknown>
 
@@ -89,7 +92,14 @@ function createApiServerPlugin(): OpenACPPlugin {
         host: (config.host as string) ?? '127.0.0.1',
       }
 
-      server = new ApiServer(ctx.core as OpenACPCore, apiConfig)
+      const instanceRoot = ctx.instanceRoot
+      server = new ApiServer(
+        ctx.core as OpenACPCore,
+        apiConfig,
+        path.join(instanceRoot, 'api.port'),
+        undefined,
+        path.join(instanceRoot, 'api-secret'),
+      )
 
       ctx.registerService('api-server', server)
 

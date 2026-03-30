@@ -1,3 +1,4 @@
+import path from 'node:path'
 import type { OpenACPPlugin, InstallContext } from '../../core/plugin/types.js'
 import type { TunnelConfig } from '../../core/config/config.js'
 
@@ -126,6 +127,8 @@ function createTunnelPlugin(): OpenACPPlugin {
       }
     },
 
+    inheritableKeys: ['provider', 'maxUserTunnels', 'auth'],
+
     async setup(ctx) {
       const config = ctx.pluginConfig as Record<string, unknown>
       if (!config.provider) {
@@ -134,7 +137,11 @@ function createTunnelPlugin(): OpenACPPlugin {
       }
 
       const { TunnelService } = await import('./tunnel-service.js')
-      const tunnelSvc = new TunnelService(config as unknown as TunnelConfig)
+      const instanceRoot = ctx.instanceRoot
+      const tunnelSvc = new TunnelService(
+        config as unknown as TunnelConfig,
+        path.join(instanceRoot, 'tunnels.json'),
+      )
       const publicUrl = await tunnelSvc.start()
       service = tunnelSvc
 

@@ -1,3 +1,5 @@
+import path from 'node:path'
+import os from 'node:os'
 import type {
   PluginContext,
   PluginPermission,
@@ -32,6 +34,7 @@ interface CreatePluginContextOpts {
   config: unknown
   core?: unknown
   log?: Logger
+  instanceRoot?: string
 }
 
 function requirePermission(permissions: PluginPermission[], required: PluginPermission, action: string): void {
@@ -53,6 +56,7 @@ export function createPluginContext(opts: CreatePluginContextOpts): PluginContex
     config,
     core,
   } = opts
+  const instanceRoot = opts.instanceRoot ?? path.join(os.homedir(), '.openacp')
 
   // Track registered items for cleanup
   const registeredListeners: Array<{ event: string; handler: (...args: unknown[]) => void }> = []
@@ -175,6 +179,8 @@ export function createPluginContext(opts: CreatePluginContextOpts): PluginContex
       requirePermission(permissions, 'kernel:access', 'core')
       return core
     },
+
+    instanceRoot,
 
     cleanup(): void {
       // Remove all event listeners registered by this plugin

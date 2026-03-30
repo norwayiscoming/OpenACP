@@ -18,6 +18,7 @@ function createTelegramPlugin(): OpenACPPlugin {
       '@openacp/speech': '^1.0.0',
     },
     permissions: ['services:register', 'kernel:access', 'events:read'],
+    inheritableKeys: [],
 
     async install(ctx: InstallContext) {
       const { terminal, settings, legacyConfig } = ctx

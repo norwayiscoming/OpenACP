@@ -36,17 +36,17 @@ interface LiveEntry {
   spawnPromise: Promise<string> | null
 }
 
-const REGISTRY_PATH = path.join(os.homedir(), '.openacp', 'tunnels.json')
-
 export class TunnelRegistry {
   private entries: Map<number, LiveEntry> = new Map()
   private saveTimeout: ReturnType<typeof setTimeout> | null = null
   private maxUserTunnels: number
   private providerOptions: Record<string, unknown>
+  private registryPath: string
 
-  constructor(opts: { maxUserTunnels?: number; providerOptions?: Record<string, unknown> } = {}) {
+  constructor(opts: { maxUserTunnels?: number; providerOptions?: Record<string, unknown>; registryPath?: string } = {}) {
     this.maxUserTunnels = opts.maxUserTunnels ?? 5
     this.providerOptions = opts.providerOptions ?? {}
+    this.registryPath = opts.registryPath ?? path.join(os.homedir(), '.openacp', 'tunnels.json')
   }
 
   async add(port: number, opts: {
@@ -181,10 +181,10 @@ export class TunnelRegistry {
   }
 
   async restore(): Promise<void> {
-    if (!fs.existsSync(REGISTRY_PATH)) return
+    if (!fs.existsSync(this.registryPath)) return
 
     try {
-      const raw = JSON.parse(fs.readFileSync(REGISTRY_PATH, 'utf-8')) as PersistedEntry[]
+      const raw = JSON.parse(fs.readFileSync(this.registryPath, 'utf-8')) as PersistedEntry[]
       log.info({ count: raw.length }, 'Restoring tunnels')
 
       // Only restore user tunnels — system tunnel is registered separately by TunnelService.start()
@@ -238,9 +238,9 @@ export class TunnelRegistry {
     }))
 
     try {
-      const dir = path.dirname(REGISTRY_PATH)
+      const dir = path.dirname(this.registryPath)
       fs.mkdirSync(dir, { recursive: true })
-      fs.writeFileSync(REGISTRY_PATH, JSON.stringify(data, null, 2))
+      fs.writeFileSync(this.registryPath, JSON.stringify(data, null, 2))
     } catch (err) {
       log.error({ err: (err as Error).message }, 'Failed to save tunnels.json')
     }

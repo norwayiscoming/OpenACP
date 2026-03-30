@@ -17,6 +17,7 @@ function createSecurityPlugin(): OpenACPPlugin {
     description: 'User access control and session limits',
     essential: false,
     permissions: ['services:register', 'middleware:register', 'kernel:access', 'commands:register'],
+    inheritableKeys: ['allowedUsers', 'maxSessionsPerUser', 'rateLimits'],
 
     async install(ctx: InstallContext) {
       const { settings, legacyConfig, terminal } = ctx

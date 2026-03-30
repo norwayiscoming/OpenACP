@@ -8,7 +8,7 @@ import { commandExists } from '../agents/agent-dependencies.js'
 
 const log = createChildLogger({ module: 'binary-installer' })
 
-const BIN_DIR = path.join(os.homedir(), '.openacp', 'bin')
+const DEFAULT_BIN_DIR = path.join(os.homedir(), '.openacp', 'bin')
 const IS_WINDOWS = os.platform() === 'win32'
 
 export interface BinarySpec {
@@ -79,9 +79,10 @@ function getDownloadUrl(spec: BinarySpec): string {
  * 2. Check ~/.openacp/bin/
  * 3. Download from GitHub releases
  */
-export async function ensureBinary(spec: BinarySpec): Promise<string> {
+export async function ensureBinary(spec: BinarySpec, binDir?: string): Promise<string> {
+  const resolvedBinDir = binDir ?? DEFAULT_BIN_DIR
   const binName = IS_WINDOWS ? `${spec.name}.exe` : spec.name
-  const binPath = path.join(BIN_DIR, binName)
+  const binPath = path.join(resolvedBinDir, binName)
 
   // 1. Check PATH first
   if (commandExists(spec.name)) {
@@ -98,16 +99,16 @@ export async function ensureBinary(spec: BinarySpec): Promise<string> {
 
   // 3. Download
   log.info({ name: spec.name }, 'Not found, downloading from GitHub...')
-  fs.mkdirSync(BIN_DIR, { recursive: true })
+  fs.mkdirSync(resolvedBinDir, { recursive: true })
 
   const url = getDownloadUrl(spec)
   const isArchive = spec.isArchive?.(url) ?? false
-  const downloadDest = isArchive ? path.join(BIN_DIR, `${spec.name}.tgz`) : binPath
+  const downloadDest = isArchive ? path.join(resolvedBinDir, `${spec.name}.tgz`) : binPath
 
   await downloadFile(url, downloadDest)
 
   if (isArchive) {
-    execSync(`tar -xzf "${downloadDest}" -C "${BIN_DIR}"`, { stdio: 'pipe' })
+    execSync(`tar -xzf "${downloadDest}" -C "${resolvedBinDir}"`, { stdio: 'pipe' })
     try { fs.unlinkSync(downloadDest) } catch { /* ignore */ }
   }
 

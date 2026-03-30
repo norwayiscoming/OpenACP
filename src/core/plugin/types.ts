@@ -54,6 +54,8 @@ export interface OpenACPPlugin {
   migrate?(ctx: MigrateContext, oldSettings: unknown, oldVersion: string): Promise<unknown>
   settingsSchema?: import('zod').ZodSchema
   essential?: boolean
+  /** Settings keys that can be copied when creating a new instance from this one */
+  inheritableKeys?: string[]
 }
 
 // ============================================================
@@ -275,6 +277,12 @@ export interface PluginContext {
   eventBus: EventBus
   /** Direct access to OpenACPCore instance. Requires 'kernel:access'. */
   core: unknown
+
+  /**
+   * Root directory for this OpenACP instance (default: ~/.openacp).
+   * Plugins should derive file paths from this instead of hardcoding ~/.openacp.
+   */
+  instanceRoot: string
 }
 
 // ============================================================

@@ -8,7 +8,7 @@ import { AgentStore } from "./agent-store.js";
 
 const log = createChildLogger({ module: "agent-installer" });
 
-const AGENTS_DIR = path.join(os.homedir(), ".openacp", "agents");
+const DEFAULT_AGENTS_DIR = path.join(os.homedir(), ".openacp", "agents");
 
 const ARCH_MAP: Record<string, string> = {
   arm64: "aarch64",
@@ -122,6 +122,7 @@ export async function installAgent(
   agent: RegistryAgent,
   store: AgentStore,
   progress?: InstallProgress,
+  agentsDir?: string,
 ): Promise<InstallResult> {
   const agentKey = getAgentAlias(agent.id);
   await progress?.onStart(agent.id, agent.name);
@@ -157,7 +158,7 @@ export async function installAgent(
 
   if (dist.type === "binary") {
     try {
-      binaryPath = await downloadAndExtract(agent.id, dist.archive, progress);
+      binaryPath = await downloadAndExtract(agent.id, dist.archive, progress, agentsDir);
     } catch (err) {
       const msg = `Failed to download ${agent.name}. Please try again or install manually.`;
       await progress?.onError(msg);
@@ -180,8 +181,9 @@ async function downloadAndExtract(
   agentId: string,
   archiveUrl: string,
   progress?: InstallProgress,
+  agentsDir?: string,
 ): Promise<string> {
-  const destDir = path.join(AGENTS_DIR, agentId);
+  const destDir = path.join(agentsDir ?? DEFAULT_AGENTS_DIR, agentId);
   fs.mkdirSync(destDir, { recursive: true });
 
   await progress?.onStep("Downloading...");

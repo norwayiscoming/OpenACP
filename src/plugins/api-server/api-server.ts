@@ -20,8 +20,6 @@ import { registerNotifyRoutes } from "./routes/notify.js";
 
 const log = createChildLogger({ module: "api-server" });
 
-const DEFAULT_PORT_FILE = path.join(os.homedir(), ".openacp", "api.port");
-
 let cachedVersion: string | undefined;
 
 function getVersion(): string {
@@ -74,7 +72,7 @@ export class ApiServer {
     secretFilePath?: string,
     uiDir?: string,
   ) {
-    this.portFilePath = portFilePath ?? DEFAULT_PORT_FILE;
+    this.portFilePath = portFilePath ?? path.join(os.homedir(), ".openacp", "api.port");
     this.secretFilePath =
       secretFilePath ?? path.join(os.homedir(), ".openacp", "api-secret");
     this.staticServer = new StaticServer(uiDir);

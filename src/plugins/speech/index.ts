@@ -14,6 +14,7 @@ const speechPlugin: OpenACPPlugin = {
   essential: false,
   optionalPluginDependencies: { '@openacp/file-service': '^1.0.0' },
   permissions: ['services:register', 'commands:register', 'kernel:access'],
+  inheritableKeys: ['tts'],
 
   async install(ctx: InstallContext) {
     const { terminal, settings, legacyConfig } = ctx

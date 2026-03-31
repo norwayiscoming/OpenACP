@@ -8,6 +8,9 @@ importers:
 
   .:
     dependencies:
+      '@agentclientprotocol/claude-agent-acp':
+        specifier: ^0.24.2
+        version: 0.24.2
       '@agentclientprotocol/sdk':
         specifier: ^0.16.0
         version: 0.16.1(zod@3.25.76)
@@ -20,9 +23,6 @@ importers:
       '@inquirer/prompts':
         specifier: ^8.3.2
         version: 8.3.2(@types/node@25.5.0)
-      '@zed-industries/claude-agent-acp':
-        specifier: ^0.22.2
-        version: 0.22.2
       diff:
         specifier: ^8.0.3
         version: 8.0.3
@@ -102,13 +102,22 @@ importers:
 
 packages:
 
+  '@agentclientprotocol/claude-agent-acp@0.24.2':
+    resolution: {integrity: sha512-/qRaecc/Hj0nL1jPIaYwCtVOIOZ6z7YBNf8uG4TGesI9YjGXixgo+xT1iAH4Gz0tyo3Q8+LmIv37oQlzOxI1/w==}
+    hasBin: true
+
   '@agentclientprotocol/sdk@0.16.1':
     resolution: {integrity: sha512-1ad+Sc/0sCtZGHthxxvgEUo5Wsbw16I+aF+YwdiLnPwkZG8KAGUEAPK6LM6Pf69lCyJPt1Aomk1d+8oE3C4ZEw==}
     peerDependencies:
       zod: ^3.25.0 || ^4.0.0
 
-  '@anthropic-ai/claude-agent-sdk@0.2.76':
-    resolution: {integrity: sha512-HZxvnT8ZWkzCnQygaYCA0dl8RSUzuVbxE1YG4ecy6vh4nQbTT36CxUxBy+QVdR12pPQluncC0mCOLhI2918Eaw==}
+  '@agentclientprotocol/sdk@0.17.0':
+    resolution: {integrity: sha512-inBMYAEd9t4E+ULZK2os9kmLG5jbPvMLbPvY71XDDem1YteW/uDwkahg6OwsGR3tvvgVhYbRJ9mJCp2VXqG4xQ==}
+    peerDependencies:
+      zod: ^3.25.0 || ^4.0.0
+
+  '@anthropic-ai/claude-agent-sdk@0.2.84':
+    resolution: {integrity: sha512-rvp3kZJM4IgDBE1zwj30H3N0bI3pYRF28tDJoyAVuWTLiWls7diNVCyFz7GeXZEAYYD87lCBE3vnQplLLluNHg==}
     engines: {node: '>=18.0.0'}
     peerDependencies:
       zod: ^4.0.0
@@ -885,10 +894,6 @@ packages:
 
   '@wasm-audio-decoders/opus-ml@0.0.2':
     resolution: {integrity: sha512-58rWEqDGg+CKCyEeKm2KoxxSwTWtHh/NLTW9ObR4K8CGF6VwuuGudEI1CtniS/oSRmL1nJq/eh8MKARiluw4DQ==}
-
-  '@zed-industries/claude-agent-acp@0.22.2':
-    resolution: {integrity: sha512-GLiKxy5MBNS9UoiE1XaM9EHVxlEcvk0sXSMCnyDp9JNAQliynt0axZrhptTl5AWe6PXGjVh5hMFdPp+yulw2uQ==}
-    hasBin: true
 
   abort-controller@3.0.0:
     resolution: {integrity: sha512-h8lQ8tacZYnR3vNQTgibj+tODHI5/+l06Au2Pcriv/Gmet0eaj4TwWH41sO9wnHDiQsEj19q0drzdWdeAHtweg==}
@@ -1815,11 +1820,21 @@ packages:
 
 snapshots:
 
+  '@agentclientprotocol/claude-agent-acp@0.24.2':
+    dependencies:
+      '@agentclientprotocol/sdk': 0.17.0(zod@3.25.76)
+      '@anthropic-ai/claude-agent-sdk': 0.2.84(zod@3.25.76)
+      zod: 3.25.76
+
   '@agentclientprotocol/sdk@0.16.1(zod@3.25.76)':
     dependencies:
       zod: 3.25.76
 
-  '@anthropic-ai/claude-agent-sdk@0.2.76(zod@3.25.76)':
+  '@agentclientprotocol/sdk@0.17.0(zod@3.25.76)':
+    dependencies:
+      zod: 3.25.76
+
+  '@anthropic-ai/claude-agent-sdk@0.2.84(zod@3.25.76)':
     dependencies:
       zod: 3.25.76
     optionalDependencies:
@@ -2440,12 +2455,6 @@ snapshots:
   '@wasm-audio-decoders/opus-ml@0.0.2':
     dependencies:
       '@wasm-audio-decoders/common': 9.0.7
-
-  '@zed-industries/claude-agent-acp@0.22.2':
-    dependencies:
-      '@agentclientprotocol/sdk': 0.16.1(zod@3.25.76)
-      '@anthropic-ai/claude-agent-sdk': 0.2.76(zod@3.25.76)
-      zod: 3.25.76
 
   abort-controller@3.0.0:
     dependencies:

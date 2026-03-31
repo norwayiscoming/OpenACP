@@ -69,7 +69,7 @@ export async function setupAgents(): Promise<{
         version: "bundled",
         distribution: "npx",
         command: "npx",
-        args: ["@zed-industries/claude-agent-acp"],
+        args: ["@agentclientprotocol/claude-agent-acp"],
         env: {},
         installedAt: new Date().toISOString(),
         binaryPath: null,

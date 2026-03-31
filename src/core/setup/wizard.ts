@@ -159,6 +159,11 @@ export async function runSetup(
       { label: 'Telegram', value: 'telegram' },
     ]
 
+    const officialAdapters = [
+      { label: 'Discord', value: 'official:@openacp/discord-adapter' },
+      { label: 'Slack', value: 'official:@openacp/slack-adapter' },
+    ]
+
     const communityOptions = communityAdapters.map(a => ({
       label: `${a.icon} ${a.displayName}${a.verified ? ' (verified)' : ''}`,
       value: `community:${a.name}`,
@@ -170,6 +175,7 @@ export async function runSetup(
         message: 'Which channels do you want to set up?',
         options: [
           ...builtInOptions.map(o => ({ value: o.value, label: o.label, hint: 'built-in' })),
+          ...officialAdapters.map(o => ({ value: o.value, label: o.label, hint: 'official' })),
           ...(communityOptions.length > 0
             ? communityOptions.map(o => ({ value: o.value, label: o.label, hint: 'from plugin registry' }))
             : []),
@@ -208,6 +214,62 @@ export async function runSetup(
         });
       }
 
+
+      // Handle official adapter selections (Discord, Slack, etc.)
+      if (channelId.startsWith('official:')) {
+        const npmPackage = channelId.slice('official:'.length);
+        const { execFileSync } = await import('node:child_process');
+        const pluginsDir = path.join(getGlobalRoot(), 'plugins');
+        const nodeModulesDir = path.join(pluginsDir, 'node_modules');
+
+        // Install from npm if not already present
+        const installedPath = path.join(nodeModulesDir, npmPackage);
+        if (!fs.existsSync(installedPath)) {
+          try {
+            clack.log.step(`Installing ${npmPackage}...`);
+            execFileSync('npm', ['install', npmPackage, '--prefix', pluginsDir, '--save'], {
+              stdio: 'inherit',
+              timeout: 60000,
+            });
+          } catch {
+            console.log(fail(`Failed to install ${npmPackage}.`));
+            continue;
+          }
+        }
+
+        // Load and run install hook
+        try {
+          const installedPkgPath = path.join(nodeModulesDir, npmPackage, 'package.json');
+          const installedPkg = JSON.parse(fs.readFileSync(installedPkgPath, 'utf-8'));
+          const pluginModule = await import(path.join(nodeModulesDir, npmPackage, installedPkg.main ?? 'dist/index.js'));
+          const plugin = pluginModule.default;
+
+          if (plugin?.install) {
+            const installCtx = createInstallContext({
+              pluginName: plugin.name ?? npmPackage,
+              settingsManager,
+              basePath: settingsManager.getBasePath(),
+            });
+            await plugin.install(installCtx);
+          }
+
+          pluginRegistry.register(plugin?.name ?? npmPackage, {
+            version: installedPkg.version,
+            source: 'npm',
+            enabled: true,
+            settingsPath: settingsManager.getSettingsPath(plugin?.name ?? npmPackage),
+            description: plugin?.description ?? installedPkg.description,
+          });
+        } catch (err) {
+          console.log(fail(`Failed to load ${npmPackage}: ${(err as Error).message}`));
+          pluginRegistry.register(npmPackage, {
+            version: 'unknown',
+            source: 'npm',
+            enabled: false,
+            settingsPath: settingsManager.getSettingsPath(npmPackage),
+          });
+        }
+      }
 
       // Handle community plugin selections
       if (channelId.startsWith('community:')) {

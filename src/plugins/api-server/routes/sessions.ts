@@ -210,7 +210,7 @@ export async function sessionRoutes(
 
       const body = PromptBodySchema.parse(request.body);
 
-      session.enqueuePrompt(body.prompt).catch(() => {});
+      await session.enqueuePrompt(body.prompt);
       return {
         ok: true,
         sessionId,

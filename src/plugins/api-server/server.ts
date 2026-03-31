@@ -31,7 +31,17 @@ export async function createApiServer(options: ApiServerOptions): Promise<ApiSer
   app.setSerializerCompiler(serializerCompiler);
 
   // Plugins
-  await app.register(fastifyCors, { origin: true });
+  await app.register(fastifyCors, {
+    origin: (origin, cb) => {
+      // Allow requests with no origin (curl, native apps) or localhost
+      if (!origin || origin.startsWith('http://localhost') || origin.startsWith('http://127.0.0.1')) {
+        cb(null, true);
+      } else {
+        cb(null, false);
+      }
+    },
+    credentials: true,
+  });
   await app.register(fastifyRateLimit, { max: 100, timeWindow: '1 minute' });
   await app.register(fastifySwagger, {
     openapi: {

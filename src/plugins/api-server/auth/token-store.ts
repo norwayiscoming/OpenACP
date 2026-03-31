@@ -100,10 +100,26 @@ export class TokenStore {
     return Array.from(this.tokens.values()).filter((t) => !t.revoked);
   }
 
+  private lastUsedSaveTimer: ReturnType<typeof setTimeout> | null = null;
+
   updateLastUsed(id: string): void {
     const token = this.tokens.get(id);
     if (token) {
       token.lastUsedAt = new Date().toISOString();
+      // Debounce persist — batch lastUsedAt updates every 60s
+      if (!this.lastUsedSaveTimer) {
+        this.lastUsedSaveTimer = setTimeout(() => {
+          this.lastUsedSaveTimer = null;
+          this.scheduleSave();
+        }, 60_000);
+      }
+    }
+  }
+
+  destroy(): void {
+    if (this.lastUsedSaveTimer) {
+      clearTimeout(this.lastUsedSaveTimer);
+      this.lastUsedSaveTimer = null;
     }
   }
 

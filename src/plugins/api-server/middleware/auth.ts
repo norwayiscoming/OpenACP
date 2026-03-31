@@ -1,5 +1,5 @@
 import type { FastifyReply, FastifyRequest, preHandlerHookHandler } from 'fastify';
-import { timingSafeEqual } from 'node:crypto';
+import { createHmac, timingSafeEqual } from 'node:crypto';
 import { AuthError } from './error-handler.js';
 import { verifyToken } from '../auth/jwt.js';
 import { getRoleScopes } from '../auth/roles.js';
@@ -16,6 +16,13 @@ declare module 'fastify' {
   }
 }
 
+function constantTimeSecretCheck(token: string, secret: string): boolean {
+  // Hash both to fixed-length to prevent length leaking
+  const tokenHash = createHmac('sha256', 'openacp-auth').update(token).digest();
+  const secretHash = createHmac('sha256', 'openacp-auth').update(secret).digest();
+  return timingSafeEqual(tokenHash, secretHash);
+}
+
 export function createAuthPreHandler(
   getSecret: () => string,
   getJwtSecret: () => string,
@@ -30,15 +37,11 @@ export function createAuthPreHandler(
       throw new AuthError('UNAUTHORIZED', 'Missing authentication token');
     }
 
-    // 1. Check secret token (timing-safe compare) — full admin access
+    // 1. Check secret token (constant-time compare) — full admin access
     const secret = getSecret();
-    if (token.length === secret.length) {
-      const tokenBuf = Buffer.from(token);
-      const secretBuf = Buffer.from(secret);
-      if (timingSafeEqual(tokenBuf, secretBuf)) {
-        request.auth = { type: 'secret', role: 'admin', scopes: ['*'] };
-        return;
-      }
+    if (constantTimeSecretCheck(token, secret)) {
+      request.auth = { type: 'secret', role: 'admin', scopes: ['*'] };
+      return;
     }
 
     // 2. Try JWT verification

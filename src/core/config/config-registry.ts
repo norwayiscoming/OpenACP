@@ -35,8 +35,8 @@ export const CONFIG_REGISTRY: ConfigFieldDef[] = [
     hotReload: true,
   },
   {
-    path: "channels.telegram.displayVerbosity",
-    displayName: "Telegram Verbosity",
+    path: "channels.telegram.outputMode",
+    displayName: "Telegram Output Mode",
     group: "display",
     type: "select",
     options: ["low", "medium", "high"],
@@ -44,8 +44,8 @@ export const CONFIG_REGISTRY: ConfigFieldDef[] = [
     hotReload: true,
   },
   {
-    path: "channels.discord.displayVerbosity",
-    displayName: "Discord Verbosity",
+    path: "channels.discord.outputMode",
+    displayName: "Discord Output Mode",
     group: "display",
     type: "select",
     options: ["low", "medium", "high"],

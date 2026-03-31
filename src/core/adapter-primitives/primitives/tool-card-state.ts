@@ -47,10 +47,7 @@ export class ToolCardState {
       this.specs.push(spec);
     }
 
-    if (this.finalized) {
-      this.onFlush(this.snapshot());
-      return;
-    }
+    if (this.finalized) return;
 
     if (this.isFirstFlush) {
       this.isFirstFlush = false;

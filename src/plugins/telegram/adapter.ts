@@ -983,7 +983,7 @@ export class TelegramAdapter extends MessagingAdapter {
       this.context.configManager,
       this.name,
       sessionId,
-      this.core.sessionManager as any,
+      this.core.sessionManager,
     );
     const tracker = this.getOrCreateTracker(sessionId, threadId, mode);
     await tracker.onThought(content.text);
@@ -1001,7 +1001,7 @@ export class TelegramAdapter extends MessagingAdapter {
         this.context.configManager,
         this.name,
         sessionId,
-        this.core.sessionManager as any,
+        this.core.sessionManager,
       );
       const tracker = this.getOrCreateTracker(sessionId, threadId, mode);
       await tracker.onTextStart();
@@ -1024,7 +1024,7 @@ export class TelegramAdapter extends MessagingAdapter {
       this.context.configManager,
       this.name,
       sessionId,
-      this.core.sessionManager as any,
+      this.core.sessionManager,
     );
     const tracker = this.getOrCreateTracker(sessionId, threadId, mode);
     await this.draftManager.finalize(sessionId, this.assistantSession?.id);
@@ -1059,7 +1059,7 @@ export class TelegramAdapter extends MessagingAdapter {
       this.context.configManager,
       this.name,
       sessionId,
-      this.core.sessionManager as any,
+      this.core.sessionManager,
     );
     const tracker = this.getOrCreateTracker(sessionId, threadId, mode);
     await tracker.onToolUpdate(
@@ -1086,7 +1086,7 @@ export class TelegramAdapter extends MessagingAdapter {
       this.context.configManager,
       this.name,
       sessionId,
-      this.core.sessionManager as any,
+      this.core.sessionManager,
     );
     const tracker = this.getOrCreateTracker(sessionId, threadId, mode);
     await tracker.onPlan(

@@ -6,7 +6,7 @@ interface ConfigManagerLike {
 }
 
 interface SessionManagerLike {
-  getSession(id: string): { record?: { outputMode?: OutputMode } } | undefined;
+  getSessionRecord(id: string): { outputMode?: OutputMode } | undefined;
 }
 
 const VALID_MODES = new Set<string>(["low", "medium", "high"]);
@@ -31,8 +31,8 @@ export class OutputModeResolver {
     if (adapterMode) mode = adapterMode;
     // 3. Per-session override (most specific)
     if (sessionId && sessionManager) {
-      const session = sessionManager.getSession(sessionId);
-      const sessionMode = session?.record?.outputMode;
+      const record = sessionManager.getSessionRecord(sessionId);
+      const sessionMode = toOutputMode(record?.outputMode);
       if (sessionMode) mode = sessionMode;
     }
     return mode;

@@ -196,8 +196,7 @@ export class DisplaySpecBuilder {
     if (content && content.trim().length > 0 && includeMeta) {
       outputSummary = buildOutputSummary(content);
 
-      const isLong =
-        content.split("\n").length > INLINE_MAX_LINES || content.length > INLINE_MAX_CHARS;
+      const isLong = !isShortOutput(content);
 
       if (isLong) {
         const publicUrl = this.tunnelService?.getPublicUrl();

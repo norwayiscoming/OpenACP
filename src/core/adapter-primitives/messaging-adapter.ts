@@ -173,8 +173,11 @@ export abstract class MessagingAdapter implements IChannelAdapter {
     const channelConfig = (config as Record<string, unknown>).channels as
       | Record<string, Record<string, unknown>>
       | undefined;
+    const ch = channelConfig?.[this.name];
     const v =
-      channelConfig?.[this.name]?.displayVerbosity ??
+      ch?.outputMode ??
+      ch?.displayVerbosity ??
+      (config as Record<string, unknown>).outputMode ??
       this.adapterConfig.displayVerbosity;
     if (v === "low" || v === "high") return v;
     return "medium";

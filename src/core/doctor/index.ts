@@ -100,7 +100,7 @@ export class DoctorEngine {
     try {
       const content = fs.readFileSync(configPath, "utf-8");
       rawConfig = JSON.parse(content);
-      const cm = new ConfigManager();
+      const cm = new ConfigManager(configPath);
       await cm.load();
       config = cm.get();
     } catch {

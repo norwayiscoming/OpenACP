@@ -41,7 +41,7 @@ export async function cmdDefault(command: string | undefined, instanceRoot?: str
     await pluginRegistry.load()
 
     const { runSetup } = await import('../../core/setup/index.js')
-    const shouldStart = await runSetup(cm, { settingsManager, pluginRegistry })
+    const shouldStart = await runSetup(cm, { settingsManager, pluginRegistry, instanceRoot: root })
     if (!shouldStart) process.exit(0)
   }
 

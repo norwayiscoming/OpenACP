@@ -89,7 +89,7 @@ export async function createApiServer(options: ApiServerOptions): Promise<ApiSer
           const url = new URL(address);
           return { port: Number(url.port), host: url.hostname };
         } catch (err: any) {
-          if (err?.code === 'EADDRINUSE' && attempt < maxRetries) {
+          if (err?.code === 'EADDRINUSE' && attempt < maxRetries && port < 65535) {
             port++;
             continue;
           }

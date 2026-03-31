@@ -1,5 +1,6 @@
 import type { OpenACPPlugin, InstallContext } from '../../core/plugin/types.js'
 import type { TunnelConfig } from '../../core/config/config.js'
+import { MAX_RETRIES } from './tunnel-registry.js'
 
 function createTunnelPlugin(): OpenACPPlugin {
   let service: { stop(): Promise<void> } | null = null
@@ -198,7 +199,7 @@ function createTunnelPlugin(): OpenACPPlugin {
             { label: 'System', detail: systemDetail },
             ...userTunnels.map(t => {
               const statusInfo = t.status === 'failed' && t.retryCount > 0
-                ? `${t.status} (retry ${t.retryCount}/${5})`
+                ? `${t.status} (retry ${t.retryCount}/${MAX_RETRIES})`
                 : t.status
               return {
                 label: t.label ?? `Port ${t.port}`,

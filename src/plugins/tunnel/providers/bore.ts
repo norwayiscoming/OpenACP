@@ -31,18 +31,21 @@ export class BoreTunnelProvider implements TunnelProvider {
     }
 
     return new Promise<string>((resolve, reject) => {
+      let settled = false
+      const settle = (fn: () => void) => { if (!settled) { settled = true; fn() } }
+
       const timeout = setTimeout(() => {
         this.stop()
-        reject(new Error('Bore tunnel timed out after 30s. Is bore installed?'))
+        settle(() => reject(new Error('Bore tunnel timed out after 30s. Is bore installed?')))
       }, 30_000)
 
       try {
         this.child = spawn('bore', args, { stdio: ['ignore', 'pipe', 'pipe'] })
       } catch {
         clearTimeout(timeout)
-        reject(new Error(
+        settle(() => reject(new Error(
           'Failed to start bore. Install it from https://github.com/ekzhang/bore'
-        ))
+        )))
         return
       }
 
@@ -56,7 +59,7 @@ export class BoreTunnelProvider implements TunnelProvider {
           clearTimeout(timeout)
           this.publicUrl = `http://${match[1]}:${match[2]}`
           log.info({ url: this.publicUrl }, 'Bore tunnel ready')
-          resolve(this.publicUrl)
+          settle(() => resolve(this.publicUrl))
         }
       }
 
@@ -65,15 +68,15 @@ export class BoreTunnelProvider implements TunnelProvider {
 
       this.child.on('error', (err) => {
         clearTimeout(timeout)
-        reject(new Error(
+        settle(() => reject(new Error(
           `bore failed to start: ${err.message}. Install it from https://github.com/ekzhang/bore`
-        ))
+        )))
       })
 
       this.child.on('exit', (code) => {
         if (!this.publicUrl) {
           clearTimeout(timeout)
-          reject(new Error(`bore exited with code ${code} before establishing tunnel`))
+          settle(() => reject(new Error(`bore exited with code ${code} before establishing tunnel`)))
         } else {
           log.error({ code }, 'bore exited unexpectedly after establishment')
           this.child = null

@@ -359,6 +359,39 @@ describe('TunnelRegistry — retry logic', () => {
     expect(mockProviderInstances.length).toBe(countBefore)
   })
 
+  it('stop() during mid-flight retry removes the tunnel', async () => {
+    const registry = new TunnelRegistry()
+    await registry.add(3100, { type: 'user', provider: 'cloudflare' })
+
+    // Slow mock for the retry — start() hangs until we resolve
+    let resolveRetry!: (url: string) => void
+    nextMockOverride = () => {
+      const mock = createMockProvider()
+      mock.start = vi.fn().mockReturnValue(
+        new Promise<string>(resolve => { resolveRetry = resolve })
+      )
+      return mock
+    }
+
+    // Crash → schedules retry at 2s
+    mockProviderInstances[0]._simulateCrash(1)
+    expect(registry.get(3100)?.status).toBe('failed')
+
+    // Fire retry timer synchronously — retry() starts but hangs inside add() (slow mock)
+    vi.advanceTimersByTime(2_500)
+
+    // Entry was deleted by retry(); stop() currently finds nothing and returns early (bug)
+    const stopPromise = registry.stop(3100)
+
+    // Resolve the slow add while stop() is pending
+    resolveRetry('https://retry.trycloudflare.com')
+
+    await stopPromise
+
+    // Tunnel must be gone — not re-added by the racing retry
+    expect(registry.get(3100)).toBeNull()
+  })
+
   it('does not retry during shutdown', async () => {
     const registry = new TunnelRegistry()
     await registry.add(3100, { type: 'system', provider: 'cloudflare' })

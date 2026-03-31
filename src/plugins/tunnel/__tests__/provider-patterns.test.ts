@@ -67,11 +67,10 @@ describe('URL regex patterns', () => {
 })
 
 describe('cloudflared arm64 binary mapping', () => {
-  it('has separate arm64 and amd64 darwin entries', async () => {
-    // Dynamic import to get the spec
-    const mod = await import('../providers/install-cloudflared.js')
-    // Access the spec indirectly by checking the function exists
-    // The fix ensures arm64 != amd64 — verified at the source level
-    expect(mod.ensureCloudflared).toBeDefined()
+  it('darwin arm64 uses native arm64 binary not amd64', async () => {
+    const { CLOUDFLARED_SPEC } = await import('../providers/install-cloudflared.js')
+    expect(CLOUDFLARED_SPEC.platforms.darwin.arm64).toBe('cloudflared-darwin-arm64.tgz')
+    expect(CLOUDFLARED_SPEC.platforms.darwin.arm64).not.toBe('cloudflared-darwin-amd64.tgz')
+    expect(CLOUDFLARED_SPEC.platforms.darwin.x64).toBe('cloudflared-darwin-amd64.tgz')
   })
 })

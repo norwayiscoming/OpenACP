@@ -1,6 +1,6 @@
 import { ensureBinary, type BinarySpec } from '../../../core/utils/install-binary.js'
 
-const CLOUDFLARED_SPEC: BinarySpec = {
+export const CLOUDFLARED_SPEC: BinarySpec = {
   name: 'cloudflared',
   githubBaseUrl: 'https://github.com/cloudflare/cloudflared/releases/latest/download',
   platforms: {

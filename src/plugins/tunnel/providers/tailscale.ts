@@ -37,18 +37,21 @@ export class TailscaleTunnelProvider implements TunnelProvider {
     }
 
     return new Promise<string>((resolve, reject) => {
+      let settled = false
+      const settle = (fn: () => void) => { if (!settled) { settled = true; fn() } }
+
       const timeout = setTimeout(() => {
         this.stop()
-        reject(new Error('Tailscale funnel timed out after 30s. Is tailscale installed?'))
+        settle(() => reject(new Error('Tailscale funnel timed out after 30s. Is tailscale installed?')))
       }, 30_000)
 
       try {
         this.child = spawn('tailscale', args, { stdio: ['ignore', 'pipe', 'pipe'] })
       } catch {
         clearTimeout(timeout)
-        reject(new Error(
+        settle(() => reject(new Error(
           'Failed to start tailscale. Install it from https://tailscale.com/download'
-        ))
+        )))
         return
       }
 
@@ -63,7 +66,7 @@ export class TailscaleTunnelProvider implements TunnelProvider {
           clearTimeout(timeout)
           this.publicUrl = match[0]
           log.info({ url: this.publicUrl }, 'Tailscale funnel ready')
-          resolve(this.publicUrl)
+          settle(() => resolve(this.publicUrl))
         }
       }
 
@@ -72,9 +75,9 @@ export class TailscaleTunnelProvider implements TunnelProvider {
 
       this.child.on('error', (err) => {
         clearTimeout(timeout)
-        reject(new Error(
+        settle(() => reject(new Error(
           `tailscale failed to start: ${err.message}. Install it from https://tailscale.com/download`
-        ))
+        )))
       })
 
       this.child.on('exit', (code) => {
@@ -83,10 +86,11 @@ export class TailscaleTunnelProvider implements TunnelProvider {
           if (hostname) {
             // Tailscale funnel may exit immediately after configuring — construct URL with port
             this.publicUrl = `https://${hostname}:${localPort}`
+            this.child = null  // process is done; prevent stop() from sending SIGTERM to dead process
             log.info({ url: this.publicUrl }, 'Tailscale funnel ready (constructed from hostname)')
-            resolve(this.publicUrl)
+            settle(() => resolve(this.publicUrl))
           } else {
-            reject(new Error(`tailscale exited with code ${code} before establishing funnel`))
+            settle(() => reject(new Error(`tailscale exited with code ${code} before establishing funnel`)))
           }
         } else {
           log.error({ code }, 'tailscale exited unexpectedly after establishment')

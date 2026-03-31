@@ -43,16 +43,19 @@ export class CloudflareTunnelProvider implements TunnelProvider {
     }
 
     return new Promise<string>((resolve, reject) => {
+      let settled = false
+      const settle = (fn: () => void) => { if (!settled) { settled = true; fn() } }
+
       const timeout = setTimeout(() => {
         this.stop()
-        reject(new Error('Cloudflare tunnel timed out after 30s'))
+        settle(() => reject(new Error('Cloudflare tunnel timed out after 30s')))
       }, 30_000)
 
       try {
         this.child = spawn(binaryPath, args, { stdio: ['ignore', 'pipe', 'pipe'] })
       } catch {
         clearTimeout(timeout)
-        reject(new Error(`Failed to start cloudflared at ${binaryPath}`))
+        settle(() => reject(new Error(`Failed to start cloudflared at ${binaryPath}`)))
         return
       }
 
@@ -66,7 +69,7 @@ export class CloudflareTunnelProvider implements TunnelProvider {
           clearTimeout(timeout)
           this.publicUrl = match[0]
           log.info({ url: this.publicUrl }, 'Cloudflare tunnel ready')
-          resolve(this.publicUrl)
+          settle(() => resolve(this.publicUrl))
         }
       }
 
@@ -75,13 +78,13 @@ export class CloudflareTunnelProvider implements TunnelProvider {
 
       this.child.on('error', (err) => {
         clearTimeout(timeout)
-        reject(new Error(`cloudflared failed to start: ${err.message}`))
+        settle(() => reject(new Error(`cloudflared failed to start: ${err.message}`)))
       })
 
       this.child.on('exit', (code) => {
         if (!this.publicUrl) {
           clearTimeout(timeout)
-          reject(new Error(`cloudflared exited with code ${code} before establishing tunnel`))
+          settle(() => reject(new Error(`cloudflared exited with code ${code} before establishing tunnel`)))
         } else {
           // Post-establishment crash
           log.error({ code }, 'cloudflared exited unexpectedly after establishment')

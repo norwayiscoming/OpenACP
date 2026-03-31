@@ -10,7 +10,7 @@ import { TailscaleTunnelProvider } from './providers/tailscale.js'
 
 const log = createChildLogger({ module: 'tunnel-registry' })
 
-const MAX_RETRIES = 5
+export const MAX_RETRIES = 5
 const BASE_RETRY_DELAY_MS = 2_000
 
 export interface TunnelEntry {

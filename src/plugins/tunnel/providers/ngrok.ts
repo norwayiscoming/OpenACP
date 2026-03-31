@@ -33,18 +33,21 @@ export class NgrokTunnelProvider implements TunnelProvider {
     }
 
     return new Promise<string>((resolve, reject) => {
+      let settled = false
+      const settle = (fn: () => void) => { if (!settled) { settled = true; fn() } }
+
       const timeout = setTimeout(() => {
         this.stop()
-        reject(new Error('ngrok tunnel timed out after 30s. Is ngrok installed?'))
+        settle(() => reject(new Error('ngrok tunnel timed out after 30s. Is ngrok installed?')))
       }, 30_000)
 
       try {
         this.child = spawn('ngrok', args, { stdio: ['ignore', 'pipe', 'pipe'] })
       } catch {
         clearTimeout(timeout)
-        reject(new Error(
+        settle(() => reject(new Error(
           'Failed to start ngrok. Install it from https://ngrok.com/download'
-        ))
+        )))
         return
       }
 
@@ -59,7 +62,7 @@ export class NgrokTunnelProvider implements TunnelProvider {
           clearTimeout(timeout)
           this.publicUrl = match[0]
           log.info({ url: this.publicUrl }, 'ngrok tunnel ready')
-          resolve(this.publicUrl)
+          settle(() => resolve(this.publicUrl))
         }
       }
 
@@ -68,15 +71,15 @@ export class NgrokTunnelProvider implements TunnelProvider {
 
       this.child.on('error', (err) => {
         clearTimeout(timeout)
-        reject(new Error(
+        settle(() => reject(new Error(
           `ngrok failed to start: ${err.message}. Install it from https://ngrok.com/download`
-        ))
+        )))
       })
 
       this.child.on('exit', (code) => {
         if (!this.publicUrl) {
           clearTimeout(timeout)
-          reject(new Error(`ngrok exited with code ${code} before establishing tunnel`))
+          settle(() => reject(new Error(`ngrok exited with code ${code} before establishing tunnel`)))
         } else {
           log.error({ code }, 'ngrok exited unexpectedly after establishment')
           this.child = null

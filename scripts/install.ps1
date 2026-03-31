@@ -215,18 +215,35 @@ function Install-OpenACPNpm {
         return
     }
 
-    try {
-        $output = & npm install -g $spec 2>&1
-        if ($LASTEXITCODE -ne 0) {
-            Write-Msg -Level error -Message "npm install failed:"
-            Write-Host $output
-            exit 1
+    $maxRetries = 3
+    $retryDelay = 2
+    $attempt = 0
+    $lastOutput = ""
+
+    while ($attempt -lt $maxRetries) {
+        $attempt++
+        try {
+            $lastOutput = & npm install -g $spec 2>&1
+            if ($LASTEXITCODE -eq 0) {
+                Write-Msg -Level success -Message "Installed $spec via npm"
+                return
+            }
+            if ($attempt -lt $maxRetries) {
+                Write-Msg -Level warn -Message "npm install failed (attempt $attempt/$maxRetries), retrying in ${retryDelay}s..."
+                Start-Sleep -Seconds $retryDelay
+            }
+        } catch {
+            $lastOutput = "$_"
+            if ($attempt -lt $maxRetries) {
+                Write-Msg -Level warn -Message "npm install error (attempt $attempt/$maxRetries): $_ — retrying in ${retryDelay}s..."
+                Start-Sleep -Seconds $retryDelay
+            }
         }
-        Write-Msg -Level success -Message "Installed $spec via npm"
-    } catch {
-        Write-Msg -Level error -Message "npm install failed: $_"
-        exit 1
     }
+
+    Write-Msg -Level error -Message "npm install failed after $maxRetries attempts:"
+    Write-Host $lastOutput
+    exit 1
 }
 
 # ─── Section 7: Install via Git ──────────────────────────────────────────────
@@ -332,9 +349,10 @@ function Add-ToPath {
     if (-not $Dir) { return }
     if (-not (Test-Path $Dir)) { return }
 
-    # Check if already in PATH
+    # Check if already in PATH (guard against null PATH on fresh installs)
     $currentPath = [System.Environment]::GetEnvironmentVariable('Path', 'User')
-    if ($currentPath -split ';' | Where-Object { $_ -eq $Dir }) {
+    if ($null -eq $currentPath) { $currentPath = '' }
+    if (($currentPath -split ';') -contains $Dir) {
         Write-Msg -Level info -Message "$Dir already in PATH"
         return
     }
@@ -344,7 +362,7 @@ function Add-ToPath {
         return
     }
 
-    $newPath = "$currentPath;$Dir"
+    $newPath = if ($currentPath) { "$currentPath;$Dir" } else { $Dir }
     [System.Environment]::SetEnvironmentVariable('Path', $newPath, 'User')
     $env:Path = "$env:Path;$Dir"
     Write-Msg -Level success -Message "Added $Dir to user PATH"

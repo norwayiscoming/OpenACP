@@ -543,6 +543,26 @@ parse_args() {
     done
 }
 
+validate_args() {
+    # Validate --git-dir: reject paths with shell-unsafe characters
+    if [[ "$GIT_DIR" =~ [\'\"\ \`\$\;\&\|\<\>] ]]; then
+        echo "Error: --git-dir contains unsafe characters: $GIT_DIR" >&2
+        exit 1
+    fi
+    if [[ "$GIT_DIR" == *..* ]]; then
+        echo "Error: --git-dir must not contain '..': $GIT_DIR" >&2
+        exit 1
+    fi
+
+    # Validate --version: allow 'latest', 'main', semver (YYYY.MDD.patch), or simple dist-tag
+    if [[ "$INSTALL_TAG" != "latest" && "$INSTALL_TAG" != "main" ]]; then
+        if ! [[ "$INSTALL_TAG" =~ ^[a-zA-Z0-9._-]+$ ]]; then
+            echo "Error: --version contains invalid characters: $INSTALL_TAG" >&2
+            exit 1
+        fi
+    fi
+}
+
 configure_verbose() {
     if [[ "$VERBOSE" != "1" ]]; then
         return 0
@@ -566,7 +586,7 @@ prompt_choice() {
     if ! is_promptable; then
         return 1
     fi
-    echo -e "$prompt" >/dev/tty
+    printf '%b\n' "$prompt" >/dev/tty
     read -r answer </dev/tty || true
     echo "$answer"
 }
@@ -732,8 +752,10 @@ install_node() {
         ui_success "Node.js installed"
 
     elif [[ "$OS" == "linux" ]]; then
-        # Check for nvm first, install it if not present
-        if [[ -z "${NVM_DIR:-}" ]] && ! command -v nvm &>/dev/null; then
+        # Check for nvm first, install it if not present.
+        # Note: nvm is a shell function, not a binary — command -v nvm is unreliable.
+        # Always detect nvm via NVM_DIR / nvm.sh presence.
+        if [[ -z "${NVM_DIR:-}" ]] && [[ ! -s "${HOME}/.nvm/nvm.sh" ]]; then
             ui_info "Installing nvm (Node Version Manager)"
             local nvm_install
             nvm_install="$(mktempfile)"
@@ -744,15 +766,20 @@ install_node() {
             [[ -s "${NVM_DIR}/nvm.sh" ]] && source "${NVM_DIR}/nvm.sh"
         fi
 
-        if command -v nvm &>/dev/null || [[ -n "${NVM_DIR:-}" && -s "${NVM_DIR}/nvm.sh" ]]; then
+        if [[ -n "${NVM_DIR:-}" && -s "${NVM_DIR}/nvm.sh" ]] || [[ -s "${HOME}/.nvm/nvm.sh" ]]; then
             # shellcheck source=/dev/null
-            [[ -s "${NVM_DIR}/nvm.sh" ]] && source "${NVM_DIR}/nvm.sh"
+            [[ -s "${NVM_DIR:-${HOME}/.nvm}/nvm.sh" ]] && source "${NVM_DIR:-${HOME}/.nvm}/nvm.sh"
             ui_info "Installing Node.js v${NODE_DEFAULT_MAJOR} via nvm"
             run_quiet_step "Installing Node.js" nvm install "${NODE_DEFAULT_MAJOR}"
             nvm use "${NODE_DEFAULT_MAJOR}" 2>/dev/null || true
             nvm alias default "${NODE_DEFAULT_MAJOR}" 2>/dev/null || true
         else
             # Fallback: NodeSource
+            # Security note: NodeSource setup scripts are downloaded over TLS (--proto '=https'
+            # --tlsv1.2 enforced by download_file) and executed directly. NodeSource does not
+            # publish per-script SHA256 checksums, so content verification is not possible.
+            # This is the same accepted pattern used by Homebrew, Rust, and other major installers.
+            # Source: https://github.com/nodesource/distributions
             ui_info "Installing Node.js via NodeSource"
             require_sudo
             if command -v apt-get &>/dev/null; then
@@ -995,6 +1022,11 @@ install_openacp_from_git() {
 
     if ! check_git; then
         install_git
+        if ! command -v git &>/dev/null; then
+            ui_error "Git installation failed. Please install git manually and rerun."
+            exit 1
+        fi
+        hash -r 2>/dev/null || true
     fi
 
     # Ensure pnpm is available
@@ -1030,11 +1062,9 @@ install_openacp_from_git() {
     # Create wrapper script
     ensure_user_local_bin_on_path
 
-    cat >"$HOME/.local/bin/openacp" <<EOF
-#!/usr/bin/env bash
-set -euo pipefail
-exec node "${repo_dir}/dist/cli.js" "\$@"
-EOF
+    # Write wrapper using printf to safely handle any special chars in repo_dir
+    printf '#!/usr/bin/env bash\nset -euo pipefail\nexec node %q/dist/cli.js "$@"\n' \
+        "$repo_dir" >"$HOME/.local/bin/openacp"
     chmod +x "$HOME/.local/bin/openacp"
     ui_success "OpenACP wrapper installed to ~/.local/bin/openacp"
 }
@@ -1218,7 +1248,7 @@ main() {
         active_version="$(node -v 2>/dev/null || echo "missing")"
         ui_error "Node.js v${NODE_MIN_VERSION}+ required but found ${active_version} (${active_path})"
 
-        if [[ -n "${NVM_DIR:-}" ]] || command -v nvm &>/dev/null; then
+        if [[ -n "${NVM_DIR:-}" ]] || [[ -s "${HOME}/.nvm/nvm.sh" ]]; then
             print_nvm_upgrade_hint
         else
             echo "Install Node.js ${NODE_DEFAULT_MAJOR}+ and ensure it is first on PATH, then rerun."
@@ -1234,6 +1264,11 @@ main() {
     else
         if ! check_git; then
             install_git
+            if ! command -v git &>/dev/null; then
+                ui_error "Git installation failed. Please install git manually and rerun."
+                exit 1
+            fi
+            hash -r 2>/dev/null || true
         fi
         fix_npm_permissions
 
@@ -1307,6 +1342,7 @@ main() {
 
 if [[ "${OPENACP_INSTALL_SH_NO_RUN:-0}" != "1" ]]; then
     parse_args "$@"
+    validate_args
     configure_verbose
     main
 fi

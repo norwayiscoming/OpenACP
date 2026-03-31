@@ -6,6 +6,8 @@ import type { NotificationManager } from "../../plugins/notifications/notificati
 import type { TunnelService } from "../../plugins/tunnel/tunnel-service.js";
 import type { AgentEvent } from "../types.js";
 import type { MiddlewareChain } from "../plugin/middleware-chain.js";
+import type { SessionStore } from "./session-store.js";
+import type { IChannelAdapter } from "../channel.js";
 import { Session } from "./session.js";
 import { createChildLogger } from "../utils/log.js";
 
@@ -28,6 +30,14 @@ export interface SideEffectDeps {
 
 export class SessionFactory {
   middlewareChain?: MiddlewareChain;
+  private resumeLocks: Map<string, Promise<Session | null>> = new Map();
+
+  /** Injected by Core after construction — needed for lazy resume error feedback */
+  adapters?: Map<string, IChannelAdapter>;
+  /** Injected by Core after construction — needed for lazy resume store lookup */
+  sessionStore?: SessionStore | null;
+  /** Injected by Core — creates full session with thread + bridge + persist */
+  createFullSession?: (params: SessionCreateParams & { threadId?: string; createThread?: boolean }) => Promise<Session>;
 
   constructor(
     private agentManager: AgentManager,
@@ -168,6 +178,84 @@ export class SessionFactory {
     });
 
     return session;
+  }
+
+  /**
+   * Get active session by thread, or attempt lazy resume from store.
+   * Used by adapter command handlers and handleMessage().
+   */
+  async getOrResume(channelId: string, threadId: string): Promise<Session | null> {
+    const session = this.sessionManager.getSessionByThread(channelId, threadId);
+    if (session) return session;
+    return this.lazyResume(channelId, threadId);
+  }
+
+  private async lazyResume(channelId: string, threadId: string): Promise<Session | null> {
+    const store = this.sessionStore;
+    if (!store || !this.createFullSession) return null;
+
+    const lockKey = `${channelId}:${threadId}`;
+
+    // Check for existing resume in progress
+    const existing = this.resumeLocks.get(lockKey);
+    if (existing) return existing;
+
+    const record = store.findByPlatform(
+      channelId,
+      (p) => String(p.topicId) === threadId,
+    );
+    if (!record) {
+      log.debug({ threadId, channelId }, "No session record found for thread");
+      return null;
+    }
+
+    // Don't resume errored or cancelled sessions
+    if (record.status === "error" || record.status === "cancelled") {
+      log.debug({ threadId, sessionId: record.sessionId, status: record.status }, "Skipping resume of error session");
+      return null;
+    }
+
+    log.info({ threadId, sessionId: record.sessionId, status: record.status }, "Lazy resume: found record, attempting resume");
+
+    const resumePromise = (async (): Promise<Session | null> => {
+      try {
+        const session = await this.createFullSession!({
+          channelId: record.channelId,
+          agentName: record.agentName,
+          workingDirectory: record.workingDir,
+          resumeAgentSessionId: record.agentSessionId,
+          existingSessionId: record.sessionId,
+          initialName: record.name,
+          threadId,
+        });
+        session.activate();
+        session.dangerousMode = record.dangerousMode ?? false;
+        if (record.firstAgent) session.firstAgent = record.firstAgent;
+        if (record.agentSwitchHistory) session.agentSwitchHistory = record.agentSwitchHistory;
+        if (record.currentPromptCount != null) session.promptCount = record.currentPromptCount;
+
+        log.info({ sessionId: session.id, threadId }, "Lazy resume successful");
+        return session;
+      } catch (err) {
+        log.error({ err, record }, "Lazy resume failed");
+        // Send error feedback to user
+        const adapter = this.adapters?.get(channelId);
+        if (adapter) {
+          try {
+            await adapter.sendMessage(threadId, {
+              type: "error",
+              text: `⚠️ Failed to resume session: ${err instanceof Error ? err.message : String(err)}`,
+            });
+          } catch { /* best effort */ }
+        }
+        return null;
+      } finally {
+        this.resumeLocks.delete(lockKey);
+      }
+    })();
+
+    this.resumeLocks.set(lockKey, resumePromise);
+    return resumePromise;
   }
 
   wireSideEffects(session: Session, deps: SideEffectDeps): void {

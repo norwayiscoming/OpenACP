@@ -43,7 +43,6 @@ export class OpenACPCore {
   requestRestart: (() => Promise<void>) | null = null;
   private _tunnelService?: TunnelService;
   private sessionStore: SessionStore | null = null;
-  private resumeLocks: Map<string, Promise<Session | null>> = new Map();
   eventBus: EventBus;
   sessionFactory: SessionFactory;
   readonly lifecycleManager: LifecycleManager;
@@ -126,6 +125,11 @@ export class OpenACPCore {
     // Wire middleware chain to session factory and session manager
     this.sessionFactory.middlewareChain = this.lifecycleManager.middlewareChain;
     this.sessionManager.middlewareChain = this.lifecycleManager.middlewareChain;
+
+    // Wire lazy resume dependencies
+    this.sessionFactory.sessionStore = this.sessionStore;
+    this.sessionFactory.adapters = this.adapters;
+    this.sessionFactory.createFullSession = (params) => this.createSession(params);
 
     this.agentSwitchHandler = new AgentSwitchHandler({
       sessionManager: this.sessionManager,
@@ -290,16 +294,8 @@ export class OpenACPCore {
       return;
     }
 
-    // Find session by thread
-    let session = this.sessionManager.getSessionByThread(
-      message.channelId,
-      message.threadId,
-    );
-
-    // Lazy resume: try to restore session from store
-    if (!session) {
-      session = (await this.lazyResume(message)) ?? undefined;
-    }
+    // Find session by thread or lazy resume
+    let session = await this.sessionFactory.getOrResume(message.channelId, message.threadId);
 
     if (!session) {
       log.warn(
@@ -623,106 +619,8 @@ export class OpenACPCore {
     return this.agentSwitchHandler.switch(sessionId, toAgent);
   }
 
-  // --- Lazy Resume ---
-
-  /**
-   * Get active session by thread, or attempt lazy resume from store.
-   * Used by adapter command handlers that need a session but don't go through handleMessage().
-   */
   async getOrResumeSession(channelId: string, threadId: string): Promise<Session | null> {
-    const session = this.sessionManager.getSessionByThread(channelId, threadId);
-    if (session) return session;
-    return this.lazyResume({ channelId, threadId, userId: "", text: "" });
-  }
-
-  private async lazyResume(message: IncomingMessage): Promise<Session | null> {
-    const store = this.sessionStore;
-    if (!store) return null;
-
-    const lockKey = `${message.channelId}:${message.threadId}`;
-
-    // Check for existing resume in progress
-    const existing = this.resumeLocks.get(lockKey);
-    if (existing) return existing;
-
-    const record = store.findByPlatform(
-      message.channelId,
-      (p) => String(p.topicId) === message.threadId,
-    );
-    if (!record) {
-      log.debug(
-        { threadId: message.threadId, channelId: message.channelId },
-        "No session record found for thread",
-      );
-      return null;
-    }
-
-    // Don't resume errored or cancelled sessions
-    if (record.status === "error" || record.status === "cancelled") {
-      log.debug(
-        {
-          threadId: message.threadId,
-          sessionId: record.sessionId,
-          status: record.status,
-        },
-        "Skipping resume of error session",
-      );
-      return null;
-    }
-
-    log.info(
-      {
-        threadId: message.threadId,
-        sessionId: record.sessionId,
-        status: record.status,
-      },
-      "Lazy resume: found record, attempting resume",
-    );
-
-    const resumePromise = (async (): Promise<Session | null> => {
-      try {
-        const session = await this.createSession({
-          channelId: record.channelId,
-          agentName: record.agentName,
-          workingDirectory: record.workingDir,
-          resumeAgentSessionId: record.agentSessionId,
-          existingSessionId: record.sessionId,
-          initialName: record.name,
-          threadId: message.threadId,
-        });
-        session.activate();
-        session.dangerousMode = record.dangerousMode ?? false;
-        if (record.firstAgent) session.firstAgent = record.firstAgent;
-        if (record.agentSwitchHistory) session.agentSwitchHistory = record.agentSwitchHistory;
-        if (record.currentPromptCount != null) session.promptCount = record.currentPromptCount;
-
-        log.info(
-          { sessionId: session.id, threadId: message.threadId },
-          "Lazy resume successful",
-        );
-        return session;
-      } catch (err) {
-        log.error({ err, record }, "Lazy resume failed");
-        // Send error feedback to user instead of silent drop
-        const adapter = this.adapters.get(message.channelId);
-        if (adapter) {
-          try {
-            await adapter.sendMessage(message.threadId, {
-              type: "error",
-              text: `⚠️ Failed to resume session: ${err instanceof Error ? err.message : String(err)}`,
-            });
-          } catch {
-            /* best effort */
-          }
-        }
-        return null;
-      } finally {
-        this.resumeLocks.delete(lockKey);
-      }
-    })();
-
-    this.resumeLocks.set(lockKey, resumePromise);
-    return resumePromise;
+    return this.sessionFactory.getOrResume(channelId, threadId);
   }
 
   // --- Event Wiring ---

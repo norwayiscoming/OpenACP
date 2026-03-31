@@ -11,7 +11,10 @@ Connect messaging platforms (Telegram, Discord) to 28+ AI coding agents via ACP 
   openacp                              Start (mode from config)
   openacp start                        Start as background daemon
   openacp stop                         Stop background daemon
-  openacp restart                      Restart background daemon
+  openacp restart                      Restart (same mode)
+  openacp restart --foreground         Restart in foreground mode
+  openacp restart --daemon             Restart as background daemon
+  openacp attach                       Attach to running daemon
   openacp status                       Show daemon status
   openacp logs                         Tail daemon log file
   openacp --foreground                 Force foreground mode

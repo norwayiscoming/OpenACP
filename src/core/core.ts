@@ -26,7 +26,6 @@ import { ErrorTracker } from "./plugin/error-tracker.js";
 import { createChildLogger } from "./utils/log.js";
 import type { SpeechService } from "../plugins/speech/exports.js";
 import type { ContextManager } from "../plugins/context/context-manager.js";
-import type { ContextQuery, ContextOptions, ContextResult } from "../plugins/context/context-provider.js";
 import type { InstanceContext } from "./instance/instance-context.js";
 const log = createChildLogger({ module: "core" });
 
@@ -130,6 +129,9 @@ export class OpenACPCore {
     this.sessionFactory.sessionStore = this.sessionStore;
     this.sessionFactory.adapters = this.adapters;
     this.sessionFactory.createFullSession = (params) => this.createSession(params);
+    this.sessionFactory.configManager = this.configManager;
+    this.sessionFactory.agentCatalog = this.agentCatalog;
+    this.sessionFactory.getContextManager = () => this.lifecycleManager.serviceRegistry.get<ContextManager>('context');
 
     this.agentSwitchHandler = new AgentSwitchHandler({
       sessionManager: this.sessionManager,
@@ -399,20 +401,7 @@ export class OpenACPCore {
     workspacePath?: string,
     options?: { createThread?: boolean },
   ): Promise<Session> {
-    const config = this.configManager.get();
-    const resolvedAgent = agentName || config.defaultAgent;
-    log.info({ channelId, agentName: resolvedAgent }, "New session request");
-    const agentDef = this.agentCatalog.resolve(resolvedAgent);
-    const resolvedWorkspace = this.configManager.resolveWorkspace(
-      workspacePath || agentDef?.workingDirectory,
-    );
-
-    return this.createSession({
-      channelId,
-      agentName: resolvedAgent,
-      workingDirectory: resolvedWorkspace,
-      createThread: options?.createThread,
-    });
+    return this.sessionFactory.handleNewSession(channelId, agentName, workspacePath, options);
   }
 
   async adoptSession(
@@ -549,68 +538,19 @@ export class OpenACPCore {
     };
   }
 
-  async handleNewChat(
-    channelId: string,
-    currentThreadId: string,
-  ): Promise<Session | null> {
-    const currentSession = this.sessionManager.getSessionByThread(
-      channelId,
-      currentThreadId,
-    );
-
-    if (currentSession) {
-      return this.handleNewSession(
-        channelId,
-        currentSession.agentName,
-        currentSession.workingDirectory,
-      );
-    }
-
-    // Fallback: look up from store (e.g. after restart before lazy resume)
-    const record = this.sessionManager.getRecordByThread(
-      channelId,
-      currentThreadId,
-    );
-    if (!record || record.status === "cancelled" || record.status === "error")
-      return null;
-
-    return this.handleNewSession(
-      channelId,
-      record.agentName,
-      record.workingDir,
-    );
+  async handleNewChat(channelId: string, currentThreadId: string): Promise<Session | null> {
+    return this.sessionFactory.handleNewChat(channelId, currentThreadId);
   }
 
   async createSessionWithContext(params: {
     channelId: string;
     agentName: string;
     workingDirectory: string;
-    contextQuery: ContextQuery;
-    contextOptions?: ContextOptions;
+    contextQuery: import("../plugins/context/context-provider.js").ContextQuery;
+    contextOptions?: import("../plugins/context/context-provider.js").ContextOptions;
     createThread?: boolean;
-  }): Promise<{ session: Session; contextResult: ContextResult | null }> {
-    let contextResult: ContextResult | null = null;
-    try {
-      contextResult = await this.contextManager.buildContext(
-        params.contextQuery,
-        params.contextOptions,
-      );
-    } catch (err) {
-      log.warn({ err }, "Context building failed, proceeding without context");
-    }
-
-    const session = await this.createSession({
-      channelId: params.channelId,
-      agentName: params.agentName,
-      workingDirectory: params.workingDirectory,
-      createThread: params.createThread,
-    });
-
-    if (contextResult) {
-      session.setContext(contextResult.markdown);
-    }
-
-    return { session, contextResult };
+  }): Promise<{ session: Session; contextResult: import("../plugins/context/context-provider.js").ContextResult | null }> {
+    return this.sessionFactory.createSessionWithContext(params);
   }
 
   // --- Agent Switch ---

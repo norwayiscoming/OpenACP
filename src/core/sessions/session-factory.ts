@@ -8,6 +8,10 @@ import type { AgentEvent } from "../types.js";
 import type { MiddlewareChain } from "../plugin/middleware-chain.js";
 import type { SessionStore } from "./session-store.js";
 import type { IChannelAdapter } from "../channel.js";
+import type { ConfigManager } from "../config/config.js";
+import type { AgentCatalog } from "../agents/agent-catalog.js";
+import type { ContextManager } from "../../plugins/context/context-manager.js";
+import type { ContextQuery, ContextOptions, ContextResult } from "../../plugins/context/context-provider.js";
 import { Session } from "./session.js";
 import { createChildLogger } from "../utils/log.js";
 
@@ -38,6 +42,12 @@ export class SessionFactory {
   sessionStore?: SessionStore | null;
   /** Injected by Core — creates full session with thread + bridge + persist */
   createFullSession?: (params: SessionCreateParams & { threadId?: string; createThread?: boolean }) => Promise<Session>;
+  /** Injected by Core — needed for resolving default agent and workspace */
+  configManager?: ConfigManager;
+  /** Injected by Core — needed for resolving agent definitions */
+  agentCatalog?: AgentCatalog;
+  /** Injected by Core — needed for context-aware session creation */
+  getContextManager?: () => ContextManager | undefined;
 
   constructor(
     private agentManager: AgentManager,
@@ -256,6 +266,102 @@ export class SessionFactory {
 
     this.resumeLocks.set(lockKey, resumePromise);
     return resumePromise;
+  }
+
+  async handleNewSession(
+    channelId: string,
+    agentName?: string,
+    workspacePath?: string,
+    options?: { createThread?: boolean },
+  ): Promise<Session> {
+    if (!this.configManager || !this.agentCatalog || !this.createFullSession) {
+      throw new Error("SessionFactory not fully initialized");
+    }
+    const config = this.configManager.get();
+    const resolvedAgent = agentName || config.defaultAgent;
+    log.info({ channelId, agentName: resolvedAgent }, "New session request");
+    const agentDef = this.agentCatalog.resolve(resolvedAgent);
+    const resolvedWorkspace = this.configManager.resolveWorkspace(
+      workspacePath || agentDef?.workingDirectory,
+    );
+
+    return this.createFullSession({
+      channelId,
+      agentName: resolvedAgent,
+      workingDirectory: resolvedWorkspace,
+      ...options,
+    });
+  }
+
+  /** NOTE: handleNewChat is currently dead code — never called outside core.ts itself.
+   *  Moving it anyway for completeness; can be removed in a future cleanup. */
+  async handleNewChat(
+    channelId: string,
+    currentThreadId: string,
+  ): Promise<Session | null> {
+    const currentSession = this.sessionManager.getSessionByThread(
+      channelId,
+      currentThreadId,
+    );
+
+    if (currentSession) {
+      return this.handleNewSession(
+        channelId,
+        currentSession.agentName,
+        currentSession.workingDirectory,
+      );
+    }
+
+    // Fallback: look up from store
+    const record = this.sessionManager.getRecordByThread(
+      channelId,
+      currentThreadId,
+    );
+    if (!record || record.status === "cancelled" || record.status === "error")
+      return null;
+
+    return this.handleNewSession(
+      channelId,
+      record.agentName,
+      record.workingDir,
+    );
+  }
+
+  async createSessionWithContext(params: {
+    channelId: string;
+    agentName: string;
+    workingDirectory: string;
+    contextQuery: ContextQuery;
+    contextOptions?: ContextOptions;
+    createThread?: boolean;
+  }): Promise<{ session: Session; contextResult: ContextResult | null }> {
+    if (!this.createFullSession) throw new Error("SessionFactory not fully initialized");
+
+    let contextResult: ContextResult | null = null;
+    const contextManager = this.getContextManager?.();
+    if (contextManager) {
+      try {
+        contextResult = await contextManager.buildContext(
+          params.contextQuery,
+          params.contextOptions,
+        );
+      } catch (err) {
+        log.warn({ err }, "Context building failed, proceeding without context");
+      }
+    }
+
+    const session = await this.createFullSession({
+      channelId: params.channelId,
+      agentName: params.agentName,
+      workingDirectory: params.workingDirectory,
+      createThread: params.createThread,
+    });
+
+    if (contextResult) {
+      session.setContext(contextResult.markdown);
+    }
+
+    return { session, contextResult };
   }
 
   wireSideEffects(session: Session, deps: SideEffectDeps): void {

@@ -50,9 +50,24 @@ Your Codebase
 ## Quick Start
 
 ```bash
+# macOS / Linux
+curl -fsSL https://raw.githubusercontent.com/Open-ACP/OpenACP/main/scripts/install.sh | bash
+
+# Windows
+powershell -c "irm https://raw.githubusercontent.com/Open-ACP/OpenACP/main/scripts/install.ps1 | iex"
+```
+
+Works on macOS, Linux & Windows. Installs Node.js (if needed) and everything else for you.
+
+<details>
+<summary>Or install via npm</summary>
+
+```bash
 npm install -g @openacp/cli
 openacp
 ```
+
+</details>
 
 The interactive setup wizard walks you through everything:
 

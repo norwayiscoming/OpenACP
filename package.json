@@ -1,6 +1,6 @@
 {
   "name": "@openacp/cli",
-  "version": "2026.330.2",
+  "version": "2026.330.3",
   "private": true,
   "license": "MIT",
   "type": "module",

@@ -114,6 +114,7 @@ export class TelegramAdapter extends MessagingAdapter {
   private core: OpenACPCore;
   private bot!: Bot;
   private telegramConfig: TelegramChannelConfig;
+  private saveTopicIds?: (updates: { notificationTopicId?: number; assistantTopicId?: number }) => Promise<void>;
   private permissionHandler!: PermissionHandler;
   private assistantSession: Session | null = null;
   private assistantInitializing = false;
@@ -170,7 +171,11 @@ export class TelegramAdapter extends MessagingAdapter {
     return tracker;
   }
 
-  constructor(core: OpenACPCore, config: TelegramChannelConfig) {
+  constructor(
+    core: OpenACPCore,
+    config: TelegramChannelConfig,
+    saveTopicIds?: (updates: { notificationTopicId?: number; assistantTopicId?: number }) => Promise<void>,
+  ) {
     super({ configManager: core.configManager }, {
       ...(config as Record<string, unknown>),
       maxMessageLength: 4096,
@@ -178,6 +183,7 @@ export class TelegramAdapter extends MessagingAdapter {
     } as MessagingAdapterConfig);
     this.core = core;
     this.telegramConfig = config;
+    this.saveTopicIds = saveTopicIds;
   }
 
   async start(): Promise<void> {
@@ -270,9 +276,14 @@ export class TelegramAdapter extends MessagingAdapter {
       this.telegramConfig.chatId,
       this.telegramConfig,
       async (updates) => {
-        await this.core.configManager.save({
-          channels: { telegram: updates },
-        });
+        if (this.saveTopicIds) {
+          await this.saveTopicIds(updates);
+        } else {
+          // Fallback for legacy usage without plugin settings
+          await this.core.configManager.save({
+            channels: { telegram: updates },
+          });
+        }
       },
     );
     this.notificationTopicId = topics.notificationTopicId;

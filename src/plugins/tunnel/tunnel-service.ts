@@ -36,12 +36,12 @@ export class TunnelService {
       const port = this.config.port + i
       const server = serve({ fetch: app.fetch, port })
 
-      const ok = await new Promise<boolean>((resolve) => {
-        server.on('listening', () => resolve(true))
-        server.on('error', () => resolve(false))
+      const result = await new Promise<{ ok: boolean; code?: string }>((resolve) => {
+        server.on('listening', () => resolve({ ok: true }))
+        server.on('error', (err: NodeJS.ErrnoException) => resolve({ ok: false, code: err.code }))
       })
 
-      if (ok) {
+      if (result.ok) {
         this.server = server
         actualPort = port
         if (i > 0) {
@@ -52,10 +52,17 @@ export class TunnelService {
       }
 
       server.close()
+
+      // EACCES = permission denied — retrying other ports won't help
+      if (result.code === 'EACCES') {
+        log.error({ port }, 'Permission denied binding to port (try a port > 1024)')
+        break
+      }
     }
 
     if (!this.server) {
-      log.warn({ port: this.config.port }, 'Could not find available port for tunnel HTTP server')
+      log.error({ port: this.config.port }, 'Failed to start tunnel HTTP server — no available port')
+      this.startError = `HTTP server failed to bind (tried ports ${this.config.port}-${this.config.port + maxRetries - 1})`
       return `http://localhost:${this.config.port}`
     }
 

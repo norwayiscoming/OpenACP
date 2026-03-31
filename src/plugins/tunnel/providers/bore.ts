@@ -4,13 +4,20 @@ import type { TunnelProvider } from '../provider.js'
 
 const log = createChildLogger({ module: 'bore-tunnel' })
 
+const SIGKILL_TIMEOUT_MS = 5_000
+
 export class BoreTunnelProvider implements TunnelProvider {
   private child: ChildProcess | null = null
   private publicUrl = ''
   private options: Record<string, unknown>
+  private exitCallback: ((code: number | null) => void) | null = null
 
   constructor(options: Record<string, unknown> = {}) {
     this.options = options
+  }
+
+  onExit(callback: (code: number | null) => void): void {
+    this.exitCallback = callback
   }
 
   async start(localPort: number): Promise<string> {
@@ -67,17 +74,33 @@ export class BoreTunnelProvider implements TunnelProvider {
         if (!this.publicUrl) {
           clearTimeout(timeout)
           reject(new Error(`bore exited with code ${code} before establishing tunnel`))
+        } else {
+          log.error({ code }, 'bore exited unexpectedly after establishment')
+          this.child = null
+          this.exitCallback?.(code)
         }
       })
     })
   }
 
   async stop(): Promise<void> {
-    if (this.child) {
-      this.child.kill('SIGTERM')
-      this.child = null
-      log.info('Bore tunnel stopped')
+    const child = this.child
+    if (!child) return
+    this.child = null
+
+    child.kill('SIGTERM')
+
+    const exited = await Promise.race([
+      new Promise<boolean>((resolve) => child.on('exit', () => resolve(true))),
+      new Promise<boolean>((resolve) => setTimeout(() => resolve(false), SIGKILL_TIMEOUT_MS)),
+    ])
+
+    if (!exited) {
+      log.warn('bore did not exit after SIGTERM, sending SIGKILL')
+      child.kill('SIGKILL')
     }
+
+    log.info('Bore tunnel stopped')
   }
 
   getPublicUrl(): string {

@@ -6,7 +6,7 @@ const CLOUDFLARED_SPEC: BinarySpec = {
   platforms: {
     darwin: {
       x64: 'cloudflared-darwin-amd64.tgz',
-      arm64: 'cloudflared-darwin-amd64.tgz',
+      arm64: 'cloudflared-darwin-arm64.tgz',
     },
     win32: {
       x64: 'cloudflared-windows-amd64.exe',

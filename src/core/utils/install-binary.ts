@@ -111,6 +111,11 @@ export async function ensureBinary(spec: BinarySpec): Promise<string> {
     try { fs.unlinkSync(downloadDest) } catch { /* ignore */ }
   }
 
+  // Validate the binary was actually produced
+  if (!fs.existsSync(binPath)) {
+    throw new Error(`${spec.name}: binary not found at ${binPath} after download/extraction. The archive structure may have changed.`)
+  }
+
   if (!IS_WINDOWS) {
     fs.chmodSync(binPath, '755')
   }

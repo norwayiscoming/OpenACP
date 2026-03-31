@@ -4,19 +4,26 @@ import type { TunnelProvider } from '../provider.js'
 
 const log = createChildLogger({ module: 'tailscale-tunnel' })
 
+const SIGKILL_TIMEOUT_MS = 5_000
+
 export class TailscaleTunnelProvider implements TunnelProvider {
   private child: ChildProcess | null = null
   private publicUrl = ''
   private options: Record<string, unknown>
+  private exitCallback: ((code: number | null) => void) | null = null
 
   constructor(options: Record<string, unknown> = {}) {
     this.options = options
   }
 
+  onExit(callback: (code: number | null) => void): void {
+    this.exitCallback = callback
+  }
+
   async start(localPort: number): Promise<string> {
     let hostname = ''
     try {
-      const statusJson = execSync('tailscale status --json', { encoding: 'utf-8' })
+      const statusJson = execSync('tailscale status --json', { encoding: 'utf-8', timeout: 10_000 })
       const status = JSON.parse(statusJson)
       hostname = String(status.Self.DNSName).replace(/\.$/, '')
       log.debug({ hostname }, 'Resolved Tailscale hostname')
@@ -45,7 +52,8 @@ export class TailscaleTunnelProvider implements TunnelProvider {
         return
       }
 
-      const urlPattern = /https:\/\/[^\s]+/
+      // Match only Tailscale funnel URLs (*.ts.net pattern)
+      const urlPattern = /https:\/\/[a-zA-Z0-9-]+\.[a-zA-Z0-9-]+\.ts\.net/
 
       const onData = (data: Buffer) => {
         const line = data.toString()
@@ -73,23 +81,40 @@ export class TailscaleTunnelProvider implements TunnelProvider {
         if (!this.publicUrl) {
           clearTimeout(timeout)
           if (hostname) {
-            this.publicUrl = `https://${hostname}`
+            // Tailscale funnel may exit immediately after configuring — construct URL with port
+            this.publicUrl = `https://${hostname}:${localPort}`
             log.info({ url: this.publicUrl }, 'Tailscale funnel ready (constructed from hostname)')
             resolve(this.publicUrl)
           } else {
             reject(new Error(`tailscale exited with code ${code} before establishing funnel`))
           }
+        } else {
+          log.error({ code }, 'tailscale exited unexpectedly after establishment')
+          this.child = null
+          this.exitCallback?.(code)
         }
       })
     })
   }
 
   async stop(): Promise<void> {
-    if (this.child) {
-      this.child.kill('SIGTERM')
-      this.child = null
-      log.info('Tailscale funnel stopped')
+    const child = this.child
+    if (!child) return
+    this.child = null
+
+    child.kill('SIGTERM')
+
+    const exited = await Promise.race([
+      new Promise<boolean>((resolve) => child.on('exit', () => resolve(true))),
+      new Promise<boolean>((resolve) => setTimeout(() => resolve(false), SIGKILL_TIMEOUT_MS)),
+    ])
+
+    if (!exited) {
+      log.warn('tailscale did not exit after SIGTERM, sending SIGKILL')
+      child.kill('SIGKILL')
     }
+
+    log.info('Tailscale funnel stopped')
   }
 
   getPublicUrl(): string {

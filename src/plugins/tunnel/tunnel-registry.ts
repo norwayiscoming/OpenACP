@@ -10,6 +10,9 @@ import { TailscaleTunnelProvider } from './providers/tailscale.js'
 
 const log = createChildLogger({ module: 'tunnel-registry' })
 
+const MAX_RETRIES = 5
+const BASE_RETRY_DELAY_MS = 2_000
+
 export interface TunnelEntry {
   port: number
   type: 'system' | 'user'
@@ -18,6 +21,7 @@ export interface TunnelEntry {
   publicUrl?: string
   sessionId?: string
   status: 'stopped' | 'starting' | 'active' | 'failed'
+  retryCount: number
   createdAt: string
 }
 
@@ -34,6 +38,7 @@ interface LiveEntry {
   entry: TunnelEntry
   process: TunnelProvider | null
   spawnPromise: Promise<string> | null
+  retryTimer: ReturnType<typeof setTimeout> | null
 }
 
 const REGISTRY_PATH = path.join(os.homedir(), '.openacp', 'tunnels.json')
@@ -43,6 +48,7 @@ export class TunnelRegistry {
   private saveTimeout: ReturnType<typeof setTimeout> | null = null
   private maxUserTunnels: number
   private providerOptions: Record<string, unknown>
+  private shuttingDown = false
 
   constructor(opts: { maxUserTunnels?: number; providerOptions?: Record<string, unknown> } = {}) {
     this.maxUserTunnels = opts.maxUserTunnels ?? 5
@@ -61,7 +67,8 @@ export class TunnelRegistry {
       if (existing.entry.status === 'active' || existing.entry.status === 'starting') {
         throw new Error(`Port ${port} is already tunneled → ${existing.entry.publicUrl || 'starting...'}`)
       }
-      // Stopped/failed entry — remove and re-add
+      // Stopped/failed entry — clean up retry timer and re-add
+      if (existing.retryTimer) clearTimeout(existing.retryTimer)
       this.entries.delete(port)
     }
 
@@ -80,10 +87,32 @@ export class TunnelRegistry {
       label: opts.label,
       sessionId: opts.sessionId,
       status: 'starting',
+      retryCount: 0,
       createdAt: new Date().toISOString(),
     }
 
     const provider = this.createProvider(opts.provider)
+
+    // Wire up post-establishment crash detection with auto-retry
+    provider.onExit((code) => {
+      if (this.shuttingDown) return
+      const live = this.entries.get(port)
+      if (!live) return
+
+      live.entry.status = 'failed'
+      live.process = null
+      this.scheduleSave()
+
+      if (live.entry.retryCount < MAX_RETRIES) {
+        const delay = BASE_RETRY_DELAY_MS * Math.pow(2, live.entry.retryCount)
+        log.warn({ port, code, retry: live.entry.retryCount + 1, maxRetries: MAX_RETRIES, delayMs: delay },
+          'Tunnel crashed, scheduling retry')
+        live.retryTimer = setTimeout(() => this.retry(port, opts), delay)
+      } else {
+        log.error({ port, code }, `Tunnel crashed and exhausted all ${MAX_RETRIES} retries`)
+      }
+    })
+
     const spawnPromise = provider.start(port).then(url => {
       entry.publicUrl = url
       entry.status = 'active'
@@ -97,12 +126,60 @@ export class TunnelRegistry {
       throw err
     })
 
-    this.entries.set(port, { entry, process: provider, spawnPromise })
+    this.entries.set(port, { entry, process: provider, spawnPromise, retryTimer: null })
     this.scheduleSave()
 
     // Await spawn — caller gets the URL or error
     await spawnPromise
     return entry
+  }
+
+  private async retry(port: number, opts: {
+    type: 'system' | 'user'
+    provider: string
+    label?: string
+    sessionId?: string
+  }): Promise<void> {
+    if (this.shuttingDown) return
+    const live = this.entries.get(port)
+    if (!live) return
+
+    const retryCount = live.entry.retryCount + 1
+    log.info({ port, retry: retryCount, maxRetries: MAX_RETRIES }, 'Retrying tunnel')
+
+    // Remove old entry so add() doesn't reject
+    if (live.retryTimer) clearTimeout(live.retryTimer)
+    this.entries.delete(port)
+
+    try {
+      const entry = await this.add(port, opts)
+      entry.retryCount = retryCount
+    } catch (err) {
+      log.error({ port, err: (err as Error).message, retry: retryCount }, 'Tunnel retry failed')
+
+      // Re-insert as failed with incremented retry count for next onExit cycle
+      const failedEntry: TunnelEntry = {
+        port,
+        type: opts.type,
+        provider: opts.provider,
+        label: opts.label,
+        sessionId: opts.sessionId,
+        status: 'failed',
+        retryCount,
+        createdAt: live.entry.createdAt,
+      }
+
+      if (retryCount < MAX_RETRIES) {
+        const delay = BASE_RETRY_DELAY_MS * Math.pow(2, retryCount)
+        const retryTimer = setTimeout(() => this.retry(port, opts), delay)
+        this.entries.set(port, { entry: failedEntry, process: null, spawnPromise: null, retryTimer })
+        log.warn({ port, retry: retryCount + 1, delayMs: delay }, 'Scheduling next retry')
+      } else {
+        this.entries.set(port, { entry: failedEntry, process: null, spawnPromise: null, retryTimer: null })
+        log.error({ port }, `Tunnel exhausted all ${MAX_RETRIES} retries`)
+      }
+      this.scheduleSave()
+    }
   }
 
   async stop(port: number): Promise<void> {
@@ -112,6 +189,9 @@ export class TunnelRegistry {
     if (live.entry.type === 'system') {
       throw new Error('Cannot stop system tunnel')
     }
+
+    // Cancel any pending retry
+    if (live.retryTimer) clearTimeout(live.retryTimer)
 
     // Wait for spawn to finish if still starting
     if (live.spawnPromise) {
@@ -147,7 +227,10 @@ export class TunnelRegistry {
   }
 
   async shutdown(): Promise<void> {
+    this.shuttingDown = true
+
     for (const [, live] of this.entries) {
+      if (live.retryTimer) clearTimeout(live.retryTimer)
       if (live.spawnPromise) {
         try { await live.spawnPromise } catch { /* ignore */ }
       }

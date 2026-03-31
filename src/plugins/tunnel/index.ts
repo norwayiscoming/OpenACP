@@ -176,9 +176,12 @@ function createTunnelPlugin(): OpenACPPlugin {
             }
           }
 
-          // /tunnel (no args) — show current tunnel URL
+          // /tunnel (no args) — show current tunnel URL + health
           const url = tunnelSvc.getPublicUrl()
-          return { type: 'text', text: url ? `Tunnel: ${url}` : 'No tunnel active.' }
+          const err = tunnelSvc.getStartError()
+          let text = url ? `Tunnel: ${url}` : 'No tunnel active.'
+          if (err) text += `\n⚠️ System tunnel error: ${err}`
+          return { type: 'text', text }
         },
       })
 
@@ -189,12 +192,19 @@ function createTunnelPlugin(): OpenACPPlugin {
         handler: async () => {
           const userTunnels = tunnelSvc.listTunnels()
           const systemUrl = tunnelSvc.getPublicUrl()
+          const sysError = tunnelSvc.getStartError()
+          const systemDetail = sysError ? `${systemUrl} ⚠️ ${sysError}` : systemUrl
           const items = [
-            { label: 'System', detail: systemUrl },
-            ...userTunnels.map(t => ({
-              label: t.label ?? `Port ${t.port}`,
-              detail: `${t.publicUrl ?? t.status} (${t.provider})`,
-            })),
+            { label: 'System', detail: systemDetail },
+            ...userTunnels.map(t => {
+              const statusInfo = t.status === 'failed' && t.retryCount > 0
+                ? `${t.status} (retry ${t.retryCount}/${5})`
+                : t.status
+              return {
+                label: t.label ?? `Port ${t.port}`,
+                detail: `${t.publicUrl ?? statusInfo} (${t.provider})`,
+              }
+            }),
           ]
           return { type: 'list', title: 'Active Tunnels', items }
         },

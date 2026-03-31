@@ -3,7 +3,7 @@ import type { OpenACPCore } from '../../core/core.js';
 import type { ConnectionManager } from './connection-manager.js';
 import type { EventBuffer } from './event-buffer.js';
 import type { CommandRegistry } from '../../core/command-registry.js';
-import { NotFoundError } from '../api-server/middleware/error-handler.js';
+import { NotFoundError, BadRequestError } from '../api-server/middleware/error-handler.js';
 import { requireScopes } from '../api-server/middleware/auth.js';
 import {
   SessionIdParamSchema,
@@ -12,6 +12,14 @@ import {
 } from '../api-server/schemas/sessions.js';
 import { ExecuteCommandBodySchema } from '../api-server/schemas/commands.js';
 import { serializeConnected, serializeError } from './event-serializer.js';
+
+function decodeParam(value: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    throw new BadRequestError('INVALID_PARAM', 'Invalid URL parameter encoding');
+  }
+}
 
 export interface SSERouteDeps {
   core: OpenACPCore;
@@ -27,7 +35,7 @@ export async function sseRoutes(app: FastifyInstance, deps: SSERouteDeps): Promi
     { preHandler: requireScopes('sessions:read') },
     async (request: FastifyRequest<{ Params: { sessionId: string } }>, reply: FastifyReply) => {
       const { sessionId: rawId } = SessionIdParamSchema.parse(request.params);
-      const sessionId = decodeURIComponent(rawId);
+      const sessionId = decodeParam(rawId);
 
       const session = deps.core.sessionManager.getSession(sessionId);
       if (!session) {
@@ -79,7 +87,7 @@ export async function sseRoutes(app: FastifyInstance, deps: SSERouteDeps): Promi
     { preHandler: requireScopes('sessions:prompt') },
     async (request, reply) => {
       const { sessionId: rawId } = SessionIdParamSchema.parse(request.params);
-      const sessionId = decodeURIComponent(rawId);
+      const sessionId = decodeParam(rawId);
 
       const session = deps.core.sessionManager.getSession(sessionId);
       if (!session) {
@@ -103,7 +111,7 @@ export async function sseRoutes(app: FastifyInstance, deps: SSERouteDeps): Promi
     { preHandler: requireScopes('sessions:permission') },
     async (request, reply) => {
       const { sessionId: rawId } = SessionIdParamSchema.parse(request.params);
-      const sessionId = decodeURIComponent(rawId);
+      const sessionId = decodeParam(rawId);
 
       const session = deps.core.sessionManager.getSession(sessionId);
       if (!session) {
@@ -127,7 +135,7 @@ export async function sseRoutes(app: FastifyInstance, deps: SSERouteDeps): Promi
     { preHandler: requireScopes('sessions:write') },
     async (request) => {
       const { sessionId: rawId } = SessionIdParamSchema.parse(request.params);
-      const sessionId = decodeURIComponent(rawId);
+      const sessionId = decodeParam(rawId);
 
       const session = deps.core.sessionManager.getSession(sessionId);
       if (!session) {
@@ -149,7 +157,7 @@ export async function sseRoutes(app: FastifyInstance, deps: SSERouteDeps): Promi
       }
 
       const { sessionId: rawId } = SessionIdParamSchema.parse(request.params);
-      const sessionId = decodeURIComponent(rawId);
+      const sessionId = decodeParam(rawId);
 
       const session = deps.core.sessionManager.getSession(sessionId);
       if (!session) {

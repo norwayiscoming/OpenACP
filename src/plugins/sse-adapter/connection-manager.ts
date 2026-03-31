@@ -8,6 +8,7 @@ export interface SSEConnection {
   response: ServerResponse;
   connectedAt: Date;
   lastEventId?: string;
+  backpressured?: boolean;
 }
 
 export class ConnectionManager {
@@ -53,8 +54,22 @@ export class ConnectionManager {
 
   broadcast(sessionId: string, serializedEvent: string): void {
     for (const conn of this.getConnectionsBySession(sessionId)) {
-      if (!conn.response.writableEnded) {
-        try { conn.response.write(serializedEvent); } catch { /* closed */ }
+      if (conn.response.writableEnded) continue;
+      try {
+        const ok = conn.response.write(serializedEvent);
+        if (!ok) {
+          if (conn.backpressured) {
+            // Still backpressured from previous write — disconnect to prevent OOM
+            conn.response.end();
+            this.removeConnection(conn.id);
+          } else {
+            conn.backpressured = true;
+            conn.response.once('drain', () => { conn.backpressured = false; });
+          }
+        }
+      } catch {
+        // Connection broken — clean up
+        this.removeConnection(conn.id);
       }
     }
   }

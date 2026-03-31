@@ -20,6 +20,16 @@ export class NotFoundError extends Error {
   }
 }
 
+export class BadRequestError extends Error {
+  constructor(
+    public code: string,
+    message: string,
+  ) {
+    super(message);
+    this.name = 'BadRequestError';
+  }
+}
+
 export class AuthError extends Error {
   constructor(
     public code: string,
@@ -43,6 +53,17 @@ export function globalErrorHandler(
         message: error.errors.map((e) => e.message).join(', '),
         statusCode: 400,
         details: error.errors,
+      },
+    });
+    return;
+  }
+
+  if (error instanceof BadRequestError) {
+    reply.status(400).send({
+      error: {
+        code: error.code,
+        message: error.message,
+        statusCode: 400,
       },
     });
     return;

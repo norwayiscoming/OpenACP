@@ -17,6 +17,7 @@ Requires an existing config — run 'openacp' first to set up.
 
 \x1b[1mSee also:\x1b[0m
   openacp stop       Stop the daemon
+  openacp restart    Restart the daemon
   openacp status     Check if daemon is running
   openacp logs       Tail daemon log file
 `)

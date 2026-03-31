@@ -150,7 +150,8 @@ openacp agents install <name>      # Install from registry
 ```bash
 # Server
 openacp                            # Start (first run = setup wizard)
-openacp start / stop / status      # Daemon management
+openacp start / stop / restart     # Daemon management
+openacp status                     # Check daemon status
 openacp logs                       # Tail daemon logs
 
 # Configuration

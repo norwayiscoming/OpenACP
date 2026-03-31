@@ -32,6 +32,10 @@ Reads the PID file and sends `SIGTERM`. Polls every 100 ms for up to 5 seconds w
 
 Calling `stop` also removes the running marker file (`~/.openacp/running`), which suppresses autostart on the next boot.
 
+### `openacp restart`
+
+Equivalent to `stop` followed by `start`. If no daemon is running, it skips the stop step and starts a new one. Useful after updating OpenACP to pick up the new version without manually stopping first.
+
 ### `openacp status`
 
 Checks whether the PID in the PID file is alive (using `kill -0`). Cleans up stale PID files automatically.

@@ -8,7 +8,7 @@ export default defineConfig({
   format: ['esm'],
   target: 'node20',
   platform: 'node',
-  splitting: true,
+  splitting: false,
   sourcemap: true,
   dts: true,
   clean: true,

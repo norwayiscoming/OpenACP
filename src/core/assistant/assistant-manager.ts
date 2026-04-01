@@ -40,11 +40,12 @@ export class AssistantManager {
     session.threadId = threadId
     this.sessions.set(channelId, session)
 
+    // Bridge is already connected by createSession() — no need to call connectSessionBridge().
+    // Just enqueue system prompt in background so assistant is ready for user messages.
     const systemPrompt = this.registry.buildSystemPrompt()
     const ready = session
       .enqueuePrompt(systemPrompt)
       .then(() => {
-        this.core.connectSessionBridge(session)
         log.info({ sessionId: session.id, channelId }, 'Assistant ready')
       })
       .catch((err) => {

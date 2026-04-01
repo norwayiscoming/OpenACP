@@ -6,8 +6,14 @@ export function registerAdminCommands(registry: CommandRegistry, _core: unknown)
     name: 'restart',
     description: 'Restart the server',
     category: 'system',
-    handler: async () => {
-      return { type: 'silent' } satisfies CommandResponse
+    handler: async (args) => {
+      const core = args.coreAccess as any
+      const assistant = core?.assistantManager?.get(args.channelId)
+      if (assistant && !args.sessionId) {
+        await assistant.enqueuePrompt('User wants to restart OpenACP. Ask for confirmation before restarting.')
+        return { type: 'delegated' } satisfies CommandResponse
+      }
+      return { type: 'text', text: 'Use /restart in the Assistant topic, or run `openacp api restart` in terminal.' } satisfies CommandResponse
     },
   })
 

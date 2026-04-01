@@ -2,12 +2,6 @@ import type { CommandRegistry } from '../command-registry.js'
 import type { CommandResponse } from '../plugin/types.js'
 import type { OpenACPCore } from '../core.js'
 
-/**
- * System session commands — these are placeholder registrations for discovery
- * (autocomplete, help text, etc.). The actual logic lives in adapter-specific
- * handlers. Handlers return 'silent' so the generic dispatch passes through
- * to the adapter's dedicated handler via next().
- */
 export function registerSessionCommands(registry: CommandRegistry, _core: unknown): void {
   const core = _core as OpenACPCore;
   registry.register({
@@ -15,8 +9,25 @@ export function registerSessionCommands(registry: CommandRegistry, _core: unknow
     description: 'Start a new session',
     usage: '[agent-name]',
     category: 'system',
-    handler: async () => {
-      return { type: 'silent' } satisfies CommandResponse
+    handler: async (args) => {
+      const core = args.coreAccess as any
+      if (!core) return { type: 'error', message: 'Core access not available' }
+      const parts = args.raw.trim().split(/\s+/).filter(Boolean)
+      const agent = parts[0] || undefined
+      const workspace = parts[1] || undefined
+      if (agent && workspace) {
+        const session = await core.handleNewSession(args.channelId, agent, workspace)
+        return { type: 'text', text: `✅ Session created: ${session.name || session.id}` }
+      }
+      const assistant = core.assistantManager?.get(args.channelId)
+      if (assistant && !args.sessionId) {
+        const prompt = agent
+          ? `Create session with agent "${agent}", ask user for workspace path.`
+          : `Create new session, guide user through agent and workspace selection.`
+        await assistant.enqueuePrompt(prompt)
+        return { type: 'delegated' }
+      }
+      return { type: 'text', text: 'Usage: /new <agent> <workspace>\nOr use the Assistant topic for guided setup.' }
     },
   })
 
@@ -24,8 +35,18 @@ export function registerSessionCommands(registry: CommandRegistry, _core: unknow
     name: 'cancel',
     description: 'Cancel the current agent turn',
     category: 'system',
-    handler: async () => {
-      return { type: 'silent' } satisfies CommandResponse
+    handler: async (args) => {
+      const core = args.coreAccess as any
+      if (!core) return { type: 'error', message: 'Core access not available' }
+      if (args.sessionId) {
+        const session = core.sessionManager.getSession(args.sessionId)
+        if (session) {
+          await session.abortPrompt?.()
+          session.markCancelled()
+          return { type: 'text', text: '⛔ Session cancelled.' }
+        }
+      }
+      return { type: 'error', message: 'No active session in this topic.' }
     },
   })
 
@@ -33,8 +54,18 @@ export function registerSessionCommands(registry: CommandRegistry, _core: unknow
     name: 'status',
     description: 'Show current session status',
     category: 'system',
-    handler: async () => {
-      return { type: 'silent' } satisfies CommandResponse
+    handler: async (args) => {
+      const core = args.coreAccess as any
+      if (!core) return { type: 'error', message: 'Core access not available' }
+      if (args.sessionId) {
+        const session = core.sessionManager.getSession(args.sessionId)
+        if (session) {
+          return { type: 'text', text: `📊 ${session.name || session.id}\nAgent: ${session.agentName}\nStatus: ${session.status}\nPrompts: ${session.promptCount}` }
+        }
+      }
+      const records = core.sessionManager.listRecords()
+      const active = records.filter((r: any) => r.status === 'active' || r.status === 'initializing').length
+      return { type: 'text', text: `📊 ${active} active / ${records.length} total sessions` }
     },
   })
 
@@ -42,8 +73,16 @@ export function registerSessionCommands(registry: CommandRegistry, _core: unknow
     name: 'sessions',
     description: 'List all active sessions',
     category: 'system',
-    handler: async () => {
-      return { type: 'silent' } satisfies CommandResponse
+    handler: async (args) => {
+      const core = args.coreAccess as any
+      if (!core) return { type: 'error', message: 'Core access not available' }
+      const records = core.sessionManager.listRecords()
+      if (records.length === 0) return { type: 'text', text: 'No sessions.' }
+      const items = records.map((r: any) => ({
+        label: r.name || r.id,
+        detail: `${r.agentName} — ${r.status}`,
+      }))
+      return { type: 'list', title: '📋 Sessions', items }
     },
   })
 
@@ -51,8 +90,13 @@ export function registerSessionCommands(registry: CommandRegistry, _core: unknow
     name: 'clear',
     description: 'Clear session history',
     category: 'system',
-    handler: async () => {
-      return { type: 'silent' } satisfies CommandResponse
+    handler: async (args) => {
+      const core = args.coreAccess as any
+      if (!core?.assistantManager) return { type: 'error', message: 'Assistant not available' }
+      const assistant = core.assistantManager.get(args.channelId)
+      if (!assistant) return { type: 'error', message: 'No assistant session for this channel.' }
+      await core.assistantManager.respawn(args.channelId, assistant.threadId)
+      return { type: 'text', text: '✅ Assistant history cleared.' }
     },
   })
 
@@ -60,8 +104,14 @@ export function registerSessionCommands(registry: CommandRegistry, _core: unknow
     name: 'newchat',
     description: 'New chat, same agent & workspace',
     category: 'system',
-    handler: async () => {
-      return { type: 'silent' } satisfies CommandResponse
+    handler: async (args) => {
+      if (!args.sessionId) return { type: 'text', text: 'Use /newchat inside a session topic.' }
+      const core = args.coreAccess as any
+      if (!core) return { type: 'error', message: 'Core access not available' }
+      const session = core.sessionManager.getSession(args.sessionId)
+      if (!session) return { type: 'error', message: 'No session in this topic.' }
+      const newSession = await core.handleNewSession(args.channelId, session.agentName, session.workingDirectory)
+      return { type: 'text', text: `✅ New chat created: ${newSession.name || newSession.id}` }
     },
   })
 
@@ -70,8 +120,14 @@ export function registerSessionCommands(registry: CommandRegistry, _core: unknow
     description: 'Resume a previous session',
     usage: '<session-number>',
     category: 'system',
-    handler: async () => {
-      return { type: 'silent' } satisfies CommandResponse
+    handler: async (args) => {
+      const core = args.coreAccess as any
+      const assistant = core?.assistantManager?.get(args.channelId)
+      if (assistant && !args.sessionId) {
+        await assistant.enqueuePrompt('User wants to resume a previous session. Show available sessions and guide them.')
+        return { type: 'delegated' }
+      }
+      return { type: 'text', text: 'Usage: /resume\nUse in the Assistant topic for guided session resume.' }
     },
   })
 
@@ -80,8 +136,19 @@ export function registerSessionCommands(registry: CommandRegistry, _core: unknow
     description: 'Hand off session to another agent',
     usage: '<agent-name>',
     category: 'system',
-    handler: async () => {
-      return { type: 'silent' } satisfies CommandResponse
+    handler: async (args) => {
+      if (!args.sessionId) return { type: 'text', text: 'Use /handoff inside a session topic.' }
+      const core = args.coreAccess as any
+      if (!core) return { type: 'error', message: 'Core access not available' }
+      const session = core.sessionManager.getSession(args.sessionId)
+      if (!session) return { type: 'error', message: 'No session in this topic.' }
+      const { getAgentCapabilities } = await import('../agents/agent-registry.js')
+      const caps = getAgentCapabilities(session.agentName)
+      if (!caps.supportsResume || !caps.resumeCommand) {
+        return { type: 'text', text: 'This agent does not support session transfer.' }
+      }
+      const command = caps.resumeCommand(session.agentSessionId)
+      return { type: 'text', text: `Run this in your terminal:\n${command}` }
     },
   })
 

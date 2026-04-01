@@ -991,6 +991,16 @@ this.assistantRegistry.register(createSystemSection())
 this.assistantManager = new AssistantManager(this, this.assistantRegistry)
 ```
 
+Add `connectSessionBridge` method to OpenACPCore (called by AssistantManager after system prompt completes):
+
+```typescript
+connectSessionBridge(session: Session): void {
+  const adapter = this.adapters.get(session.channelId)
+  if (!adapter) return
+  this.createBridge(session, adapter)
+}
+```
+
 Also register menuRegistry and assistantRegistry as services so plugins can access them:
 
 ```typescript
@@ -1359,16 +1369,133 @@ git commit -m "refactor: simplify SessionBridge with cleanup array and extracted
 
 - [ ] **Step 1: Replace silent session command handlers**
 
-In `src/core/commands/session.ts`, replace the `{ type: 'silent' }` handlers for `new`, `cancel`, `status`, `sessions`, `clear`, `newchat`, `resume`, `handoff` with real implementations that either execute directly or return `{ type: 'delegated' }`.
+In `src/core/commands/session.ts`, replace every `{ type: 'silent' }` handler. The pattern per command:
 
-The key pattern for each command:
-- Commands with full args/context → execute directly via `args.coreAccess`
-- Commands needing conversation → delegate to assistant via `core.assistantManager.get(args.channelId)`
-- Commands in session topics with missing args → return usage text
+**`/new`** — delegate to assistant if missing args:
+```typescript
+handler: async (args) => {
+  const core = args.coreAccess as any
+  if (!core) return { type: 'error', message: 'Core access not available' }
+  const parts = args.raw.trim().split(/\s+/)
+  const agent = parts[0] || undefined
+  const workspace = parts[1] || undefined
+  if (agent && workspace) {
+    const session = await core.handleNewSession(args.channelId, agent, workspace)
+    return { type: 'text', text: `✅ Session created: ${session.name || session.id}` }
+  }
+  const assistant = core.assistantManager?.get(args.channelId)
+  if (assistant && !args.sessionId) {
+    const prompt = agent
+      ? `Create session with agent "${agent}", ask user for workspace path.`
+      : `Create new session, guide user through agent and workspace selection.`
+    await assistant.enqueuePrompt(prompt)
+    return { type: 'delegated' }
+  }
+  return { type: 'text', text: 'Usage: /new <agent> <workspace>\nOr use the Assistant topic for guided setup.' }
+}
+```
 
-Note: The `fork`, `close`, and `agentsessions` commands already have real implementations — leave them as-is.
+**`/cancel`** — cancel session in current topic:
+```typescript
+handler: async (args) => {
+  const core = args.coreAccess as any
+  if (!core) return { type: 'error', message: 'Core access not available' }
+  if (args.sessionId) {
+    const session = core.sessionManager.getSession(args.sessionId)
+    if (session) {
+      await session.abortPrompt?.()
+      session.markCancelled()
+      return { type: 'text', text: `⛔ Session cancelled.` }
+    }
+  }
+  return { type: 'error', message: 'No active session in this topic.' }
+}
+```
 
-The actual handler logic will be adapted from the existing Telegram command implementations (e.g., `handleCancel()`, `handleStatus()` in `src/plugins/telegram/commands/session.ts`), but using `CommandArgs` and returning `CommandResponse` instead of using grammY `ctx.reply()`.
+**`/status`** — return session or system status:
+```typescript
+handler: async (args) => {
+  const core = args.coreAccess as any
+  if (!core) return { type: 'error', message: 'Core access not available' }
+  if (args.sessionId) {
+    const session = core.sessionManager.getSession(args.sessionId)
+    if (session) {
+      return { type: 'text', text: `📊 ${session.name || session.id}\nAgent: ${session.agentName}\nStatus: ${session.status}\nPrompts: ${session.promptCount}` }
+    }
+  }
+  const records = core.sessionManager.listRecords()
+  const active = records.filter((r: any) => r.status === 'active' || r.status === 'initializing').length
+  return { type: 'text', text: `📊 ${active} active / ${records.length} total sessions` }
+}
+```
+
+**`/sessions`** — list all sessions:
+```typescript
+handler: async (args) => {
+  const core = args.coreAccess as any
+  if (!core) return { type: 'error', message: 'Core access not available' }
+  const records = core.sessionManager.listRecords()
+  if (records.length === 0) return { type: 'text', text: 'No sessions.' }
+  const items = records.map((r: any) => ({
+    label: r.name || r.id,
+    detail: `${r.agentName} — ${r.status}`,
+  }))
+  return { type: 'list', title: '📋 Sessions', items }
+}
+```
+
+**`/clear`** — respawn assistant:
+```typescript
+handler: async (args) => {
+  const core = args.coreAccess as any
+  if (!core?.assistantManager) return { type: 'error', message: 'Assistant not available' }
+  await core.assistantManager.respawn(args.channelId, '') // threadId resolved by manager
+  return { type: 'text', text: '✅ Assistant history cleared.' }
+}
+```
+
+**`/newchat`, `/resume`, `/handoff`** — these require adapter-specific context (threadId for topic lookup, agent capabilities). They should delegate to assistant or return usage text:
+```typescript
+// /newchat
+handler: async (args) => {
+  if (!args.sessionId) return { type: 'text', text: 'Use /newchat inside a session topic.' }
+  const core = args.coreAccess as any
+  if (!core) return { type: 'error', message: 'Core access not available' }
+  const session = core.sessionManager.getSession(args.sessionId)
+  if (!session) return { type: 'error', message: 'No session in this topic.' }
+  const newSession = await core.handleNewSession(args.channelId, session.agentName, session.workingDirectory)
+  return { type: 'text', text: `✅ New chat created: ${newSession.name || newSession.id}` }
+}
+
+// /resume — delegate to assistant
+handler: async (args) => {
+  const core = args.coreAccess as any
+  const assistant = core?.assistantManager?.get(args.channelId)
+  if (assistant && !args.sessionId) {
+    await assistant.enqueuePrompt('User wants to resume a previous session. Show available sessions and guide them.')
+    return { type: 'delegated' }
+  }
+  return { type: 'text', text: 'Usage: /resume <session-id>' }
+}
+
+// /handoff — needs agent capabilities
+handler: async (args) => {
+  if (!args.sessionId) return { type: 'text', text: 'Use /handoff inside a session topic.' }
+  const core = args.coreAccess as any
+  if (!core) return { type: 'error', message: 'Core access not available' }
+  const session = core.sessionManager.getSession(args.sessionId)
+  if (!session) return { type: 'error', message: 'No session in this topic.' }
+  const { getAgentCapabilities } = await import('../agents/agent-registry.js')
+  const caps = getAgentCapabilities(session.agentName)
+  if (!caps.supportsResume || !caps.resumeCommand) {
+    return { type: 'text', text: 'This agent does not support session transfer.' }
+  }
+  const command = caps.resumeCommand(session.agentSessionId)
+  return { type: 'text', text: `Run this in your terminal:\n${command}` }
+}
+```
+
+Note: `fork`, `close`, `agentsessions` already have real implementations — leave as-is.
 
 - [ ] **Step 2: Replace silent admin command handlers**
 
@@ -1376,13 +1503,13 @@ In `src/core/commands/admin.ts`, the `restart` command currently returns `{ type
 
 ```typescript
 handler: async (args: CommandArgs) => {
-  const core = args.coreAccess as any;
-  const assistant = core?.assistantManager?.get(args.channelId);
+  const core = args.coreAccess as any
+  const assistant = core?.assistantManager?.get(args.channelId)
   if (assistant && !args.sessionId) {
-    await assistant.enqueuePrompt('User wants to restart OpenACP. Ask for confirmation before restarting.');
-    return { type: 'delegated' as const };
+    await assistant.enqueuePrompt('User wants to restart OpenACP. Ask for confirmation before restarting.')
+    return { type: 'delegated' as const }
   }
-  return { type: 'text' as const, text: 'Use /restart in the Assistant topic, or run `openacp api restart` in terminal.' };
+  return { type: 'text' as const, text: 'Use /restart in the Assistant topic, or run `openacp api restart` in terminal.' }
 }
 ```
 
@@ -1442,12 +1569,23 @@ In `src/plugins/telegram/commands/index.ts`:
 - Remove re-exports: `handlePendingWorkspaceInput`, `startInteractiveNewSession`, `setupNewSessionCallbacks`, `handlePendingResumeInput`
 - Remove `setupActionCallbacks` import and re-export
 
-- [ ] **Step 5: Build to verify**
+- [ ] **Step 5: Fix adapter.ts import errors from deleted functions**
+
+In `src/plugins/telegram/adapter.ts`:
+- Remove import of `setupActionCallbacks` from `./action-detect.js`
+- Remove import of `handlePendingWorkspaceInput`, `handlePendingResumeInput` from `./commands/index.js`
+- Remove `setupActionCallbacks(...)` call in `start()`
+- Remove `handlePendingWorkspaceInput()` and `handlePendingResumeInput()` checks in `setupRoutes()`
+- Comment out or remove `setupCommands(...)` call (full removal in Task 11)
+
+These are minimal fixes to make the build pass — the full adapter simplification happens in Task 11.
+
+- [ ] **Step 6: Build to verify**
 
 Run: `cd /Users/lucas/openacp-workspace/OpenACP && pnpm build`
-Expected: May have compile errors from adapter.ts referencing deleted functions. These will be fixed in Task 11.
+Expected: Build succeeds
 
-- [ ] **Step 6: Commit (even if build has errors — they're fixed next task)**
+- [ ] **Step 7: Commit**
 
 ```bash
 git add -A
@@ -1576,7 +1714,8 @@ bot.callbackQuery(/^m:/, async (ctx) => {
     case 'delegate': {
       const assistant = core.assistantManager.get('telegram')
       if (assistant) {
-        const assistantTopicId = /* get from adapter config */
+        // assistantTopicId is passed as a closure parameter from setupAllCallbacks()
+        const assistantTopicId = systemTopicIds?.assistantTopicId
         if (topicId && topicId !== assistantTopicId) {
           await ctx.reply(redirectToAssistant(chatId, assistantTopicId))
         } else {

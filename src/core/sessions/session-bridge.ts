@@ -24,14 +24,7 @@ export interface BridgeDeps {
 
 export class SessionBridge {
   private connected = false;
-  private agentEventHandler?: (event: AgentEvent) => void;
-  private sessionEventHandler?: (event: AgentEvent) => void;
-  private statusChangeHandler?: (
-    from: SessionStatus,
-    to: SessionStatus,
-  ) => void;
-  private namedHandler?: (name: string) => void;
-  private promptCountHandler?: (count: number) => void;
+  private cleanupFns: Array<() => void> = [];
 
   constructor(
     private session: Session,
@@ -41,6 +34,12 @@ export class SessionBridge {
 
   private get tracer(): DebugTracer | null {
     return this.session.agentInstance.debugTracer ?? null;
+  }
+
+  /** Register a listener and track it for cleanup */
+  private listen(emitter: any, event: string, handler: (...args: any[]) => void): void {
+    emitter.on(event, handler);
+    this.cleanupFns.push(() => emitter.off(event, handler));
   }
 
   /** Send message to adapter, optionally running through message:outgoing middleware */
@@ -70,82 +69,99 @@ export class SessionBridge {
     if (this.connected) return;
     this.connected = true;
 
-    this.wireAgentToSession();
-    this.wireSessionToAdapter();
-    this.wirePermissions();
-    this.wireLifecycle();
+    // Wire agent events to session (agent → session relay)
+    this.listen(this.session.agentInstance, "agent_event", (event: AgentEvent) => {
+      this.session.emit("agent_event", event);
+    });
+
+    // Wire session events to adapter (session → adapter dispatch)
+    this.listen(this.session, "agent_event", (event: AgentEvent) => {
+      this.dispatchAgentEvent(event);
+    });
+
+    // Wire permissions
+    this.session.agentInstance.onPermissionRequest = async (request: PermissionRequest) => {
+      return this.resolvePermission(request);
+    };
+
+    // Wire lifecycle: persist status changes and auto-disconnect on terminal states
+    this.listen(this.session, "status_change", (from: SessionStatus, to: SessionStatus) => {
+      this.deps.sessionManager.patchRecord(this.session.id, {
+        status: to,
+        lastActiveAt: new Date().toISOString(),
+      });
+      this.deps.eventBus?.emit("session:updated", {
+        sessionId: this.session.id,
+        status: to,
+      });
+
+      // Auto-disconnect on terminal states (finished only — cancelled sessions can resume)
+      if (to === "finished") {
+        // Disconnect on next tick so current event handlers can complete
+        queueMicrotask(() => this.disconnect());
+      }
+    });
+
+    // Wire lifecycle: persist and relay name changes — only rename thread once per session.
+    this.listen(this.session, "named", async (name: string) => {
+      const record = this.deps.sessionManager.getSessionRecord(this.session.id);
+      const alreadyNamed = !!record?.name;
+      await this.deps.sessionManager.patchRecord(this.session.id, { name });
+      this.deps.eventBus?.emit("session:updated", {
+        sessionId: this.session.id,
+        name,
+      });
+      if (!alreadyNamed) {
+        await this.adapter.renameSessionThread(this.session.id, name);
+      }
+    });
+
+    // Wire lifecycle: persist prompt count after each prompt for resume decisions
+    this.listen(this.session, "prompt_count_changed", (count: number) => {
+      this.deps.sessionManager.patchRecord(this.session.id, { currentPromptCount: count });
+    });
   }
 
   disconnect(): void {
     if (!this.connected) return;
     this.connected = false;
-
-    if (this.agentEventHandler) {
-      this.session.agentInstance.off("agent_event", this.agentEventHandler);
-    }
-    if (this.sessionEventHandler) {
-      this.session.off("agent_event", this.sessionEventHandler);
-    }
-    if (this.statusChangeHandler) {
-      this.session.off("status_change", this.statusChangeHandler);
-    }
-    if (this.namedHandler) {
-      this.session.off("named", this.namedHandler);
-    }
-    if (this.promptCountHandler) {
-      this.session.off("prompt_count_changed", this.promptCountHandler);
-    }
-
-    // Reset agent callbacks to no-op
+    this.cleanupFns.forEach(fn => fn());
+    this.cleanupFns = [];
     this.session.agentInstance.onPermissionRequest = async () => "";
   }
 
-  private wireAgentToSession(): void {
-    this.agentEventHandler = (event: AgentEvent) => {
-      this.session.emit("agent_event", event);
-    };
-    this.session.agentInstance.on("agent_event", this.agentEventHandler);
-  }
-
-  private wireSessionToAdapter(): void {
-    this.sessionEventHandler = (event: AgentEvent) => {
-      this.tracer?.log("core", { step: "agent_event", sessionId: this.session.id, event });
-      // Hook: agent:beforeEvent — modifiable, can block
-      const mw = this.deps.middlewareChain;
-      if (mw) {
-        mw.execute('agent:beforeEvent', { sessionId: this.session.id, event }, async (e) => e).then((result) => {
-          this.tracer?.log("core", { step: "middleware:before", sessionId: this.session.id, hook: "agent:beforeEvent", blocked: !result });
-          if (!result) return; // blocked by middleware
-          try {
-            const transformedEvent = result.event;
-            const outgoing = this.handleAgentEvent(transformedEvent);
-            // Hook: agent:afterEvent — read-only, fire-and-forget
-            mw.execute('agent:afterEvent', {
-              sessionId: this.session.id,
-              event: transformedEvent,
-              outgoingMessage: outgoing ?? { type: 'text' as const, text: '' },
-            }, async (e) => e).catch(() => {});
-          } catch (err) {
-            log.error({ err, sessionId: this.session.id }, "Error handling agent event after middleware");
-          }
-        }).catch(() => {
-          // Middleware error — proceed with original event
-          try {
-            this.handleAgentEvent(event);
-          } catch (err) {
-            log.error({ err, sessionId: this.session.id }, "Error handling agent event (middleware fallback)");
-          }
-        });
-      } else {
+  /** Dispatch an agent event through middleware and to the adapter */
+  private async dispatchAgentEvent(event: AgentEvent): Promise<void> {
+    this.tracer?.log("core", { step: "agent_event", sessionId: this.session.id, event });
+    const mw = this.deps.middlewareChain;
+    if (mw) {
+      try {
+        const result = await mw.execute('agent:beforeEvent', { sessionId: this.session.id, event }, async (e) => e);
+        this.tracer?.log("core", { step: "middleware:before", sessionId: this.session.id, hook: "agent:beforeEvent", blocked: !result });
+        if (!result) return; // blocked by middleware
+        const transformedEvent = result.event;
+        const outgoing = this.handleAgentEvent(transformedEvent);
+        // Hook: agent:afterEvent — read-only, fire-and-forget
+        mw.execute('agent:afterEvent', {
+          sessionId: this.session.id,
+          event: transformedEvent,
+          outgoingMessage: outgoing ?? { type: 'text' as const, text: '' },
+        }, async (e) => e).catch(() => {});
+      } catch {
+        // Middleware error — proceed with original event
         try {
           this.handleAgentEvent(event);
         } catch (err) {
-          log.error({ err, sessionId: this.session.id }, "Error handling agent event");
+          log.error({ err, sessionId: this.session.id }, "Error handling agent event (middleware fallback)");
         }
       }
-    };
-
-    this.session.on("agent_event", this.sessionEventHandler);
+    } else {
+      try {
+        this.handleAgentEvent(event);
+      } catch (err) {
+        log.error({ err, sessionId: this.session.id }, "Error handling agent event");
+      }
+    }
   }
 
   private handleAgentEvent(event: AgentEvent): import('../types.js').OutgoingMessage | undefined {
@@ -294,138 +310,92 @@ export class SessionBridge {
     });
   }
 
-  private wirePermissions(): void {
+  /** Resolve a permission request through the full pipeline: middleware -> auto-approve -> ask user */
+  private async resolvePermission(request: PermissionRequest): Promise<string> {
+    const startTime = Date.now();
     const mw = this.deps.middlewareChain;
 
-    this.session.agentInstance.onPermissionRequest = async (
-      request: PermissionRequest,
-    ) => {
-      const startTime = Date.now();
-
-      // Hook: permission:beforeRequest — modifiable, can block or autoResolve
-      let permReq = request;
-      if (mw) {
-        const payload = { sessionId: this.session.id, request, autoResolve: undefined as string | undefined };
-        const result = await mw.execute('permission:beforeRequest', payload, async (r) => r);
-        if (!result) return ""; // blocked by middleware
-        permReq = result.request;
-        // I4: If middleware set autoResolve, skip UI and return directly
-        if (result.autoResolve) {
-          if (mw) {
-            mw.execute('permission:afterResolve', {
-              sessionId: this.session.id, requestId: permReq.id, decision: result.autoResolve, userId: 'middleware', durationMs: Date.now() - startTime,
-            }, async (p) => p).catch(() => {});
-          }
-          return result.autoResolve;
-        }
+    // Step 1: Middleware
+    let permReq = request;
+    if (mw) {
+      const payload = { sessionId: this.session.id, request, autoResolve: undefined as string | undefined };
+      const result = await mw.execute('permission:beforeRequest', payload, async (r) => r);
+      if (!result) return ""; // blocked by middleware
+      permReq = result.request;
+      // If middleware set autoResolve, skip UI and return directly
+      if (result.autoResolve) {
+        this.emitAfterResolve(mw, permReq.id, result.autoResolve, 'middleware', startTime);
+        return result.autoResolve;
       }
+    }
 
-      this.session.emit("permission_request", permReq);
-      this.deps.eventBus?.emit("permission:request", {
-        sessionId: this.session.id,
-        permission: permReq,
-      });
+    this.session.emit("permission_request", permReq);
+    this.deps.eventBus?.emit("permission:request", {
+      sessionId: this.session.id,
+      permission: permReq,
+    });
 
-      // Auto-approve openacp CLI commands
-      if (permReq.description.toLowerCase().includes("openacp")) {
-        const allowOption = permReq.options.find((o) => o.isAllow);
-        if (allowOption) {
-          log.info(
-            { sessionId: this.session.id, requestId: permReq.id },
-            "Auto-approving openacp command",
-          );
-          // Hook: permission:afterResolve — read-only, fire-and-forget
-          if (mw) {
-            mw.execute('permission:afterResolve', {
-              sessionId: this.session.id, requestId: permReq.id, decision: allowOption.id, userId: 'system', durationMs: Date.now() - startTime,
-            }, async (p) => p).catch(() => {});
-          }
-          return allowOption.id;
-        }
-      }
+    // Step 2: Auto-approve
+    const autoDecision = this.checkAutoApprove(permReq);
+    if (autoDecision) {
+      this.emitAfterResolve(mw, permReq.id, autoDecision, 'system', startTime);
+      return autoDecision;
+    }
 
-      // Bypass mode: auto-approve all permissions (agent-side or client-side)
-      const modeOption = this.session.getConfigByCategory("mode");
-      const isAgentBypass = modeOption && isPermissionBypass(
-        typeof modeOption.currentValue === "string" ? modeOption.currentValue : ""
-      );
-      const isClientBypass = this.session.clientOverrides.bypassPermissions;
-      if (isAgentBypass || isClientBypass) {
-        const allowOption = permReq.options.find((o) => o.isAllow);
-        if (allowOption) {
-          log.info(
-            { sessionId: this.session.id, requestId: permReq.id, optionId: allowOption.id, agentBypass: !!isAgentBypass, clientBypass: !!isClientBypass },
-            "Bypass mode: auto-approving permission",
-          );
-          // Hook: permission:afterResolve — read-only, fire-and-forget
-          if (mw) {
-            mw.execute('permission:afterResolve', {
-              sessionId: this.session.id, requestId: permReq.id, decision: allowOption.id, userId: 'system', durationMs: Date.now() - startTime,
-            }, async (p) => p).catch(() => {});
-          }
-          return allowOption.id;
-        }
-      }
+    // Step 3: Ask user
+    // Set pending BEFORE sending UI to avoid race condition
+    const promise = this.session.permissionGate.setPending(permReq);
 
-      // Set pending BEFORE sending UI to avoid race condition
-      const promise = this.session.permissionGate.setPending(permReq);
+    // Send permission UI to session topic
+    await this.adapter.sendPermissionRequest(this.session.id, permReq);
 
-      // Send permission UI to session topic
-      await this.adapter.sendPermissionRequest(this.session.id, permReq);
+    // Wait for user response — adapter resolves this promise
+    const optionId = await promise;
 
-      // Wait for user response — adapter resolves this promise
-      const optionId = await promise;
-
-      // Hook: permission:afterResolve — read-only, fire-and-forget
-      if (mw) {
-        mw.execute('permission:afterResolve', {
-          sessionId: this.session.id, requestId: permReq.id, decision: optionId, userId: 'user', durationMs: Date.now() - startTime,
-        }, async (p) => p).catch(() => {});
-      }
-
-      return optionId;
-    };
+    this.emitAfterResolve(mw, permReq.id, optionId, 'user', startTime);
+    return optionId;
   }
 
-  private wireLifecycle(): void {
-    // Persist status changes and auto-disconnect on terminal states
-    this.statusChangeHandler = (from: SessionStatus, to: SessionStatus) => {
-      this.deps.sessionManager.patchRecord(this.session.id, {
-        status: to,
-        lastActiveAt: new Date().toISOString(),
-      });
-      this.deps.eventBus?.emit("session:updated", {
-        sessionId: this.session.id,
-        status: to,
-      });
-
-      // Auto-disconnect on terminal states (finished only — cancelled sessions can resume)
-      if (to === "finished") {
-        // Disconnect on next tick so current event handlers can complete
-        queueMicrotask(() => this.disconnect());
+  /** Check if a permission request should be auto-approved (openacp commands or bypass mode) */
+  private checkAutoApprove(request: PermissionRequest): string | null {
+    // Auto-approve openacp CLI commands
+    if (request.description.toLowerCase().includes("openacp")) {
+      const allowOption = request.options.find((o) => o.isAllow);
+      if (allowOption) {
+        log.info(
+          { sessionId: this.session.id, requestId: request.id },
+          "Auto-approving openacp command",
+        );
+        return allowOption.id;
       }
-    };
-    this.session.on("status_change", this.statusChangeHandler);
+    }
 
-    // Persist and relay name changes — only rename thread once per session.
-    this.namedHandler = async (name: string) => {
-      const record = this.deps.sessionManager.getSessionRecord(this.session.id);
-      const alreadyNamed = !!record?.name;
-      await this.deps.sessionManager.patchRecord(this.session.id, { name });
-      this.deps.eventBus?.emit("session:updated", {
-        sessionId: this.session.id,
-        name,
-      });
-      if (!alreadyNamed) {
-        await this.adapter.renameSessionThread(this.session.id, name);
+    // Bypass mode: auto-approve all permissions (agent-side or client-side)
+    const modeOption = this.session.getConfigByCategory("mode");
+    const isAgentBypass = modeOption && isPermissionBypass(
+      typeof modeOption.currentValue === "string" ? modeOption.currentValue : ""
+    );
+    const isClientBypass = this.session.clientOverrides.bypassPermissions;
+    if (isAgentBypass || isClientBypass) {
+      const allowOption = request.options.find((o) => o.isAllow);
+      if (allowOption) {
+        log.info(
+          { sessionId: this.session.id, requestId: request.id, optionId: allowOption.id, agentBypass: !!isAgentBypass, clientBypass: !!isClientBypass },
+          "Bypass mode: auto-approving permission",
+        );
+        return allowOption.id;
       }
-    };
-    this.session.on("named", this.namedHandler);
+    }
 
-    // Persist prompt count after each prompt for resume decisions
-    this.promptCountHandler = (count: number) => {
-      this.deps.sessionManager.patchRecord(this.session.id, { currentPromptCount: count });
-    };
-    this.session.on("prompt_count_changed", this.promptCountHandler);
+    return null;
+  }
+
+  /** Emit permission:afterResolve middleware hook (fire-and-forget) */
+  private emitAfterResolve(mw: MiddlewareChain | undefined, requestId: string, decision: string, userId: string, startTime: number): void {
+    if (mw) {
+      mw.execute('permission:afterResolve', {
+        sessionId: this.session.id, requestId, decision, userId, durationMs: Date.now() - startTime,
+      }, async (p) => p).catch(() => {});
+    }
   }
 }

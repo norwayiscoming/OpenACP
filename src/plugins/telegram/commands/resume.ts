@@ -257,10 +257,6 @@ async function executeResume(
 
     onControlMessage?.(session.id, controlMsg.message_id);
 
-    await core.sessionManager.patchRecord(session.id, {
-      platform: { topicId: threadId },
-    });
-
   } catch (err) {
     log.error({ err }, "Resume session creation failed");
     if (threadId) {

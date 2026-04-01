@@ -202,10 +202,6 @@ export async function createSessionDirect(
 
     onControlMessage?.(session.id, controlMsg.message_id);
 
-    await core.sessionManager.patchRecord(session.id, {
-      platform: { topicId: threadId },
-    });
-
     return threadId ?? null;
   } catch (err) {
     log.error({ err }, "Session creation failed");
@@ -301,10 +297,6 @@ export async function handleNewChat(
     );
 
     onControlMessage?.(session.id, controlMsg.message_id);
-
-    await core.sessionManager.patchRecord(session.id, {
-      platform: { topicId: newThreadId },
-    });
 
   } catch (err) {
     // Clean up orphaned topic if session creation failed

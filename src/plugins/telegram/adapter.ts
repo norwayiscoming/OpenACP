@@ -140,9 +140,10 @@ export class TelegramAdapter extends MessagingAdapter {
 
   /** Store control message ID in memory + persist to session record */
   private storeControlMsgId(sessionId: string, msgId: number): void {
-    this.storeControlMsgId(sessionId, msgId);
+    this.controlMsgIds.set(sessionId, msgId);
+    const record = this.core.sessionManager.getSessionRecord(sessionId);
     this.core.sessionManager.patchRecord(sessionId, {
-      platform: { controlMsgId: msgId },
+      platform: { ...(record?.platform ?? {}), controlMsgId: msgId },
     }).catch(() => {});
   }
 

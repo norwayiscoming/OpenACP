@@ -182,16 +182,14 @@ export class SessionFactory {
     // 3. Propagate ACP state from agent session response
     const resp = agentInstance.initialSessionResponse;
     if (resp) {
-      session.setInitialAcpState({
-        modes: (resp.modes as any) ?? null,
-        configOptions: (resp.configOptions as any) ?? null,
-        models: (resp.models as any) ?? null,
-        agentCapabilities: agentInstance.agentCapabilities ?? null,
-      });
+      if (resp.configOptions) {
+        session.setInitialConfigOptions(resp.configOptions as import("../types.js").ConfigOption[]);
+      }
+      if (agentInstance.agentCapabilities) {
+        session.setAgentCapabilities(agentInstance.agentCapabilities);
+      }
     } else if (agentInstance.agentCapabilities) {
-      session.setInitialAcpState({
-        agentCapabilities: agentInstance.agentCapabilities,
-      });
+      session.setAgentCapabilities(agentInstance.agentCapabilities);
     }
 
     // 4. Register in SessionManager
@@ -254,24 +252,24 @@ export class SessionFactory {
           threadId,
         });
         session.activate();
-        session.dangerousMode = record.dangerousMode ?? false;
+        // MIGRATION: old records with dangerousMode but no clientOverrides
+        if (record.clientOverrides) {
+          session.clientOverrides = record.clientOverrides;
+        } else if (record.dangerousMode) {
+          session.clientOverrides = { bypassPermissions: true };
+        }
         if (record.firstAgent) session.firstAgent = record.firstAgent;
         if (record.agentSwitchHistory) session.agentSwitchHistory = record.agentSwitchHistory;
         if (record.currentPromptCount != null) session.promptCount = record.currentPromptCount;
 
         // Hydrate cached ACP state (will be overridden by agent events on resume)
         if (record.acpState) {
-          const s = record.acpState;
-          session.setInitialAcpState({
-            modes: s.currentMode && s.availableModes
-              ? { currentModeId: s.currentMode, availableModes: s.availableModes }
-              : null,
-            configOptions: s.configOptions ?? null,
-            models: s.currentModel && s.availableModels
-              ? { currentModelId: s.currentModel, availableModels: s.availableModels }
-              : null,
-            agentCapabilities: s.agentCapabilities ?? null,
-          });
+          if (record.acpState.configOptions) {
+            session.setInitialConfigOptions(record.acpState.configOptions);
+          }
+          if (record.acpState.agentCapabilities) {
+            session.setAgentCapabilities(record.acpState.agentCapabilities);
+          }
         }
 
         log.info({ sessionId: session.id, threadId }, "Lazy resume successful");

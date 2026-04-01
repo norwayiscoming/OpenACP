@@ -421,10 +421,12 @@ export class OpenACPCore {
       adapter.flushPendingSkillCommands?.(session.id).catch((err) => {
         log.warn({ err, sessionId: session.id }, "Failed to flush pending skill commands");
       });
-      // Send initial control message (status + buttons) for new threads
-      if (params.createThread) {
-        adapter.sendInitialControlMessage?.(session.id).catch((err) => {
-          log.warn({ err, sessionId: session.id }, "Failed to send initial control message");
+      // Signal that thread is ready — adapters handle control messages, notifications, etc.
+      if (params.createThread && session.threadId) {
+        this.eventBus.emit("session:threadReady", {
+          sessionId: session.id,
+          channelId: params.channelId,
+          threadId: session.threadId,
         });
       }
     }

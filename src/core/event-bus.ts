@@ -53,6 +53,9 @@ export interface EventBusEvents {
   // Usage tracking (consumed by usage plugin)
   "usage:recorded": (data: UsageRecordEvent) => void;
 
+  // Emitted after a new session thread is created and bridge connected
+  "session:threadReady": (data: { sessionId: string; channelId: string; threadId: string }) => void;
+
   // Config changed (used by adapters to update control messages)
   "session:configChanged": (data: { sessionId: string }) => void;
 

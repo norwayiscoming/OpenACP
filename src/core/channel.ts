@@ -41,9 +41,6 @@ export interface IChannelAdapter {
   /** Flush skill commands that were queued before threadId was available */
   flushPendingSkillCommands?(sessionId: string): Promise<void>
 
-  // Initial control message — optional, sent when a new session thread is created
-  sendInitialControlMessage?(sessionId: string): Promise<void>
-
   // Agent switch cleanup — optional, called when switching agents to clear adapter-side per-session state
   cleanupSessionState?(sessionId: string): Promise<void>
 }

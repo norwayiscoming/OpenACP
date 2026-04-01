@@ -486,6 +486,30 @@ export class TelegramAdapter extends MessagingAdapter {
     );
     this.permissionHandler.setupCallbackHandler();
 
+    // Send control message (status + buttons) when a new session thread is created
+    this.core.eventBus.on("session:threadReady", ({ sessionId, channelId, threadId }) => {
+      if (channelId !== "telegram") return;
+      const session = this.core.sessionManager.getSession(sessionId);
+      if (!session) return;
+      const numThreadId = Number(threadId);
+      if (!numThreadId) return;
+
+      const text = buildSessionStatusText(session, '✅ <b>Session started</b>');
+      const keyboard = buildSessionControlKeyboard(sessionId, false, false);
+      this.sendQueue.enqueue(
+        () => this.bot.api.sendMessage(this.telegramConfig.chatId, text, {
+          message_thread_id: numThreadId,
+          parse_mode: 'HTML',
+          reply_markup: keyboard,
+        }),
+        { type: 'other' },
+      ).then((msg) => {
+        if (msg) this.storeControlMsgId(sessionId, msg.message_id);
+      }).catch((err) => {
+        log.warn({ err, sessionId }, 'Failed to send initial control message');
+      });
+    });
+
     // Update control message when config changes via commands (/model, /mode, /bypass, etc.)
     this.core.eventBus.on("session:configChanged", ({ sessionId }) => {
       this.updateControlMessage(sessionId).catch(() => {});
@@ -1281,31 +1305,6 @@ export class TelegramAdapter extends MessagingAdapter {
     return String(
       await createSessionTopic(this.bot, this.telegramConfig.chatId, name),
     );
-  }
-
-  async sendInitialControlMessage(sessionId: string): Promise<void> {
-    const session = this.core.sessionManager.getSession(sessionId);
-    if (!session) return;
-    const threadId = Number(session.threadId);
-    if (!threadId || isNaN(threadId)) return;
-
-    try {
-      const text = buildSessionStatusText(session, '✅ <b>Session started</b>');
-      const keyboard = buildSessionControlKeyboard(sessionId, false, false);
-      const msg = await this.sendQueue.enqueue(
-        () => this.bot.api.sendMessage(this.telegramConfig.chatId, text, {
-          message_thread_id: threadId,
-          parse_mode: 'HTML',
-          reply_markup: keyboard,
-        }),
-        { type: 'other' },
-      );
-      if (msg) {
-        this.storeControlMsgId(sessionId, msg.message_id);
-      }
-    } catch (err) {
-      log.warn({ err, sessionId }, 'Failed to send initial control message');
-    }
   }
 
   async renameSessionThread(sessionId: string, newName: string): Promise<void> {

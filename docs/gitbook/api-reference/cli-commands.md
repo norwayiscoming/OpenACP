@@ -29,6 +29,19 @@ openacp adopt claude abc123 --channel discord
 
 ---
 
+## attach
+
+Connects to a running daemon and displays live status with log tailing. Useful for monitoring a daemon instance without opening a separate terminal.
+
+**Usage**
+```
+openacp attach
+```
+
+Shows the daemon's current status (uptime, sessions, adapters, tunnel) and tails the log file. Press Ctrl+C to detach.
+
+---
+
 ## agents
 
 Browse and manage AI coding agents from the ACP Registry.
@@ -484,6 +497,30 @@ openacp plugin enable @myorg/translator
 
 ---
 
+## remote
+
+Generates access links for connecting app clients to a running OpenACP instance. Displays local URL, tunnel URL (if enabled), app deep link, and a QR code.
+
+**Usage**
+```
+openacp remote
+```
+
+The generated link includes a single-use access code valid for 30 minutes. The app exchanges this code for a JWT token on first use.
+
+**Example output**
+```
+Local:   http://127.0.0.1:21420
+Tunnel:  https://abc.trycloudflare.com
+App:     openacp://connect?host=abc.trycloudflare.com&code=xyz123
+
+[QR code]
+```
+
+See [App Connectivity](../features/app-connectivity.md) for the full guide.
+
+---
+
 ## plugins
 
 Lists all plugins installed in `~/.openacp/plugins/`.
@@ -520,12 +557,24 @@ openacp stop && openacp start
 
 ## start
 
-Starts OpenACP as a background daemon. Requires an existing config (run `openacp` first to set up).
+Starts OpenACP. Requires an existing config (run `openacp` first to set up).
 
 **Usage**
 ```
-openacp start
+openacp start [options]
 ```
+
+**Options**
+
+| Flag | Description |
+|---|---|
+| `--foreground` | Force foreground mode regardless of config |
+| `--daemon` | Force daemon mode regardless of config |
+| `--local` | Use local `.openacp/` instance in the current directory |
+| `--global` | Use the global `~/.openacp/` instance |
+| `--dir <path>` | Use a specific instance directory |
+| `--name <id>` | Give the instance a name |
+| `--from <source>` | Clone settings from an existing instance |
 
 ---
 
@@ -535,8 +584,12 @@ Shows whether the OpenACP daemon is running and its PID.
 
 **Usage**
 ```
-openacp status
+openacp status [--all]
 ```
+
+| Flag | Description |
+|---|---|
+| `--all` | Show status of all registered instances, not just the current one |
 
 ---
 
@@ -631,6 +684,16 @@ Running `openacp` with no arguments starts the server. On first run, the setup w
 
 - `foreground` — runs in the current terminal.
 - `daemon` — spawns a background process and exits.
+
+If a daemon is already running, `openacp` shows a rich status display with an interactive menu instead of an error:
+
+- **r** — restart the daemon
+- **f** — restart in foreground mode
+- **s** — show full status
+- **l** — tail logs
+- **q** — quit
+
+The startup display also shows which instance is active (global vs. local) and prints hints when a local instance is available but the global is being used.
 
 `openacp --foreground` forces foreground mode regardless of config.
 

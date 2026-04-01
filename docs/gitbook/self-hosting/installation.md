@@ -11,9 +11,26 @@
 
 No database, no Docker, no external services required beyond the messaging platform bots you configure.
 
+## One-liner install (recommended)
+
+The fastest way to install OpenACP on macOS or Linux:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Open-ACP/OpenACP/main/scripts/install.sh | bash
+```
+
+The script automatically:
+
+1. Detects your platform (macOS or Linux).
+2. Checks for Node.js 20+ and installs it if missing.
+3. Installs `@openacp/cli` globally via npm.
+4. Launches the setup wizard.
+
+No prior setup required — the script handles everything.
+
 ## Install via npm
 
-OpenACP is published as `@openacp/cli` on npm. Install it globally:
+If you prefer to manage Node.js yourself, install OpenACP directly from npm:
 
 ```bash
 npm install -g @openacp/cli
@@ -25,7 +42,7 @@ npm install -g @openacp/cli
 openacp --version
 ```
 
-This prints the installed version (e.g., `0.6.9`) and exits. If the command is not found, ensure your npm global bin directory is on `PATH`.
+This prints the installed version (e.g., `2026.401.1`) and exits. If the command is not found, ensure your npm global bin directory is on `PATH`.
 
 ## First Run and Setup Wizard
 

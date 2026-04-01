@@ -29,7 +29,11 @@ OpenACP responds to commands sent in your chat platform. This page covers every 
 | `/usage` | Yes | No | View token usage and cost |
 | `/archive` | Yes | No | Archive a session topic |
 | `/summary` | Yes | No | Generate an AI summary of a session |
-| `/switch` | Yes | No | Switch to a different agent mid-conversation (Discord/Slack: coming soon) |
+| `/mode` | Yes | Yes | Switch agent mode (code, architect, etc.) |
+| `/model` | Yes | Yes | Switch agent model |
+| `/thought` | Yes | Yes | Toggle thinking/reasoning mode |
+| `/dangerous` | Yes | Yes | Toggle dangerous/bypass permissions mode |
+| `/switch` | Yes | Yes | Switch to a different agent mid-conversation |
 | `/handoff` | Yes | Yes | Continue session in your terminal |
 | `/integrate` | Yes | Yes | Manage agent integrations |
 | `/restart` | Yes | Yes | Restart OpenACP |
@@ -169,6 +173,47 @@ Archive the current session: stops the agent, marks the session as cancelled, an
 ### `/summary` (Telegram only)
 
 Ask the agent to summarize what it has accomplished in the current session. Works inside a session topic.
+
+### `/mode [mode-name]`
+
+Switch the agent's operating mode. Without an argument, shows a menu of available modes declared by the agent (e.g., `code`, `architect`, `ask`).
+
+```
+/mode                          # show available modes
+/mode code                     # switch to code mode
+/mode architect                # switch to architect mode
+```
+
+Available modes depend on the agent — they are declared via the ACP config options protocol.
+
+### `/model [model-name]`
+
+Switch the agent's model. Without an argument, shows available models.
+
+```
+/model                         # show available models
+/model claude-sonnet           # switch to a specific model
+```
+
+### `/thought [on|off]`
+
+Toggle the agent's thinking/reasoning mode. When enabled, the agent shows its reasoning process.
+
+```
+/thought                       # toggle thinking mode
+/thought on                    # enable thinking
+/thought off                   # disable thinking
+```
+
+### `/dangerous [on|off]`
+
+Toggle dangerous/bypass permissions mode for the current session. When enabled, the agent can perform destructive operations without confirmation prompts. This is equivalent to `/bypass` but routed through the agent's config options when available.
+
+```
+/dangerous                     # toggle dangerous mode
+/dangerous on                  # enable (auto-approve all permissions)
+/dangerous off                 # disable (restore normal prompts)
+```
 
 ### `/switch [agent-name | label on|off]`
 

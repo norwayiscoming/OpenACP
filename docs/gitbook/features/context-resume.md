@@ -12,9 +12,29 @@ This lets you continue work naturally. The agent knows the history without you h
 
 The `ContextManager` maintains a list of registered context providers. When a session resumes, OpenACP queries the appropriate provider for the relevant history, receives a formatted markdown document, and prepends it to the first prompt.
 
-Providers are pluggable. The current built-in provider is `EntireProvider`, which reads conversation history stored by the [Entire.io](https://entire.io) git checkpoint system.
+Providers are pluggable. OpenACP ships with two built-in providers:
+
+- **HistoryProvider** — records conversation history directly within OpenACP (see below).
+- **EntireProvider** — reads conversation history from [Entire.io](https://entire.io) git checkpoints (used as a fallback when HistoryProvider has no data).
 
 Results are cached on disk at `~/.openacp/cache/entire/` so that repeated requests for the same query (same branch, same commit range) do not re-read and re-parse transcript files.
+
+---
+
+## Conversation history recording
+
+OpenACP automatically records conversation history for every session via middleware hooks. The `HistoryRecorder` captures:
+
+- **User prompts** — recorded via the `agent:beforePrompt` middleware hook
+- **Agent responses** — text output, tool calls, and file operations captured via `agent:afterEvent`
+- **Permission decisions** — recorded via `permission:afterResolve`
+- **Turn boundaries** — turn start/end tracked for accurate session segmenting
+
+History is stored as JSON files in `~/.openacp/history/`, one file per session. When a new session starts, the `HistoryProvider` builds a context summary from recent sessions and injects it into the agent's initial prompt.
+
+### Multi-session history
+
+When multiple past sessions are relevant, history is merged chronologically. The provider respects a configurable token budget and automatically selects the rendering mode (full, balanced, or compact) based on total volume. If the combined history still exceeds the budget, the oldest sessions are dropped first.
 
 ---
 

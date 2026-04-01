@@ -90,8 +90,8 @@ Configure via `~/.openacp/config.json` or the `/settings` command.
 | Platform | Supported |
 |---|---|
 | Telegram | Yes |
-| Discord | Coming soon |
-| Slack | Coming soon |
+| Discord | Yes |
+| Slack | Yes |
 
 ---
 

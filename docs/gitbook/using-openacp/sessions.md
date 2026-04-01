@@ -53,7 +53,22 @@ Sessions have an inactivity timeout (default: 60 minutes). If no prompt is sent 
 
 Sessions that are `finished` or have been idle since a restart can often be resumed by simply sending a message in the existing topic or thread. OpenACP will reconnect to the agent process if possible.
 
-For richer resume with full conversation history, use `/resume` (Telegram only). This loads context from Entire checkpoints — previous sessions' work is injected into the new session's context window. See the `/resume` section in [Chat Commands](chat-commands.md) for query formats.
+Sessions that were evicted from memory (e.g., after a server restart or memory pressure) are automatically resumed when you send a command or message to their topic. This happens transparently — you do not need to manually restart the session. The session record is loaded from the store and the agent reconnects.
+
+For richer resume with full conversation history, use `/resume` (Telegram only). This loads context from Entire checkpoints or OpenACP's built-in history recorder — previous sessions' work is injected into the new session's context window. See the `/resume` section in [Chat Commands](chat-commands.md) for query formats.
+
+## Session config options
+
+Agents can declare configurable options (modes, models, toggles) via the ACP protocol. These appear in OpenACP as session-level settings that you can change mid-conversation:
+
+```
+/mode                          # show available modes (e.g., code, architect)
+/model                         # show available models
+/thought                       # toggle thinking/reasoning mode
+/dangerous                     # toggle bypass permissions
+```
+
+When the agent pushes config updates (e.g., available modes change based on context), the session reflects the new options automatically. Config changes fire the `config:beforeChange` middleware hook, allowing plugins to intercept or modify the change.
 
 ## Cancelling a prompt
 

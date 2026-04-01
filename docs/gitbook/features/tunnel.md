@@ -43,13 +43,8 @@ Add a `tunnel` block to `~/.openacp/config.json` (see [Configuration](../self-ho
   "tunnel": {
     "enabled": true,
     "provider": "cloudflare",
-    "port": 7080,
     "maxUserTunnels": 5,
     "storeTtlMinutes": 60,
-    "auth": {
-      "enabled": false,
-      "token": ""
-    },
     "options": {}
   }
 }
@@ -57,12 +52,10 @@ Add a `tunnel` block to `~/.openacp/config.json` (see [Configuration](../self-ho
 
 | Field | Default | Description |
 |-------|---------|-------------|
-| `enabled` | `false` | Enable or disable the tunnel feature |
+| `enabled` | `false` | Enable or disable the tunnel feature. When `true`, the tunnel auto-starts on server boot. |
 | `provider` | `"cloudflare"` | One of `cloudflare`, `ngrok`, `bore`, `tailscale` |
-| `port` | `7080` | Local port for the internal file viewer server. Auto-increments if in use. |
 | `maxUserTunnels` | `5` | Maximum number of simultaneous user-created tunnels |
 | `storeTtlMinutes` | `60` | How long file/diff viewer entries are kept in memory |
-| `auth.enabled` | `false` | Require a bearer token to access the file viewer |
 | `options` | `{}` | Provider-specific options (see below) |
 
 ### Provider-specific options
@@ -113,10 +106,11 @@ Inside Telegram or Discord, if you have the agent integration installed, the age
 
 ## File viewer
 
-The file viewer is an internal HTTP server that OpenACP starts alongside the tunnel. When an agent reads, edits, or writes a file, it can register that file or diff in the viewer and send you a clickable link.
+The file viewer routes are served directly by the API server — there is no separate viewer process. When an agent reads, edits, or writes a file, OpenACP registers that file or diff in the viewer store and generates a clickable link via the tunnel.
 
 - **File view** — renders file content with Monaco editor syntax highlighting. Supported languages include TypeScript, JavaScript, Python, Rust, Go, Java, Kotlin, Ruby, PHP, C/C++, C#, Swift, Bash, JSON, YAML, TOML, XML, HTML, CSS, SCSS, SQL, Markdown, Dockerfile, HCL, Vue, and Svelte.
 - **Diff view** — renders a side-by-side diff of old vs. new content.
+- **Output view** — large tool output that does not fit inline is stored in the viewer and linked from the tool card.
 
 The viewer enforces a 1 MB per-entry size limit and rejects file paths that fall outside the session's working directory (path traversal protection). Entries expire automatically after `storeTtlMinutes` (default 60 minutes).
 
@@ -128,9 +122,17 @@ Each user or session can open up to `maxUserTunnels` tunnels simultaneously (def
 
 ---
 
+## Auto-start and keepalive
+
+When `tunnel.enabled` is `true`, the tunnel starts automatically when the OpenACP server boots. No manual `/tunnel start` is needed.
+
+A keepalive loop pings the tunnel URL every 30 seconds via HTTP. If three consecutive pings fail, the tunnel is considered dead and is automatically restarted. This ensures long-running deployments recover from transient provider outages without manual intervention.
+
+---
+
 ## Security
 
-- **Auth token**: When `auth.enabled` is true, all requests to the file viewer require a `Bearer <token>` header. Set `auth.token` to a secret value.
 - **Path validation**: The viewer validates every file path against the session's `workingDirectory`. Files outside that directory are rejected.
 - **TTL**: Viewer entries expire after `storeTtlMinutes`. Expired entries are cleaned up every 5 minutes.
 - **Tunnel timeouts**: If a provider process does not establish a tunnel within 30 seconds, it is killed and an error is returned.
+- **One-time access codes**: When connecting apps remotely, `openacp remote` generates a single-use access code (valid for 30 minutes) instead of embedding secrets directly in the URL. The app exchanges the code for a JWT on first use. See [App Connectivity](app-connectivity.md) for details.

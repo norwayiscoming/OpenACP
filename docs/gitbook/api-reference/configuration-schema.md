@@ -80,6 +80,14 @@ Map of named agent configurations. Each key is an agent name used in `defaultAge
 
 ---
 
+## outputMode
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `outputMode` | `"low"` \| `"medium"` \| `"high"` | `"medium"` | Global default output mode. Overridden per adapter via `channels.<name>.outputMode` and per session via `/outputmode session`. See [Output Modes](../features/output-modes.md). |
+
+---
+
 ## defaultAgent
 
 | Field | Type | Default | Description |
@@ -155,14 +163,11 @@ Map of named agent configurations. Each key is an agent name used in `defaultAge
 
 | Field | Type | Default | Description |
 |---|---|---|---|
-| `tunnel.enabled` | boolean | `false` | Enable the built-in tunnel service |
-| `tunnel.port` | number | `3100` | Default local port the tunnel service listens on |
+| `tunnel.enabled` | boolean | `false` | Enable the built-in tunnel service. When `true`, the tunnel auto-starts on server boot with keepalive monitoring. |
 | `tunnel.provider` | `"cloudflare"` \| `"ngrok"` \| `"bore"` \| `"tailscale"` | `"cloudflare"` | Tunnel provider |
 | `tunnel.options` | object | `{}` | Provider-specific options (passed through to the tunnel process) |
 | `tunnel.maxUserTunnels` | number | `5` | Maximum number of simultaneous user-created tunnels |
 | `tunnel.storeTtlMinutes` | number | `60` | Minutes before expired tunnel entries are cleaned up |
-| `tunnel.auth.enabled` | boolean | `false` | Require authentication to access tunnel endpoints |
-| `tunnel.auth.token` | string | — | Auth token for tunnel access (when `tunnel.auth.enabled` is true) |
 
 ---
 

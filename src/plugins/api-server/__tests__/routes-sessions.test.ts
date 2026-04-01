@@ -324,6 +324,187 @@ describe('session routes', () => {
     });
   });
 
+  describe('GET /api/v1/sessions/:sessionId/config', () => {
+    it('returns configOptions and clientOverrides', async () => {
+      const configOptions = [
+        {
+          id: 'mode',
+          name: 'Mode',
+          type: 'select',
+          currentValue: 'code',
+          options: [{ value: 'code', label: 'Code' }, { value: 'architect', label: 'Architect' }],
+        },
+      ];
+      (deps.core.sessionManager.getSession as any).mockReturnValue(
+        createMockSession({
+          configOptions,
+          clientOverrides: { bypassPermissions: true },
+        }),
+      );
+
+      const response = await app.inject({
+        method: 'GET',
+        url: '/api/v1/sessions/sess-1/config',
+      });
+
+      expect(response.statusCode).toBe(200);
+      const body = JSON.parse(response.body);
+      expect(body.configOptions).toEqual(configOptions);
+      expect(body.clientOverrides).toEqual({ bypassPermissions: true });
+    });
+
+    it('returns 404 for unknown session', async () => {
+      (deps.core.sessionManager.getSession as any).mockReturnValue(null);
+
+      const response = await app.inject({
+        method: 'GET',
+        url: '/api/v1/sessions/unknown/config',
+      });
+
+      expect(response.statusCode).toBe(404);
+    });
+  });
+
+  describe('PUT /api/v1/sessions/:sessionId/config/:configId', () => {
+    it('sets config option and returns full state', async () => {
+      const updatedConfigOptions = [
+        {
+          id: 'mode',
+          name: 'Mode',
+          type: 'select',
+          currentValue: 'architect',
+          options: [{ value: 'code', label: 'Code' }, { value: 'architect', label: 'Architect' }],
+        },
+      ];
+      const mockSetConfigOption = vi.fn().mockResolvedValue({
+        configOptions: updatedConfigOptions,
+      });
+      const session = createMockSession({
+        configOptions: [
+          {
+            id: 'mode',
+            name: 'Mode',
+            type: 'select',
+            currentValue: 'code',
+            options: [{ value: 'code', label: 'Code' }, { value: 'architect', label: 'Architect' }],
+          },
+        ],
+        clientOverrides: { bypassPermissions: false },
+        agentInstance: { setConfigOption: mockSetConfigOption },
+        updateConfigOptions: vi.fn().mockImplementation(async function (this: any, opts: any) {
+          this.configOptions = opts;
+        }),
+        toAcpStateSnapshot: vi.fn().mockReturnValue({ configOptions: updatedConfigOptions }),
+      });
+      // Bind updateConfigOptions to session context
+      session.updateConfigOptions = session.updateConfigOptions.bind(session);
+      (deps.core.sessionManager.getSession as any).mockReturnValue(session);
+
+      const response = await app.inject({
+        method: 'PUT',
+        url: '/api/v1/sessions/sess-1/config/mode',
+        payload: { value: 'architect' },
+      });
+
+      expect(response.statusCode).toBe(200);
+      const body = JSON.parse(response.body);
+      expect(body.configOptions).toEqual(updatedConfigOptions);
+      expect(body.clientOverrides).toEqual({ bypassPermissions: false });
+      expect(mockSetConfigOption).toHaveBeenCalledWith('mode', { type: 'select', value: 'architect' });
+      expect(deps.core.sessionManager.patchRecord).toHaveBeenCalled();
+    });
+
+    it('returns 404 for unknown session', async () => {
+      (deps.core.sessionManager.getSession as any).mockReturnValue(null);
+
+      const response = await app.inject({
+        method: 'PUT',
+        url: '/api/v1/sessions/unknown/config/mode',
+        payload: { value: 'code' },
+      });
+
+      expect(response.statusCode).toBe(404);
+    });
+  });
+
+  describe('GET /api/v1/sessions/:sessionId/config/overrides', () => {
+    it('returns clientOverrides', async () => {
+      (deps.core.sessionManager.getSession as any).mockReturnValue(
+        createMockSession({ clientOverrides: { bypassPermissions: true } }),
+      );
+
+      const response = await app.inject({
+        method: 'GET',
+        url: '/api/v1/sessions/sess-1/config/overrides',
+      });
+
+      expect(response.statusCode).toBe(200);
+      const body = JSON.parse(response.body);
+      expect(body.clientOverrides).toEqual({ bypassPermissions: true });
+    });
+
+    it('returns 404 for unknown session', async () => {
+      (deps.core.sessionManager.getSession as any).mockReturnValue(null);
+
+      const response = await app.inject({
+        method: 'GET',
+        url: '/api/v1/sessions/unknown/config/overrides',
+      });
+
+      expect(response.statusCode).toBe(404);
+    });
+  });
+
+  describe('PUT /api/v1/sessions/:sessionId/config/overrides', () => {
+    it('sets bypassPermissions and persists', async () => {
+      const session = createMockSession({ clientOverrides: { bypassPermissions: false } });
+      (deps.core.sessionManager.getSession as any).mockReturnValue(session);
+
+      const response = await app.inject({
+        method: 'PUT',
+        url: '/api/v1/sessions/sess-1/config/overrides',
+        payload: { bypassPermissions: true },
+      });
+
+      expect(response.statusCode).toBe(200);
+      const body = JSON.parse(response.body);
+      expect(body.clientOverrides).toEqual({ bypassPermissions: true });
+      expect(session.clientOverrides.bypassPermissions).toBe(true);
+      expect(deps.core.sessionManager.patchRecord).toHaveBeenCalledWith('sess-1', {
+        clientOverrides: { bypassPermissions: true },
+      });
+    });
+
+    it('merges overrides instead of replacing entirely', async () => {
+      const session = createMockSession({ clientOverrides: { bypassPermissions: true } });
+      (deps.core.sessionManager.getSession as any).mockReturnValue(session);
+
+      // Send an empty body (no bypassPermissions key) — should not clear existing value
+      const response = await app.inject({
+        method: 'PUT',
+        url: '/api/v1/sessions/sess-1/config/overrides',
+        payload: {},
+      });
+
+      expect(response.statusCode).toBe(200);
+      const body = JSON.parse(response.body);
+      // bypassPermissions should still be true since we didn't send it
+      expect(body.clientOverrides.bypassPermissions).toBe(true);
+    });
+
+    it('returns 404 for unknown session', async () => {
+      (deps.core.sessionManager.getSession as any).mockReturnValue(null);
+
+      const response = await app.inject({
+        method: 'PUT',
+        url: '/api/v1/sessions/unknown/config/overrides',
+        payload: { bypassPermissions: true },
+      });
+
+      expect(response.statusCode).toBe(404);
+    });
+  });
+
   describe('DELETE /api/v1/sessions/:sessionId', () => {
     it('cancels a session', async () => {
       const response = await app.inject({

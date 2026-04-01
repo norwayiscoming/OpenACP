@@ -5,13 +5,17 @@ import { requireScopes } from '../middleware/auth.js';
 import { createChildLogger } from '../../../core/utils/log.js';
 import {
   SessionIdParamSchema,
+  ConfigIdParamSchema,
   CreateSessionBodySchema,
   AdoptSessionBodySchema,
   PromptBodySchema,
   PermissionResponseBodySchema,
   DangerousModeBodySchema,
   UpdateSessionBodySchema,
+  SetConfigOptionBodySchema,
+  SetClientOverridesBodySchema,
 } from '../schemas/sessions.js';
+import type { ConfigOption } from '../../../core/types.js';
 
 const log = createChildLogger({ module: 'api-server' });
 
@@ -333,6 +337,114 @@ export async function sessionRoutes(
         clientOverrides: session.clientOverrides,
       });
       return { ok: true, dangerousMode: body.enabled };
+    },
+  );
+
+  // GET /sessions/:sessionId/config — get all configOptions + clientOverrides
+  app.get<{ Params: { sessionId: string } }>(
+    '/:sessionId/config',
+    { preHandler: requireScopes('sessions:read') },
+    async (request) => {
+      const { sessionId: rawId } = SessionIdParamSchema.parse(request.params);
+      const sessionId = decodeURIComponent(rawId);
+      const session = deps.core.sessionManager.getSession(sessionId);
+      if (!session) {
+        throw new NotFoundError(
+          'SESSION_NOT_FOUND',
+          `Session "${sessionId}" not found`,
+        );
+      }
+
+      return {
+        configOptions: session.configOptions,
+        clientOverrides: session.clientOverrides,
+      };
+    },
+  );
+
+  // PUT /sessions/:sessionId/config/:configId — set config option via agent
+  app.put<{ Params: { sessionId: string; configId: string } }>(
+    '/:sessionId/config/:configId',
+    { preHandler: requireScopes('sessions:write') },
+    async (request) => {
+      const { sessionId: rawId, configId } = ConfigIdParamSchema.parse(request.params);
+      const sessionId = decodeURIComponent(rawId);
+      const session = deps.core.sessionManager.getSession(sessionId);
+      if (!session) {
+        throw new NotFoundError(
+          'SESSION_NOT_FOUND',
+          `Session "${sessionId}" not found`,
+        );
+      }
+
+      const body = SetConfigOptionBodySchema.parse(request.body);
+
+      const response = await session.agentInstance.setConfigOption(configId, {
+        type: 'select',
+        value: body.value,
+      });
+
+      if (response.configOptions) {
+        await session.updateConfigOptions(response.configOptions as ConfigOption[]);
+      }
+
+      await deps.core.sessionManager.patchRecord(sessionId, {
+        acpState: session.toAcpStateSnapshot(),
+      });
+
+      return {
+        configOptions: session.configOptions,
+        clientOverrides: session.clientOverrides,
+      };
+    },
+  );
+
+  // GET /sessions/:sessionId/config/overrides — get clientOverrides
+  app.get<{ Params: { sessionId: string } }>(
+    '/:sessionId/config/overrides',
+    { preHandler: requireScopes('sessions:read') },
+    async (request) => {
+      const { sessionId: rawId } = SessionIdParamSchema.parse(request.params);
+      const sessionId = decodeURIComponent(rawId);
+      const session = deps.core.sessionManager.getSession(sessionId);
+      if (!session) {
+        throw new NotFoundError(
+          'SESSION_NOT_FOUND',
+          `Session "${sessionId}" not found`,
+        );
+      }
+
+      return { clientOverrides: session.clientOverrides };
+    },
+  );
+
+  // PUT /sessions/:sessionId/config/overrides — set clientOverrides
+  app.put<{ Params: { sessionId: string } }>(
+    '/:sessionId/config/overrides',
+    { preHandler: requireScopes('sessions:write') },
+    async (request) => {
+      const { sessionId: rawId } = SessionIdParamSchema.parse(request.params);
+      const sessionId = decodeURIComponent(rawId);
+      const session = deps.core.sessionManager.getSession(sessionId);
+      if (!session) {
+        throw new NotFoundError(
+          'SESSION_NOT_FOUND',
+          `Session "${sessionId}" not found`,
+        );
+      }
+
+      const body = SetClientOverridesBodySchema.parse(request.body);
+
+      // Merge into existing overrides (don't replace entirely)
+      if (body.bypassPermissions !== undefined) {
+        session.clientOverrides.bypassPermissions = body.bypassPermissions;
+      }
+
+      await deps.core.sessionManager.patchRecord(sessionId, {
+        clientOverrides: session.clientOverrides,
+      });
+
+      return { clientOverrides: session.clientOverrides };
     },
   );
 

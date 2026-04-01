@@ -42,3 +42,16 @@ export const UpdateSessionBodySchema = z.object({
 export const SessionIdParamSchema = z.object({
   sessionId: z.string().min(1),
 });
+
+export const ConfigIdParamSchema = z.object({
+  sessionId: z.string().min(1),
+  configId: z.string().min(1),
+});
+
+export const SetConfigOptionBodySchema = z.object({
+  value: z.string(),
+});
+
+export const SetClientOverridesBodySchema = z.object({
+  bypassPermissions: z.boolean().optional(),
+});

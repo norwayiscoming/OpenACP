@@ -24,7 +24,7 @@ Installs the plugin to ~/.openacp/plugins/.
 `)
     return
   }
-  const pkg = args[1]
+  const pkg = args[0]
   if (!pkg) {
     console.error("Usage: openacp install <package>")
     process.exit(1)

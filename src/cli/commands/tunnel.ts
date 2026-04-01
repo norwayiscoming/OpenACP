@@ -1,7 +1,7 @@
 import { readApiPort, apiCall } from '../api-client.js'
 
 export async function cmdTunnel(args: string[], instanceRoot?: string): Promise<void> {
-  const subCmd = args[1]
+  const subCmd = args[0]
   const port = readApiPort(undefined, instanceRoot)
   if (port === null) {
     console.error('OpenACP is not running. Start with `openacp start`')
@@ -12,7 +12,7 @@ export async function cmdTunnel(args: string[], instanceRoot?: string): Promise<
 
   try {
     if (subCmd === 'add') {
-      const tunnelPort = args[2]
+      const tunnelPort = args[1]
       if (!tunnelPort) {
         console.error('Usage: openacp tunnel add <port> [--label name] [--session id]')
         process.exit(1)
@@ -54,7 +54,7 @@ export async function cmdTunnel(args: string[], instanceRoot?: string): Promise<
       }
 
     } else if (subCmd === 'stop') {
-      const tunnelPort = args[2]
+      const tunnelPort = args[1]
       if (!tunnelPort) {
         console.error('Usage: openacp tunnel stop <port>')
         process.exit(1)

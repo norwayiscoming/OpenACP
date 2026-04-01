@@ -12,7 +12,7 @@ async function createCatalog(instanceRoot?: string) {
 }
 
 export async function cmdAgents(args: string[], instanceRoot?: string): Promise<void> {
-  const subcommand = args[1];
+  const subcommand = args[0];
 
   if (wantsHelp(args) && (!subcommand || subcommand === '--help' || subcommand === '-h')) {
     console.log(`
@@ -41,9 +41,9 @@ export async function cmdAgents(args: string[], instanceRoot?: string): Promise<
 
   switch (subcommand) {
     case "install":
-      return agentsInstall(args[2], args.includes("--force"), wantsHelp(args), instanceRoot);
+      return agentsInstall(args[1], args.includes("--force"), wantsHelp(args), instanceRoot);
     case "uninstall":
-      return agentsUninstall(args[2], wantsHelp(args), instanceRoot);
+      return agentsUninstall(args[1], wantsHelp(args), instanceRoot);
     case "refresh":
       if (wantsHelp(args)) {
         console.log(`
@@ -59,9 +59,9 @@ bypassing the normal staleness check.
       }
       return agentsRefresh(instanceRoot);
     case "info":
-      return agentsInfo(args[2], wantsHelp(args), instanceRoot);
+      return agentsInfo(args[1], wantsHelp(args), instanceRoot);
     case "run":
-      return agentsRun(args[2], args.slice(3), wantsHelp(args), instanceRoot);
+      return agentsRun(args[1], args.slice(2), wantsHelp(args), instanceRoot);
     case "list":
     case undefined:
       return agentsList(instanceRoot);

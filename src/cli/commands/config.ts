@@ -3,7 +3,7 @@ import { readApiPort, apiCall } from '../api-client.js'
 import { wantsHelp, buildNestedUpdateFromPath } from './helpers.js'
 
 export async function cmdConfig(args: string[] = [], instanceRoot?: string): Promise<void> {
-  const subCmd = args[1] // 'set' or undefined
+  const subCmd = args[0] // 'set' or undefined
 
   if (wantsHelp(args) && subCmd === 'set') {
     console.log(`
@@ -55,8 +55,8 @@ the API for live updates. When stopped, edits config file directly.
 
   if (subCmd === 'set') {
     // Non-interactive: openacp config set <key> <value>
-    const configPath = args[2]
-    const configValue = args[3]
+    const configPath = args[1]
+    const configValue = args[2]
     if (!configPath || configValue === undefined) {
       console.error('Usage: openacp config set <path> <value>')
       process.exit(1)

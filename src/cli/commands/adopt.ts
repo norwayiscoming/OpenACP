@@ -29,8 +29,8 @@ as a messaging thread. Requires a running daemon.
     return
   }
 
-  const agent = args[1];
-  const sessionId = args[2];
+  const agent = args[0];
+  const sessionId = args[1];
 
   if (!agent || !sessionId) {
     console.log("Usage: openacp adopt <agent> <session_id> [--cwd <path>] [--channel <name>]");

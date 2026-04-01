@@ -20,7 +20,7 @@ Fixable issues can be auto-repaired when not using --dry-run.
   }
 
   const knownFlags = ["--dry-run"];
-  const unknownFlags = args.slice(1).filter(
+  const unknownFlags = args.filter(
     (a) => a.startsWith("--") && !knownFlags.includes(a),
   );
   if (unknownFlags.length > 0) {

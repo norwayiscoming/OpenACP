@@ -29,7 +29,7 @@ a "Handoff" slash command to Claude Code.
 
   const { getIntegration, listIntegrations } = await import("../integrate.js");
 
-  const agent = args[1];
+  const agent = args[0];
   const uninstall = args.includes("--uninstall");
 
   if (!agent) {

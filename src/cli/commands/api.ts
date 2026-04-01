@@ -47,7 +47,7 @@ function printApiHelp(): void {
 }
 
 export async function cmdApi(args: string[], instanceRoot?: string): Promise<void> {
-  const subCmd = args[1]
+  const subCmd = args[0]
 
   if (wantsHelp(args) && (!subCmd || subCmd === '--help' || subCmd === '-h')) {
     printApiHelp()
@@ -282,9 +282,9 @@ Shows the version of the currently running daemon process.
 
   try {
     if (subCmd === 'new') {
-      const agent = args[2]
+      const agent = args[1]
       const workspaceIdx = args.indexOf('--workspace')
-      const workspace = workspaceIdx !== -1 ? args[workspaceIdx + 1] : args[3]
+      const workspace = workspaceIdx !== -1 ? args[workspaceIdx + 1] : args[2]
       const channelIdx = args.indexOf('--channel')
       const channel = channelIdx !== -1 ? args[channelIdx + 1] : undefined
       const body: Record<string, string> = {}
@@ -309,7 +309,7 @@ Shows the version of the currently running daemon process.
       console.log(`  Status    : ${data.status}`)
 
     } else if (subCmd === 'cancel') {
-      const sessionId = args[2]
+      const sessionId = args[1]
       if (!sessionId) {
         console.error('Usage: openacp api cancel <session-id>')
         process.exit(1)
@@ -364,7 +364,7 @@ Shows the version of the currently running daemon process.
       }
 
     } else if (subCmd === 'delete-topic') {
-      const sessionId = args[2]
+      const sessionId = args[1]
       if (!sessionId) {
         console.error('Usage: openacp api delete-topic <session-id> [--force]')
         process.exit(1)
@@ -406,12 +406,12 @@ Shows the version of the currently running daemon process.
       }
 
     } else if (subCmd === 'send') {
-      const sessionId = args[2]
+      const sessionId = args[1]
       if (!sessionId) {
         console.error('Usage: openacp api send <session-id> <prompt>')
         process.exit(1)
       }
-      const prompt = args.slice(3).join(' ')
+      const prompt = args.slice(2).join(' ')
       if (!prompt) {
         console.error('Usage: openacp api send <session-id> <prompt>')
         process.exit(1)
@@ -429,7 +429,7 @@ Shows the version of the currently running daemon process.
       console.log(`Prompt sent to session ${sessionId} (queue depth: ${data.queueDepth})`)
 
     } else if (subCmd === 'session') {
-      const sessionId = args[2]
+      const sessionId = args[1]
       if (!sessionId) {
         console.error('Usage: openacp api session <session-id>')
         process.exit(1)
@@ -455,12 +455,12 @@ Shows the version of the currently running daemon process.
       console.log(`  Thread         : ${s.threadId ?? '(none)'}`)
 
     } else if (subCmd === 'dangerous' || subCmd === 'bypass') {
-      const sessionId = args[2]
+      const sessionId = args[1]
       if (!sessionId) {
         console.error('Usage: openacp api bypass <session-id> [on|off]')
         process.exit(1)
       }
-      const toggle = args[3]
+      const toggle = args[2]
       if (!toggle || (toggle !== 'on' && toggle !== 'off')) {
         console.error('Usage: openacp api bypass <session-id> [on|off]')
         process.exit(1)
@@ -514,7 +514,7 @@ Shows the version of the currently running daemon process.
 
     } else if (subCmd === 'config') {
       console.warn('⚠️  Deprecated: use "openacp config" or "openacp config set" instead.')
-      const subSubCmd = args[2]
+      const subSubCmd = args[1]
       if (!subSubCmd) {
         const res = await call('/api/config')
         const data = await res.json() as Record<string, unknown>
@@ -524,8 +524,8 @@ Shows the version of the currently running daemon process.
         }
         console.log(JSON.stringify(data.config, null, 2))
       } else if (subSubCmd === 'set') {
-        const configPath = args[3]
-        const configValue = args[4]
+        const configPath = args[2]
+        const configValue = args[3]
         if (!configPath || configValue === undefined) {
           console.error('Usage: openacp api config set <path> <value>')
           process.exit(1)
@@ -584,7 +584,7 @@ Shows the version of the currently running daemon process.
       }
 
     } else if (subCmd === 'notify') {
-      const message = args.slice(2).join(' ')
+      const message = args.slice(1).join(' ')
       if (!message) {
         console.error('Usage: openacp api notify <message>')
         process.exit(1)
@@ -611,12 +611,12 @@ Shows the version of the currently running daemon process.
       console.log(`Daemon version: ${data.version}`)
 
     } else if (subCmd === 'session-config') {
-      const sessionId = args[2]
+      const sessionId = args[1]
       if (!sessionId) {
         console.error('Usage: openacp api session-config <session-id> [set <opt> <value> | overrides | dangerous [on|off]]')
         process.exit(1)
       }
-      const configSubCmd = args[3]
+      const configSubCmd = args[2]
 
       if (!configSubCmd || configSubCmd === 'list') {
         // List all config options
@@ -655,8 +655,8 @@ Shows the version of the currently running daemon process.
         }
 
       } else if (configSubCmd === 'set') {
-        const configId = args[4]
-        const value = args[5]
+        const configId = args[3]
+        const value = args[4]
         if (!configId || value === undefined) {
           console.error('Usage: openacp api session-config <session-id> set <config-id> <value>')
           process.exit(1)
@@ -697,7 +697,7 @@ Shows the version of the currently running daemon process.
         }
 
       } else if (configSubCmd === 'dangerous') {
-        const toggle = args[4]
+        const toggle = args[3]
         if (toggle && toggle !== 'on' && toggle !== 'off') {
           console.error('Usage: openacp api session-config <session-id> dangerous [on|off]')
           process.exit(1)

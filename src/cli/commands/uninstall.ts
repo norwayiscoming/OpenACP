@@ -22,7 +22,7 @@ export async function cmdUninstall(args: string[], instanceRoot?: string): Promi
 `)
     return
   }
-  const pkg = args[1]
+  const pkg = args[0]
   if (!pkg) {
     console.error("Usage: openacp uninstall <package>")
     process.exit(1)

@@ -21,7 +21,7 @@ function botFromCtx(ctx: Context): Bot {
   return { api: ctx.api } as unknown as Bot;
 }
 
-// --- Pending state for interactive workspace picker ---
+// --- Pending state for workspace picker callbacks ---
 
 interface PendingResume {
   query: Omit<ContextQuery, "repoPath">;
@@ -93,10 +93,6 @@ export function parseResumeArgs(matchStr: string): { query: Omit<ContextQuery, "
   return { query: { type: "latest", value: "5" } };
 }
 
-function looksLikePath(text: string): boolean {
-  return text.startsWith("/") || text.startsWith("~") || text.startsWith(".");
-}
-
 // --- List subdirectories in workspace baseDir ---
 
 function listWorkspaceDirs(baseDir: string, maxItems = 10): string[] {
@@ -124,14 +120,12 @@ async function showWorkspacePicker(
 ): Promise<void> {
   const config = core.configManager.get();
   const baseDir = config.workspace.baseDir;
-  const resolvedBase = baseDir.replace(/^~/, os.homedir());
   const subdirs = listWorkspaceDirs(baseDir);
 
   const keyboard = new InlineKeyboard();
 
   // List subdirectories as buttons
   for (const dir of subdirs) {
-    const fullPath = path.join(resolvedBase, dir);
     keyboard.text(`📁 ${dir}`, `m:resume:ws:${dir}`).row();
   }
 
@@ -304,46 +298,6 @@ export async function handleResume(
 
   // Always show workspace picker — user must choose working directory
   await showWorkspacePicker(ctx, core, chatId, userId, query);
-}
-
-// --- Text input handler for custom workspace path ---
-
-export async function handlePendingResumeInput(
-  ctx: Context,
-  core: OpenACPCore,
-  chatId: number,
-  assistantTopicId?: number,
-  onControlMessage?: (sessionId: string, msgId: number) => void,
-): Promise<boolean> {
-  const userId = ctx.from?.id;
-  if (!userId) return false;
-  const pending = pendingResumes.get(userId);
-  if (!pending || !ctx.message?.text) return false;
-  if (pending.step !== "workspace_input" && pending.step !== "workspace") return false;
-
-  // Only intercept in assistant topic or general chat
-  const threadId = ctx.message.message_thread_id;
-  if (threadId && threadId !== assistantTopicId) return false;
-
-  // At "workspace" step (picker shown), only intercept if text looks like a path
-  if (pending.step === "workspace" && !looksLikePath(ctx.message.text.trim())) return false;
-
-  let workspace = ctx.message.text.trim();
-  if (!workspace) {
-    await ctx.reply("⚠️ Please enter a valid directory path.", { parse_mode: "HTML" });
-    return true;
-  }
-
-  // Resolve relative paths against baseDir
-  if (!workspace.startsWith("/") && !workspace.startsWith("~")) {
-    const baseDir = core.configManager.get().workspace.baseDir;
-    workspace = `${baseDir.replace(/\/$/, "")}/${workspace}`;
-  }
-  const resolved = core.configManager.resolveWorkspace(workspace);
-
-  cleanupPending(userId);
-  await executeResume(ctx, core, chatId, pending.query, resolved, onControlMessage);
-  return true;
 }
 
 // --- Callback handlers for workspace picker buttons ---

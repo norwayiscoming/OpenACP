@@ -5,7 +5,6 @@ import type {
   OutgoingMessage,
   PermissionRequest,
   NotificationMessage,
-  Session,
   AgentCommand,
   FileServiceInterface,
 } from "../../core/index.js";
@@ -22,31 +21,24 @@ import {
   deleteSessionTopic,
 } from "./topics.js";
 import {
-  setupCommands,
   setupMenuCallbacks,
   setupDangerousModeCallbacks,
   setupTTSCallbacks,
   setupVerbosityCallbacks,
   setupIntegrateCallbacks,
   buildMenuKeyboard,
-  handlePendingWorkspaceInput,
-  handlePendingResumeInput,
   STATIC_COMMANDS,
 } from "./commands/index.js";
 import { buildSessionStatusText, buildSessionControlKeyboard, isBypassActive } from "./commands/admin.js";
 import type { TelegramPlatformData } from "../../core/types.js";
 import { PermissionHandler } from "./permissions.js";
 import {
-  spawnAssistant,
-  handleAssistantMessage,
   redirectToAssistant,
   buildWelcomeMessage,
-  type SpawnAssistantResult,
 } from "./assistant.js";
 import { escapeHtml, formatUsage } from "./formatting.js";
 import { ActivityTracker } from "./activity.js";
 import { SendQueue } from "../../core/adapter-primitives/primitives/send-queue.js";
-import { setupActionCallbacks } from "./action-detect.js";
 import { DraftManager } from "./draft-manager.js";
 import { SkillCommandManager } from "./skill-command-manager.js";
 import {
@@ -118,8 +110,6 @@ export class TelegramAdapter extends MessagingAdapter {
   private telegramConfig: TelegramChannelConfig;
   private saveTopicIds?: (updates: { notificationTopicId?: number; assistantTopicId?: number }) => Promise<void>;
   private permissionHandler!: PermissionHandler;
-  private assistantSession: Session | null = null;
-  private assistantInitializing = false;
   private notificationTopicId!: number;
   private assistantTopicId!: number;
   private sendQueue = new SendQueue({ minInterval: 3000 });
@@ -470,12 +460,6 @@ export class TelegramAdapter extends MessagingAdapter {
     setupDangerousModeCallbacks(this.bot, this.core as OpenACPCore);
     setupTTSCallbacks(this.bot, this.core as OpenACPCore);
     setupVerbosityCallbacks(this.bot, this.core as OpenACPCore);
-    setupActionCallbacks(
-      this.bot,
-      this.core as OpenACPCore,
-      this.telegramConfig.chatId,
-      () => this.assistantSession?.id,
-    );
     setupIntegrateCallbacks(this.bot, this.core as OpenACPCore);
     setupMenuCallbacks(
       this.bot,
@@ -486,103 +470,18 @@ export class TelegramAdapter extends MessagingAdapter {
         assistantTopicId: this.assistantTopicId,
       },
       () => {
-        if (!this.assistantSession) return undefined;
+        const assistant = this.core.assistantManager?.get('telegram');
+        if (!assistant) return undefined;
         return {
           topicId: this.assistantTopicId,
-          enqueuePrompt: (p: string) => this.assistantSession!.enqueuePrompt(p),
+          enqueuePrompt: (p: string) => assistant.enqueuePrompt(p),
         };
       },
       (sessionId: string, msgId: number) => {
         this.storeControlMsgId(sessionId, msgId);
       },
     );
-    setupCommands(
-      this.bot,
-      this.core as OpenACPCore,
-      this.telegramConfig.chatId,
-      {
-        topicId: this.assistantTopicId,
-        getSession: () => this.assistantSession,
-        setControlMessage: (sessionId: string, msgId: number) => {
-          this.storeControlMsgId(sessionId, msgId);
-        },
-        respawn: async () => {
-          if (this.assistantSession) {
-            await this.assistantSession.destroy();
-            this.assistantSession = null;
-          }
-          const { session, ready } = await spawnAssistant(
-            this.core as OpenACPCore,
-            this,
-            this.assistantTopicId,
-          );
-          this.assistantSession = session;
-          this.assistantInitializing = true;
-          ready.then(() => {
-            this.assistantInitializing = false;
-          });
-        },
-      },
-    );
     this.permissionHandler.setupCallbackHandler();
-
-    // /handoff command
-    this.bot.command("handoff", async (ctx) => {
-      const threadId = ctx.message?.message_thread_id;
-      if (!threadId) return;
-
-      if (
-        threadId === this.notificationTopicId ||
-        threadId === this.assistantTopicId
-      ) {
-        await ctx.reply("This command only works in session topics.", {
-          message_thread_id: threadId,
-        });
-        return;
-      }
-
-      const session = await this.core.getOrResumeSession(
-        "telegram",
-        String(threadId),
-      );
-      const record = session
-        ? undefined
-        : this.core.sessionManager.getRecordByThread(
-            "telegram",
-            String(threadId),
-          );
-
-      const agentName = session?.agentName ?? record?.agentName;
-      const agentSessionId = session?.agentSessionId ?? record?.agentSessionId;
-
-      if (!agentName || !agentSessionId) {
-        await ctx.reply("No session found for this topic.", {
-          message_thread_id: threadId,
-        });
-        return;
-      }
-
-      const { getAgentCapabilities } =
-        await import("../../core/agents/agent-registry.js");
-      const caps = getAgentCapabilities(agentName);
-
-      if (!caps.supportsResume || !caps.resumeCommand) {
-        await ctx.reply("This agent does not support session transfer.", {
-          message_thread_id: threadId,
-        });
-        return;
-      }
-
-      const command = caps.resumeCommand(agentSessionId);
-
-      await ctx.reply(
-        `Run this in your terminal to continue the session:\n\n<code>${command}</code>`,
-        {
-          message_thread_id: threadId,
-          parse_mode: "HTML",
-        },
-      );
-    });
 
     // Update control message when config changes via commands (/model, /mode, /bypass, etc.)
     this.core.eventBus.on("session:configChanged", ({ sessionId }) => {
@@ -621,42 +520,19 @@ export class TelegramAdapter extends MessagingAdapter {
       await this.bot.api.sendMessage(this.telegramConfig.chatId, welcomeText, {
         message_thread_id: this.assistantTopicId,
         parse_mode: "HTML",
-        reply_markup: buildMenuKeyboard(),
+        reply_markup: buildMenuKeyboard(
+          this.core.lifecycleManager?.serviceRegistry?.get('menu-registry') as import('../../core/menu-registry.js').MenuRegistry | undefined,
+        ),
       });
     } catch (err) {
       log.warn({ err }, "Failed to send welcome message");
     }
 
-    // Spawn assistant in background
+    // Spawn assistant via AssistantManager
     try {
-      log.info("Spawning assistant session...");
-      const { session, ready } = await spawnAssistant(
-        this.core as OpenACPCore,
-        this,
-        this.assistantTopicId,
-      );
-      this.assistantSession = session;
-      this.assistantInitializing = true;
-      log.info(
-        { sessionId: session.id },
-        "Assistant session ready, system prompt running in background",
-      );
-      ready.then(() => {
-        this.assistantInitializing = false;
-        log.info(
-          { sessionId: session.id },
-          "Assistant ready for user messages",
-        );
-      });
+      await this.core.assistantManager.spawn("telegram", String(this.assistantTopicId));
     } catch (err) {
       log.error({ err }, "Failed to spawn assistant");
-      this.bot.api
-        .sendMessage(
-          this.telegramConfig.chatId,
-          `⚠️ <b>Failed to start assistant session.</b>\n\n<code>${err instanceof Error ? err.message : String(err)}</code>`,
-          { message_thread_id: this.assistantTopicId, parse_mode: "HTML" },
-        )
-        .catch(() => {});
     }
   }
 
@@ -710,11 +586,6 @@ export class TelegramAdapter extends MessagingAdapter {
 
     // Clear send queue
     this.sendQueue.clear();
-
-    // Destroy assistant session
-    if (this.assistantSession) {
-      await this.assistantSession.destroy();
-    }
 
     await this.bot.stop();
     log.info("Telegram bot stopped");
@@ -813,33 +684,6 @@ export class TelegramAdapter extends MessagingAdapter {
       const threadId = ctx.message.message_thread_id;
       const text = ctx.message.text;
 
-      // Check for pending workspace input from interactive /new flow
-      if (
-        await handlePendingWorkspaceInput(
-          ctx,
-          this.core,
-          this.telegramConfig.chatId,
-          this.assistantTopicId,
-        )
-      ) {
-        return;
-      }
-
-      // Check for pending workspace input from interactive /resume flow
-      if (
-        await handlePendingResumeInput(
-          ctx,
-          this.core,
-          this.telegramConfig.chatId,
-          this.assistantTopicId,
-          (sessionId: string, msgId: number) => {
-            this.storeControlMsgId(sessionId, msgId);
-          },
-        )
-      ) {
-        return;
-      }
-
       // General topic or no thread → redirect to assistant
       if (!threadId) {
         const html = redirectToAssistant(
@@ -858,34 +702,15 @@ export class TelegramAdapter extends MessagingAdapter {
       // Unrecognized slash commands can cause agent subprocesses to hang.
       const forwardText = text.startsWith("/") ? text.slice(1) : text;
 
-      // Assistant topic → forward to assistant session
-      if (threadId === this.assistantTopicId) {
-        if (!this.assistantSession) {
-          await ctx.reply(
-            "⚠️ Assistant is not available yet. Please try again shortly.",
-            { parse_mode: "HTML" },
-          );
-          return;
-        }
-        await this.draftManager.finalize(
-          this.assistantSession.id,
-          this.assistantSession.id,
-        );
-        ctx.replyWithChatAction("typing").catch(() => {});
-        handleAssistantMessage(this.assistantSession, forwardText).catch(
-          (err) => log.error({ err }, "Assistant error"),
-        );
-        return;
-      }
-
-      // Session topic → forward to core
+      // All topics (including assistant) → forward to core
       const sessionId = (await this.core.getOrResumeSession(
         "telegram",
         String(threadId),
       ))?.id;
       if (sessionId) {
         this.getTracer(sessionId)?.log("telegram", { action: "incoming:message", sessionId, userId: String(ctx.from?.id), text: ctx.message?.text });
-        await this.draftManager.finalize(sessionId, this.assistantSession?.id);
+        const assistantSession = this.core.assistantManager?.get('telegram');
+        await this.draftManager.finalize(sessionId, assistantSession?.id);
       }
       if (sessionId) {
         const tracker = this.sessionTrackers.get(sessionId);
@@ -1002,10 +827,6 @@ export class TelegramAdapter extends MessagingAdapter {
     sessionId: string,
     content: OutgoingMessage,
   ): Promise<void> {
-    // Suppress assistant messages during system prompt
-    if (this.assistantInitializing && sessionId === this.assistantSession?.id)
-      return;
-
     const session = this.core.sessionManager.getSession(sessionId);
     if (!session) return;
 
@@ -1092,7 +913,7 @@ export class TelegramAdapter extends MessagingAdapter {
       this.core.sessionManager,
     );
     const tracker = this.getOrCreateTracker(sessionId, threadId, mode);
-    await this.draftManager.finalize(sessionId, this.assistantSession?.id);
+    await this.draftManager.finalize(sessionId, this.core.assistantManager?.get('telegram')?.id);
     await tracker.onToolCall(
       {
         id: meta.id ?? "",
@@ -1171,7 +992,7 @@ export class TelegramAdapter extends MessagingAdapter {
     const threadId = this.getThreadId(sessionId);
     const meta = content.metadata as UsageMetadata | undefined;
     this.getTracer(sessionId)?.log("telegram", { action: "handle:usage", sessionId, tokensUsed: meta?.tokensUsed, contextSize: meta?.contextSize, cost: (meta as Record<string, unknown>)?.cost });
-    await this.draftManager.finalize(sessionId, this.assistantSession?.id);
+    await this.draftManager.finalize(sessionId, this.core.assistantManager?.get('telegram')?.id);
 
     // Send usage as a separate message (not part of the tool card)
     const usageText = formatUsage(meta ?? {}, verbosity);
@@ -1190,7 +1011,7 @@ export class TelegramAdapter extends MessagingAdapter {
     }
 
     // Notify the Notifications topic that a prompt has completed
-    if (this.notificationTopicId && sessionId !== this.assistantSession?.id) {
+    if (this.notificationTopicId && sessionId !== this.core.assistantManager?.get('telegram')?.id) {
       const sess = this.core.sessionManager.getSession(sessionId);
       const sessionName = sess?.name || "Session";
       const chatIdStr = String(this.telegramConfig.chatId);
@@ -1282,7 +1103,7 @@ export class TelegramAdapter extends MessagingAdapter {
   ): Promise<void> {
     this.getTracer(sessionId)?.log("telegram", { action: "handle:sessionEnd", sessionId });
     const threadId = this.getThreadId(sessionId);
-    await this.draftManager.finalize(sessionId, this.assistantSession?.id);
+    await this.draftManager.finalize(sessionId, this.core.assistantManager?.get('telegram')?.id);
     this.draftManager.cleanup(sessionId);
     await this.skillManager.cleanup(sessionId);
     const tracker = this.sessionTrackers.get(sessionId);
@@ -1353,7 +1174,7 @@ export class TelegramAdapter extends MessagingAdapter {
   ): Promise<void> {
     this.getTracer(sessionId)?.log("telegram", { action: "handle:error", sessionId, text: content.text });
     const threadId = this.getThreadId(sessionId);
-    await this.draftManager.finalize(sessionId, this.assistantSession?.id);
+    await this.draftManager.finalize(sessionId, this.core.assistantManager?.get('telegram')?.id);
     const tracker = this.sessionTrackers.get(sessionId);
     if (tracker) {
       tracker.destroy();
@@ -1407,7 +1228,7 @@ export class TelegramAdapter extends MessagingAdapter {
 
   async sendNotification(notification: NotificationMessage): Promise<void> {
     this.getTracer(notification.sessionId)?.log("telegram", { action: "notification:send", sessionId: notification.sessionId, type: notification.type });
-    if (notification.sessionId === this.assistantSession?.id) return;
+    if (notification.sessionId === this.core.assistantManager?.get('telegram')?.id) return;
 
     log.info(
       { sessionId: notification.sessionId, type: notification.type },
@@ -1499,7 +1320,7 @@ export class TelegramAdapter extends MessagingAdapter {
     sessionId: string,
     commands: AgentCommand[],
   ): Promise<void> {
-    if (sessionId === this.assistantSession?.id) return;
+    if (sessionId === this.core.assistantManager?.get('telegram')?.id) return;
 
     const session = this.core.sessionManager.getSession(sessionId);
     if (!session) return;
@@ -1602,15 +1423,16 @@ export class TelegramAdapter extends MessagingAdapter {
 
     // Assistant topic
     if (threadId === this.assistantTopicId) {
-      if (this.assistantSession) {
-        await this.assistantSession.enqueuePrompt(text, [att]);
+      const assistantSession = this.core.assistantManager?.get('telegram');
+      if (assistantSession) {
+        await assistantSession.enqueuePrompt(text, [att]);
       }
       return;
     }
 
     // Session topic
     const sid = await this.resolveSessionId(threadId);
-    if (sid) await this.draftManager.finalize(sid, this.assistantSession?.id);
+    if (sid) await this.draftManager.finalize(sid, this.core.assistantManager?.get('telegram')?.id);
     this.core
       .handleMessage({
         channelId: "telegram",
@@ -1630,7 +1452,7 @@ export class TelegramAdapter extends MessagingAdapter {
   async cleanupSessionState(sessionId: string): Promise<void> {
     this._pendingSkillCommands.delete(sessionId);
     // Finalize and clean up draft state
-    await this.draftManager.finalize(sessionId, this.assistantSession?.id);
+    await this.draftManager.finalize(sessionId, this.core.assistantManager?.get('telegram')?.id);
     this.draftManager.cleanup(sessionId);
 
     // Destroy activity tracker (stops ThinkingIndicator timers, finalizes ToolCard)
@@ -1658,7 +1480,7 @@ export class TelegramAdapter extends MessagingAdapter {
     session.archiving = true;
 
     // Finalize any pending draft
-    await this.draftManager.finalize(session.id, this.assistantSession?.id);
+    await this.draftManager.finalize(session.id, this.core.assistantManager?.get('telegram')?.id);
 
     // Cleanup all trackers
     this.draftManager.cleanup(session.id);

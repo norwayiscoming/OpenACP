@@ -1,9 +1,8 @@
 import type { Bot, Context } from "grammy";
 import type { OpenACPCore } from "../../../core/index.js";
-import type { CommandsAssistantContext } from "../types.js";
 
 // Domain modules
-import { handleNew, handleNewChat, setupNewSessionCallbacks, createSessionDirect } from './new-session.js'
+import { handleNew, handleNewChat, createSessionDirect } from './new-session.js'
 import { handleCancel, handleStatus, handleTopics, handleArchive, handleArchiveConfirm, setupSessionCallbacks } from './session.js'
 import { handleUpdate, handleRestart, handleTTS, handleVerbosity, handleOutputMode } from './admin.js'
 import { handleMenu, handleHelp, handleClear, buildMenuKeyboard } from './menu.js'
@@ -12,43 +11,13 @@ import { handleIntegrate } from "./integrate.js";
 import {
   handleResume,
   setupResumeCallbacks,
-  handlePendingResumeInput,
 } from "./resume.js";
 import { handleSettings, setupSettingsCallbacks } from "./settings.js";
 import { handleDoctor, setupDoctorCallbacks } from "./doctor.js";
 import { handleTunnel, handleTunnels, setupTunnelCallbacks } from "./tunnel.js";
 import { handleSwitch, setupSwitchCallbacks } from "./switch.js";
-
-export function setupCommands(
-  bot: Bot,
-  core: OpenACPCore,
-  chatId: number,
-  assistant?: CommandsAssistantContext,
-): void {
-  const onControlMessage = assistant?.setControlMessage;
-  bot.command("new", (ctx) => handleNew(ctx, core, chatId, assistant, onControlMessage));
-  bot.command("newchat", (ctx) => handleNewChat(ctx, core, chatId, onControlMessage));
-  bot.command("cancel", (ctx) => handleCancel(ctx, core, assistant));
-  bot.command("status", (ctx) => handleStatus(ctx, core));
-  bot.command("sessions", (ctx) => handleTopics(ctx, core));
-  bot.command("agents", (ctx) => handleAgents(ctx, core));
-  bot.command("install", (ctx) => handleInstall(ctx, core));
-  bot.command("help", (ctx) => handleHelp(ctx));
-  bot.command("menu", (ctx) => handleMenu(ctx));
-  bot.command("restart", (ctx) => handleRestart(ctx, core));
-  bot.command("update", (ctx) => handleUpdate(ctx, core));
-  bot.command("integrate", (ctx) => handleIntegrate(ctx, core));
-  bot.command("clear", (ctx) => handleClear(ctx, assistant));
-  bot.command("doctor", (ctx) => handleDoctor(ctx));
-  bot.command("tunnel", (ctx) => handleTunnel(ctx, core));
-  bot.command("tunnels", (ctx) => handleTunnels(ctx, core));
-  bot.command("archive", (ctx) => handleArchive(ctx, core));
-  bot.command("text_to_speech", (ctx) => handleTTS(ctx, core));
-  bot.command("verbosity", (ctx) => handleVerbosity(ctx, core));
-  bot.command("outputmode", (ctx) => handleOutputMode(ctx, core));
-  bot.command("resume", (ctx) => handleResume(ctx, core, chatId, assistant, onControlMessage));
-  bot.command("switch", (ctx) => handleSwitch(ctx, core));
-}
+import type { CommandRegistry } from "../../../core/command-registry.js";
+import type { MenuRegistry } from "../../../core/menu-registry.js";
 
 export function setupAllCallbacks(
   bot: Bot,
@@ -61,7 +30,6 @@ export function setupAllCallbacks(
   onControlMessage?: (sessionId: string, msgId: number) => void,
 ): void {
   // Register specific prefix handlers FIRST (grammY middleware order matters)
-  setupNewSessionCallbacks(bot, core, chatId);
   setupResumeCallbacks(bot, core, chatId, onControlMessage);
   setupSessionCallbacks(bot, core, chatId, systemTopicIds);
 
@@ -96,57 +64,71 @@ export function setupAllCallbacks(
   // Archive confirmation callbacks
   bot.callbackQuery(/^ar:/, (ctx) => handleArchiveConfirm(ctx, core, chatId));
 
-  // Broad m: handler for remaining menu dispatch — LAST
+  // Broad m: handler for MenuRegistry dispatch — LAST
   bot.callbackQuery(/^m:/, async (ctx) => {
-    const data = ctx.callbackQuery.data;
-    try {
-      await ctx.answerCallbackQuery();
-    } catch {
-      /* expired or network — ignore */
-    }
+    const itemId = ctx.callbackQuery.data.replace('m:', '')
+    try { await ctx.answerCallbackQuery() } catch { /* expired */ }
 
-    switch (data) {
-      case "m:new":
-        await handleNew(ctx, core, chatId);
-        break;
-      case "m:status":
-        await handleStatus(ctx, core);
-        break;
-      case "m:agents":
-        await handleAgents(ctx, core);
-        break;
-      case "m:help":
-        await handleHelp(ctx);
-        break;
-      case "m:restart":
-        await handleRestart(ctx, core);
-        break;
-      case "m:update":
-        await handleUpdate(ctx, core);
-        break;
-      case "m:integrate":
-        await handleIntegrate(ctx, core);
-        break;
-      case "m:topics":
-        await handleTopics(ctx, core);
-        break;
-      case "m:settings":
-        await handleSettings(ctx, core);
-        break;
+    const menuRegistry = core.lifecycleManager?.serviceRegistry?.get('menu-registry') as MenuRegistry | undefined
+    if (!menuRegistry) return
+
+    const item = menuRegistry.getItem(itemId)
+    if (!item) return
+
+    const topicId = ctx.callbackQuery.message?.message_thread_id
+    const registry = core.lifecycleManager?.serviceRegistry?.get('command-registry') as CommandRegistry | undefined
+
+    switch (item.action.type) {
+      case 'command': {
+        if (!registry) return
+        const response = await registry.execute(item.action.command, {
+          raw: '',
+          channelId: 'telegram',
+          userId: String(ctx.from.id),
+          sessionId: null,
+          reply: async () => {},
+        })
+        if (response.type !== 'delegated' && response.type !== 'silent') {
+          if (response.type === 'text') {
+            await ctx.reply(response.text, { parse_mode: 'HTML' }).catch(() => {})
+          } else if (response.type === 'error') {
+            await ctx.reply(`⚠️ ${response.message}`).catch(() => {})
+          } else if (response.type === 'list') {
+            const lines = response.items.map((i: { label: string; detail?: string }) => `• ${i.label}${i.detail ? ` — ${i.detail}` : ''}`).join('\n')
+            await ctx.reply(`${response.title}\n${lines}`, { parse_mode: 'HTML' }).catch(() => {})
+          }
+        }
+        break
+      }
+      case 'delegate': {
+        const assistant = core.assistantManager?.get('telegram')
+        if (assistant) {
+          if (topicId && systemTopicIds && topicId !== systemTopicIds.assistantTopicId) {
+            const { redirectToAssistant } = await import('../assistant.js')
+            await ctx.reply(redirectToAssistant(chatId, systemTopicIds.assistantTopicId), { parse_mode: 'HTML' }).catch(() => {})
+          } else {
+            await assistant.enqueuePrompt(item.action.prompt)
+          }
+        } else {
+          await ctx.reply('⚠️ Assistant is not available.').catch(() => {})
+        }
+        break
+      }
+      case 'callback':
+        // Pass through to specific callback handlers
+        break
     }
-  });
+  })
 }
 
 // Backward compat alias
 export { setupAllCallbacks as setupMenuCallbacks };
 
-// Re-exports for external consumers (adapter.ts, action-detect.ts)
+// Re-exports for external consumers (adapter.ts)
 export { buildMenuKeyboard } from "./menu.js";
 export { buildSkillMessages } from "./menu.js";
 export {
-  handlePendingWorkspaceInput,
   executeNewSession,
-  startInteractiveNewSession,
 } from "./new-session.js";
 export { executeCancelSession } from "./session.js";
 export {
@@ -165,7 +147,7 @@ export {
 export { setupIntegrateCallbacks } from "./integrate.js";
 export { setupSettingsCallbacks } from "./settings.js";
 export { setupDoctorCallbacks } from "./doctor.js";
-export { handlePendingResumeInput, setupResumeCallbacks } from "./resume.js";
+export { setupResumeCallbacks } from "./resume.js";
 
 export const STATIC_COMMANDS = [
   { command: "new", description: "Create new session" },

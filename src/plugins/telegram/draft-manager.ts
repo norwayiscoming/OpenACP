@@ -2,11 +2,6 @@ import type { Bot } from "grammy";
 import { MessageDraft } from "./streaming.js";
 import type { SendQueue } from "../../core/adapter-primitives/primitives/send-queue.js";
 import type { DebugTracer } from "../../core/utils/debug-tracer.js";
-import {
-  detectAction,
-  storeAction,
-  buildActionKeyboard,
-} from "./action-detect.js";
 
 interface FinalizedDraft {
   messageId: number;
@@ -57,11 +52,10 @@ export class DraftManager {
 
   /**
    * Finalize the current draft and return the message ID.
-   * Optionally detects actions in assistant responses.
    */
   async finalize(
     sessionId: string,
-    assistantSessionId?: string,
+    _assistantSessionId?: string,
   ): Promise<void> {
     const draft = this.drafts.get(sessionId);
     if (!draft) return;
@@ -76,29 +70,7 @@ export class DraftManager {
       this.finalizedDrafts.set(sessionId, { messageId: finalMsgId, draft });
     }
 
-    // Detect actions in assistant responses and attach keyboard
-    if (assistantSessionId && sessionId === assistantSessionId) {
-      const fullText = this.textBuffers.get(sessionId);
-      this.textBuffers.delete(sessionId);
-      if (fullText && finalMsgId) {
-        const detected = detectAction(fullText);
-        if (detected) {
-          const actionId = storeAction(detected);
-          const keyboard = buildActionKeyboard(actionId, detected);
-          try {
-            await this.bot.api.editMessageReplyMarkup(
-              this.chatId,
-              finalMsgId,
-              { reply_markup: keyboard },
-            );
-          } catch {
-            // Best effort — keyboard attachment is non-critical
-          }
-        }
-      }
-    } else {
-      this.textBuffers.delete(sessionId);
-    }
+    this.textBuffers.delete(sessionId);
   }
 
   /**

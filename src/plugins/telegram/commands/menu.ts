@@ -2,23 +2,40 @@ import type { Context } from "grammy";
 import { InlineKeyboard } from "grammy";
 import type { AgentCommand } from "../../../core/index.js";
 import type { CommandsAssistantContext } from "../types.js";
+import type { MenuRegistry } from "../../../core/menu-registry.js";
 
-export function buildMenuKeyboard(): InlineKeyboard {
-  return new InlineKeyboard()
-    .text("🆕 New Session", "m:new")
-    .text("📋 Sessions", "m:topics")
-    .row()
-    .text("📊 Status", "m:status")
-    .text("🤖 Agents", "m:agents")
-    .row()
-    .text("⚙️ Settings", "m:settings")
-    .text("🔗 Integrate", "m:integrate")
-    .row()
-    .text("🔄 Restart", "m:restart")
-    .text("⬆️ Update", "m:update")
-    .row()
-    .text("❓ Help", "m:help")
-    .text("🩺 Doctor", "m:doctor");
+export function buildMenuKeyboard(menuRegistry?: MenuRegistry): InlineKeyboard {
+  if (!menuRegistry) {
+    return new InlineKeyboard()
+      .text('🆕 New Session', 'm:core:new')
+      .text('📋 Sessions', 'm:core:sessions')
+      .row()
+      .text('📊 Status', 'm:core:status')
+      .text('🤖 Agents', 'm:core:agents')
+      .row()
+      .text('❓ Help', 'm:core:help')
+  }
+
+  const items = menuRegistry.getItems()
+  const kb = new InlineKeyboard()
+  let currentGroup: string | undefined
+  let rowCount = 0
+
+  for (const item of items) {
+    if (item.group !== currentGroup && rowCount > 0) {
+      kb.row()
+      rowCount = 0
+    }
+    currentGroup = item.group
+    if (rowCount >= 2) {
+      kb.row()
+      rowCount = 0
+    }
+    kb.text(item.label, `m:${item.id}`)
+    rowCount++
+  }
+
+  return kb
 }
 
 export async function handleMenu(ctx: Context): Promise<void> {

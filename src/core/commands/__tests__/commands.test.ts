@@ -62,7 +62,7 @@ describe('System Commands', () => {
     }
   })
 
-  it('/cancel returns silent when no session', async () => {
+  it('/cancel returns error when no core access', async () => {
     const registry = createRegistry()
     const response = await registry.execute('/cancel', {
       sessionId: null,
@@ -71,10 +71,10 @@ describe('System Commands', () => {
       raw: '',
       reply: async () => {},
     })
-    expect(response.type).toBe('silent')
+    expect(response.type).toBe('error')
   })
 
-  it('/status returns silent (handled by adapter)', async () => {
+  it('/status returns error when no core access', async () => {
     const registry = createRegistry()
     const response = await registry.execute('/status', {
       sessionId: null,
@@ -83,7 +83,7 @@ describe('System Commands', () => {
       raw: '',
       reply: async () => {},
     })
-    expect(response.type).toBe('silent')
+    expect(response.type).toBe('error')
   })
 
   it('/agents returns text', async () => {

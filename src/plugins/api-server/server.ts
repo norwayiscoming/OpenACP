@@ -40,6 +40,7 @@ export async function createApiServer(options: ApiServerOptions): Promise<ApiSer
         cb(null, false);
       }
     },
+    methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
     credentials: true,
   });
   await app.register(fastifyRateLimit, { max: 100, timeWindow: '1 minute' });

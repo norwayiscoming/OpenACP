@@ -65,11 +65,17 @@ export class SSEManager {
     const parsedUrl = new URL(req.url || "", "http://localhost");
     const sessionFilter = parsedUrl.searchParams.get("sessionId");
 
-    res.writeHead(200, {
+    const origin = req.headers.origin;
+    const corsHeaders: Record<string, string> = {
       "Content-Type": "text/event-stream",
       "Cache-Control": "no-cache",
       Connection: "keep-alive",
-    });
+    };
+    if (origin && (origin.startsWith('http://localhost') || origin.startsWith('http://127.0.0.1'))) {
+      corsHeaders["Access-Control-Allow-Origin"] = origin;
+      corsHeaders["Access-Control-Allow-Credentials"] = "true";
+    }
+    res.writeHead(200, corsHeaders);
     res.flushHeaders();
 
     // Store filter metadata on the response for broadcast

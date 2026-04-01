@@ -29,7 +29,6 @@ function createMockSession(overrides: Record<string, unknown> = {}) {
       resolve: vi.fn(),
     },
     enqueuePrompt: vi.fn().mockResolvedValue(undefined),
-    warmup: vi.fn().mockResolvedValue(undefined),
     ...overrides,
   };
 }
@@ -280,7 +279,7 @@ describe('session routes', () => {
   });
 
   describe('PATCH /api/v1/sessions/:sessionId/dangerous', () => {
-    it('toggles dangerous mode', async () => {
+    it('toggles bypass permissions', async () => {
       const response = await app.inject({
         method: 'PATCH',
         url: '/api/v1/sessions/sess-1/dangerous',

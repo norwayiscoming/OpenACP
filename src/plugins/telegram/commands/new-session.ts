@@ -201,7 +201,6 @@ export async function createSessionDirect(
       },
     );
 
-    session.warmup().catch((err) => log.error({ err }, "Warm-up error"));
     return threadId ?? null;
   } catch (err) {
     log.error({ err }, "Session creation failed");
@@ -297,8 +296,6 @@ export async function handleNewChat(
       },
     );
 
-    // Warm up model cache in background while user types
-    session.warmup().catch((err) => log.error({ err }, "Warm-up error"));
   } catch (err) {
     // Clean up orphaned topic if session creation failed
     if (newThreadId) {
@@ -345,9 +342,6 @@ export async function executeNewSession(
     // Rename topic with agent name after session is created
     const finalName = `🔄 ${session.agentName} — New Session`;
     await renameSessionTopic(bot, chatId, threadId, finalName);
-
-    // Warm up model cache in background while user types
-    session.warmup().catch((err) => log.error({ err }, "Warm-up error"));
 
     return { session, threadId, firstMsgId };
   } catch (err) {

@@ -17,7 +17,7 @@ function printApiHelp(): void {
                                            [--channel <id>]
   openacp api send <id> <prompt>           Send prompt to session
   openacp api cancel <id>                  Cancel a session
-  openacp api dangerous <id> on|off        Toggle dangerous mode
+  openacp api bypass <id> on|off           Toggle bypass permissions
 
 \x1b[1mSession Config Commands:\x1b[0m
   openacp api session-config <id>                    List all config options
@@ -75,7 +75,7 @@ Lists all active sessions with their ID, agent, status, and name.
   <id>            Session ID
 
 Shows detailed info: agent, status, name, workspace, creation time,
-dangerous mode, queue depth, and channel/thread IDs.
+bypass permissions, queue depth, and channel/thread IDs.
 `,
       'new': `
 \x1b[1mopenacp api new\x1b[0m — Create a new session
@@ -119,17 +119,17 @@ dangerous mode, queue depth, and channel/thread IDs.
 \x1b[1mArguments:\x1b[0m
   <id>            Session ID to cancel
 `,
-      'dangerous': `
-\x1b[1mopenacp api dangerous\x1b[0m — Toggle dangerous mode for a session
+      'bypass': `
+\x1b[1mopenacp api bypass\x1b[0m — Toggle bypass permissions for a session
 
 \x1b[1mUsage:\x1b[0m
-  openacp api dangerous <id> on|off
+  openacp api bypass <id> on|off
 
 \x1b[1mArguments:\x1b[0m
   <id>            Session ID
-  on|off          Enable or disable dangerous mode
+  on|off          Enable or disable bypass permissions
 
-Dangerous mode allows the agent to run destructive commands
+Bypass permissions allows the agent to run destructive commands
 without confirmation prompts.
 `,
       'topics': `
@@ -454,15 +454,15 @@ Shows the version of the currently running daemon process.
       console.log(`  Channel        : ${s.channelId ?? '(none)'}`)
       console.log(`  Thread         : ${s.threadId ?? '(none)'}`)
 
-    } else if (subCmd === 'dangerous') {
+    } else if (subCmd === 'dangerous' || subCmd === 'bypass') {
       const sessionId = args[2]
       if (!sessionId) {
-        console.error('Usage: openacp api dangerous <session-id> [on|off]')
+        console.error('Usage: openacp api bypass <session-id> [on|off]')
         process.exit(1)
       }
       const toggle = args[3]
       if (!toggle || (toggle !== 'on' && toggle !== 'off')) {
-        console.error('Usage: openacp api dangerous <session-id> [on|off]')
+        console.error('Usage: openacp api bypass <session-id> [on|off]')
         process.exit(1)
       }
       const res = await call(`/api/sessions/${encodeURIComponent(sessionId)}/dangerous`, {
@@ -476,7 +476,7 @@ Shows the version of the currently running daemon process.
         process.exit(1)
       }
       const state = toggle === 'on' ? 'enabled' : 'disabled'
-      console.log(`Dangerous mode ${state} for session ${sessionId}`)
+      console.log(`Bypass permissions ${state} for session ${sessionId}`)
 
     } else if (subCmd === 'health') {
       const res = await call('/api/health')
@@ -742,7 +742,7 @@ Shows the version of the currently running daemon process.
       const { suggestMatch } = await import('../suggest.js')
       const apiSubcommands = [
         'new', 'cancel', 'status', 'agents', 'topics', 'delete-topic',
-        'cleanup', 'send', 'session', 'dangerous', 'health', 'restart',
+        'cleanup', 'send', 'session', 'bypass', 'dangerous', 'health', 'restart',
         'config', 'adapters', 'tunnel', 'notify', 'version', 'session-config',
       ]
       const suggestion = suggestMatch(subCmd ?? '', apiSubcommands)

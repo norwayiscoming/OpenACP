@@ -258,7 +258,6 @@ describe("ApiServer", () => {
       agentName: "claude",
       status: "initializing",
       workingDirectory: "/tmp/ws",
-      warmup: vi.fn().mockResolvedValue(undefined),
       agentInstance: mockAgentInstance,
     };
     mockCore.createSession.mockResolvedValueOnce(mockSession);
@@ -279,7 +278,6 @@ describe("ApiServer", () => {
     expect(mockCore.createSession).toHaveBeenCalledWith(
       expect.objectContaining({ channelId: "api", agentName: "claude" }),
     );
-    expect(mockSession.warmup).toHaveBeenCalled();
     // Verify auto-approve permission handler was wired
     expect(mockAgentInstance.onPermissionRequest).toBeTypeOf("function");
   });
@@ -290,7 +288,6 @@ describe("ApiServer", () => {
       agentName: "claude",
       status: "initializing",
       workingDirectory: "/tmp/ws",
-      warmup: vi.fn().mockResolvedValue(undefined),
       agentInstance: { onPermissionRequest: vi.fn() },
     };
     mockCore.createSession.mockResolvedValueOnce(mockSession);
@@ -757,7 +754,7 @@ describe("ApiServer", () => {
     expect(res.status).toBe(404);
   });
 
-  it("PATCH /api/sessions/:id/dangerous toggles dangerous mode", async () => {
+  it("PATCH /api/sessions/:id/dangerous toggles bypass permissions", async () => {
     const mockSession = { id: "abc123", clientOverrides: { bypassPermissions: false } };
     mockCore.sessionManager.getSession.mockReturnValueOnce(mockSession);
     const port = await startServer();

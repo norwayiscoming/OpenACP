@@ -10,7 +10,7 @@ export function buildDangerousModeKeyboard(
   enabled: boolean,
 ): InlineKeyboard {
   return new InlineKeyboard().text(
-    enabled ? "🔐 Disable Dangerous Mode" : "☠️ Enable Dangerous Mode",
+    enabled ? "🔐 Disable Bypass Permissions" : "☠️ Enable Bypass Permissions",
     `d:${sessionId}`,
   );
 }
@@ -26,15 +26,15 @@ export function setupDangerousModeCallbacks(bot: Bot, core: OpenACPCore): void {
       session.clientOverrides.bypassPermissions = newDangerousMode;
       log.info(
         { sessionId, dangerousMode: newDangerousMode },
-        "Dangerous mode toggled via button",
+        "Bypass permissions toggled via button",
       );
       core.sessionManager
         .patchRecord(sessionId, { clientOverrides: session.clientOverrides })
         .catch(() => {});
 
       const toastText = newDangerousMode
-        ? "☠️ Dangerous mode enabled — permissions auto-approved"
-        : "🔐 Dangerous mode disabled — permissions shown normally";
+        ? "☠️ Bypass permissions enabled — permissions auto-approved"
+        : "🔐 Bypass permissions disabled — permissions shown normally";
       try {
         await ctx.answerCallbackQuery({ text: toastText });
       } catch {
@@ -74,12 +74,12 @@ export function setupDangerousModeCallbacks(bot: Bot, core: OpenACPCore): void {
       .catch(() => {});
     log.info(
       { sessionId, dangerousMode: newDangerousMode },
-      "Dangerous mode toggled via button (store-only, session not in memory)",
+      "Bypass permissions toggled via button (store-only, session not in memory)",
     );
 
     const toastText = newDangerousMode
-      ? "☠️ Dangerous mode enabled — permissions auto-approved"
-      : "🔐 Dangerous mode disabled — permissions shown normally";
+      ? "☠️ Bypass permissions enabled — permissions auto-approved"
+      : "🔐 Bypass permissions disabled — permissions shown normally";
     try {
       await ctx.answerCallbackQuery({ text: toastText });
     } catch {
@@ -117,7 +117,7 @@ export async function handleEnableDangerous(
   );
   if (session) {
     if (session.clientOverrides.bypassPermissions) {
-      await ctx.reply("☠️ Dangerous mode is already enabled.", {
+      await ctx.reply("☠️ Bypass permissions is already enabled.", {
         parse_mode: "HTML",
       });
       return;
@@ -139,7 +139,7 @@ export async function handleEnableDangerous(
       return;
     }
     if (record.clientOverrides?.bypassPermissions ?? record.dangerousMode) {
-      await ctx.reply("☠️ Dangerous mode is already enabled.", {
+      await ctx.reply("☠️ Bypass permissions is already enabled.", {
         parse_mode: "HTML",
       });
       return;
@@ -149,7 +149,7 @@ export async function handleEnableDangerous(
       .catch(() => {});
   }
   await ctx.reply(
-    `⚠️ <b>Dangerous mode enabled</b>\n\nAll permission requests will be auto-approved. Claude can run arbitrary commands without asking.\n\nUse /disable_dangerous to restore normal behaviour.`,
+    `⚠️ <b>Bypass permissions enabled</b>\n\nAll permission requests will be auto-approved. Claude can run arbitrary commands without asking.\n\nUse /disable_bypass to restore normal behaviour.`,
     { parse_mode: "HTML" },
   );
 }
@@ -171,7 +171,7 @@ export async function handleDisableDangerous(
   );
   if (session) {
     if (!session.clientOverrides.bypassPermissions) {
-      await ctx.reply("🔐 Dangerous mode is already disabled.", {
+      await ctx.reply("🔐 Bypass permissions is already disabled.", {
         parse_mode: "HTML",
       });
       return;
@@ -193,7 +193,7 @@ export async function handleDisableDangerous(
       return;
     }
     if (!(record.clientOverrides?.bypassPermissions ?? record.dangerousMode)) {
-      await ctx.reply("🔐 Dangerous mode is already disabled.", {
+      await ctx.reply("🔐 Bypass permissions is already disabled.", {
         parse_mode: "HTML",
       });
       return;
@@ -203,7 +203,7 @@ export async function handleDisableDangerous(
       .catch(() => {});
   }
   await ctx.reply(
-    "🔐 <b>Dangerous mode disabled</b>\n\nPermission requests will be shown normally.",
+    "🔐 <b>Bypass permissions disabled</b>\n\nPermission requests will be shown normally.",
     { parse_mode: "HTML" },
   );
 }
@@ -225,7 +225,7 @@ export function buildSessionControlKeyboard(
 ): InlineKeyboard {
   return new InlineKeyboard()
     .text(
-      dangerousMode ? "🔐 Disable Dangerous Mode" : "☠️ Enable Dangerous Mode",
+      dangerousMode ? "🔐 Disable Bypass Permissions" : "☠️ Enable Bypass Permissions",
       `d:${sessionId}`,
     )
     .row()

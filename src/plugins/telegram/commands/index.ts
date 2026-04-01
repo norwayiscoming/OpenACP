@@ -34,8 +34,8 @@ export function setupCommands(
   bot.command("install", (ctx) => handleInstall(ctx, core));
   bot.command("help", (ctx) => handleHelp(ctx));
   bot.command("menu", (ctx) => handleMenu(ctx));
-  bot.command("enable_dangerous", (ctx) => handleEnableDangerous(ctx, core));
-  bot.command("disable_dangerous", (ctx) => handleDisableDangerous(ctx, core));
+  bot.command("enable_bypass", (ctx) => handleEnableDangerous(ctx, core));
+  bot.command("disable_bypass", (ctx) => handleDisableDangerous(ctx, core));
   bot.command("restart", (ctx) => handleRestart(ctx, core));
   bot.command("update", (ctx) => handleUpdate(ctx, core));
   bot.command("integrate", (ctx) => handleIntegrate(ctx, core));
@@ -178,11 +178,11 @@ export const STATIC_COMMANDS = [
   { command: "help", description: "Help" },
   { command: "menu", description: "Show menu" },
   {
-    command: "enable_dangerous",
+    command: "enable_bypass",
     description: "Auto-approve all permission requests (session only)",
   },
   {
-    command: "disable_dangerous",
+    command: "disable_bypass",
     description: "Restore normal permission prompts (session only)",
   },
   { command: "integrate", description: "Manage agent integrations" },

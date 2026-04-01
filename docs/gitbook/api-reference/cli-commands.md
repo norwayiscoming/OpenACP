@@ -151,12 +151,12 @@ openacp api config
 openacp api config set <key> <value>
 ```
 
-### api dangerous
+### api bypass
 
-Enables or disables dangerous mode for a session. When enabled, the agent runs destructive commands without confirmation prompts.
+Enables or disables bypass permissions for a session. When enabled, the agent runs destructive commands without confirmation prompts.
 
 ```
-openacp api dangerous <session-id> on|off
+openacp api bypass <session-id> on|off
 ```
 
 ### api delete-topic

@@ -121,7 +121,7 @@ Lists all sessions (active, finished, cancelled, error).
       "name": "Fix login bug",
       "workspace": "/home/user/myproject",
       "createdAt": "2026-03-25T10:00:00.000Z",
-      "dangerousMode": false,
+      "bypassPermissions": false,
       "queueDepth": 0,
       "promptRunning": true,
       "lastActiveAt": "2026-03-25T10:05:00.000Z"
@@ -152,7 +152,7 @@ Returns details for a single session.
     "name": "Fix login bug",
     "workspace": "/home/user/myproject",
     "createdAt": "2026-03-25T10:00:00.000Z",
-    "dangerousMode": false,
+    "bypassPermissions": false,
     "queueDepth": 1,
     "promptRunning": false,
     "threadId": "12345",
@@ -252,9 +252,9 @@ curl -X POST \
 
 ---
 
-### PATCH /api/sessions/:id/dangerous
+### PATCH /api/sessions/:id/bypass
 
-Enables or disables dangerous mode for a session.
+Enables or disables bypass permissions for a session.
 
 **Request body**
 ```json
@@ -263,7 +263,7 @@ Enables or disables dangerous mode for a session.
 
 **Response**
 ```json
-{ "ok": true, "dangerousMode": true }
+{ "ok": true, "bypassPermissions": true }
 ```
 
 ```bash
@@ -271,7 +271,7 @@ curl -X PATCH \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"enabled":true}' \
-  http://localhost:21420/api/sessions/sess_abc123/dangerous
+  http://localhost:21420/api/sessions/sess_abc123/bypass
 ```
 
 ---

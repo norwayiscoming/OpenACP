@@ -169,11 +169,6 @@ export class Session extends TypedEmitter<SessionEvents> {
   }
 
   private async processPrompt(text: string, attachments?: Attachment[]): Promise<void> {
-    if (text === "\x00__warmup__") {
-      await this.runWarmup();
-      return;
-    }
-
     // Don't process prompts for finished sessions (queue may still drain)
     if (this._status === "finished") return;
 
@@ -401,32 +396,6 @@ export class Session extends TypedEmitter<SessionEvents> {
     }
   }
 
-  /** Fire-and-forget warm-up: primes model cache while user types their first message */
-  async warmup(): Promise<void> {
-    // Route through PromptQueue to prevent concurrent prompt execution.
-    // Any user prompts arriving during warmup will be queued and drained after.
-    await this.queue.enqueue("\x00__warmup__");
-  }
-
-  private async runWarmup(): Promise<void> {
-    // Pause events but let commands_update pass through
-    this.pause((_event, args) => {
-      const agentEvent = args[0] as AgentEvent;
-      return agentEvent?.type === "commands_update";
-    });
-
-    try {
-      const start = Date.now();
-      await this.agentInstance.prompt('Reply with only "ready".');
-      this.activate();
-      this.log.info({ durationMs: Date.now() - start }, "Warm-up complete");
-    } catch (err) {
-      this.log.error({ err }, "Warm-up failed");
-    } finally {
-      this.clearBuffer();
-      this.resume();
-    }
-  }
 
   // --- ACP Mode / Config / Model State ---
 

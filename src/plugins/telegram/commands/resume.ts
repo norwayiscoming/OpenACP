@@ -255,7 +255,6 @@ async function executeResume(
       },
     );
 
-    session.warmup().catch((err) => log.error({ err }, "Warm-up error"));
   } catch (err) {
     log.error({ err }, "Resume session creation failed");
     if (threadId) {

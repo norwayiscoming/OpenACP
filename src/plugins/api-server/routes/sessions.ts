@@ -166,13 +166,6 @@ export async function sessionRoutes(
       };
     }
 
-    // Warmup in background so session moves from 'initializing' to 'active'
-    session
-      .warmup()
-      .catch((err) =>
-        log.warn({ err, sessionId: session.id }, 'API session warmup failed'),
-      );
-
     return {
       sessionId: session.id,
       agent: session.agentName,
@@ -274,7 +267,7 @@ export async function sessionRoutes(
     },
   );
 
-  // PATCH /sessions/:sessionId — update session (agent, voice, dangerous mode)
+  // PATCH /sessions/:sessionId — update session (agent, voice, bypass permissions)
   app.patch<{ Params: { sessionId: string } }>(
     '/:sessionId',
     { preHandler: requireScopes('sessions:write') },
@@ -315,7 +308,7 @@ export async function sessionRoutes(
     },
   );
 
-  // PATCH /sessions/:sessionId/dangerous — toggle dangerous mode
+  // PATCH /sessions/:sessionId/dangerous — toggle bypass permissions
   app.patch<{ Params: { sessionId: string } }>(
     '/:sessionId/dangerous',
     { preHandler: requireScopes('sessions:write') },

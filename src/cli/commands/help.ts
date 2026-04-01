@@ -69,7 +69,7 @@ Connect messaging platforms (Telegram, Discord) to 28+ AI coding agents via ACP 
   openacp api new [agent] [workspace]  Create session
   openacp api send <id> <prompt>       Send prompt
   openacp api cancel <id>              Cancel session
-  openacp api dangerous <id> on|off    Toggle dangerous mode
+  openacp api bypass <id> on|off       Toggle bypass permissions
   openacp api topics [--status ...]    List topics
   openacp api cleanup [--status ...]   Cleanup old topics
   openacp api health                   System health check

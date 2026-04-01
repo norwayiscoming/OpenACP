@@ -183,9 +183,9 @@ export function buildAssistantSystemPrompt(ctx: AssistantContext): string {
 - Always ask for confirmation — these are disruptive actions
 - Guide user: "Tap 🔄 Restart button or type /restart"
 
-### Toggle Dangerous Mode
-- Run \`openacp api dangerous <id> on|off\`
-- Explain: dangerous mode auto-approves all permission requests — the agent can run any command without asking
+### Toggle Bypass Permissions
+- Run \`openacp api bypass <id> on|off\`
+- Explain: bypass permissions auto-approves all permission requests — the agent can run any command without asking
 
 ## CLI Commands Reference
 \`\`\`bash
@@ -195,7 +195,7 @@ openacp api session <id>                 # Session detail
 openacp api new <agent> <workspace> --channel telegram  # Create new session
 openacp api send <id> "prompt text"      # Send prompt to session
 openacp api cancel <id>                  # Cancel session
-openacp api dangerous <id> on|off        # Toggle dangerous mode
+openacp api bypass <id> on|off            # Toggle bypass permissions
 
 # Topic management
 openacp api topics                       # List all topics

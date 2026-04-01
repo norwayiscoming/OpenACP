@@ -102,12 +102,12 @@ function registerCategoryCommand(
   })
 }
 
-// ── /dangerous command ───────────────────────────────────────────────
+// ── /bypass command ───────────────────────────────────────────────
 
 function registerDangerousCommand(registry: CommandRegistry, core: OpenACPCore): void {
   registry.register({
-    name: 'dangerous',
-    description: 'Toggle dangerous mode (bypass permissions)',
+    name: 'bypass',
+    description: 'Toggle bypass permissions (auto-approve all permissions)',
     usage: '[on|off]',
     category: 'system',
     handler: async (args) => {
@@ -139,17 +139,17 @@ function registerDangerousCommand(registry: CommandRegistry, core: OpenACPCore):
       // No args → show status menu
       if (!raw) {
         const status = isCurrentlyDangerous ? 'on' : 'off'
-        const toggleCmd = isCurrentlyDangerous ? '/dangerous off' : '/dangerous on'
+        const toggleCmd = isCurrentlyDangerous ? '/bypass off' : '/bypass on'
         const toggleLabel = isCurrentlyDangerous ? 'Turn off' : 'Turn on'
         return {
           type: 'menu',
-          title: `Dangerous mode: ${status}`,
+          title: `Bypass permissions: ${status}`,
           options: [{ label: toggleLabel, command: toggleCmd }],
         } satisfies CommandResponse
       }
 
       if (raw !== 'on' && raw !== 'off') {
-        return { type: 'error', message: '⚠️ Usage: /dangerous [on|off]' } satisfies CommandResponse
+        return { type: 'error', message: '⚠️ Usage: /bypass [on|off]' } satisfies CommandResponse
       }
 
       const wantOn = raw === 'on'
@@ -168,7 +168,7 @@ function registerDangerousCommand(registry: CommandRegistry, core: OpenACPCore):
           }
           return {
             type: 'text',
-            text: `Dangerous mode ${wantOn ? 'enabled' : 'disabled'}.`,
+            text: `Bypass permissions ${wantOn ? 'enabled' : 'disabled'}.`,
           } satisfies CommandResponse
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err)
@@ -183,7 +183,7 @@ function registerDangerousCommand(registry: CommandRegistry, core: OpenACPCore):
       })
       return {
         type: 'text',
-        text: `Dangerous mode ${wantOn ? 'enabled' : 'disabled'} (client-side bypass).`,
+        text: `Bypass permissions ${wantOn ? 'enabled' : 'disabled'} (client-side bypass).`,
       } satisfies CommandResponse
     },
   })

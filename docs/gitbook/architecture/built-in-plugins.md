@@ -92,7 +92,7 @@ interface SecurityService {
 }
 ```
 
-**Commands**: `/dangerous on|off` -- toggle auto-approve mode for all permissions.
+**Commands**: `/bypass on|off` -- toggle auto-approve mode for all permissions.
 
 **Config**: Uses core `config.json` security section (`allowedUserIds`, `maxConcurrentSessions`).
 

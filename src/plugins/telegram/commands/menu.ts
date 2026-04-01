@@ -47,8 +47,8 @@ export async function handleHelp(ctx: Context): Promise<void> {
       `/integrate — Manage agent integrations\n` +
       `/menu — Show action menu\n\n` +
       `🔒 <b>Session Options</b>\n` +
-      `/enable_dangerous — Auto-approve permissions\n` +
-      `/disable_dangerous — Restore permission prompts\n` +
+      `/enable_bypass — Auto-approve permissions\n` +
+      `/disable_bypass — Restore permission prompts\n` +
       `/handoff — Continue session in terminal\n` +
       `/archive — Archive session topic\n` +
       `/clear — Clear assistant history\n\n` +

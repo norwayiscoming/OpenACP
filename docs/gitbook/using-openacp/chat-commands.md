@@ -19,9 +19,9 @@ OpenACP responds to commands sent in your chat platform. This page covers every 
 | `/doctor` | Yes | Yes | Run system diagnostics |
 | `/tunnel` | Yes | No | Create a public URL for a local port |
 | `/tunnels` | Yes | No | List active tunnels |
-| `/enable_dangerous` | Yes | No | Auto-approve all permissions |
-| `/disable_dangerous` | Yes | No | Restore normal permission prompts |
-| `/dangerous` | No | Yes | Toggle dangerous mode (Discord) |
+| `/enable_bypass` | Yes | No | Auto-approve all permissions |
+| `/disable_bypass` | Yes | No | Restore normal permission prompts |
+| `/bypass` | No | Yes | Toggle bypass permissions (Discord) |
 | `/text_to_speech` | Yes | No | Toggle TTS for a session |
 | `/tts` | No | Yes | Toggle TTS (Discord) |
 | `/outputmode` | Yes | Yes | Set output detail level (replaces `/verbosity`) |
@@ -128,9 +128,9 @@ Create a public HTTPS URL for a local port. Useful when an agent starts a dev se
 
 List all active tunnels with their public URLs and stop buttons.
 
-### `/enable_dangerous` / `/disable_dangerous` (Telegram) · `/dangerous` (Discord)
+### `/enable_bypass` / `/disable_bypass` (Telegram) · `/bypass` (Discord)
 
-Toggle dangerous mode for the current session. When enabled, all permission requests are auto-approved without showing buttons. Run inside a session topic. See [Permissions](permissions.md) for details.
+Toggle bypass permissions for the current session. When enabled, all permission requests are auto-approved without showing buttons. Run inside a session topic. See [Permissions](permissions.md) for details.
 
 ### `/text_to_speech [on|off]` (Telegram) · `/tts [on|off]` (Discord)
 

@@ -192,7 +192,7 @@ Slash commands are registered automatically when OpenACP starts (guild-scoped, s
 | `/install <name>` | Install an agent |
 | `/outputmode [low\|medium\|high\|reset] [session]` | Set output detail level; use `session` scope to override for the current thread only |
 | `/verbosity` | Deprecated alias for `/outputmode` |
-| `/dangerous` | Toggle auto-approval of all permission requests |
+| `/bypass` | Toggle auto-approval of all permission requests |
 | `/tts [on\|off]` | Toggle text-to-speech for the current session |
 | `/settings` | Change configuration in-chat |
 | `/doctor` | Run system diagnostics |

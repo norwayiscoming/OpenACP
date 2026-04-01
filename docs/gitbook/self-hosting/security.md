@@ -66,7 +66,7 @@ The CLI reads this file automatically when talking to a running daemon, so you d
 
 Do not expose the API port externally. The default `host: "127.0.0.1"` binding ensures the API is only reachable from localhost. If you change `api.host` to `0.0.0.0`, the server logs a warning — ensure your firewall blocks external access to port `21420`.
 
-## Dangerous Mode
+## Bypass Permissions
 
 Some agent operations (file writes, command execution) require explicit user approval via permission request buttons in the chat. This is the default behavior. For details on how permissions work from a user's perspective, see [Permissions](../using-openacp/permissions.md).
 

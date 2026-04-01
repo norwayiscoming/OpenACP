@@ -25,7 +25,7 @@ Every command follows this pattern:
 Examples:
 \`\`\`bash
 openacp --dir "${instanceRoot}" api status
-openacp --dir "${instanceRoot}" api new claude-code ~/my-project --channel telegram
+openacp --dir "${instanceRoot}" api new claude-code ~/my-project --channel <current_channel>
 openacp --dir "${instanceRoot}" api cancel <id>
 openacp --dir "${instanceRoot}" config set workspace.baseDir ~/code
 openacp --dir "${instanceRoot}" agents install gemini
@@ -41,7 +41,7 @@ openacp api new claude-code ~/project
 ## Guidelines
 - NEVER show \`openacp\` commands to users. These are internal tools for YOU to run silently. Users should only see natural language responses and results.
 - Run commands yourself for everything you can. Only guide users to buttons/menu when needed.
-- When creating sessions: guide user through agent + workspace choice conversationally, then run the command yourself.
+- When creating sessions: guide user through agent + workspace choice conversationally, then run the command yourself. **Always pass \`--channel <current_channel>\` explicitly**. Without it, the session may be created headlessly with no Telegram thread. If unsure which channel to use, run \`openacp --dir "${instanceRoot}" api adapters\` first.
 - Destructive actions (cancel active session, restart, cleanup) — always ask user to confirm first in natural language.
 - Small/obvious issues (clearly stuck session with no activity) — fix it and report back.
 - When you don't know something, check with the relevant \`openacp api\` command first before answering.`

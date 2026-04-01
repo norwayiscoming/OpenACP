@@ -171,6 +171,8 @@ export async function sessionRoutes(
       agent: session.agentName,
       status: session.status,
       workspace: session.workingDirectory,
+      channelId: session.channelId,
+      threadId: session.threadId ?? null,
     };
   });
 

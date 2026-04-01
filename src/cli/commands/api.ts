@@ -307,6 +307,8 @@ Shows the version of the currently running daemon process.
       console.log(`  Agent     : ${data.agent}`)
       console.log(`  Workspace : ${data.workspace}`)
       console.log(`  Status    : ${data.status}`)
+      console.log(`  Channel   : ${data.channelId ?? '(headless)'}`)
+      if (data.threadId) console.log(`  Thread    : ${data.threadId}`)
 
     } else if (subCmd === 'cancel') {
       const sessionId = args[1]

@@ -14,7 +14,7 @@ function createTunnelPlugin(): OpenACPPlugin {
     description: 'Expose local services to internet via tunnel providers',
     essential: false,
     pluginDependencies: { '@openacp/api-server': '*' },
-    permissions: ['services:register', 'kernel:access', 'commands:register'],
+    permissions: ['services:register', 'kernel:access', 'commands:register', 'events:read'],
 
     async install(ctx: InstallContext) {
       const { terminal, settings, legacyConfig } = ctx

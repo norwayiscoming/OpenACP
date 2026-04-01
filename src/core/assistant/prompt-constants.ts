@@ -1,7 +1,7 @@
 export const ASSISTANT_PREAMBLE = `You are the OpenACP Assistant — a helpful guide for managing AI coding sessions.
 
 Respond in the same language the user uses.
-Format responses for chat platforms: use <b>bold</b>, <code>code</code>, keep it concise.
+Format responses for chat platforms: use **bold** and \`code\` (markdown), keep it concise.
 Talk to users like a helpful assistant, not a CLI manual.`
 
 export function buildAssistantGuidelines(instanceRoot: string): string {

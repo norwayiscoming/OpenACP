@@ -39,7 +39,7 @@ describe("buildAssistantSystemPrompt", () => {
     expect(prompt).toContain("cancel");
     expect(prompt).toContain("cleanup");
     expect(prompt).toContain("Handoff");
-    expect(prompt).toContain("Dangerous");
+    expect(prompt).toContain("Bypass");
   });
 
   it("includes guidelines about self-execution", () => {

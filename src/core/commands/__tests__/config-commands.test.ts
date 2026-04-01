@@ -145,6 +145,15 @@ describe('Config Commands', () => {
       }
     })
 
+    it('menu title contains current mode name', async () => {
+      const res = await registry.execute('/mode', baseArgs('test-session'))
+      expect(res.type).toBe('menu')
+      if (res.type === 'menu') {
+        // Current value is 'code', name is 'Code'
+        expect(res.title).toContain('Code')
+      }
+    })
+
     it('current value highlighted with check prefix in menu', async () => {
       const res = await registry.execute('/mode', baseArgs('test-session'))
       expect(res.type).toBe('menu')
@@ -174,6 +183,36 @@ describe('Config Commands', () => {
         'mode',
         { type: 'select', value: 'architect' },
       )
+    })
+
+    it('success message uses "switched to" phrasing', async () => {
+      const res = await registry.execute('/mode architect', baseArgs('test-session'))
+      expect(res.type).toBe('text')
+      if (res.type === 'text') {
+        expect(res.text).toContain('switched to')
+        expect(res.text).toContain('Architect')
+      }
+    })
+
+    it('returns text when already using current value', async () => {
+      // current value is 'code', set to 'code' again
+      const res = await registry.execute('/mode code', baseArgs('test-session'))
+      expect(res.type).toBe('text')
+      if (res.type === 'text') {
+        expect(res.text).toContain('Already using')
+        expect(res.text).toContain('Code')
+      }
+      // Agent should NOT be called when already at target value
+      expect(session.agentInstance.setConfigOption).not.toHaveBeenCalled()
+    })
+
+    it('returns error for invalid value with "Unknown option" message', async () => {
+      const res = await registry.execute('/mode nonexistent', baseArgs('test-session'))
+      expect(res.type).toBe('error')
+      if (res.type === 'error') {
+        expect(res.message).toContain('Unknown option')
+        expect(res.message).toContain('nonexistent')
+      }
     })
 
     it('returns error for invalid value', async () => {
@@ -266,6 +305,13 @@ describe('Config Commands', () => {
       }
     })
 
+    it('menu title contains current model name', async () => {
+      const res = await registry.execute('/model', baseArgs('test-session'))
+      if (res.type === 'menu') {
+        expect(res.title).toContain('Sonnet')
+      }
+    })
+
     it('current model highlighted in menu', async () => {
       const res = await registry.execute('/model', baseArgs('test-session'))
       if (res.type === 'menu') {
@@ -286,6 +332,15 @@ describe('Config Commands', () => {
     it('returns error for invalid model', async () => {
       const res = await registry.execute('/model gpt5', baseArgs('test-session'))
       expect(res.type).toBe('error')
+    })
+
+    it('returns text when already using current model', async () => {
+      const res = await registry.execute('/model sonnet', baseArgs('test-session'))
+      expect(res.type).toBe('text')
+      if (res.type === 'text') {
+        expect(res.text).toContain('Already using')
+      }
+      expect(session.agentInstance.setConfigOption).not.toHaveBeenCalled()
     })
   })
 
@@ -333,9 +388,9 @@ describe('Config Commands', () => {
   })
 
   // =============================================
-  // /dangerous
+  // /bypass (formerly /dangerous)
   // =============================================
-  describe('/dangerous', () => {
+  describe('/bypass', () => {
     describe('agent has mode config with bypass value', () => {
       beforeEach(async () => {
         session = mockSession([modeOption])
@@ -345,8 +400,8 @@ describe('Config Commands', () => {
         registerConfigCommands(registry, core)
       })
 
-      it('/dangerous on switches to bypass mode', async () => {
-        const res = await registry.execute('/dangerous on', baseArgs('test-session'))
+      it('/bypass on switches to bypass mode', async () => {
+        const res = await registry.execute('/bypass on', baseArgs('test-session'))
         expect(res.type).toBe('text')
         expect(session.agentInstance.setConfigOption).toHaveBeenCalledWith(
           'mode',
@@ -354,13 +409,13 @@ describe('Config Commands', () => {
         )
       })
 
-      it('/dangerous off switches back to non-bypass default', async () => {
+      it('/bypass off switches back to non-bypass default', async () => {
         // Current value is code (non-bypass), but let's set it to bypass first
         session.getConfigByCategory.mockReturnValue({
           ...modeOption,
           currentValue: 'bypassPermissions',
         })
-        const res = await registry.execute('/dangerous off', baseArgs('test-session'))
+        const res = await registry.execute('/bypass off', baseArgs('test-session'))
         expect(res.type).toBe('text')
         // Should set to first non-bypass option
         expect(session.agentInstance.setConfigOption).toHaveBeenCalledWith(
@@ -369,28 +424,51 @@ describe('Config Commands', () => {
         )
       })
 
-      it('/dangerous with no args shows current status as off with toggle menu', async () => {
-        const res = await registry.execute('/dangerous', baseArgs('test-session'))
+      it('/bypass with no args shows current status as off with toggle menu', async () => {
+        const res = await registry.execute('/bypass', baseArgs('test-session'))
         expect(res.type).toBe('menu')
         if (res.type === 'menu') {
-          // Current mode is 'code' (non-bypass), so dangerous is off
-          expect(res.title).toContain('off')
+          // Current mode is 'code' (non-bypass), so bypass is off
+          expect(res.title).toContain('OFF')
           // Should show option to turn on
-          expect(res.options.some(o => o.command === '/dangerous on')).toBe(true)
+          expect(res.options.some(o => o.command === '/bypass on')).toBe(true)
         }
       })
 
-      it('/dangerous with no args shows current status as on when bypass active', async () => {
+      it('/bypass with no args shows current status as on when bypass active', async () => {
         session.getConfigByCategory.mockReturnValue({
           ...modeOption,
           currentValue: 'bypassPermissions',
         })
-        const res = await registry.execute('/dangerous', baseArgs('test-session'))
+        const res = await registry.execute('/bypass', baseArgs('test-session'))
         expect(res.type).toBe('menu')
         if (res.type === 'menu') {
-          expect(res.title).toContain('on')
-          expect(res.options.some(o => o.command === '/dangerous off')).toBe(true)
+          expect(res.title).toContain('ON')
+          expect(res.options.some(o => o.command === '/bypass off')).toBe(true)
         }
+      })
+
+      it('/bypass on when already bypassing returns "already enabled" text', async () => {
+        session.getConfigByCategory.mockReturnValue({
+          ...modeOption,
+          currentValue: 'bypassPermissions',
+        })
+        const res = await registry.execute('/bypass on', baseArgs('test-session'))
+        expect(res.type).toBe('text')
+        if (res.type === 'text') {
+          expect(res.text).toContain('already')
+        }
+        expect(session.agentInstance.setConfigOption).not.toHaveBeenCalled()
+      })
+
+      it('/bypass off when already off returns "already disabled" text', async () => {
+        // current is 'code' (non-bypass), so bypass is already off
+        const res = await registry.execute('/bypass off', baseArgs('test-session'))
+        expect(res.type).toBe('text')
+        if (res.type === 'text') {
+          expect(res.text).toContain('already')
+        }
+        expect(session.agentInstance.setConfigOption).not.toHaveBeenCalled()
       })
     })
 
@@ -415,22 +493,22 @@ describe('Config Commands', () => {
         registerConfigCommands(registry, core)
       })
 
-      it('/dangerous on sets clientOverrides.bypassPermissions = true', async () => {
-        const res = await registry.execute('/dangerous on', baseArgs('test-session'))
+      it('/bypass on sets clientOverrides.bypassPermissions = true', async () => {
+        const res = await registry.execute('/bypass on', baseArgs('test-session'))
         expect(res.type).toBe('text')
         expect(session.clientOverrides.bypassPermissions).toBe(true)
         expect(core.sessionManager.patchRecord).toHaveBeenCalled()
       })
 
-      it('/dangerous off sets clientOverrides.bypassPermissions = false', async () => {
+      it('/bypass off sets clientOverrides.bypassPermissions = false', async () => {
         session.clientOverrides.bypassPermissions = true
-        const res = await registry.execute('/dangerous off', baseArgs('test-session'))
+        const res = await registry.execute('/bypass off', baseArgs('test-session'))
         expect(res.type).toBe('text')
         expect(session.clientOverrides.bypassPermissions).toBe(false)
       })
 
       it('shows message about client-side fallback', async () => {
-        const res = await registry.execute('/dangerous on', baseArgs('test-session'))
+        const res = await registry.execute('/bypass on', baseArgs('test-session'))
         if (res.type === 'text') {
           expect(res.text).toContain('client')
         }
@@ -446,33 +524,33 @@ describe('Config Commands', () => {
         registerConfigCommands(registry, core)
       })
 
-      it('/dangerous on falls back to clientOverrides', async () => {
-        const res = await registry.execute('/dangerous on', baseArgs('test-session'))
+      it('/bypass on falls back to clientOverrides', async () => {
+        const res = await registry.execute('/bypass on', baseArgs('test-session'))
         expect(res.type).toBe('text')
         expect(session.clientOverrides.bypassPermissions).toBe(true)
       })
 
-      it('/dangerous off falls back to clientOverrides', async () => {
+      it('/bypass off falls back to clientOverrides', async () => {
         session.clientOverrides.bypassPermissions = true
-        const res = await registry.execute('/dangerous off', baseArgs('test-session'))
+        const res = await registry.execute('/bypass off', baseArgs('test-session'))
         expect(res.type).toBe('text')
         expect(session.clientOverrides.bypassPermissions).toBe(false)
       })
 
-      it('/dangerous with no args shows current status', async () => {
-        const res = await registry.execute('/dangerous', baseArgs('test-session'))
+      it('/bypass with no args shows current status as off', async () => {
+        const res = await registry.execute('/bypass', baseArgs('test-session'))
         expect(res.type).toBe('menu')
         if (res.type === 'menu') {
-          expect(res.title).toContain('off')
+          expect(res.title).toContain('OFF')
         }
       })
 
-      it('/dangerous with no args shows on when clientOverrides enabled', async () => {
+      it('/bypass with no args shows on when clientOverrides enabled', async () => {
         session.clientOverrides.bypassPermissions = true
-        const res = await registry.execute('/dangerous', baseArgs('test-session'))
+        const res = await registry.execute('/bypass', baseArgs('test-session'))
         expect(res.type).toBe('menu')
         if (res.type === 'menu') {
-          expect(res.title).toContain('on')
+          expect(res.title).toContain('ON')
         }
       })
     })
@@ -530,7 +608,7 @@ describe('Config Commands', () => {
       const { registerConfigCommands } = await loadModule()
       registerConfigCommands(registry, core)
 
-      const res = await registry.execute('/dangerous', baseArgs(null))
+      const res = await registry.execute('/bypass', baseArgs(null))
       expect(res.type).toBe('error')
     })
   })
@@ -545,7 +623,7 @@ describe('Config Commands', () => {
       const { registerConfigCommands } = await loadModule()
       registerConfigCommands(registry, core)
 
-      for (const cmd of ['/mode', '/model', '/thought', '/dangerous']) {
+      for (const cmd of ['/mode', '/model', '/thought', '/bypass']) {
         const res = await registry.execute(cmd, baseArgs(null))
         expect(res.type).toBe('error')
       }

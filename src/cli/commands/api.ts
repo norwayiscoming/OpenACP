@@ -19,6 +19,12 @@ function printApiHelp(): void {
   openacp api cancel <id>                  Cancel a session
   openacp api dangerous <id> on|off        Toggle dangerous mode
 
+\x1b[1mSession Config Commands:\x1b[0m
+  openacp api session-config <id>                    List all config options
+  openacp api session-config <id> set <opt> <value>  Set a config option
+  openacp api session-config <id> overrides          Show clientOverrides
+  openacp api session-config <id> dangerous [on|off] Toggle bypassPermissions
+
 \x1b[1mTopic Commands:\x1b[0m
   openacp api topics [--status s1,s2]      List topics
   openacp api delete-topic <id> [--force]  Delete a topic
@@ -234,6 +240,26 @@ Sends a restart signal to the running daemon.
   openacp api version
 
 Shows the version of the currently running daemon process.
+`,
+      'session-config': `
+\x1b[1mopenacp api session-config\x1b[0m — Manage session config options
+
+\x1b[1mUsage:\x1b[0m
+  openacp api session-config <id>                    List all config options
+  openacp api session-config <id> set <opt> <value>  Set a config option
+  openacp api session-config <id> overrides          Show clientOverrides
+  openacp api session-config <id> dangerous [on|off] Toggle bypassPermissions
+
+\x1b[1mArguments:\x1b[0m
+  <id>            Session ID
+  <opt>           Config option ID (from list)
+  <value>         New value for the config option
+
+\x1b[1mExamples:\x1b[0m
+  openacp api session-config abc123
+  openacp api session-config abc123 set model claude-opus-4-5
+  openacp api session-config abc123 overrides
+  openacp api session-config abc123 dangerous on
 `,
     }
     const help = apiSubHelp[subCmd]
@@ -584,12 +610,140 @@ Shows the version of the currently running daemon process.
       }
       console.log(`Daemon version: ${data.version}`)
 
+    } else if (subCmd === 'session-config') {
+      const sessionId = args[2]
+      if (!sessionId) {
+        console.error('Usage: openacp api session-config <session-id> [set <opt> <value> | overrides | dangerous [on|off]]')
+        process.exit(1)
+      }
+      const configSubCmd = args[3]
+
+      if (!configSubCmd || configSubCmd === 'list') {
+        // List all config options
+        const res = await call(`/api/sessions/${encodeURIComponent(sessionId)}/config`)
+        const data = await res.json() as Record<string, unknown>
+        if (!res.ok) {
+          console.error(`Error: ${data.error}`)
+          process.exit(1)
+        }
+        const configOptions = data.configOptions as Array<Record<string, unknown>> | undefined
+        const clientOverrides = data.clientOverrides as Record<string, unknown> | undefined
+        if (!configOptions || configOptions.length === 0) {
+          console.log('No config options available for this session.')
+        } else {
+          console.log(`Config options for session ${sessionId}:\n`)
+          for (const opt of configOptions) {
+            const desc = opt.description ? `  ${opt.description}` : ''
+            console.log(`  [${opt.id}]  ${opt.name}  (${opt.type})  current: ${opt.currentValue}${desc}`)
+            if (opt.type === 'select') {
+              const options = opt.options as Array<Record<string, unknown>> | undefined
+              if (options && options.length > 0) {
+                const choices = options.flatMap((o) => {
+                  if ('group' in o) {
+                    const groupOpts = o.options as Array<{ value: string; label: string }> | undefined
+                    return groupOpts?.map((c) => `${c.value} (${c.label})`) ?? []
+                  }
+                  return [`${o.value} (${o.label})`]
+                })
+                console.log(`    choices: ${choices.join(', ')}`)
+              }
+            }
+          }
+        }
+        if (clientOverrides && Object.keys(clientOverrides).length > 0) {
+          console.log(`\nClient overrides: ${JSON.stringify(clientOverrides)}`)
+        }
+
+      } else if (configSubCmd === 'set') {
+        const configId = args[4]
+        const value = args[5]
+        if (!configId || value === undefined) {
+          console.error('Usage: openacp api session-config <session-id> set <config-id> <value>')
+          process.exit(1)
+        }
+        const res = await call(`/api/sessions/${encodeURIComponent(sessionId)}/config/${encodeURIComponent(configId)}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ value }),
+        })
+        const data = await res.json() as Record<string, unknown>
+        if (!res.ok) {
+          console.error(`Error: ${data.error}`)
+          process.exit(1)
+        }
+        console.log(`Config option "${configId}" updated to "${value}"`)
+        const configOptions = data.configOptions as Array<Record<string, unknown>> | undefined
+        const updated = configOptions?.find((o) => o.id === configId)
+        if (updated) {
+          console.log(`  Current value: ${updated.currentValue}`)
+        }
+
+      } else if (configSubCmd === 'overrides') {
+        // Show clientOverrides
+        const res = await call(`/api/sessions/${encodeURIComponent(sessionId)}/config/overrides`)
+        const data = await res.json() as Record<string, unknown>
+        if (!res.ok) {
+          console.error(`Error: ${data.error}`)
+          process.exit(1)
+        }
+        const overrides = data.clientOverrides as Record<string, unknown> | undefined
+        if (!overrides || Object.keys(overrides).length === 0) {
+          console.log('No client overrides set.')
+        } else {
+          console.log(`Client overrides for session ${sessionId}:`)
+          for (const [key, val] of Object.entries(overrides)) {
+            console.log(`  ${key}: ${val}`)
+          }
+        }
+
+      } else if (configSubCmd === 'dangerous') {
+        const toggle = args[4]
+        if (toggle && toggle !== 'on' && toggle !== 'off') {
+          console.error('Usage: openacp api session-config <session-id> dangerous [on|off]')
+          process.exit(1)
+        }
+        if (toggle) {
+          // Set bypassPermissions
+          const res = await call(`/api/sessions/${encodeURIComponent(sessionId)}/config/overrides`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ bypassPermissions: toggle === 'on' }),
+          })
+          const data = await res.json() as Record<string, unknown>
+          if (!res.ok) {
+            console.error(`Error: ${data.error}`)
+            process.exit(1)
+          }
+          const state = toggle === 'on' ? 'enabled' : 'disabled'
+          console.log(`bypassPermissions ${state} for session ${sessionId}`)
+        } else {
+          // Show current state
+          const res = await call(`/api/sessions/${encodeURIComponent(sessionId)}/config/overrides`)
+          const data = await res.json() as Record<string, unknown>
+          if (!res.ok) {
+            console.error(`Error: ${data.error}`)
+            process.exit(1)
+          }
+          const overrides = data.clientOverrides as Record<string, unknown> | undefined
+          const bypass = overrides?.bypassPermissions
+          console.log(`bypassPermissions: ${bypass ?? false}`)
+        }
+
+      } else {
+        console.error(`Unknown session-config subcommand: ${configSubCmd}`)
+        console.log('  openacp api session-config <id>                    List config options')
+        console.log('  openacp api session-config <id> set <opt> <value>  Set a config option')
+        console.log('  openacp api session-config <id> overrides          Show clientOverrides')
+        console.log('  openacp api session-config <id> dangerous [on|off] Toggle bypassPermissions')
+        process.exit(1)
+      }
+
     } else {
       const { suggestMatch } = await import('../suggest.js')
       const apiSubcommands = [
         'new', 'cancel', 'status', 'agents', 'topics', 'delete-topic',
         'cleanup', 'send', 'session', 'dangerous', 'health', 'restart',
-        'config', 'adapters', 'tunnel', 'notify', 'version',
+        'config', 'adapters', 'tunnel', 'notify', 'version', 'session-config',
       ]
       const suggestion = suggestMatch(subCmd ?? '', apiSubcommands)
       console.error(`Unknown api command: ${subCmd || '(none)'}\n`)

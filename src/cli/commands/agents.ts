@@ -63,8 +63,9 @@ bypassing the normal staleness check.
     case "run":
       return agentsRun(args[1], args.slice(2), wantsHelp(args), instanceRoot);
     case "list":
+    case "--json":
     case undefined:
-      return agentsList(instanceRoot);
+      return agentsList(instanceRoot, args.includes("--json"));
     default: {
       const { suggestMatch } = await import('../suggest.js');
       const agentSubcommands = ["install", "uninstall", "refresh", "info", "run", "list"];
@@ -77,12 +78,27 @@ bypassing the normal staleness check.
   }
 }
 
-async function agentsList(instanceRoot?: string): Promise<void> {
+async function agentsList(instanceRoot?: string, json = false): Promise<void> {
   const catalog = await createCatalog(instanceRoot);
   catalog.load();
   await catalog.refreshRegistryIfStale();
 
   const items = catalog.getAvailable();
+
+  if (json) {
+    console.log(JSON.stringify(items.map((item) => ({
+      key: item.key,
+      name: item.name,
+      version: item.version,
+      distribution: item.distribution,
+      description: item.description ?? "",
+      installed: item.installed,
+      available: item.available ?? true,
+      missingDeps: item.missingDeps ?? [],
+    }))));
+    return;
+  }
+
   const installed = items.filter((i) => i.installed);
   const available = items.filter((i) => !i.installed);
 

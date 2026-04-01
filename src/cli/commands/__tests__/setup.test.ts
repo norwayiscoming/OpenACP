@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -6,14 +6,16 @@ import * as path from 'node:path';
 describe('cmdSetup', () => {
   let tmpDir: string;
 
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'openacp-setup-test-'));
+  });
+
   afterEach(() => {
     fs.rmSync(tmpDir, { recursive: true, force: true });
     vi.restoreAllMocks();
   });
 
   it('writes config.json with correct fields when all flags provided', async () => {
-    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'openacp-setup-test-'));
-
     const { cmdSetup } = await import('../setup.js');
     await cmdSetup(
       ['--workspace', '/tmp/my-workspace', '--agent', 'claude-code', '--run-mode', 'daemon'],
@@ -31,8 +33,6 @@ describe('cmdSetup', () => {
   });
 
   it('uses first agent when comma-separated agents passed', async () => {
-    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'openacp-setup-test-'));
-
     const { cmdSetup } = await import('../setup.js');
     await cmdSetup(['--workspace', '/tmp/ws', '--agent', 'claude-code,gemini'], tmpDir);
 
@@ -41,7 +41,6 @@ describe('cmdSetup', () => {
   });
 
   it('outputs JSON result when --json flag is passed', async () => {
-    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'openacp-setup-test-'));
     let output = '';
     vi.spyOn(console, 'log').mockImplementation((s: string) => { output += s; });
 
@@ -57,7 +56,6 @@ describe('cmdSetup', () => {
   });
 
   it('exits with code 1 when --workspace is missing', async () => {
-    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'openacp-setup-test-'));
     const exitSpy = vi.spyOn(process, 'exit').mockImplementation((() => { throw new Error('process.exit called'); }) as any);
 
     const { cmdSetup } = await import('../setup.js');
@@ -66,7 +64,6 @@ describe('cmdSetup', () => {
   });
 
   it('exits with code 1 when --agent is missing', async () => {
-    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'openacp-setup-test-'));
     const exitSpy = vi.spyOn(process, 'exit').mockImplementation((() => { throw new Error('process.exit called'); }) as any);
 
     const { cmdSetup } = await import('../setup.js');

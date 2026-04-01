@@ -9,7 +9,6 @@ function parseFlag(args: string[], flag: string): string | undefined {
 export async function cmdSetup(args: string[], instanceRoot: string): Promise<void> {
   const workspace = parseFlag(args, '--workspace');
   const agentRaw = parseFlag(args, '--agent');
-  const runMode = (parseFlag(args, '--run-mode') ?? 'daemon') as 'daemon' | 'foreground';
   const json = args.includes('--json');
 
   if (!workspace) {
@@ -29,6 +28,17 @@ export async function cmdSetup(args: string[], instanceRoot: string): Promise<vo
     }
     process.exit(1);
   }
+
+  const rawRunMode = parseFlag(args, '--run-mode') ?? 'daemon';
+  if (rawRunMode !== 'daemon' && rawRunMode !== 'foreground') {
+    if (json) {
+      console.log(JSON.stringify({ success: false, error: `--run-mode must be 'daemon' or 'foreground'` }));
+    } else {
+      console.error(`  Error: --run-mode must be 'daemon' or 'foreground'`);
+    }
+    process.exit(1);
+  }
+  const runMode = rawRunMode as 'daemon' | 'foreground';
 
   const defaultAgent = agentRaw.split(',')[0]!.trim();
 

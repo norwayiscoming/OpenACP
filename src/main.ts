@@ -37,8 +37,11 @@ export async function startServer(opts?: StartServerOptions) {
   if (process.argv.includes('--daemon-child')) {
     const { writePidFile, readPidFile, shouldAutoStart } = await import('./cli/daemon.js')
 
+    console.error(`[startup] Daemon child starting (pid=${process.pid}, root=${ctx.root}, env.OPENACP_INSTANCE_ROOT=${process.env.OPENACP_INSTANCE_ROOT ?? 'unset'})`)
+
     // Only auto-start if the daemon was previously running (user started it)
     if (!shouldAutoStart(ctx.root)) {
+      console.error(`[startup] shouldAutoStart=false, exiting`)
       process.exit(0)
     }
 
@@ -47,13 +50,14 @@ export async function startServer(opts?: StartServerOptions) {
     if (existingPid !== null && existingPid !== process.pid) {
       try {
         process.kill(existingPid, 0)
-        console.error(`Another OpenACP instance is already running (PID ${existingPid}). Exiting.`)
+        console.error(`[startup] Another instance running (PID ${existingPid}), exiting`)
         process.exit(1)
       } catch {
-        // Stale PID file — safe to overwrite
+        console.error(`[startup] Stale PID file (PID ${existingPid} not running), overwriting`)
       }
     }
     writePidFile(pidPath, process.pid)
+    console.error(`[startup] PID file written: ${pidPath}`)
   }
 
   // Create SettingsManager and PluginRegistry early (needed by wizard + boot)
@@ -339,6 +343,8 @@ export async function startServer(opts?: StartServerOptions) {
         fsMod.writeFileSync(pathMod.join(osMod.tmpdir(), 'openacp-dev-loop-root'), ctx.root, 'utf-8')
       }
 
+      log.info({ isDaemon, isDevLoop: !!process.env.OPENACP_DEV_LOOP, instanceRoot: ctx.root }, 'Restart: preparing respawn')
+
       if (isDaemon) {
         // Daemon mode: spawn detached child writing to log file
         const { spawn: spawnChild } = await import('node:child_process')
@@ -353,6 +359,7 @@ export async function startServer(opts?: StartServerOptions) {
         const out = fs.openSync(logFile, 'a')
         const err = fs.openSync(logFile, 'a')
 
+        log.info({ cliPath, nodePath: process.execPath, instanceRoot: ctx.root }, 'Restart: spawning daemon child')
         const child = spawnChild(process.execPath, [cliPath, '--daemon-child'], {
           detached: true,
           stdio: ['ignore', out, err],
@@ -365,6 +372,7 @@ export async function startServer(opts?: StartServerOptions) {
       } else if (!process.env.OPENACP_DEV_LOOP) {
         // Foreground production mode: spawn replacement process with inherited stdio
         const { spawn: spawnChild } = await import('node:child_process')
+        log.info({ args: process.argv.slice(1), instanceRoot: ctx.root }, 'Restart: spawning foreground child')
         const child = spawnChild(process.execPath, process.argv.slice(1), {
           stdio: 'inherit',
           env: { ...process.env, OPENACP_SKIP_UPDATE_CHECK: '1', OPENACP_INSTANCE_ROOT: ctx.root },
@@ -372,6 +380,8 @@ export async function startServer(opts?: StartServerOptions) {
         await shutdownLogger()
         child.on('exit', (code) => process.exit(code ?? 0))
         return
+      } else {
+        log.info('Restart: dev-loop mode, exiting for shell script to respawn')
       }
     }
 

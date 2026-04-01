@@ -142,7 +142,7 @@ describe('SessionManager', () => {
         status: 'active',
         createdAt: new Date().toISOString(),
         lastActiveAt: new Date().toISOString(),
-        dangerousMode: false,
+        clientOverrides: {},
         platform: {},
       }
       await store.save(record)
@@ -164,7 +164,7 @@ describe('SessionManager', () => {
         status: 'initializing',
         createdAt: new Date().toISOString(),
         lastActiveAt: new Date().toISOString(),
-        dangerousMode: false,
+        clientOverrides: {},
         platform: {},
       })
       expect(store.save).toHaveBeenCalled()
@@ -198,7 +198,7 @@ describe('SessionManager', () => {
         status: 'active',
         createdAt: new Date().toISOString(),
         lastActiveAt: new Date().toISOString(),
-        dangerousMode: false,
+        clientOverrides: {},
         platform: {},
       })
 
@@ -221,7 +221,7 @@ describe('SessionManager', () => {
         status: 'active',
         createdAt: new Date().toISOString(),
         lastActiveAt: new Date().toISOString(),
-        dangerousMode: false,
+        clientOverrides: {},
         platform: {},
       })
 
@@ -271,7 +271,7 @@ describe('SessionManager', () => {
         status: 'cancelled',
         createdAt: new Date().toISOString(),
         lastActiveAt: new Date().toISOString(),
-        dangerousMode: false,
+        clientOverrides: {},
         platform: {},
       })
       const callCount = (store.save as any).mock.calls.length
@@ -314,12 +314,12 @@ describe('SessionManager', () => {
       await store.save({
         sessionId: 'r1', agentSessionId: 'a1', agentName: 'claude',
         workingDir: '/ws', channelId: 'tg', status: 'active',
-        createdAt: '', lastActiveAt: '', dangerousMode: false, platform: {},
+        createdAt: '', lastActiveAt: '', clientOverrides: {}, platform: {},
       })
       await store.save({
         sessionId: 'r2', agentSessionId: 'a2', agentName: 'claude',
         workingDir: '/ws', channelId: 'tg', status: 'finished',
-        createdAt: '', lastActiveAt: '', dangerousMode: false, platform: {},
+        createdAt: '', lastActiveAt: '', clientOverrides: {}, platform: {},
       })
 
       expect(manager.listRecords()).toHaveLength(2)
@@ -329,12 +329,12 @@ describe('SessionManager', () => {
       await store.save({
         sessionId: 'r1', agentSessionId: 'a1', agentName: 'claude',
         workingDir: '/ws', channelId: 'tg', status: 'active',
-        createdAt: '', lastActiveAt: '', dangerousMode: false, platform: {},
+        createdAt: '', lastActiveAt: '', clientOverrides: {}, platform: {},
       })
       await store.save({
         sessionId: 'r2', agentSessionId: 'a2', agentName: 'claude',
         workingDir: '/ws', channelId: 'tg', status: 'finished',
-        createdAt: '', lastActiveAt: '', dangerousMode: false, platform: {},
+        createdAt: '', lastActiveAt: '', clientOverrides: {}, platform: {},
       })
 
       const result = manager.listRecords({ statuses: ['active'] })
@@ -353,7 +353,7 @@ describe('SessionManager', () => {
       await store.save({
         sessionId: 'to-remove', agentSessionId: 'a1', agentName: 'claude',
         workingDir: '/ws', channelId: 'tg', status: 'finished',
-        createdAt: '', lastActiveAt: '', dangerousMode: false, platform: {},
+        createdAt: '', lastActiveAt: '', clientOverrides: {}, platform: {},
       })
 
       await manager.removeRecord('to-remove')
@@ -377,12 +377,12 @@ describe('SessionManager', () => {
       await store.save({
         sessionId: 'ds-1', agentSessionId: 'a1', agentName: 'claude',
         workingDir: '/ws', channelId: 'tg', status: 'active',
-        createdAt: '', lastActiveAt: '', dangerousMode: false, platform: {},
+        createdAt: '', lastActiveAt: '', clientOverrides: {}, platform: {},
       })
       await store.save({
         sessionId: 'ds-2', agentSessionId: 'a2', agentName: 'claude',
         workingDir: '/ws', channelId: 'tg', status: 'active',
-        createdAt: '', lastActiveAt: '', dangerousMode: false, platform: {},
+        createdAt: '', lastActiveAt: '', clientOverrides: {}, platform: {},
       })
 
       await manager.destroyAll()
@@ -402,7 +402,7 @@ describe('SessionManager', () => {
       await store.save({
         sessionId: 'rec-1', agentSessionId: 'a1', agentName: 'claude',
         workingDir: '/ws', channelId: 'tg', status: 'active',
-        createdAt: '', lastActiveAt: '', dangerousMode: false, platform: {},
+        createdAt: '', lastActiveAt: '', clientOverrides: {}, platform: {},
       })
 
       const record = manager.getSessionRecord('rec-1')

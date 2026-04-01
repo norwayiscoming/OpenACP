@@ -107,8 +107,8 @@ A notification also appears in the Notifications topic with a link to the reques
 
 ### Bypass permissions
 Auto-approves ALL permission requests — the agent runs any command without asking.
-- Enable: \`/enable_bypass\` or tap the ☠️ button in the session
-- Disable: \`/disable_bypass\` or tap the 🔐 button
+- Toggle: \`/bypass_permissions on\` or tap the ☠️ button in the session
+- Disable: \`/bypass_permissions off\` or tap the 🔐 button
 - ⚠️ Use with caution — the agent can execute anything
 
 ### Session timeout
@@ -184,8 +184,7 @@ Just chat naturally: "How do I create a session?", "What's the status?", "Someth
 | \`/sessions\` | Anywhere | List all sessions |
 | \`/agents\` | Anywhere | Browse & install agents from ACP Registry |
 | \`/install <name>\` | Anywhere | Install an agent |
-| \`/enable_bypass\` | Session topic | Auto-approve all permissions |
-| \`/disable_bypass\` | Session topic | Restore permission prompts |
+| \`/bypass_permissions\` | Session topic | Toggle bypass permissions (on/off) |
 | \`/handoff\` | Session topic | Transfer session to terminal |
 | \`/clear\` | Assistant topic | Clear assistant history |
 | \`/menu\` | Anywhere | Show action menu |
@@ -379,7 +378,7 @@ Override config with env vars:
 
 ### Permission request not showing
 - Check Notifications topic for the alert
-- Try \`/enable_bypass\` to auto-approve (if you trust the agent)
+- Try \`/bypass_permissions on\` to auto-approve (if you trust the agent)
 
 ### Session disappeared after restart
 - Sessions persist across restarts

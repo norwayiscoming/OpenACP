@@ -138,6 +138,28 @@ export class TelegramAdapter extends MessagingAdapter {
   /** Control message IDs per session (for updating status text/buttons) */
   private controlMsgIds = new Map<string, number>();
 
+  /** Store control message ID in memory + persist to session record */
+  private storeControlMsgId(sessionId: string, msgId: number): void {
+    this.storeControlMsgId(sessionId, msgId);
+    this.core.sessionManager.patchRecord(sessionId, {
+      platform: { controlMsgId: msgId },
+    }).catch(() => {});
+  }
+
+  /** Get control message ID (from Map, with fallback to session record) */
+  private getControlMsgId(sessionId: string): number | undefined {
+    let msgId = this.controlMsgIds.get(sessionId);
+    if (!msgId) {
+      const record = this.core.sessionManager.getSessionRecord(sessionId);
+      const platform = record?.platform as TelegramPlatformData | undefined;
+      if (platform?.controlMsgId) {
+        msgId = platform.controlMsgId;
+        this.storeControlMsgId(sessionId, msgId);
+      }
+    }
+    return msgId;
+  }
+
   private getThreadId(sessionId: string): number {
     const threadId = this._sessionThreadIds.get(sessionId);
     if (threadId === undefined) {
@@ -470,7 +492,7 @@ export class TelegramAdapter extends MessagingAdapter {
         };
       },
       (sessionId: string, msgId: number) => {
-        this.controlMsgIds.set(sessionId, msgId);
+        this.storeControlMsgId(sessionId, msgId);
       },
     );
     setupCommands(
@@ -481,7 +503,7 @@ export class TelegramAdapter extends MessagingAdapter {
         topicId: this.assistantTopicId,
         getSession: () => this.assistantSession,
         setControlMessage: (sessionId: string, msgId: number) => {
-          this.controlMsgIds.set(sessionId, msgId);
+          this.storeControlMsgId(sessionId, msgId);
         },
         respawn: async () => {
           if (this.assistantSession) {
@@ -810,7 +832,7 @@ export class TelegramAdapter extends MessagingAdapter {
           this.telegramConfig.chatId,
           this.assistantTopicId,
           (sessionId: string, msgId: number) => {
-            this.controlMsgIds.set(sessionId, msgId);
+            this.storeControlMsgId(sessionId, msgId);
           },
         )
       ) {
@@ -1292,7 +1314,7 @@ export class TelegramAdapter extends MessagingAdapter {
     const session = this.core.sessionManager.getSession(sessionId);
     if (!session) return;
 
-    const controlMsgId = this.controlMsgIds.get(sessionId);
+    const controlMsgId = this.getControlMsgId(sessionId);
     if (!controlMsgId) return;
 
     const threadId = Number(session.threadId);

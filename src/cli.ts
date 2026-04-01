@@ -31,7 +31,7 @@ import {
   cmdAttach,
   cmdRemote,
 } from './cli/commands/index.js'
-import { resolveInstanceRoot, getGlobalRoot } from './core/instance/instance-context.js'
+import { resolveInstanceRoot } from './core/instance/instance-context.js'
 
 export interface InstanceFlags {
   local: boolean
@@ -80,36 +80,40 @@ resolvedInstanceRoot = resolveInstanceRoot({
   cwd: process.cwd(),
 })
 
-const root = resolvedInstanceRoot ?? getGlobalRoot()
-
-const commands: Record<string, () => Promise<void>> = {
+// Commands that don't need an instance root
+const noInstanceCommands: Record<string, () => Promise<void>> = {
   '--help': async () => printHelp(),
   '-h': async () => printHelp(),
   '--version': () => cmdVersion(),
   '-v': () => cmdVersion(),
-  'install': () => cmdInstall(args, root),
-  'uninstall': () => cmdUninstall(args, root),
-  'plugins': () => cmdPlugins(args, root),
-  'plugin': () => cmdPlugin(args, root),
-  'api': () => cmdApi(args, root),
-  'start': () => cmdStart(args, root),
-  'stop': () => cmdStop(args, root),
-  'restart': () => cmdRestart(args, root),
-  'status': () => cmdStatus(args, root),
-  'logs': () => cmdLogs(args, root),
-  'config': () => cmdConfig(args, root),
-  'reset': () => cmdReset(args, root),
   'update': () => cmdUpdate(args),
   'adopt': () => cmdAdopt(args),
   'integrate': () => cmdIntegrate(args),
-  'doctor': () => cmdDoctor(args, root),
-  'agents': () => cmdAgents(args, root),
-  'tunnel': () => cmdTunnel(args, root),
-  'onboard': () => cmdOnboard(root),
   'dev': () => cmdDev(args),
-  'attach': () => cmdAttach(args, root),
-  'remote': () => cmdRemote(args, root),
-  '--daemon-child': async () => {
+}
+
+/**
+ * Resolve instance root, prompting interactively when needed.
+ * - If flags or auto-detect resolved it → use that
+ * - If null + operational command → prompt with existing instances only
+ * - If null + cmdDefault → prompt with existing + "create new here"
+ */
+async function resolveRoot(allowCreate: boolean): Promise<string> {
+  if (resolvedInstanceRoot) return resolvedInstanceRoot
+  const { promptForInstance } = await import('./cli/instance-prompt.js')
+  return promptForInstance({ allowCreate })
+}
+
+async function main() {
+  // No-instance commands
+  const noInstance = command ? noInstanceCommands[command] : undefined
+  if (noInstance) {
+    await noInstance()
+    return
+  }
+
+  // Daemon child (special: reads root from env)
+  if (command === '--daemon-child') {
     const { startServer } = await import('./main.js')
     const envRoot = process.env.OPENACP_INSTANCE_ROOT
     if (envRoot) {
@@ -128,14 +132,38 @@ const commands: Record<string, () => Promise<void>> = {
     } else {
       await startServer()
     }
-  },
-}
+    return
+  }
 
-async function main() {
-  const handler = command ? commands[command] : undefined
+  // Instance-aware commands (resolve root with prompt if needed)
+  const instanceCommands: Record<string, (root: string) => Promise<void>> = {
+    'install': (r) => cmdInstall(args, r),
+    'uninstall': (r) => cmdUninstall(args, r),
+    'plugins': (r) => cmdPlugins(args, r),
+    'plugin': (r) => cmdPlugin(args, r),
+    'api': (r) => cmdApi(args, r),
+    'start': (r) => cmdStart(args, r),
+    'stop': (r) => cmdStop(args, r),
+    'restart': (r) => cmdRestart(args, r),
+    'status': (r) => cmdStatus(args, r),
+    'logs': (r) => cmdLogs(args, r),
+    'config': (r) => cmdConfig(args, r),
+    'reset': (r) => cmdReset(args, r),
+    'doctor': (r) => cmdDoctor(args, r),
+    'agents': (r) => cmdAgents(args, r),
+    'tunnel': (r) => cmdTunnel(args, r),
+    'onboard': (r) => cmdOnboard(r),
+    'attach': (r) => cmdAttach(args, r),
+    'remote': (r) => cmdRemote(args, r),
+  }
+
+  const handler = command ? instanceCommands[command] : undefined
   if (handler) {
-    await handler()
+    const root = await resolveRoot(false)
+    await handler(root)
   } else {
+    // cmdDefault: allow "create new here" option
+    const root = await resolveRoot(true)
     await cmdDefault(command, root)
   }
 }

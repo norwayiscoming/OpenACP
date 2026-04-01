@@ -22,9 +22,27 @@ export class InstanceRegistry {
       const parsed = JSON.parse(raw) as RegistryData
       if (parsed.version === 1 && parsed.instances) {
         this.data = parsed
+        this.deduplicate()
       }
     } catch {
       // File doesn't exist or invalid — start fresh
+    }
+  }
+
+  /** Remove duplicate entries that point to the same root, keeping the first one */
+  private deduplicate(): void {
+    const seen = new Set<string>()
+    const toRemove: string[] = []
+    for (const [id, entry] of Object.entries(this.data.instances)) {
+      if (seen.has(entry.root)) {
+        toRemove.push(id)
+      } else {
+        seen.add(entry.root)
+      }
+    }
+    if (toRemove.length > 0) {
+      for (const id of toRemove) delete this.data.instances[id]
+      this.save() // auto-clean on load
     }
   }
 

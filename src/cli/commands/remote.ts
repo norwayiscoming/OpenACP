@@ -24,7 +24,7 @@ export async function cmdRemote(args: string[], instanceRoot?: string): Promise<
     await registry.load()
     const entry = registry.get(instanceId)
     if (!entry) {
-      console.error(`Instance "${instanceId}" not found. Run "openacp status" to see running instances.`)
+      console.error(`Workspace "${instanceId}" not found. Run "openacp status" to see workspaces.`)
       process.exit(1)
     }
     resolvedInstanceRoot = entry.root

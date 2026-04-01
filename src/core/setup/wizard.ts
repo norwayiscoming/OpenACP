@@ -1,5 +1,6 @@
 import * as path from "node:path";
 import * as fs from "node:fs";
+import * as os from "node:os";
 import * as clack from "@clack/prompts";
 import type { Config, ConfigManager } from "../config/config.js";
 import type { ChannelId } from "./types.js";
@@ -18,6 +19,7 @@ import type { PluginRegistry } from "../plugin/plugin-registry.js";
 import { InstanceRegistry } from "../instance/instance-registry.js";
 import { generateSlug, getGlobalRoot } from "../instance/instance-context.js";
 import { copyInstance } from "../instance/instance-copy.js";
+import { protectLocalInstance } from "./git-protect.js";
 
 // ─── Registry discovery ───
 
@@ -69,10 +71,11 @@ export async function runSetup(
 
     let instanceName = opts?.instanceName;
     if (!instanceName) {
-      const defaultName = isGlobal ? 'Main' : `openacp-${Date.now()}`;
+      const defaultName = isGlobal ? 'Global workspace' : path.basename(path.dirname(instanceRoot));
+      const locationHint = isGlobal ? 'global (~/.openacp)' : `local (${instanceRoot.replace(/\/.openacp$/, '').replace(os.homedir(), '~')})`;
       const nameResult = await clack.text({
-        message: 'Give this setup a name',
-        defaultValue: defaultName,
+        message: `Name for this workspace (${locationHint})`,
+        initialValue: defaultName,
         validate: (v) => (!v?.trim() ? 'Name cannot be empty' : undefined),
       });
       if (clack.isCancel(nameResult)) return false;
@@ -108,8 +111,27 @@ export async function runSetup(
       );
 
       if (existingInstances.length > 0) {
+        // Build display label for the single-instance case
+        let singleLabel: string | undefined;
+        if (existingInstances.length === 1) {
+          const e = existingInstances[0]!;
+          let name = e.id;
+          try {
+            const cfg = JSON.parse(fs.readFileSync(path.join(e.root, 'config.json'), 'utf-8'));
+            if (cfg.instanceName) name = cfg.instanceName;
+          } catch {}
+          const isGlobalEntry = e.root === getGlobalRoot();
+          const displayPath = e.root.replace(os.homedir(), '~');
+          const type = isGlobalEntry ? 'global' : 'local';
+          singleLabel = `${name} workspace (${type} — ${displayPath})`;
+        }
+
+        const confirmMsg = singleLabel
+          ? `Copy config from ${singleLabel}?`
+          : 'Copy config from an existing workspace?';
+
         const shouldCopy = await clack.confirm({
-          message: 'Use settings from an existing setup as a starting point?',
+          message: confirmMsg,
           initialValue: true,
         });
 
@@ -121,15 +143,17 @@ export async function runSetup(
             sourceRoot = existingInstances[0]!.root;
           } else {
             const choice = await clack.select({
-              message: 'Which setup to copy from?',
+              message: 'Which workspace to copy from?',
               options: existingInstances.map(e => {
                 let name = e.id;
                 try {
                   const cfg = JSON.parse(fs.readFileSync(path.join(e.root, 'config.json'), 'utf-8'));
                   if (cfg.instanceName) name = cfg.instanceName;
                 } catch {}
-                const displayPath = e.root.replace(/\/.openacp$/, '');
-                return { value: e.root, label: `${name} (${displayPath})` };
+                const isGlobalEntry = e.root === getGlobalRoot();
+                const displayPath = e.root.replace(os.homedir(), '~');
+                const type = isGlobalEntry ? 'global' : 'local';
+                return { value: e.root, label: `${name} workspace (${type} — ${displayPath})` };
               }),
             });
             if (clack.isCancel(choice)) return false;
@@ -335,7 +359,7 @@ export async function runSetup(
     await setupIntegrations();
 
     currentStep++;
-    const workspace = await setupWorkspace({ stepNum: currentStep, totalSteps });
+    const workspace = await setupWorkspace({ stepNum: currentStep, totalSteps, isGlobal });
 
     let runMode: 'foreground' | 'daemon' = 'foreground';
     let autoStart = false;
@@ -411,10 +435,20 @@ export async function runSetup(
       await pluginRegistry.save();
     }
 
-    // Register instance in the global registry
-    const id = instanceRegistry.uniqueId(generateSlug(instanceName));
-    instanceRegistry.register(id, instanceRoot);
-    await instanceRegistry.save();
+    // Register instance in the global registry (skip if this root is already registered)
+    const existingEntry = instanceRegistry.getByRoot(instanceRoot);
+    if (!existingEntry) {
+      const id = instanceRegistry.uniqueId(generateSlug(instanceName));
+      instanceRegistry.register(id, instanceRoot);
+      await instanceRegistry.save();
+    }
+
+    // For local instances: protect secrets from git and document in CLAUDE.md
+    const isLocal = instanceRoot !== path.join(getGlobalRoot());
+    if (isLocal) {
+      const projectDir = path.dirname(instanceRoot) // .openacp parent = project dir
+      protectLocalInstance(projectDir)
+    }
 
     clack.outro(`Config saved to ${configManager.getConfigPath()}`);
 

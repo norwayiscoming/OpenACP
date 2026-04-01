@@ -30,7 +30,7 @@ async function showAllInstances(): Promise<void> {
   const instances = registry.list()
 
   if (instances.length === 0) {
-    console.log('No instances registered.')
+    console.log('No workspaces registered.')
     return
   }
 
@@ -60,7 +60,7 @@ async function showInstanceById(id: string): Promise<void> {
   await registry.load()
   const entry = registry.get(id)
   if (!entry) {
-    console.error(`Instance "${id}" not found.`)
+    console.error(`Workspace "${id}" not found.`)
     process.exit(1)
   }
   await showSingleInstance(entry.root)
@@ -144,13 +144,13 @@ export function formatInstanceStatus(root: string): { info: InstanceInfo; lines:
   const info = readInstanceInfo(root)
   if (!info.pid) return null
 
-  const displayRoot = root.replace(os.homedir(), '~')
   const isGlobal = root === getGlobalRoot()
+  const displayPath = root.replace(os.homedir(), '~')
   const label = isGlobal ? 'global' : 'local'
 
   const lines: string[] = []
   lines.push(`  PID:       ${info.pid}`)
-  lines.push(`  Instance:  ${displayRoot} (${label})`)
+  lines.push(`  Workspace: ${info.name ?? 'unknown'} (${label} — ${displayPath})`)
   lines.push(`  Mode:      ${info.runMode ?? 'unknown'}`)
   if (info.channels.length > 0) lines.push(`  Channels:  ${info.channels.join(', ')}`)
   if (info.apiPort) lines.push(`  API:       port ${info.apiPort}`)

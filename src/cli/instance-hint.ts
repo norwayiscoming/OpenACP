@@ -13,14 +13,13 @@ export function printInstanceHint(root: string): void {
   const displayPath = root.replace(os.homedir(), '~')
   const label = isGlobal ? 'global' : 'local'
 
-  console.log(`  Instance: ${displayPath} (${label})`)
+  console.log(`  Workspace: ${label} — ${displayPath}`)
 
   // If using global but local exists in cwd, hint
   if (isGlobal) {
     const localRoot = path.join(process.cwd(), '.openacp')
     if (fs.existsSync(localRoot)) {
-      const localDisplay = localRoot.replace(os.homedir(), '~')
-      console.log(`  \x1b[2mhint: local instance found at ${localDisplay} — use --local to use it\x1b[0m`)
+      console.log(`  \x1b[2mhint: local workspace exists in current directory — use --local to use it\x1b[0m`)
     }
   }
 }

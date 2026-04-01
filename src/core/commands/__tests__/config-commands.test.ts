@@ -567,19 +567,19 @@ describe('Config Commands', () => {
         expect(isPermissionBypass('dangerous_mode')).toBe(true)
       })
 
-      it('detects "skip" keyword', async () => {
+      it('does NOT treat "skip" as bypass (skip means deny)', async () => {
         const { isPermissionBypass } = await loadModule()
-        expect(isPermissionBypass('skipAll')).toBe(true)
+        expect(isPermissionBypass('skipAll')).toBe(false)
       })
 
-      it('detects "dontask" keyword', async () => {
+      it('does NOT treat "dontask" as bypass (dont_ask denies unknown)', async () => {
         const { isPermissionBypass } = await loadModule()
-        expect(isPermissionBypass('dontask')).toBe(true)
+        expect(isPermissionBypass('dontask')).toBe(false)
       })
 
-      it('detects "dont_ask" keyword', async () => {
+      it('does NOT treat "dont_ask" as bypass (dont_ask denies unknown)', async () => {
         const { isPermissionBypass } = await loadModule()
-        expect(isPermissionBypass('dont_ask_mode')).toBe(true)
+        expect(isPermissionBypass('dont_ask_mode')).toBe(false)
       })
 
       it('detects "auto_accept" keyword', async () => {

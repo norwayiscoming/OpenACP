@@ -92,12 +92,12 @@ describe("isBypassActive", () => {
     expect(isBypassActive(session)).toBe(true);
   });
 
-  it("returns true when agent mode contains 'dont_ask' keyword", () => {
+  it("returns false when agent mode is 'dont_ask' (deny, not bypass)", () => {
     const opt = modeOption();
     opt.options = [{ value: "dont_ask", name: "Don't Ask" }];
     opt.currentValue = "dont_ask";
     const session = mockSession([opt]);
-    expect(isBypassActive(session)).toBe(true);
+    expect(isBypassActive(session)).toBe(false);
   });
 
   it("returns true when clientOverrides.bypassPermissions is true (no agent mode)", () => {

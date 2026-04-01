@@ -280,10 +280,10 @@ describe("SessionBridge auto-approve", () => {
 
   // --- Bypass keyword coverage ---
 
-  it("recognizes all bypass keywords in mode values", async () => {
-    const keywords = ["bypass", "dangerous", "skip", "dontask", "dont_ask", "auto_accept"];
+  it("recognizes bypass keywords (auto-approve) in mode values", async () => {
+    const bypassKeywords = ["bypass", "dangerous", "auto_accept"];
 
-    for (const kw of keywords) {
+    for (const kw of bypassKeywords) {
       const agent = createMockAgentInstance();
       const session = createSession(agent);
       const adapter = createMockAdapter();
@@ -304,6 +304,39 @@ describe("SessionBridge auto-approve", () => {
 
       const request = makePermissionRequest("Some action");
       const result = await agent.onPermissionRequest(request);
+      expect(result).toBe("allow-1");
+    }
+  });
+
+  it("does NOT auto-approve for deny-type keywords (dontask, skip)", async () => {
+    const denyKeywords = ["skip", "dontask", "dont_ask"];
+
+    for (const kw of denyKeywords) {
+      const agent = createMockAgentInstance();
+      const session = createSession(agent);
+      const adapter = createMockAdapter();
+      const deps = createMockDeps();
+      const bridge = new SessionBridge(session, adapter, deps);
+      bridge.connect();
+
+      session.setInitialConfigOptions([
+        {
+          id: "mode",
+          name: "Mode",
+          category: "mode",
+          type: "select",
+          currentValue: kw,
+          options: [{ value: kw, name: kw }],
+        },
+      ]);
+
+      const request = makePermissionRequest("Some action");
+      // Start request (don't await — it waits for resolution)
+      const resultPromise = agent.onPermissionRequest(request);
+      // Should NOT auto-approve — should prompt user via adapter
+      expect(adapter.sendPermissionRequest).toHaveBeenCalled();
+      session.permissionGate.resolve("allow-1");
+      const result = await resultPromise;
       expect(result).toBe("allow-1");
     }
   });

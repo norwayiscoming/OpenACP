@@ -230,3 +230,51 @@ User → /mode code
 **Plugin template:** Update `cli/plugin-template/` to reflect new middleware hooks.
 
 **Tests:** Update all tests referencing removed fields/methods.
+
+## Section 6: Platform UI Rendering
+
+Commands (`/mode`, `/model`, `/thought`, `/dangerous`) return `CommandResponse` type `menu`. Each adapter renders menus using its native interactive elements.
+
+### Command Response Format
+
+All config commands return a `menu` response:
+```typescript
+{
+  type: 'menu',
+  title: 'Session Mode',  // e.g. from configOption.name
+  options: [
+    { label: '✅ Code', command: '/mode code', hint: 'Full tool access' },
+    { label: 'Architect', command: '/mode architect', hint: 'Design without implementation' },
+    { label: 'Ask', command: '/mode ask', hint: 'Ask permission before changes' },
+  ]
+}
+```
+- Current value prefixed with ✅
+- `hint` populated from `ConfigOptionValue.description`
+- `command` is the full command to execute when selected
+
+### Telegram
+- Inline keyboard: one button per option per row
+- Callback data: `c/<command>` prefix (cache for >64 bytes)
+- Existing pattern in `adapter.ts` `renderCommandResponse()` for `menu` type
+
+### Discord
+- `ActionRowBuilder<ButtonBuilder>`: one button per option
+- Active option styled as `Primary`, others as `Secondary`
+- Existing pattern in `renderCommandResponse()` + `buildMenuKeyboard()`
+
+### Slack
+- Block Kit: `actions` block with `button` elements
+- Active option styled with confirm visual
+- Existing pattern via blocks rendering
+
+### Agent-Initiated Updates (Notifications)
+
+When agent pushes `config_option_update`, the bridge notifies user via adapter:
+- **Config change text**: "Mode changed to **Code**" / "Model switched to **opus-4**"
+- No buttons on notifications — user can use commands to change back
+- Renderer methods: update existing `renderModeChange()`, `renderModelUpdate()`, `renderConfigUpdate()` to read from configOptions instead of separate fields
+
+### No Config = No Buttons
+
+If agent provides no configOptions, commands return error text. No empty menus or placeholder buttons are shown.

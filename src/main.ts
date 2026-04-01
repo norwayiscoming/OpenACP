@@ -413,21 +413,43 @@ export async function startServer(opts?: StartServerOptions) {
   if (isForegroundTTY) {
     if (spinner) spinner.stop()
     const ok = (msg: string) => console.log(`\x1b[32m✓\x1b[0m ${msg}`)
+    const warn = (msg: string) => console.log(`\x1b[33m⚠\x1b[0m  ${msg}`)
+    const spin = (msg: string) => console.log(`\x1b[36m⟳\x1b[0m ${msg}`)
+
     ok('Config loaded')
     ok('Dependencies checked')
+
     const tunnelSvc = core.lifecycleManager.serviceRegistry.get<TunnelService>('tunnel')
+    let tunnelUrl: string | null = null
     if (tunnelSvc) {
-      const tunnelUrl = tunnelSvc.getPublicUrl()
       const tunnelErr = tunnelSvc.getStartError()
+      const url = tunnelSvc.getPublicUrl()
+      const isPublic = url && !url.startsWith('http://localhost') && !url.startsWith('http://127.0.0.1')
       if (tunnelErr) {
-        console.log(`\x1b[33m⚠\x1b[0m  Tunnel failed (${tunnelErr}) — viewer links unavailable`)
+        warn(`Tunnel failed (${tunnelErr}) — retrying in background`)
+      } else if (isPublic) {
+        ok('Tunnel ready')
+        tunnelUrl = url
       } else {
-        ok(`Tunnel ready → ${tunnelUrl}`)
+        spin('Tunnel connecting...')
       }
     }
-    for (const [name] of core.adapters) ok(`${name.charAt(0).toUpperCase() + name.slice(1)} connected`)
+
+    for (const [name] of core.adapters) {
+      ok(`${name.charAt(0).toUpperCase() + name.slice(1)} connected`)
+    }
+
+    const apiSvc = core.lifecycleManager.serviceRegistry.get('api-server')
     const apiPort = config.api?.port ?? 21420
-    if (core.lifecycleManager.serviceRegistry.get('api-server')) ok(`API server on port ${apiPort}`)
+    if (apiSvc) ok(`API server on port ${apiPort}`)
+
+    // Links as plain text — easily copyable
+    console.log('')
+    console.log(`Local:  http://localhost:${apiPort}`)
+    if (tunnelUrl) {
+      console.log(`Tunnel: ${tunnelUrl}`)
+    }
+
     console.log(`\nOpenACP is running. Press Ctrl+C to stop.\n`)
     unmuteLogger()
   }

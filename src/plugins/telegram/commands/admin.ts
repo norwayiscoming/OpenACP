@@ -1,6 +1,7 @@
 import type { Bot, Context } from "grammy";
 import { InlineKeyboard } from "grammy";
 import type { OpenACPCore } from "../../../core/index.js";
+import type { Session } from "../../../core/sessions/session.js";
 import { escapeHtml } from "../formatting.js";
 import { createChildLogger } from "../../../core/utils/log.js";
 const log = createChildLogger({ module: "telegram-cmd-admin" });
@@ -42,12 +43,14 @@ export function setupDangerousModeCallbacks(bot: Bot, core: OpenACPCore): void {
       }
 
       try {
-        await ctx.editMessageReplyMarkup({
-          reply_markup: buildSessionControlKeyboard(
-            sessionId,
-            newDangerousMode,
-            session.voiceMode === "on",
-          ),
+        const keyboard = buildSessionControlKeyboard(
+          sessionId,
+          newDangerousMode,
+          session.voiceMode === "on",
+        );
+        await ctx.editMessageText(buildSessionStatusText(session), {
+          parse_mode: "HTML",
+          reply_markup: keyboard,
         });
       } catch {
         /* ignore */
@@ -235,6 +238,49 @@ export function buildSessionControlKeyboard(
     );
 }
 
+/**
+ * Build the status text shown in the session control message.
+ * Includes agent, workspace, and current config info (model, thought, mode).
+ */
+export function buildSessionStatusText(
+  session: Session,
+  heading: string = "✅ New chat (same agent &amp; workspace)",
+): string {
+  const lines: string[] = [heading];
+  lines.push(`<b>Agent:</b> ${escapeHtml(session.agentName)}`);
+  lines.push(`<b>Workspace:</b> <code>${escapeHtml(session.workingDirectory)}</code>`);
+
+  const modelOpt = session.getConfigByCategory("model");
+  if (modelOpt && modelOpt.type === "select") {
+    const choice = modelOpt.options
+      .flatMap((o) => "group" in o ? o.options : [o])
+      .find((c) => c.value === modelOpt.currentValue);
+    lines.push(`<b>Model:</b> ${escapeHtml(choice?.name ?? modelOpt.currentValue)}`);
+  }
+
+  const thoughtOpt = session.getConfigByCategory("thought_level");
+  if (thoughtOpt && thoughtOpt.type === "select") {
+    const choice = thoughtOpt.options
+      .flatMap((o) => "group" in o ? o.options : [o])
+      .find((c) => c.value === thoughtOpt.currentValue);
+    lines.push(`<b>Thinking:</b> ${escapeHtml(choice?.name ?? thoughtOpt.currentValue)}`);
+  }
+
+  const modeOpt = session.getConfigByCategory("mode");
+  if (modeOpt && modeOpt.type === "select") {
+    const choice = modeOpt.options
+      .flatMap((o) => "group" in o ? o.options : [o])
+      .find((c) => c.value === modeOpt.currentValue);
+    lines.push(`<b>Mode:</b> ${escapeHtml(choice?.name ?? modeOpt.currentValue)}`);
+  }
+
+  if (session.clientOverrides.bypassPermissions) {
+    lines.push(`☠️ <b>Bypass enabled</b>`);
+  }
+
+  return lines.join("\n");
+}
+
 export function setupTTSCallbacks(bot: Bot, core: OpenACPCore): void {
   bot.callbackQuery(/^v:/, async (ctx) => {
     const sessionId = ctx.callbackQuery.data.slice(2);
@@ -271,12 +317,14 @@ export function setupTTSCallbacks(bot: Bot, core: OpenACPCore): void {
     } catch {}
 
     try {
-      await ctx.editMessageReplyMarkup({
-        reply_markup: buildSessionControlKeyboard(
-          sessionId,
-          session.clientOverrides.bypassPermissions ?? false,
-          newMode === "on",
-        ),
+      const keyboard = buildSessionControlKeyboard(
+        sessionId,
+        session.clientOverrides.bypassPermissions ?? false,
+        newMode === "on",
+      );
+      await ctx.editMessageText(buildSessionStatusText(session), {
+        parse_mode: "HTML",
+        reply_markup: keyboard,
       });
     } catch {
       /* ignore */

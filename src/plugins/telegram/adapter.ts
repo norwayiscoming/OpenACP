@@ -33,6 +33,8 @@ import {
   handlePendingResumeInput,
   STATIC_COMMANDS,
 } from "./commands/index.js";
+import { buildSessionStatusText, buildSessionControlKeyboard } from "./commands/admin.js";
+import type { TelegramPlatformData } from "../../core/types.js";
 import { PermissionHandler } from "./permissions.js";
 import {
   spawnAssistant,
@@ -133,6 +135,8 @@ export class TelegramAdapter extends MessagingAdapter {
   private callbackCounter = 0;
   /** Pending skill commands queued when session.threadId was not yet set */
   private _pendingSkillCommands = new Map<string, AgentCommand[]>();
+  /** Control message IDs per session (for updating status text/buttons) */
+  private controlMsgIds = new Map<string, number>();
 
   private getThreadId(sessionId: string): number {
     const threadId = this._sessionThreadIds.get(sessionId);
@@ -410,7 +414,25 @@ export class TelegramAdapter extends MessagingAdapter {
 
         await ctx.answerCallbackQuery();
         if (response.type !== "silent") {
-          await this.renderCommandResponse(response, chatId, topicId);
+          // If response is a menu, edit current message with updated menu (don't send new message)
+          if (response.type === "menu") {
+            const keyboard = response.options.map((opt) => [
+              {
+                text: `${opt.label}${opt.hint ? ` \u2014 ${opt.hint}` : ""}`,
+                callback_data: this.toCallbackData(opt.command),
+              },
+            ]);
+            try {
+              await ctx.editMessageText(response.title, {
+                reply_markup: { inline_keyboard: keyboard },
+              });
+            } catch {
+              /* message unchanged or deleted */
+            }
+          } else {
+            // For text/error responses, send new message
+            await this.renderCommandResponse(response, chatId, topicId);
+          }
         }
       } catch {
         await ctx.answerCallbackQuery({ text: "Command failed" });
@@ -443,6 +465,9 @@ export class TelegramAdapter extends MessagingAdapter {
           enqueuePrompt: (p: string) => this.assistantSession!.enqueuePrompt(p),
         };
       },
+      (sessionId: string, msgId: number) => {
+        this.controlMsgIds.set(sessionId, msgId);
+      },
     );
     setupCommands(
       this.bot,
@@ -451,6 +476,9 @@ export class TelegramAdapter extends MessagingAdapter {
       {
         topicId: this.assistantTopicId,
         getSession: () => this.assistantSession,
+        setControlMessage: (sessionId: string, msgId: number) => {
+          this.controlMsgIds.set(sessionId, msgId);
+        },
         respawn: async () => {
           if (this.assistantSession) {
             await this.assistantSession.destroy();
@@ -527,6 +555,11 @@ export class TelegramAdapter extends MessagingAdapter {
           parse_mode: "HTML",
         },
       );
+    });
+
+    // Update control message when config changes via commands (/model, /mode, /bypass, etc.)
+    this.core.eventBus.on("session:configChanged", ({ sessionId }) => {
+      this.updateControlMessage(sessionId).catch(() => {});
     });
 
     // Setup message routing
@@ -772,6 +805,9 @@ export class TelegramAdapter extends MessagingAdapter {
           this.core,
           this.telegramConfig.chatId,
           this.assistantTopicId,
+          (sessionId: string, msgId: number) => {
+            this.controlMsgIds.set(sessionId, msgId);
+          },
         )
       ) {
         return;
@@ -1234,6 +1270,53 @@ export class TelegramAdapter extends MessagingAdapter {
           disable_notification: true,
         }),
       );
+    }
+  }
+
+  protected async handleConfigUpdate(
+    sessionId: string,
+    _content: OutgoingMessage,
+  ): Promise<void> {
+    await this.updateControlMessage(sessionId);
+  }
+
+  /**
+   * Edit the pinned control message to reflect current session state
+   * (model, thought level, mode, bypass status).
+   */
+  async updateControlMessage(sessionId: string): Promise<void> {
+    const session = this.core.sessionManager.getSession(sessionId);
+    if (!session) return;
+
+    const controlMsgId = this.controlMsgIds.get(sessionId);
+    if (!controlMsgId) return;
+
+    const threadId = Number(session.threadId);
+    if (!threadId || isNaN(threadId)) return;
+
+    const text = buildSessionStatusText(session);
+    const keyboard = buildSessionControlKeyboard(
+      sessionId,
+      session.clientOverrides.bypassPermissions ?? false,
+      session.voiceMode === "on",
+    );
+
+    try {
+      // Update text first
+      await this.bot.api.editMessageText(
+        this.telegramConfig.chatId,
+        controlMsgId,
+        text,
+        { parse_mode: "HTML" },
+      );
+      // Then update keyboard separately
+      await this.bot.api.editMessageReplyMarkup(
+        this.telegramConfig.chatId,
+        controlMsgId,
+        { reply_markup: keyboard },
+      );
+    } catch {
+      /* message unchanged or deleted — ignore */
     }
   }
 

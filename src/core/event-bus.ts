@@ -53,6 +53,9 @@ export interface EventBusEvents {
   // Usage tracking (consumed by usage plugin)
   "usage:recorded": (data: UsageRecordEvent) => void;
 
+  // Config changed (used by adapters to update control messages)
+  "session:configChanged": (data: { sessionId: string }) => void;
+
   // Agent switch lifecycle (used by UI & dashboards)
   "session:agentSwitch": (data: {
     sessionId: string;

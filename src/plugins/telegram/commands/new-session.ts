@@ -5,7 +5,7 @@ import type { Session } from "../../../core/sessions/session.js";
 import { escapeHtml } from "../formatting.js";
 import { createSessionTopic, renameSessionTopic, buildDeepLink } from "../topics.js";
 import { createChildLogger } from "../../../core/utils/log.js";
-import { buildSessionControlKeyboard } from "./admin.js";
+import { buildSessionControlKeyboard, buildSessionStatusText } from "./admin.js";
 import type { CommandsAssistantContext } from "../types.js";
 const log = createChildLogger({ module: "telegram-cmd-new-session" });
 
@@ -40,6 +40,7 @@ export async function handleNew(
   core: OpenACPCore,
   chatId: number,
   assistant?: CommandsAssistantContext,
+  onControlMessage?: (sessionId: string, msgId: number) => void,
 ): Promise<void> {
   const rawMatch = (ctx as Context & { match: unknown }).match;
   const matchStr = typeof rawMatch === "string" ? rawMatch : "";
@@ -49,7 +50,7 @@ export async function handleNew(
 
   // Full args → create directly
   if (agentName && workspace) {
-    await createSessionDirect(ctx, core, chatId, agentName, workspace);
+    await createSessionDirect(ctx, core, chatId, agentName, workspace, onControlMessage);
     return;
   }
 
@@ -165,6 +166,7 @@ export async function createSessionDirect(
   chatId: number,
   agentName: string,
   workspace: string,
+  onControlMessage?: (sessionId: string, msgId: number) => void,
 ): Promise<number | null> {
   log.info({ userId: ctx.from?.id, agentName, workspace }, "New session command (direct)");
 
@@ -188,18 +190,21 @@ export async function createSessionDirect(
       await ctx.api.editForumTopic(chatId, threadId, { name: finalName });
     } catch { /* ignore rename failures */ }
 
-    await ctx.api.sendMessage(
+    const controlMsg = await ctx.api.sendMessage(
       chatId,
-      `✅ <b>Session started</b>\n` +
-        `<b>Agent:</b> ${escapeHtml(session.agentName)}\n` +
-        `<b>Workspace:</b> <code>${escapeHtml(session.workingDirectory)}</code>\n\n` +
-        `This is your coding session — chat here to work with the agent.`,
+      buildSessionStatusText(session, `✅ <b>Session started</b>`),
       {
         message_thread_id: threadId,
         parse_mode: "HTML",
         reply_markup: buildSessionControlKeyboard(session.id, false, false),
       },
     );
+
+    onControlMessage?.(session.id, controlMsg.message_id);
+
+    await core.sessionManager.patchRecord(session.id, {
+      platform: { topicId: threadId },
+    });
 
     return threadId ?? null;
   } catch (err) {
@@ -217,6 +222,7 @@ export async function handleNewChat(
   ctx: Context,
   core: OpenACPCore,
   chatId: number,
+  onControlMessage?: (sessionId: string, msgId: number) => void,
 ): Promise<void> {
   const threadId = ctx.message?.message_thread_id;
   if (!threadId) {
@@ -284,17 +290,21 @@ export async function handleNewChat(
       topicId: newThreadId,
     } });
 
-    await ctx.api.sendMessage(
+    const controlMsg = await ctx.api.sendMessage(
       chatId,
-      `✅ New chat (same agent &amp; workspace)\n` +
-        `<b>Agent:</b> ${escapeHtml(session.agentName)}\n` +
-        `<b>Workspace:</b> <code>${escapeHtml(session.workingDirectory)}</code>`,
+      buildSessionStatusText(session, `✅ New chat (same agent &amp; workspace)`),
       {
         message_thread_id: newThreadId,
         parse_mode: "HTML",
         reply_markup: buildSessionControlKeyboard(session.id, false, false),
       },
     );
+
+    onControlMessage?.(session.id, controlMsg.message_id);
+
+    await core.sessionManager.patchRecord(session.id, {
+      platform: { topicId: newThreadId },
+    });
 
   } catch (err) {
     // Clean up orphaned topic if session creation failed

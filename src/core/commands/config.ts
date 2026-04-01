@@ -139,6 +139,7 @@ function registerCategoryCommand(
           // Skip middleware hook on update — already validated above
           session.configOptions = response.configOptions as ConfigOption[]
         }
+        core.eventBus.emit('session:configChanged', { sessionId: session.id })
         return { type: 'text', text: labels.successMsg(match.name, configOption.name) } satisfies CommandResponse
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err)
@@ -225,6 +226,7 @@ function registerDangerousCommand(registry: CommandRegistry, core: OpenACPCore):
           if (response.configOptions) {
             session.configOptions = response.configOptions as ConfigOption[]
           }
+          core.eventBus.emit('session:configChanged', { sessionId: session.id })
           return {
             type: 'text',
             text: wantOn
@@ -242,6 +244,7 @@ function registerDangerousCommand(registry: CommandRegistry, core: OpenACPCore):
       await core.sessionManager.patchRecord(session.id, {
         clientOverrides: { ...session.clientOverrides },
       })
+      core.eventBus.emit('session:configChanged', { sessionId: session.id })
       return {
         type: 'text',
         text: wantOn

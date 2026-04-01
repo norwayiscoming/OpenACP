@@ -9,7 +9,7 @@ import { DEFAULT_MAX_TOKENS } from "../../../plugins/context/context-provider.js
 import { CheckpointReader } from "../../../plugins/context/entire/checkpoint-reader.js";
 import { escapeHtml } from "../formatting.js";
 import { createSessionTopic, buildDeepLink } from "../topics.js";
-import { buildSessionControlKeyboard } from "./admin.js";
+import { buildSessionControlKeyboard, buildSessionStatusText } from "./admin.js";
 import { createChildLogger } from "../../../core/utils/log.js";
 import type { CommandsAssistantContext } from "../types.js";
 
@@ -165,6 +165,7 @@ async function executeResume(
   chatId: number,
   query: Omit<ContextQuery, "repoPath">,
   repoPath: string,
+  onControlMessage?: (sessionId: string, msgId: number) => void,
 ): Promise<void> {
   // Check provider availability
   const provider = await core.contextManager.getProvider(repoPath);
@@ -239,21 +240,26 @@ async function executeResume(
       );
     }
 
-    await ctx.api.sendMessage(
-      chatId,
+    const resumeHeading =
       `✅ <b>Session resumed with context</b>\n` +
-        `<b>Agent:</b> ${escapeHtml(session.agentName)}\n` +
-        `<b>Workspace:</b> <code>${escapeHtml(session.workingDirectory)}</code>\n` +
-        `<b>Sessions loaded:</b> ${sessionCount}\n` +
-        `<b>Mode:</b> ${escapeHtml(mode)}\n` +
-        `<b>~Tokens:</b> ${tokens.toLocaleString()}\n\n` +
-        `Context is ready — chat here to continue working with the agent.`,
+      `<b>Sessions loaded:</b> ${sessionCount}\n` +
+      `<b>Mode:</b> ${escapeHtml(mode)}\n` +
+      `<b>~Tokens:</b> ${tokens.toLocaleString()}`;
+    const controlMsg = await ctx.api.sendMessage(
+      chatId,
+      buildSessionStatusText(session, resumeHeading),
       {
         message_thread_id: threadId,
         parse_mode: "HTML",
         reply_markup: buildSessionControlKeyboard(session.id, false, false),
       },
     );
+
+    onControlMessage?.(session.id, controlMsg.message_id);
+
+    await core.sessionManager.patchRecord(session.id, {
+      platform: { topicId: threadId },
+    });
 
   } catch (err) {
     log.error({ err }, "Resume session creation failed");
@@ -274,6 +280,7 @@ export async function handleResume(
   core: OpenACPCore,
   chatId: number,
   assistant?: CommandsAssistantContext,
+  onControlMessage?: (sessionId: string, msgId: number) => void,
 ): Promise<void> {
   const rawMatch = (ctx as Context & { match: unknown }).match;
   const matchStr = typeof rawMatch === "string" ? rawMatch : "";
@@ -310,6 +317,7 @@ export async function handlePendingResumeInput(
   core: OpenACPCore,
   chatId: number,
   assistantTopicId?: number,
+  onControlMessage?: (sessionId: string, msgId: number) => void,
 ): Promise<boolean> {
   const userId = ctx.from?.id;
   if (!userId) return false;
@@ -338,7 +346,7 @@ export async function handlePendingResumeInput(
   const resolved = core.configManager.resolveWorkspace(workspace);
 
   cleanupPending(userId);
-  await executeResume(ctx, core, chatId, pending.query, resolved);
+  await executeResume(ctx, core, chatId, pending.query, resolved, onControlMessage);
   return true;
 }
 
@@ -348,6 +356,7 @@ export function setupResumeCallbacks(
   bot: Bot,
   core: OpenACPCore,
   chatId: number,
+  onControlMessage?: (sessionId: string, msgId: number) => void,
 ): void {
   bot.callbackQuery(/^m:resume:/, async (ctx) => {
     const data = ctx.callbackQuery.data;
@@ -369,7 +378,7 @@ export function setupResumeCallbacks(
       try {
         await ctx.api.editMessageText(chatId, pending.messageId, `⏳ Using <code>${escapeHtml(resolved)}</code>...`, { parse_mode: "HTML" });
       } catch { /* ignore */ }
-      await executeResume(ctx, core, chatId, pending.query, resolved);
+      await executeResume(ctx, core, chatId, pending.query, resolved, onControlMessage);
       return;
     }
 
@@ -402,7 +411,7 @@ export function setupResumeCallbacks(
       try {
         await ctx.api.editMessageText(chatId, pending.messageId, `⏳ Using <code>${escapeHtml(resolved)}</code>...`, { parse_mode: "HTML" });
       } catch { /* ignore */ }
-      await executeResume(ctx, core, chatId, pending.query, resolved);
+      await executeResume(ctx, core, chatId, pending.query, resolved, onControlMessage);
       return;
     }
   });

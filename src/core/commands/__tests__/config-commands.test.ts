@@ -80,6 +80,7 @@ function mockCore(session?: ReturnType<typeof mockSession>) {
       getSession: vi.fn().mockReturnValue(session ?? null),
       patchRecord: vi.fn().mockResolvedValue(undefined),
     },
+    eventBus: { emit: vi.fn() },
   }
 }
 

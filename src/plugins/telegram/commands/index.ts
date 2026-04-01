@@ -25,8 +25,9 @@ export function setupCommands(
   chatId: number,
   assistant?: CommandsAssistantContext,
 ): void {
-  bot.command("new", (ctx) => handleNew(ctx, core, chatId, assistant));
-  bot.command("newchat", (ctx) => handleNewChat(ctx, core, chatId));
+  const onControlMessage = assistant?.setControlMessage;
+  bot.command("new", (ctx) => handleNew(ctx, core, chatId, assistant, onControlMessage));
+  bot.command("newchat", (ctx) => handleNewChat(ctx, core, chatId, onControlMessage));
   bot.command("cancel", (ctx) => handleCancel(ctx, core, assistant));
   bot.command("status", (ctx) => handleStatus(ctx, core));
   bot.command("sessions", (ctx) => handleTopics(ctx, core));
@@ -47,7 +48,7 @@ export function setupCommands(
   bot.command("text_to_speech", (ctx) => handleTTS(ctx, core));
   bot.command("verbosity", (ctx) => handleVerbosity(ctx, core));
   bot.command("outputmode", (ctx) => handleOutputMode(ctx, core));
-  bot.command("resume", (ctx) => handleResume(ctx, core, chatId, assistant));
+  bot.command("resume", (ctx) => handleResume(ctx, core, chatId, assistant, onControlMessage));
   bot.command("switch", (ctx) => handleSwitch(ctx, core));
 }
 
@@ -59,10 +60,11 @@ export function setupAllCallbacks(
   getAssistantSession?: () =>
     | { topicId: number; enqueuePrompt: (p: string) => Promise<void> }
     | undefined,
+  onControlMessage?: (sessionId: string, msgId: number) => void,
 ): void {
   // Register specific prefix handlers FIRST (grammY middleware order matters)
   setupNewSessionCallbacks(bot, core, chatId);
-  setupResumeCallbacks(bot, core, chatId);
+  setupResumeCallbacks(bot, core, chatId, onControlMessage);
   setupSessionCallbacks(bot, core, chatId, systemTopicIds);
 
   // Settings handlers — must be before broad m: handler

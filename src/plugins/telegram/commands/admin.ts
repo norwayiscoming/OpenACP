@@ -22,16 +22,17 @@ export function setupDangerousModeCallbacks(bot: Bot, core: OpenACPCore): void {
 
     // Session live in memory — toggle directly
     if (session) {
-      session.dangerousMode = !session.dangerousMode;
+      const newDangerousMode = !session.clientOverrides.bypassPermissions;
+      session.clientOverrides.bypassPermissions = newDangerousMode;
       log.info(
-        { sessionId, dangerousMode: session.dangerousMode },
+        { sessionId, dangerousMode: newDangerousMode },
         "Dangerous mode toggled via button",
       );
       core.sessionManager
-        .patchRecord(sessionId, { dangerousMode: session.dangerousMode })
+        .patchRecord(sessionId, { clientOverrides: session.clientOverrides })
         .catch(() => {});
 
-      const toastText = session.dangerousMode
+      const toastText = newDangerousMode
         ? "☠️ Dangerous mode enabled — permissions auto-approved"
         : "🔐 Dangerous mode disabled — permissions shown normally";
       try {
@@ -44,7 +45,7 @@ export function setupDangerousModeCallbacks(bot: Bot, core: OpenACPCore): void {
         await ctx.editMessageReplyMarkup({
           reply_markup: buildSessionControlKeyboard(
             sessionId,
-            session.dangerousMode,
+            newDangerousMode,
             session.voiceMode === "on",
           ),
         });
@@ -115,15 +116,15 @@ export async function handleEnableDangerous(
     String(threadId),
   );
   if (session) {
-    if (session.dangerousMode) {
+    if (session.clientOverrides.bypassPermissions) {
       await ctx.reply("☠️ Dangerous mode is already enabled.", {
         parse_mode: "HTML",
       });
       return;
     }
-    session.dangerousMode = true;
+    session.clientOverrides.bypassPermissions = true;
     core.sessionManager
-      .patchRecord(session.id, { dangerousMode: true })
+      .patchRecord(session.id, { clientOverrides: session.clientOverrides })
       .catch(() => {});
   } else {
     // Session not in memory (e.g. after restart) — update store directly
@@ -169,15 +170,15 @@ export async function handleDisableDangerous(
     String(threadId),
   );
   if (session) {
-    if (!session.dangerousMode) {
+    if (!session.clientOverrides.bypassPermissions) {
       await ctx.reply("🔐 Dangerous mode is already disabled.", {
         parse_mode: "HTML",
       });
       return;
     }
-    session.dangerousMode = false;
+    session.clientOverrides.bypassPermissions = false;
     core.sessionManager
-      .patchRecord(session.id, { dangerousMode: false })
+      .patchRecord(session.id, { clientOverrides: session.clientOverrides })
       .catch(() => {});
   } else {
     // Session not in memory (e.g. after restart) — update store directly
@@ -273,7 +274,7 @@ export function setupTTSCallbacks(bot: Bot, core: OpenACPCore): void {
       await ctx.editMessageReplyMarkup({
         reply_markup: buildSessionControlKeyboard(
           sessionId,
-          session.dangerousMode,
+          session.clientOverrides.bypassPermissions ?? false,
           newMode === "on",
         ),
       });

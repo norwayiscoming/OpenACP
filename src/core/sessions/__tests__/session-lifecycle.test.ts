@@ -54,7 +54,7 @@ describe('Session - Lifecycle & Prompt Processing', () => {
       expect(session.workingDirectory).toBe('/workspace')
       expect(session.threadId).toBe('')
       expect(session.name).toBeUndefined()
-      expect(session.dangerousMode).toBe(false)
+      expect(session.clientOverrides).toEqual({})
     })
   })
 

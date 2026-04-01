@@ -125,12 +125,6 @@ interface SdkSessionInfoUpdate {
   _meta?: Record<string, unknown>;
 }
 
-interface SdkCurrentModeUpdate {
-  sessionUpdate: 'current_mode_update';
-  currentModeId: string;
-  _meta?: Record<string, unknown>;
-}
-
 interface SdkConfigOptionUpdate {
   sessionUpdate: 'config_option_update';
   configOptions: unknown[];
@@ -513,14 +507,6 @@ export class AgentInstance extends TypedEmitter<AgentInstanceEvents> {
               title: si.title ?? undefined,
               updatedAt: si.updatedAt ?? undefined,
               _meta: si._meta ?? undefined,
-            };
-            break;
-          }
-          case "current_mode_update": {
-            const cm = update as unknown as SdkCurrentModeUpdate;
-            event = {
-              type: "current_mode_update",
-              modeId: cm.currentModeId,
             };
             break;
           }

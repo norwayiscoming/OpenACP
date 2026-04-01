@@ -235,11 +235,6 @@ export class HistoryRecorder {
         break;
       }
 
-      case "current_mode_update": {
-        steps.push({ type: "mode_change", modeId: event.modeId });
-        break;
-      }
-
       case "config_option_update": {
         for (const opt of event.options) {
           steps.push({

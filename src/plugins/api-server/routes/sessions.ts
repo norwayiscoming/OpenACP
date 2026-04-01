@@ -30,16 +30,13 @@ export async function sessionRoutes(
         name: s.name ?? null,
         workspace: s.workingDirectory,
         createdAt: s.createdAt.toISOString(),
-        dangerousMode: s.dangerousMode,
+        dangerousMode: s.clientOverrides.bypassPermissions ?? false,
         queueDepth: s.queueDepth,
         promptRunning: s.promptRunning,
         lastActiveAt:
           deps.core.sessionManager.getSessionRecord(s.id)?.lastActiveAt ?? null,
         // ACP state
-        currentMode: s.currentMode ?? null,
-        currentModel: s.currentModel ?? null,
-        availableModes: s.availableModes?.length ? s.availableModes : undefined,
-        availableModels: s.availableModels?.length ? s.availableModels : undefined,
+        configOptions: s.configOptions?.length ? s.configOptions : undefined,
         capabilities: s.agentCapabilities ?? null,
       })),
     };
@@ -69,17 +66,13 @@ export async function sessionRoutes(
           name: session.name ?? null,
           workspace: session.workingDirectory,
           createdAt: session.createdAt.toISOString(),
-          dangerousMode: session.dangerousMode,
+          dangerousMode: session.clientOverrides.bypassPermissions ?? false,
           queueDepth: session.queueDepth,
           promptRunning: session.promptRunning,
           threadId: session.threadId,
           channelId: session.channelId,
           agentSessionId: session.agentSessionId,
           // ACP state
-          currentMode: session.currentMode ?? null,
-          currentModel: session.currentModel ?? null,
-          availableModes: session.availableModes?.length ? session.availableModes : undefined,
-          availableModels: session.availableModels?.length ? session.availableModels : undefined,
           configOptions: session.configOptions?.length ? session.configOptions : undefined,
           capabilities: session.agentCapabilities ?? null,
         },
@@ -307,9 +300,9 @@ export async function sessionRoutes(
       }
 
       if (body.dangerousMode !== undefined) {
-        session.dangerousMode = body.dangerousMode;
+        session.clientOverrides.bypassPermissions = body.dangerousMode;
         await deps.core.sessionManager.patchRecord(sessionId, {
-          dangerousMode: body.dangerousMode,
+          clientOverrides: session.clientOverrides,
         });
         changes.dangerousMode = body.dangerousMode;
       }
@@ -335,9 +328,9 @@ export async function sessionRoutes(
 
       const body = DangerousModeBodySchema.parse(request.body);
 
-      session.dangerousMode = body.enabled;
+      session.clientOverrides.bypassPermissions = body.enabled;
       await deps.core.sessionManager.patchRecord(sessionId, {
-        dangerousMode: body.enabled,
+        clientOverrides: session.clientOverrides,
       });
       return { ok: true, dangerousMode: body.enabled };
     },

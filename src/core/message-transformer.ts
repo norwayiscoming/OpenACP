@@ -154,23 +154,11 @@ export class MessageTransformer {
           text: `Session updated: ${event.title ?? ""}`.trim(),
           metadata: { title: event.title, updatedAt: event.updatedAt },
         };
-      case "current_mode_update":
-        return {
-          type: "mode_change",
-          text: `Mode: ${event.modeId}`,
-          metadata: { modeId: event.modeId },
-        };
       case "config_option_update":
         return {
           type: "config_update",
           text: "Config updated",
           metadata: { options: event.options },
-        };
-      case "model_update":
-        return {
-          type: "model_update",
-          text: `Model: ${event.modelId}`,
-          metadata: { modelId: event.modelId },
         };
       case "user_message_chunk":
         return {

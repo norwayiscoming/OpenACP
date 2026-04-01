@@ -40,7 +40,7 @@ export class BoreTunnelProvider implements TunnelProvider {
       }, 30_000)
 
       try {
-        this.child = spawn('bore', args, { stdio: ['ignore', 'pipe', 'pipe'] })
+        this.child = spawn('bore', args, { stdio: ['ignore', 'pipe', 'pipe'], detached: true })
       } catch {
         clearTimeout(timeout)
         settle(() => reject(new Error(

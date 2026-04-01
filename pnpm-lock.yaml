@@ -29,9 +29,6 @@ importers:
       '@fastify/swagger-ui':
         specifier: ^5.2.5
         version: 5.2.5
-      '@hono/node-server':
-        specifier: ^1.19.11
-        version: 1.19.11(hono@4.12.8)
       '@inquirer/prompts':
         specifier: ^8.3.2
         version: 8.3.2(@types/node@25.5.0)
@@ -50,9 +47,6 @@ importers:
       grammy:
         specifier: ^1.41.1
         version: 1.41.1
-      hono:
-        specifier: ^4.12.8
-        version: 4.12.8
       jsonwebtoken:
         specifier: ^9.0.3
         version: 9.0.3

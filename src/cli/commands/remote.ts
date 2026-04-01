@@ -65,13 +65,13 @@ export async function cmdRemote(args: string[], instanceRoot?: string): Promise<
   const yyyy = now.getFullYear()
   const tokenName = name ?? `remote-${hh}h${mm}-${dd}-${mo}-${yyyy}`
 
-  // Generate token via API
-  let tokenData: { tokenId: string; accessToken: string; expiresAt: string }
+  // Generate one-time code via API
+  let codeData: { code: string; expiresAt: string }
   try {
     const body: Record<string, unknown> = { role, name: tokenName, expire }
     if (scopes) body.scopes = scopes
 
-    const res = await apiCall(port, '/api/v1/auth/tokens', {
+    const res = await apiCall(port, '/api/v1/auth/codes', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
@@ -79,15 +79,17 @@ export async function cmdRemote(args: string[], instanceRoot?: string): Promise<
 
     if (!res.ok) {
       const err = await res.json() as Record<string, unknown>
-      console.error(`Failed to generate token: ${err.error ?? err.message ?? 'Unknown error'}`)
+      console.error(`Failed to generate code: ${err.error ?? err.message ?? 'Unknown error'}`)
       process.exit(1)
     }
 
-    tokenData = await res.json() as typeof tokenData
+    codeData = await res.json() as typeof codeData
   } catch (err) {
-    console.error(`Failed to generate token: ${(err as Error).message}`)
+    console.error(`Failed to generate code: ${(err as Error).message}`)
     process.exit(1)
   }
+
+  const { code, expiresAt } = codeData
 
   // Try to get tunnel URL
   let tunnelUrl: string | null = null
@@ -106,58 +108,56 @@ export async function cmdRemote(args: string[], instanceRoot?: string): Promise<
   }
 
   // Build URLs
-  const localUrl = `http://127.0.0.1:${port}`
-  const tokenParam = `token=${tokenData.accessToken}`
-
-  const localLink = `${localUrl}?${tokenParam}`
-  const tunnelLink = tunnelUrl ? `${tunnelUrl}?${tokenParam}` : null
+  const localUrl = `http://127.0.0.1:${port}?code=${code}`
+  const tunnelLink = tunnelUrl ? `${tunnelUrl}?code=${code}` : null
   const appLink = tunnelUrl
-    ? `openacp://connect?host=${encodeURIComponent(tunnelUrl)}&${tokenParam}&port=${port}`
-    : `openacp://connect?host=${encodeURIComponent('127.0.0.1')}&${tokenParam}&port=${port}`
+    ? `openacp://connect?host=${new URL(tunnelUrl).host}&code=${code}`
+    : null
 
-  // Display output
-  const width = 64
-  const border = '─'.repeat(width)
+  // Format expiry for display
+  const expireDisplay = expiresAt
+
+  // Display output — metadata in box, links outside as plain text
+  const W = 64
+  const line = '─'.repeat(W - 4)
 
   console.log('')
-  console.log(`  ┌${border}┐`)
-  console.log(`  │${'  Remote Access'.padEnd(width)}│`)
-  console.log(`  ├${border}┤`)
-  console.log(`  │${''.padEnd(width)}│`)
-  console.log(`  │${'  Token:'.padEnd(width)}│`)
-  console.log(`  │${'  ' + tokenData.tokenId.padEnd(width - 2)}│`)
-  console.log(`  │${'  Role: ' + role.padEnd(width - 8)}│`)
-  console.log(`  │${'  Expires: ' + tokenData.expiresAt.padEnd(width - 11)}│`)
-  console.log(`  │${''.padEnd(width)}│`)
-  console.log(`  │${'  Local:'.padEnd(width)}│`)
-  printWrapped(localLink, width)
-  console.log(`  │${''.padEnd(width)}│`)
+  console.log(`  ┌${line}┐`)
+  console.log(`  │  Remote Access${' '.repeat(W - 4 - 15)}│`)
+  console.log(`  ├${line}┤`)
+  console.log(`  │  Token:   ${tokenName}${' '.repeat(Math.max(0, W - 4 - 11 - tokenName.length))}│`)
+  console.log(`  │  Role:    ${role}${' '.repeat(Math.max(0, W - 4 - 11 - role.length))}│`)
+  console.log(`  │  Expires: ${expireDisplay}${' '.repeat(Math.max(0, W - 4 - 11 - expireDisplay.length))}│`)
+  console.log(`  └${line}┘`)
+
+  // Links as plain text — copyable
+  console.log('')
+  console.log('Local:')
+  console.log(localUrl)
 
   if (tunnelLink) {
-    console.log(`  │${'  Tunnel:'.padEnd(width)}│`)
-    printWrapped(tunnelLink, width)
-    console.log(`  │${''.padEnd(width)}│`)
+    console.log('')
+    console.log('Tunnel:')
+    console.log(tunnelLink)
   }
 
-  console.log(`  │${'  App link:'.padEnd(width)}│`)
-  printWrapped(appLink, width)
-  console.log(`  │${''.padEnd(width)}│`)
-  console.log(`  └${border}┘`)
-  console.log('')
+  if (appLink) {
+    console.log('')
+    console.log('App:')
+    console.log(appLink)
+  }
 
-  // Show QR code
-  if (!noQr) {
-    const qrTarget = tunnelLink ?? appLink
-    console.log('  Scan to connect:')
+  // QR code
+  if (!noQr && (tunnelLink || localUrl)) {
     console.log('')
-    qrcode.generate(qrTarget, { small: true }, (code: string) => {
-      // Indent each line of the QR code
-      const lines = code.split('\n')
-      for (const line of lines) {
-        console.log(`    ${line}`)
-      }
-    })
-    console.log('')
+    qrcode.generate(tunnelLink || localUrl, { small: true })
+  }
+
+  // Warning
+  console.log('')
+  console.log('\x1b[33m⚠\x1b[0m  Code expires in 30 minutes and can only be used once.')
+  if (!tunnelLink) {
+    console.log('\x1b[33m⚠\x1b[0m  No tunnel available — local link only works on same machine.')
   }
 }
 
@@ -165,14 +165,4 @@ function extractFlag(args: string[], flag: string): string | undefined {
   const idx = args.indexOf(flag)
   if (idx === -1 || idx + 1 >= args.length) return undefined
   return args[idx + 1]
-}
-
-function printWrapped(text: string, width: number): void {
-  const maxContent = width - 4 // 2 spaces indent + 2 padding
-  let remaining = text
-  while (remaining.length > 0) {
-    const chunk = remaining.slice(0, maxContent)
-    remaining = remaining.slice(maxContent)
-    console.log(`  │${'  ' + chunk.padEnd(width - 2)}│`)
-  }
 }

@@ -31,3 +31,22 @@ export interface TokenInfo {
   expiresAt: string;
   refreshDeadline: string;
 }
+
+export interface StoredCode {
+  code: string;
+  role: string;
+  scopes?: string[];
+  name: string;
+  expire: string;
+  createdAt: string;
+  expiresAt: string;
+  used: boolean;
+}
+
+export interface CreateCodeOpts {
+  role: string;
+  name: string;
+  expire: string;
+  scopes?: string[];
+  codeTtlMs?: number; // default 30 minutes
+}

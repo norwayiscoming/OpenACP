@@ -1,7 +1,9 @@
 import path from 'node:path'
 import type { OpenACPPlugin, InstallContext } from '../../core/plugin/types.js'
 import type { TunnelConfig } from '../../core/config/config.js'
+import type { ApiServerService } from '../api-server/service.js'
 import { MAX_RETRIES } from './tunnel-registry.js'
+import { createViewerRoutes } from './viewer-routes.js'
 
 function createTunnelPlugin(): OpenACPPlugin {
   let service: { stop(): Promise<void> } | null = null
@@ -11,6 +13,7 @@ function createTunnelPlugin(): OpenACPPlugin {
     version: '1.0.0',
     description: 'Expose local services to internet via tunnel providers',
     essential: false,
+    pluginDependencies: { '@openacp/api-server': '*' },
     permissions: ['services:register', 'kernel:access', 'commands:register'],
 
     async install(ctx: InstallContext) {
@@ -141,6 +144,13 @@ function createTunnelPlugin(): OpenACPPlugin {
         return
       }
 
+      if (config.port) {
+        ctx.log.warn('tunnel.port is deprecated and ignored — tunnel now uses API server port')
+      }
+      if ((config.auth as Record<string, unknown> | undefined)?.enabled) {
+        ctx.log.warn('tunnel.auth is deprecated and ignored — viewer routes are now public')
+      }
+
       const { TunnelService } = await import('./tunnel-service.js')
       const instanceRoot = ctx.instanceRoot
       const tunnelSvc = new TunnelService(
@@ -148,7 +158,24 @@ function createTunnelPlugin(): OpenACPPlugin {
         path.join(instanceRoot, 'tunnels.json'),
         path.join(instanceRoot, 'bin'),
       )
-      const publicUrl = await tunnelSvc.start()
+
+      // Get API server service (new dependency)
+      const apiServer = ctx.getService<ApiServerService>('api-server')
+
+      // Register viewer routes in API server (replaces Hono viewer server)
+      if (apiServer) {
+        const viewerRoutes = createViewerRoutes(tunnelSvc.getStore())
+        apiServer.registerPlugin('/', viewerRoutes, { auth: false })
+      } else {
+        ctx.log.warn('API server not available — viewer links will be unavailable')
+      }
+
+      // Defer tunnel start until system:ready — API server is guaranteed to be listening by then
+      ctx.on('system:ready', async () => {
+        const apiPort = apiServer?.getPort() ?? 0
+        const publicUrl = await tunnelSvc.start(apiPort)
+        ctx.log.info(`Tunnel ready: ${publicUrl}`)
+      })
       service = tunnelSvc
 
       ctx.registerService('tunnel', tunnelSvc)
@@ -219,7 +246,6 @@ function createTunnelPlugin(): OpenACPPlugin {
         },
       })
 
-      ctx.log.info(`Tunnel ready: ${publicUrl}`)
     },
 
     async teardown() {

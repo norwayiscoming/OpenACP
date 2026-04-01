@@ -523,7 +523,7 @@ export interface ViewerStoreInterface {
 
 export interface TunnelServiceInterface {
   getPublicUrl(): string
-  start(): Promise<string>
+  start(apiPort: number): Promise<string>
   stop(): Promise<void>
   getStore(): ViewerStoreInterface
   fileUrl(entryId: string): string

@@ -254,6 +254,42 @@ function createApiServerPlugin(): OpenACPPlugin {
       server.registerPlugin('/api/v1/commands', async (app) => commandRoutes(app, deps))
       server.registerPlugin('/api/v1/auth', async (app) => authRoutes(app, { tokenStore, getJwtSecret: () => jwtSecret }))
 
+      // Exchange endpoint — NO auth (code in body IS the credential)
+      // Fastify encapsulation makes dual registerPlugin on the same prefix safe —
+      // each registration gets its own scope with independent hooks.
+      server.registerPlugin('/api/v1/auth', async (app) => {
+        const { ExchangeCodeBodySchema } = await import('./schemas/auth.js')
+        const { signToken } = await import('./auth/jwt.js')
+        const { parseDuration } = await import('./auth/token-store.js')
+        const { AuthError } = await import('./middleware/error-handler.js')
+
+        app.post('/exchange', async (request, reply) => {
+          const body = ExchangeCodeBodySchema.parse(request.body)
+          const code = tokenStore.exchangeCode(body.code)
+          if (!code) {
+            throw new AuthError('INVALID_CODE', 'Code is invalid, expired, or already used', 401)
+          }
+          const token = tokenStore.create({
+            role: code.role,
+            name: code.name,
+            expire: code.expire,
+            scopes: code.scopes,
+          })
+          const rfd = new Date(token.refreshDeadline).getTime() / 1000
+          const accessToken = signToken(
+            { sub: token.id, role: token.role, scopes: token.scopes, rfd },
+            jwtSecret,
+            code.expire,
+          )
+          return reply.send({
+            accessToken,
+            tokenId: token.id,
+            expiresAt: new Date(Date.now() + parseDuration(code.expire)).toISOString(),
+            refreshDeadline: token.refreshDeadline,
+          })
+        })
+      }, { auth: false })
+
       // SSE manager
       const sseManager = new SSEManager(
         core.eventBus,

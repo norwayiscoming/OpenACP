@@ -3,6 +3,7 @@ import path from 'node:path'
 import os from 'node:os'
 import { createChildLogger } from '../../core/utils/log.js'
 import type { TunnelProvider } from './provider.js'
+import { TunnelKeepAlive } from './keepalive.js'
 import { CloudflareTunnelProvider } from './providers/cloudflare.js'
 import { NgrokTunnelProvider } from './providers/ngrok.js'
 import { BoreTunnelProvider } from './providers/bore.js'
@@ -45,6 +46,7 @@ export class TunnelRegistry {
   private entries: Map<number, LiveEntry> = new Map()
   private saveTimeout: ReturnType<typeof setTimeout> | null = null
   private maxUserTunnels: number
+  private keepalive = new TunnelKeepAlive()
   private providerOptions: Record<string, unknown>
   private registryPath: string
   private shuttingDown = false
@@ -102,6 +104,10 @@ export class TunnelRegistry {
       const live = this.entries.get(port)
       if (!live) return
 
+      if (entry.type === 'system') {
+        this.keepalive.stop()
+      }
+
       live.entry.status = 'failed'
       live.process = null
       this.scheduleSave()
@@ -121,6 +127,17 @@ export class TunnelRegistry {
       entry.status = 'active'
       log.info({ port, url, label: opts.label }, 'Tunnel active')
       this.scheduleSave()
+      if (opts.type === 'system' && entry.publicUrl) {
+        const live = this.entries.get(port)
+        this.keepalive.start(entry.publicUrl, () => {
+          log.warn('Tunnel keepalive detected dead tunnel, restarting...')
+          // Clear publicUrl so getPublicUrl() falls back to localhost
+          entry.publicUrl = undefined
+          entry.status = 'failed'
+          // Kill process to trigger onExit → retry
+          if (live) live.process?.stop()
+        })
+      }
       return url
     }).catch(err => {
       entry.status = 'failed'
@@ -243,6 +260,7 @@ export class TunnelRegistry {
   }
 
   async shutdown(): Promise<void> {
+    this.keepalive.stop()
     this.shuttingDown = true
 
     const stopPromises: Promise<void>[] = []

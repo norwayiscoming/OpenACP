@@ -33,7 +33,7 @@ import {
   handlePendingResumeInput,
   STATIC_COMMANDS,
 } from "./commands/index.js";
-import { buildSessionStatusText, buildSessionControlKeyboard } from "./commands/admin.js";
+import { buildSessionStatusText, buildSessionControlKeyboard, isBypassActive } from "./commands/admin.js";
 import type { TelegramPlatformData } from "../../core/types.js";
 import { PermissionHandler } from "./permissions.js";
 import {
@@ -414,7 +414,7 @@ export class TelegramAdapter extends MessagingAdapter {
 
         await ctx.answerCallbackQuery();
         if (response.type !== "silent") {
-          // If response is a menu, edit current message with updated menu (don't send new message)
+          // Always edit the callback message in-place (no new messages)
           if (response.type === "menu") {
             const keyboard = response.options.map((opt) => [
               {
@@ -429,9 +429,13 @@ export class TelegramAdapter extends MessagingAdapter {
             } catch {
               /* message unchanged or deleted */
             }
-          } else {
-            // For text/error responses, send new message
-            await this.renderCommandResponse(response, chatId, topicId);
+          } else if (response.type === "text" || response.type === "error") {
+            const text = response.type === "text" ? response.text : `❌ ${response.message}`;
+            try {
+              await ctx.editMessageText(text, { parse_mode: "Markdown" });
+            } catch {
+              /* message unchanged or deleted */
+            }
           }
         }
       } catch {
@@ -1297,7 +1301,7 @@ export class TelegramAdapter extends MessagingAdapter {
     const text = buildSessionStatusText(session);
     const keyboard = buildSessionControlKeyboard(
       sessionId,
-      session.clientOverrides.bypassPermissions ?? false,
+      isBypassActive(session),
       session.voiceMode === "on",
     );
 

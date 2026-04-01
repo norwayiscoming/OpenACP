@@ -2,16 +2,24 @@ import type { Bot, Context } from "grammy";
 import { InlineKeyboard } from "grammy";
 import type { OpenACPCore } from "../../../core/index.js";
 import type { Session } from "../../../core/sessions/session.js";
+import { isPermissionBypass } from "../../../core/utils/bypass-detection.js";
+import type { CommandRegistry } from "../../../core/command-registry.js";
 import { escapeHtml } from "../formatting.js";
 import { createChildLogger } from "../../../core/utils/log.js";
 const log = createChildLogger({ module: "telegram-cmd-admin" });
+
+export function isBypassActive(session: Session): boolean {
+  const modeOpt = session.getConfigByCategory("mode");
+  return (modeOpt?.type === "select" && isPermissionBypass(String(modeOpt.currentValue)))
+    || !!session.clientOverrides.bypassPermissions;
+}
 
 export function buildDangerousModeKeyboard(
   sessionId: string,
   enabled: boolean,
 ): InlineKeyboard {
   return new InlineKeyboard().text(
-    enabled ? "🔐 Disable Bypass" : "☠️ Enable Bypass",
+    enabled ? "🔐 Disable Bypass Permissions" : "☠️ Enable Bypass Permissions",
     `d:${sessionId}`,
   );
 }
@@ -21,36 +29,34 @@ export function setupDangerousModeCallbacks(bot: Bot, core: OpenACPCore): void {
     const sessionId = ctx.callbackQuery.data.slice(2);
     const session = core.sessionManager.getSession(sessionId);
 
-    // Session live in memory — toggle directly
+    // Session live in memory — delegate to /bypass command (handles ACP + client-side fallback)
     if (session) {
-      const newDangerousMode = !session.clientOverrides.bypassPermissions;
-      session.clientOverrides.bypassPermissions = newDangerousMode;
-      log.info(
-        { sessionId, dangerousMode: newDangerousMode },
-        "Bypass permissions toggled via button",
-      );
-      core.sessionManager
-        .patchRecord(sessionId, { clientOverrides: session.clientOverrides })
-        .catch(() => {});
-
-      const toastText = newDangerousMode
-        ? "☠️ Bypass enabled — permissions auto-approved"
-        : "🔐 Bypass disabled — approvals required";
+      const wantOn = !isBypassActive(session);
+      const toastText = wantOn
+        ? "☠️ Bypass Permissions enabled — permissions auto-approved"
+        : "🔐 Bypass Permissions disabled — approvals required";
       try {
         await ctx.answerCallbackQuery({ text: toastText });
       } catch {
         /* expired */
       }
 
-      try {
-        const keyboard = buildSessionControlKeyboard(
+      const registry = core.lifecycleManager?.serviceRegistry?.get<CommandRegistry>("command-registry");
+      if (registry) {
+        await registry.execute(wantOn ? "/bypass on" : "/bypass off", {
+          raw: wantOn ? "on" : "off",
           sessionId,
-          newDangerousMode,
-          session.voiceMode === "on",
-        );
+          channelId: "telegram",
+          userId: String(ctx.from?.id ?? ""),
+          reply: async () => {},
+        }).catch(() => {});
+      }
+      log.info({ sessionId, wantOn }, "Bypass permissions toggled via button");
+
+      try {
         await ctx.editMessageText(buildSessionStatusText(session), {
           parse_mode: "HTML",
-          reply_markup: keyboard,
+          reply_markup: buildSessionControlKeyboard(sessionId, isBypassActive(session), session.voiceMode === "on"),
         });
       } catch {
         /* ignore */
@@ -81,8 +87,8 @@ export function setupDangerousModeCallbacks(bot: Bot, core: OpenACPCore): void {
     );
 
     const toastText = newDangerousMode
-      ? "☠️ Bypass enabled — permissions auto-approved"
-      : "🔐 Bypass disabled — approvals required";
+      ? "☠️ Bypass Permissions enabled — permissions auto-approved"
+      : "🔐 Bypass Permissions disabled — approvals required";
     try {
       await ctx.answerCallbackQuery({ text: toastText });
     } catch {
@@ -152,7 +158,7 @@ export async function handleEnableDangerous(
       .catch(() => {});
   }
   await ctx.reply(
-    `☠️ <b>Bypass enabled</b>\n\nAll permission requests will be auto-approved — the agent can run any action without asking.\n\nUse /disable_bypass to turn this off.`,
+    `☠️ <b>Bypass Permissions enabled</b>\n\nAll permission requests will be auto-approved — the agent can run any action without asking.\n\nUse /disable_bypass to turn this off.`,
     { parse_mode: "HTML" },
   );
 }
@@ -206,7 +212,7 @@ export async function handleDisableDangerous(
       .catch(() => {});
   }
   await ctx.reply(
-    "🔐 <b>Bypass disabled</b>\n\nYou will be asked to approve risky actions.",
+    "🔐 <b>Bypass Permissions disabled</b>\n\nYou will be asked to approve risky actions.",
     { parse_mode: "HTML" },
   );
 }
@@ -228,7 +234,7 @@ export function buildSessionControlKeyboard(
 ): InlineKeyboard {
   return new InlineKeyboard()
     .text(
-      dangerousMode ? "🔐 Disable Bypass" : "☠️ Enable Bypass",
+      dangerousMode ? "🔐 Disable Bypass Permissions" : "☠️ Enable Bypass Permissions",
       `d:${sessionId}`,
     )
     .row()
@@ -267,15 +273,13 @@ export function buildSessionStatusText(
   }
 
   const modeOpt = session.getConfigByCategory("mode");
-  if (modeOpt && modeOpt.type === "select") {
+  if (isBypassActive(session)) {
+    lines.push(`<b>Mode:</b> ☠️ Bypass Permissions enabled`);
+  } else if (modeOpt && modeOpt.type === "select") {
     const choice = modeOpt.options
       .flatMap((o) => "group" in o ? o.options : [o])
       .find((c) => c.value === modeOpt.currentValue);
     lines.push(`<b>Mode:</b> ${escapeHtml(choice?.name ?? modeOpt.currentValue)}`);
-  }
-
-  if (session.clientOverrides.bypassPermissions) {
-    lines.push(`☠️ <b>Bypass enabled</b>`);
   }
 
   return lines.join("\n");
@@ -319,7 +323,7 @@ export function setupTTSCallbacks(bot: Bot, core: OpenACPCore): void {
     try {
       const keyboard = buildSessionControlKeyboard(
         sessionId,
-        session.clientOverrides.bypassPermissions ?? false,
+        isBypassActive(session),
         newMode === "on",
       );
       await ctx.editMessageText(buildSessionStatusText(session), {

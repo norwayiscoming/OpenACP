@@ -1,33 +1,56 @@
 import { InstanceRegistry } from '../../core/instance/instance-registry.js'
 import { getGlobalRoot } from '../../core/instance/instance-context.js'
+import { isJsonMode, jsonSuccess, jsonError, muteForJson, ErrorCodes } from '../output.js'
 import fs from 'node:fs'
 import path from 'node:path'
 import os from 'node:os'
 
 export async function cmdStatus(args: string[] = [], instanceRoot?: string): Promise<void> {
+  const json = isJsonMode(args)
+  if (json) await muteForJson()
+
   // Handle --all flag
   if (args.includes('--all')) {
-    await showAllInstances()
+    await showAllInstances(json)
     return
   }
 
   // Handle --id flag
   const idIdx = args.indexOf('--id')
   if (idIdx !== -1 && args[idIdx + 1]) {
-    await showInstanceById(args[idIdx + 1]!)
+    await showInstanceById(args[idIdx + 1]!, json)
     return
   }
 
   // Default: show status of current/specified instance
   const root = instanceRoot ?? getGlobalRoot()
-  await showSingleInstance(root)
+  await showSingleInstance(root, json)
 }
 
-async function showAllInstances(): Promise<void> {
+async function showAllInstances(json = false): Promise<void> {
   const registryPath = path.join(getGlobalRoot(), 'instances.json')
   const registry = new InstanceRegistry(registryPath)
   await registry.load()
   const instances = registry.list()
+
+  if (json) {
+    jsonSuccess({
+      instances: instances.map(entry => {
+        const info = readInstanceInfo(entry.root)
+        return {
+          id: entry.id,
+          name: info.name,
+          status: info.pid ? 'online' : 'offline',
+          pid: info.pid,
+          dir: entry.root,
+          mode: info.runMode,
+          channels: info.channels,
+          apiPort: info.apiPort,
+          tunnelPort: info.tunnelPort,
+        }
+      }),
+    })
+  }
 
   if (instances.length === 0) {
     console.log('No workspaces registered.')
@@ -54,21 +77,36 @@ async function showAllInstances(): Promise<void> {
   console.log('')
 }
 
-async function showInstanceById(id: string): Promise<void> {
+async function showInstanceById(id: string, json = false): Promise<void> {
   const registryPath = path.join(getGlobalRoot(), 'instances.json')
   const registry = new InstanceRegistry(registryPath)
   await registry.load()
   const entry = registry.get(id)
   if (!entry) {
+    if (json) jsonError(ErrorCodes.INSTANCE_NOT_FOUND, `Workspace "${id}" not found.`)
     console.error(`Workspace "${id}" not found.`)
     process.exit(1)
   }
-  await showSingleInstance(entry.root)
+  await showSingleInstance(entry.root, json)
 }
 
-async function showSingleInstance(root: string): Promise<void> {
+async function showSingleInstance(root: string, json = false): Promise<void> {
   // Read PID and check if running
   const info = readInstanceInfo(root)
+
+  if (json) {
+    jsonSuccess({
+      id: path.basename(root),
+      name: info.name,
+      status: info.pid ? 'online' : 'offline',
+      pid: info.pid,
+      dir: root,
+      mode: info.runMode,
+      channels: info.channels,
+      apiPort: info.apiPort,
+      tunnelPort: info.tunnelPort,
+    })
+  }
 
   if (info.pid) {
     console.log(`OpenACP is running (PID ${info.pid})`)

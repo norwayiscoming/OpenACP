@@ -48,7 +48,10 @@ export class TunnelService {
         })
         return entry.publicUrl || `http://localhost:${apiPort}`
       } catch (err) {
-        // If openacp provider failed, fall back to cloudflare quick tunnel
+        // If the OpenACP worker is unreachable (service down, rate-limited, etc.),
+        // fall back to Cloudflare quick tunnel so the user is never left without a URL.
+        // This intentionally bypasses TunnelRegistry's retry backoff — we want an
+        // immediate provider switch rather than repeated retries against a down service.
         if (this.config.provider === 'openacp') {
           log.warn({ err: (err as Error).message }, 'OpenACP tunnel service unreachable, falling back to Cloudflare quick tunnel')
           try {

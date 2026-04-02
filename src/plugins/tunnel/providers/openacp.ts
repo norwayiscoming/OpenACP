@@ -9,9 +9,13 @@ import type { PluginStorage } from '../../../core/plugin/types.js'
 const log = createChildLogger({ module: 'openacp-tunnel' })
 
 export const DEFAULT_WORKER_URL = 'https://tunnel-worker.openacp.ai'
+// TODO: replace with the real shared API key before shipping; rotatable via CLI release
 export const DEFAULT_API_KEY = 'OPENACP_SHARED_KEY_V1'
 
 const HEARTBEAT_INTERVAL_MS = 10 * 60 * 1000
+// 15s instead of the spec's suggested 10s: cloudflared can take a few seconds to
+// connect on slower machines or cold starts. If it hasn't crashed by 15s we assume
+// the tunnel is up — the public URL is already known from the worker response anyway.
 const STARTUP_TIMEOUT_MS = 15_000
 const SIGKILL_TIMEOUT_MS = 5_000
 const STORAGE_KEY = 'openacp-tunnels'
@@ -136,6 +140,9 @@ export class OpenACPTunnelProvider implements TunnelProvider {
   }
 
   private async spawnCloudflared(binaryPath: string, token: string, port: number): Promise<void> {
+    // `--url` with `--token` is a documented cloudflared shorthand: it sets up a
+    // simple HTTP proxy to the given local service without requiring ingress rules
+    // to be configured on the Cloudflare dashboard side.
     const args = ['tunnel', 'run', '--token', token, '--url', `http://localhost:${port}`]
 
     return new Promise<void>((resolve, reject) => {
@@ -210,6 +217,10 @@ export class OpenACPTunnelProvider implements TunnelProvider {
       headers: { Authorization: `Bearer ${this.apiKey}` },
     })
     if (!res.ok) throw new Error(`DELETE /tunnel/${tunnelId} returned ${res.status}`)
+    const body = await res.json() as { ok: boolean; warnings?: string[] }
+    if (body.warnings?.length) {
+      log.warn({ tunnelId, warnings: body.warnings }, 'Tunnel deletion had partial CF API failures — cron will clean up')
+    }
   }
 
   private startHeartbeat(): void {

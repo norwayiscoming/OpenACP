@@ -189,4 +189,65 @@ describe('OpenACPTunnelProvider', () => {
     expect(deleteCalls.length).toBe(1)
     expect(storage.set).toHaveBeenLastCalledWith('openacp-tunnels', {})
   })
+
+  it('stop(force=true) sends SIGKILL immediately without escalation delay', async () => {
+    const proc = makeProcess()
+    vi.mocked(spawn).mockReturnValue(proc as any)
+
+    fetchMock
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ tunnelId: 'cf-123', token: 'tok', publicUrl: 'https://abc.tunnel.openacp.ai' }) })
+      .mockResolvedValue({ ok: true, json: async () => ({}) })
+
+    const provider = new OpenACPTunnelProvider({}, '/mock/bin', storage)
+    const startPromise = provider.start(3100)
+    await vi.advanceTimersByTimeAsync(15_001)
+    await startPromise
+
+    await provider.stop(true)
+
+    expect(proc.kill).toHaveBeenCalledWith('SIGKILL')
+    expect(proc.kill).toHaveBeenCalledTimes(1)
+  })
+
+  it('heartbeat pings worker every 10 minutes after start', async () => {
+    const proc = makeProcess()
+    vi.mocked(spawn).mockReturnValue(proc as any)
+
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({ tunnelId: 'cf-123', token: 'tok', publicUrl: 'https://abc.tunnel.openacp.ai' }),
+    })
+
+    const provider = new OpenACPTunnelProvider({}, '/mock/bin', storage)
+    const startPromise = provider.start(3100)
+    await vi.advanceTimersByTimeAsync(15_001)
+    await startPromise
+
+    const pingsBefore = fetchMock.mock.calls.filter(([url]: [string]) =>
+      String(url).includes('/ping')
+    ).length
+    expect(pingsBefore).toBe(0)
+
+    await vi.advanceTimersByTimeAsync(10 * 60 * 1000)
+
+    const pingsAfter = fetchMock.mock.calls.filter(([url]: [string]) =>
+      String(url).includes('/ping')
+    ).length
+    expect(pingsAfter).toBe(1)
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining('/tunnel/cf-123/ping'),
+      expect.anything(),
+    )
+  })
+
+  it('throws when worker returns 429 on create', async () => {
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 429,
+      text: async () => '{"error":"Rate limit exceeded. Max 5 tunnels per hour."}',
+    })
+
+    const provider = new OpenACPTunnelProvider({}, '/mock/bin', storage)
+    await expect(provider.start(3100)).rejects.toThrow('429')
+  })
 })

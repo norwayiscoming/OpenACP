@@ -163,6 +163,7 @@ export { setupAllCallbacks as setupMenuCallbacks };
 // Re-exports for external consumers (adapter.ts)
 export { buildMenuKeyboard } from "./menu.js";
 export { buildSkillMessages } from "./menu.js";
+export { TELEGRAM_OVERRIDES } from './telegram-overrides.js'
 export {
   executeNewSession,
 } from "./new-session.js";

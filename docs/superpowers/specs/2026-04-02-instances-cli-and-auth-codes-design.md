@@ -6,19 +6,27 @@
 - [Spec 1: API Server Core](./2026-03-31-api-server-core-design.md)
 - [Spec 2: Auth System](./2026-03-31-auth-system-design.md)
 - [Spec 4: App Connectivity](./2026-03-31-app-connectivity-design.md)
+- [Multi-Instance Design](./2026-03-30-multi-instance-design.md)
 - [App Spec: Add Workspace Feature](../../OpenACP-App/docs/superpowers/specs/2026-04-02-add-workspace-feature-design.md)
 
 ## Overview
 
-Two additions to the OpenACP core to support the Add Workspace feature in the desktop app:
+Three additions to the OpenACP core to support the Add Workspace feature in the desktop app:
 
-1. **`openacp instances` CLI subcommand** — list and create instances with JSON output, replacing direct file reads in the app.
-2. **Auth code exchange** — one-time codes for secure remote connection, replacing JWT-in-URL.
-3. **`GET /api/v1/workspace` endpoint** — lets authenticated clients fetch workspace identity info.
+1. **`openacp instances` CLI subcommand** — list and create instances with app-friendly JSON output.
+2. **Extend `start --json` output** — include full instance info after startup (wizard or normal start).
+3. **Auth code exchange** — one-time codes for secure remote connection, replacing JWT-in-URL.
+4. **`GET /api/v1/workspace` endpoint** — lets authenticated clients fetch workspace identity info.
 
 ---
 
 ## 1. `openacp instances` CLI Subcommand
+
+### Relationship to `openacp status --all`
+
+`openacp status --all` already exists and lists all instances in a table format for terminal users. The new `openacp instances list` command targets **app consumption**: its JSON output uses a different schema (`directory` = parent of `.openacp` root, `root` = `.openacp` path) compared to `status --all --json` which returns runtime fields (`channels`, `runMode`, `pid`). Human-readable output of `instances list` reuses the same table rendering as `status --all`.
+
+---
 
 ### `openacp instances list`
 
@@ -30,8 +38,8 @@ openacp instances list [--json]
 
 **Status check per instance:**
 1. Read `<root>/openacp.pid` — file missing → `stopped`
-2. If PID file exists, check process alive → dead process → `stopped`
-3. If process alive, `GET http://localhost:<port>/api/v1/system/health` → confirm → `running`
+2. If PID file exists, check process alive (kill -0) → dead process → `stopped`
+3. If process alive, `GET http://localhost:<port>/api/v1/system/health` → confirm alive → `running`
 
 **JSON output (`--json`):**
 
@@ -56,44 +64,51 @@ openacp instances list [--json]
 ]
 ```
 
-All paths are absolute (no `~/` prefix). `directory` is the parent of `root` (the human-facing project folder).
+All paths are **absolute** — no `~/` prefix. `directory` = `path.dirname(root)` (the human-facing project folder, not the `.openacp` subdirectory itself).
 
-**Human-readable output (no flag):** Table format — same as `openacp status --all` (defined in multi-instance spec).
+**Human-readable output (no `--json`):** Same table format as `openacp status --all`. Can share rendering logic.
 
 ---
 
 ### `openacp instances create`
 
-Creates a new instance at a given directory, non-interactively.
+Creates or registers a new instance at a given directory, non-interactively.
 
 ```
 openacp instances create
-  --dir <path>              Target directory (system appends /.openacp internally)
-  [--from <path>]           Clone settings from this existing instance directory
+  --dir <path>              Target directory — system appends /.openacp internally (user-facing convention from multi-instance spec)
+  [--from <path>]           Clone from this existing instance directory (same convention: parent dir, not /.openacp)
   [--name <name>]           Instance name (default: openacp-<N>)
-  [--agent <agentName>]     Set default agent
+  [--agent <agentName>]     Set default agent in config
   [--no-interactive]        Skip setup wizard entirely
-  [--json]                  Print created instance info as JSON on completion
+  [--json]                  Print resulting instance info as JSON to stdout
 ```
 
 **Flow:**
 
 ```
-→ Resolve --dir to absolute path
+→ Resolve --dir to absolute path (expand ~/, resolve symlinks)
 → Check <dir>/.openacp already exists?
-  → Yes + already in registry: error "Instance already exists at <dir> (id: <id>)"
-  → Yes + not in registry: register it, skip creation
-→ --from provided:
-  → Validate <from>/.openacp/config.json exists
-  → Clone using existing copy logic (from multi-instance spec)
-  → Register new instance in ~/.openacp/instances.json
-→ --no-interactive (no --from):
-  → Create <dir>/.openacp/ directory structure
-  → Write minimal config.json: { instanceName, runMode: "daemon" }
-  → Write agents.json: [{ name: <agentName> }] if --agent provided
-  → Register in ~/.openacp/instances.json
-→ --json: print instance info to stdout
-→ Exit 0
+  → Yes + already in registry:
+    → Error: "Instance already exists at <dir> (id: <id>)"
+    → Exit 1
+  → Yes + not in registry:
+    → Read instanceName from <dir>/.openacp/config.json
+    → Register entry in ~/.openacp/instances.json
+    → Skip creation, go to output step
+→ No .openacp yet:
+  → --from <fromPath> provided:
+    → Validate <fromPath>/.openacp/config.json exists (error if not found)
+    → Clone using existing copy logic (from multi-instance spec)
+    → Register new instance in ~/.openacp/instances.json
+  → --no-interactive (no --from):
+    → Create <dir>/.openacp/ directory structure
+    → Write minimal config.json: { instanceName: <name>, runMode: "daemon" }
+    → Write agents.json with default agent if --agent provided
+    → Register in ~/.openacp/instances.json
+→ Output step:
+  → --json: print instance info JSON to stdout, exit 0
+  → No --json: print "Instance created: <name> at <dir>", exit 0
 ```
 
 **JSON output (`--json`):**
@@ -111,22 +126,49 @@ openacp instances create
 
 ---
 
-### `--json` on Onboarding Wizard
+## 2. Extend `start --json` and Onboarding Output
 
-When the onboarding wizard completes (first-run setup), if `--json` flag is present, print the created instance info as a JSON block to stdout before handing off to daemon mode:
+### Current `start --json` Output
 
-```
-→ Setup wizard completes
-→ Start server
-→ Print JSON to stdout (one line): {"id":"main","name":"Main","directory":"/Users/user",...}
-→ Daemon takes over stdout
+`openacp start --json` (and the default command when starting) already outputs:
+```json
+{ "success": true, "data": { "pid": 1234, "instanceId": "main", "dir": "/Users/user/.openacp" } }
 ```
 
-The app reads this JSON line from sidecar stdout to capture the `id` of the newly created instance immediately.
+`dir` here is the `.openacp` root path.
+
+### Required Change
+
+Extend the `data` payload to include `name` and `directory` (the parent folder, i.e., the human-facing project folder):
+
+```json
+{
+  "success": true,
+  "data": {
+    "pid": 1234,
+    "instanceId": "main",
+    "name": "Main",
+    "directory": "/Users/user",
+    "dir": "/Users/user/.openacp",
+    "port": 21420
+  }
+}
+```
+
+`dir` is kept for backward compatibility. `directory` is `path.dirname(dir)`.
+
+### Onboarding Wizard with `--json`
+
+When `openacp` (or `openacp start`) is run with `--json` and no config exists:
+
+1. The setup wizard runs normally (interactive terminal prompts — `--json` controls output format, not interactivity).
+2. After wizard completes and server starts, the extended `start --json` output is emitted.
+
+The app reads this JSON from sidecar stdout to capture the newly created instance's `id` immediately after setup completes.
 
 ---
 
-## 2. Auth Code Exchange
+## 3. Auth Code Exchange
 
 ### Motivation
 
@@ -136,7 +178,7 @@ The current `openacp remote` spec embeds the JWT directly in the URL (`?token=ey
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| `POST` | `/api/v1/auth/codes` | Secret token | Generate one-time code |
+| `POST` | `/api/v1/auth/codes` | Secret token only | Generate one-time code |
 | `POST` | `/api/v1/auth/exchange` | None (code is credential) | Exchange code for JWT |
 
 ---
@@ -183,7 +225,7 @@ No authentication required — the code is the credential.
 → Not found: 401 "Invalid code"
 → Found but expired: 401 "Code expired"
 → Found but already used: 401 "Code already used"
-→ Mark code as used (single-use)
+→ Mark code as used (single-use, prevent replay)
 → Call internal token generation with stored tokenParams
 → Return same response as POST /api/v1/auth/tokens
 ```
@@ -204,22 +246,22 @@ No authentication required — the code is the credential.
 
 ```
 openacp remote
-  → POST /api/v1/auth/codes → code "abc123xyz"
+  → POST /api/v1/auth/codes (secret token) → code "abc123xyz"
   → Generate links:
     openacp://connect?host=<tunnel>&code=abc123xyz
     https://<tunnel>?code=abc123xyz
     http://localhost:<port>?code=abc123xyz
 ```
 
-The `token=` query param in all link formats is replaced by `code=`.
+The `token=` query param in all link formats is replaced by `code=`. The auth spec's existing link formats are updated accordingly.
 
 ---
 
-## 3. `GET /api/v1/workspace`
+## 4. `GET /api/v1/workspace`
 
-Returns identity information about the current workspace/instance. Used by the app after connecting to a remote workspace to get the instance `id` and display info.
+Returns identity information about the current workspace/instance. Used by the app after connecting to a remote workspace to retrieve the instance `id` and display info.
 
-**Auth:** Any valid auth (secret token or JWT with `system:health` scope).
+**Auth:** Any valid auth (secret token or JWT — no specific scope required beyond authentication).
 
 **Response:**
 ```json
@@ -231,9 +273,9 @@ Returns identity information about the current workspace/instance. Used by the a
 }
 ```
 
-`directory` is the parent of the `.openacp` root — the human-facing project folder.
+`directory` is `path.dirname(instanceRoot)` — the parent of the `.openacp` folder, i.e., the human-facing project folder.
 
-Note: `directory` is the server-side filesystem path, meaningful for display but not for connection routing (which uses `host`).
+`directory` is the server-side filesystem path. For remote workspaces, it is meaningful for display only — connection routing uses `host`, not `directory`.
 
 ---
 
@@ -242,12 +284,14 @@ Note: `directory` is the server-side filesystem path, meaningful for display but
 ### New Files (core)
 - `src/cli/commands/instances.ts` — `instances list` and `instances create` subcommands
 - `src/plugins/api-server/routes/workspace.ts` — `GET /api/v1/workspace` route
-- `src/plugins/api-server/auth/code-store.ts` — in-memory code store
-- `src/plugins/api-server/routes/auth-codes.ts` — `/api/v1/auth/codes` and `/api/v1/auth/exchange` routes
+- `src/plugins/api-server/auth/code-store.ts` — in-memory code store (TTL + single-use)
+- `src/plugins/api-server/routes/auth-codes.ts` — `POST /api/v1/auth/codes` and `POST /api/v1/auth/exchange` routes
 
 ### Modified Files (core)
-- `src/cli/commands/default.ts` — add `--json` flag support to onboarding wizard output
-- `src/cli/commands/plugins.ts` / CLI entry — register `instances` subcommand
+- `src/cli.ts` — register `instances` subcommand in instance-aware command map
+- `src/cli/commands/index.ts` — export `cmdInstances`
+- `src/cli/commands/start.ts` — extend `--json` output with `name`, `directory`, `port`
+- `src/cli/commands/default.ts` — extend `--json` output (startup after wizard) with same fields
 - `src/plugins/api-server/routes/auth.ts` — register new code exchange routes
 - `src/plugins/api-server/server.ts` — register workspace route
 

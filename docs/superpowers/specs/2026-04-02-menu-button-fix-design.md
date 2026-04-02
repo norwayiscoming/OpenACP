@@ -100,21 +100,23 @@ The `m:` handler has `case 'callback': break;` which silently does nothing. This
 
 The issue: grammY callback routing already matched `m:core:settings` → the broad `m:` handler consumed it. The `s:settings` callback data is never re-dispatched to `setupSettingsCallbacks`.
 
-Fix: handle known callback data directly in the `callback` case:
+Fix: handle known callback data directly in the `callback` case. grammY does not support re-dispatching callback data, so we must call handlers directly.
 
 ```typescript
 case 'callback': {
   const cbData = item.action.callbackData
   if (cbData === 's:settings') {
-    // Call handleSettings directly — it sends the settings keyboard
     await handleSettings(ctx, core)
+  } else if (cbData.startsWith('ns:')) {
+    // New Session flow — call showAgentPicker directly
+    await showAgentPicker(ctx, core, chatId)
   }
   // Future callback types can be added here
   break
 }
 ```
 
-This is a targeted fix. A more general solution (re-dispatching arbitrary callback data) is complex and unnecessary — `s:settings` is currently the only `callback` action in the menu.
+This handles the two known `callback` actions: Settings (`s:settings`) and New Session (`ns:start`). Plugins adding new `callback` menu items would need to extend this case — but that's a rare scenario. A more general solution (callback registry) can be added later if needed.
 
 ### Part 3: New Session Button Flow
 
@@ -146,8 +148,31 @@ Replace the current `delegate` action (sends everything to AI) with a multi-step
 |--------------|--------|
 | `ns:start` | Show agent picker |
 | `ns:agent:{agentKey}` | Show workspace picker for this agent |
-| `ns:ws:{agentKey}:{base64-workspace}` | Create session directly |
+| `ns:ws:{id}` | Create session directly (workspace resolved from cache) |
 | `ns:custom:{agentKey}` | Delegate to AI for workspace input |
+
+#### Callback data size constraint
+
+Telegram limits callback_data to 64 bytes. Workspace paths can easily exceed this (e.g. `ns:ws:claude-code:/Users/lucas/some-long-path` = 50+ chars). The adapter already has a compression mechanism (`toCallbackData`/`fromCallbackData` with `callbackCache` Map) but it only handles the `c/` prefix.
+
+For `ns:ws:` callbacks, use a workspace cache instead of embedding the path:
+
+```typescript
+// Store workspace in a short-lived cache keyed by numeric ID
+const workspaceCache = new Map<number, { agentKey: string; workspace: string }>()
+let nextWsId = 0
+
+// When building workspace picker buttons:
+const id = nextWsId++
+workspaceCache.set(id, { agentKey, workspace })
+kb.text(shortLabel, `ns:ws:${id}`)  // always short callback data
+
+// When handling ns:ws callback:
+const entry = workspaceCache.get(id)
+if (!entry) { /* expired — show picker again */ }
+```
+
+This keeps callback data under 20 bytes regardless of path length.
 
 #### Agent picker
 
@@ -222,16 +247,16 @@ User taps [🆕 New Session]
   → callback_data = "m:core:new"
   → broad m: handler → menuRegistry.getItem("core:new")
   → action.type === 'callback', callbackData: 'ns:start'
-  → case 'callback': cbData === 'ns:start' → (but ns: handler already registered before m:)
-
-Actually: ns:start is dispatched via the callback case in m: handler
-  → shows agent picker buttons
+  → case 'callback': cbData starts with 'ns:' → call setupNewSessionCallbacks handler directly
+  → shows agent picker buttons (edit existing message)
   → user taps [claude-code] → ns:agent:claude-code
-  → shows workspace picker: [~/project-a] [~/project-b] [📁 Custom...]
-  → user taps [~/project-a] → ns:ws:claude-code:<base64>
-  → createSessionDirect(ctx, core, chatId, "claude-code", "~/project-a")
+  → ns: handler shows workspace picker: [~/project-a] [~/project-b] [📁 Custom...]
+  → user taps [~/project-a] → ns:ws:42
+  → ns: handler resolves workspace from cache → createSessionDirect(ctx, core, chatId, "claude-code", "~/project-a")
   → ✅ Session created with topic
 ```
+
+Note: The callback_data `m:core:new` is consumed by the broad `m:` handler. Inside `case 'callback'`, the handler must call the `ns:` logic directly — it cannot re-dispatch `ns:start` as a new callback because grammY doesn't support that. Implementation: extract the agent picker logic into a standalone function `showAgentPicker(ctx, core, chatId)` and call it from both the `m:` handler's callback case and the `ns:start` callback handler.
 
 ### Flow 2: User taps "🤖 Agents" menu button
 
@@ -284,7 +309,8 @@ User taps [Refresh]
 | No agents installed | New Session shows "No agents installed. Use /install" |
 | Intercept handler throws | Caught by existing try/catch in slash command handler and `m:` handler |
 | User taps old menu button (before update) | `m:core:new` with old `delegate` action — still works via fallback in `m:` handler |
-| Workspace path contains special chars | Base64 encoded in callback data, decoded before use |
+| Workspace path is very long | Workspace stored in cache with numeric ID — callback data always under 20 bytes |
+| Workspace cache entry expired (user waited too long) | Show agent picker again with message "Session expired, please try again" |
 | Agent key not found after selection | `createSessionDirect` error handling shows error message |
 
 ## Testing

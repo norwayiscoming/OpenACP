@@ -54,8 +54,16 @@ export async function cmdSetup(args: string[], instanceRoot: string): Promise<vo
     }
   }
 
+  // Preserve existing channels; always ensure the SSE adapter is enabled
+  const existingChannels = (existing['channels'] as Record<string, unknown>) ?? {};
+  const channels = {
+    ...existingChannels,
+    sse: { ...(existingChannels['sse'] as Record<string, unknown> ?? {}), enabled: true },
+  };
+
   const config = {
     ...existing,
+    channels,
     defaultAgent,
     workspace: { baseDir: workspace },
     runMode,

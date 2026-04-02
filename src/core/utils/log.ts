@@ -9,7 +9,7 @@ export type Logger = pino.Logger
 // --- Default console-only logger (pre-init) ---
 let rootLogger: pino.Logger = pino({
   level: 'debug',
-  transport: { target: 'pino-pretty', options: { colorize: true, translateTime: 'SYS:standard' } },
+  transport: { target: 'pino-pretty', options: { colorize: true, translateTime: 'SYS:standard', destination: 2 } },
 })
 let initialized = false
 let logDir: string | undefined
@@ -114,6 +114,7 @@ export function initLogger(config: LoggingConfig): Logger {
           translateTime: 'SYS:HH:MM:ss',
           ignore: 'pid,hostname',
           singleLine: true,
+          destination: 2,
         },
         level: config.level,
       },

@@ -104,7 +104,8 @@ export const ConfigSchema = z.object({
   instanceName: z.string().optional(),
   channels: z
     .object({})
-    .catchall(BaseChannelSchema),
+    .catchall(BaseChannelSchema)
+    .default({}),
   agents: z.record(z.string(), AgentSchema).optional().default({}),
   defaultAgent: z.string(),
   workspace: z

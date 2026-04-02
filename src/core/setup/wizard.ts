@@ -40,6 +40,30 @@ async function fetchCommunityAdapters(): Promise<CommunityAdapterOption[]> {
   }
 }
 
+// ─── Desktop App detection ───
+
+function checkDesktopAppInstalled(): boolean {
+  // TODO: replace with exact app bundle / executable path once the Desktop App ships
+  const candidates: string[] = [];
+  const platform = process.platform;
+
+  if (platform === 'darwin') {
+    candidates.push('/Applications/OpenACP.app');
+    candidates.push(`${os.homedir()}/Applications/OpenACP.app`);
+  } else if (platform === 'win32') {
+    const localAppData = process.env['LOCALAPPDATA'] ?? '';
+    candidates.push(`${localAppData}\\Programs\\OpenACP\\OpenACP.exe`);
+    candidates.push(`C:\\Program Files\\OpenACP\\OpenACP.exe`);
+  } else {
+    // Linux — check common binary locations
+    candidates.push('/usr/bin/openacp-desktop');
+    candidates.push('/usr/local/bin/openacp-desktop');
+    candidates.push(`${os.homedir()}/.local/bin/openacp-desktop`);
+  }
+
+  return candidates.some(p => fs.existsSync(p));
+}
+
 // ─── First-run setup ───
 
 export async function runSetup(
@@ -180,6 +204,7 @@ export async function runSetup(
     const communityAdapters = await fetchCommunityAdapters()
 
     const builtInOptions = [
+      { label: 'Desktop App', value: 'sse' },
       { label: 'Telegram', value: 'telegram' },
     ]
 
@@ -205,7 +230,7 @@ export async function runSetup(
             : []),
         ],
         required: true,
-        initialValues: ['telegram' as const],
+        initialValues: ['sse' as const],
       }),
     ) as string[];
 
@@ -220,6 +245,30 @@ export async function runSetup(
 
     for (const channelId of channelChoices) {
       currentStep++;
+
+      if (channelId === 'sse') {
+        // TODO: check if the OpenACP Desktop App is installed; if not, offer to download it.
+        // For now, detect common install locations on the current platform.
+        const isInstalled = checkDesktopAppInstalled();
+        if (isInstalled) {
+          clack.log.success('Desktop App detected.');
+        } else {
+          clack.log.warn(
+            'Desktop App not found on this machine.\n' +
+            '  TODO: download from https://openacp.com/download (download flow not yet implemented).',
+          );
+        }
+
+        const ssePlugin = (await import('../../plugins/sse-adapter/index.js')).default;
+        pluginRegistry.register(ssePlugin.name, {
+          version: ssePlugin.version,
+          source: 'builtin',
+          enabled: true,
+          settingsPath: settingsManager.getSettingsPath(ssePlugin.name),
+          description: ssePlugin.description,
+        });
+        continue;
+      }
 
       if (channelId === 'telegram') {
         const telegramPlugin = (await import('../../plugins/telegram/index.js')).default;
@@ -587,7 +636,7 @@ export async function runReconfigure(configManager: ConfigManager): Promise<void
       }
 
       if (choice === "integrations") {
-        await setupIntegrations(config);
+        await setupIntegrations();
       }
     }
 

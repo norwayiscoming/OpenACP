@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { TokenStore, parseDuration } from '../auth/token-store.js'
 import { createApiServer } from '../server.js'
 import type { ApiServerInstance } from '../server.js'
@@ -117,5 +117,26 @@ describe('POST /exchange', () => {
       payload: { code: created.code },
     })
     expect(second.statusCode).toBe(401)
+  })
+
+  it('returns 401 for expired code', async () => {
+    const realNow = Date.now()
+    // createCode defaults to 30-minute TTL; create code at current real time
+    const created = store.createCode({ role: 'operator', name: 'expiry-test', expire: '24h' })
+
+    // Mock Date.now to simulate time past the 30-minute TTL without blocking async I/O
+    const expiredTime = realNow + 30 * 60 * 1000 + 1_000
+    vi.spyOn(Date, 'now').mockReturnValue(expiredTime)
+    try {
+      const res = await server.app.inject({
+        method: 'POST',
+        url: '/api/v1/auth/exchange',
+        payload: { code: created.code },
+      })
+
+      expect(res.statusCode).toBe(401)
+    } finally {
+      vi.restoreAllMocks()
+    }
   })
 })

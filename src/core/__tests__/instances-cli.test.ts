@@ -124,4 +124,76 @@ describe('cmdInstancesCreate', () => {
     mockExit.mockRestore()
     mockError.mockRestore()
   })
+
+  it('registers .openacp that exists but is not in registry', async () => {
+    // .openacp exists but registry has no entry for it
+    vi.mocked(fs.existsSync).mockReturnValue(true)
+    vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({ instanceName: 'My Project' }))
+    const mockRegistry = {
+      load: vi.fn(),
+      list: vi.fn().mockReturnValue([]),
+      getByRoot: vi.fn().mockReturnValue(undefined),
+      uniqueId: vi.fn().mockReturnValue('my-project'),
+      register: vi.fn(),
+      save: vi.fn(),
+    }
+    vi.mocked(InstanceRegistry).mockImplementation(function() { return mockRegistry } as any)
+    vi.mocked(readInstanceInfo).mockReturnValue({
+      name: 'My Project', pid: null, apiPort: null,
+      tunnelPort: null, runMode: null, channels: [],
+    })
+
+    const mockLog = vi.spyOn(console, 'log').mockImplementation(() => {})
+    await cmdInstancesCreate(['--dir', '/Users/user/my-project'])
+    expect(mockRegistry.register).toHaveBeenCalledWith('my-project', '/Users/user/my-project/.openacp')
+    expect(mockRegistry.save).toHaveBeenCalled()
+    mockLog.mockRestore()
+  })
+
+  it('creates minimal config with --no-interactive flag', async () => {
+    // .openacp does not exist
+    vi.mocked(fs.existsSync).mockReturnValue(false)
+    vi.mocked(fs.mkdirSync).mockReturnValue(undefined)
+    vi.mocked(fs.writeFileSync).mockReturnValue(undefined)
+    const mockRegistry = {
+      load: vi.fn(),
+      list: vi.fn().mockReturnValue([]),
+      getByRoot: vi.fn().mockReturnValue(undefined),
+      uniqueId: vi.fn().mockReturnValue('my-instance'),
+      register: vi.fn(),
+      save: vi.fn(),
+    }
+    vi.mocked(InstanceRegistry).mockImplementation(function() { return mockRegistry } as any)
+    vi.mocked(readInstanceInfo).mockReturnValue({
+      name: 'my-instance', pid: null, apiPort: null,
+      tunnelPort: null, runMode: null, channels: [],
+    })
+
+    const mockLog = vi.spyOn(console, 'log').mockImplementation(() => {})
+    await cmdInstancesCreate(['--dir', '/Users/user/new-instance', '--name', 'my-instance', '--no-interactive'])
+
+    // mkdirSync called for instanceRoot
+    expect(fs.mkdirSync).toHaveBeenCalledWith('/Users/user/new-instance/.openacp', { recursive: true })
+
+    // config.json written with instanceName
+    const configWriteCall = vi.mocked(fs.writeFileSync).mock.calls.find(
+      ([p]) => typeof p === 'string' && (p as string).endsWith('config.json')
+    )
+    expect(configWriteCall).toBeDefined()
+    const writtenConfig = JSON.parse(configWriteCall![1] as string)
+    expect(writtenConfig.instanceName).toBe('my-instance')
+    expect(writtenConfig.runMode).toBe('daemon')
+
+    // plugins.json also written
+    const pluginsWriteCall = vi.mocked(fs.writeFileSync).mock.calls.find(
+      ([p]) => typeof p === 'string' && (p as string).endsWith('plugins.json')
+    )
+    expect(pluginsWriteCall).toBeDefined()
+
+    // registered in registry
+    expect(mockRegistry.register).toHaveBeenCalledWith('my-instance', '/Users/user/new-instance/.openacp')
+    expect(mockRegistry.save).toHaveBeenCalled()
+
+    mockLog.mockRestore()
+  })
 })

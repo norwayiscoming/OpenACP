@@ -131,6 +131,12 @@ export function setupAllCallbacks(
         break
       }
       case 'delegate': {
+        // Telegram-specific override: New Session uses button flow instead of AI
+        if (itemId === 'core:new') {
+          await showAgentPicker(ctx, core, chatId)
+          break
+        }
+
         const assistant = core.assistantManager?.get('telegram')
         if (assistant) {
           if (topicId && systemTopicIds && topicId !== systemTopicIds.assistantTopicId) {
@@ -148,8 +154,6 @@ export function setupAllCallbacks(
         const cbData = item.action.callbackData
         if (cbData === 's:settings') {
           await handleSettings(ctx, core)
-        } else if (cbData === 'ns:start') {
-          await showAgentPicker(ctx, core, chatId)
         }
         break
       }

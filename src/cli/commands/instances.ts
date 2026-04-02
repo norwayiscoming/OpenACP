@@ -4,7 +4,7 @@ import fs from 'node:fs'
 import { InstanceRegistry } from '../../core/instance/instance-registry.js'
 import { getGlobalRoot, generateSlug } from '../../core/instance/instance-context.js'
 import { readInstanceInfo } from './status.js'
-import { isJsonMode, jsonSuccess, muteForJson } from '../output.js'
+import { isJsonMode, jsonSuccess, jsonError, muteForJson, ErrorCodes } from '../output.js'
 import { wantsHelp } from './helpers.js'
 
 export interface InstanceListEntry {
@@ -34,16 +34,16 @@ export async function buildInstanceListEntries(): Promise<InstanceListEntry[]> {
 }
 
 export async function cmdInstances(args: string[] = []): Promise<void> {
+  if (wantsHelp(args)) {
+    printInstancesHelp()
+    return
+  }
+
   const sub = args[0]
   const subArgs = args.slice(1)
 
   if (!sub || sub === 'list') return cmdInstancesList(subArgs)
   if (sub === 'create') return cmdInstancesCreate(subArgs)
-
-  if (wantsHelp(args)) {
-    printInstancesHelp()
-    return
-  }
 
   console.error(`Unknown subcommand: instances ${sub}`)
   printInstancesHelp()
@@ -100,6 +100,7 @@ export async function cmdInstancesCreate(args: string[]): Promise<void> {
   const dirIdx = args.indexOf('--dir')
   const rawDir = dirIdx !== -1 ? args[dirIdx + 1] : undefined
   if (!rawDir) {
+    if (json) jsonError(ErrorCodes.MISSING_ARGUMENT, '--dir is required')
     console.error('Error: --dir is required')
     process.exit(1)
   }
@@ -124,6 +125,7 @@ export async function cmdInstancesCreate(args: string[]): Promise<void> {
   if (fs.existsSync(instanceRoot)) {
     const existing = registry.getByRoot(instanceRoot)
     if (existing) {
+      if (json) jsonError(ErrorCodes.UNKNOWN_ERROR, `Instance already exists at ${resolvedDir} (id: ${existing.id})`)
       console.error(`Error: Instance already exists at ${resolvedDir} (id: ${existing.id})`)
       process.exit(1)
     }
@@ -144,7 +146,6 @@ export async function cmdInstancesCreate(args: string[]): Promise<void> {
   // Case: create new
   const name = instanceName ?? `openacp-${registry.list().length + 1}`
   const id = registry.uniqueId(generateSlug(name))
-  fs.mkdirSync(instanceRoot, { recursive: true })
 
   if (rawFrom) {
     // Clone from existing instance using copyInstance
@@ -153,6 +154,7 @@ export async function cmdInstancesCreate(args: string[]): Promise<void> {
       console.error(`Error: No OpenACP instance found at ${rawFrom}`)
       process.exit(1)
     }
+    fs.mkdirSync(instanceRoot, { recursive: true })
     const { copyInstance } = await import('../../core/instance/instance-copy.js')
     await copyInstance(fromRoot, instanceRoot, {})
     // Write instanceName into config
@@ -164,12 +166,14 @@ export async function cmdInstancesCreate(args: string[]): Promise<void> {
     } catch {}
   } else if (noInteractive || !process.stdin.isTTY) {
     // Minimal config for non-interactive mode
+    fs.mkdirSync(instanceRoot, { recursive: true })
     const config: Record<string, unknown> = { instanceName: name, runMode: 'daemon' }
     if (agent) config.defaultAgent = agent
     fs.writeFileSync(path.join(instanceRoot, 'config.json'), JSON.stringify(config, null, 2))
     fs.writeFileSync(path.join(instanceRoot, 'plugins.json'), JSON.stringify({ version: 1, installed: {} }, null, 2))
   } else {
     // Interactive wizard — requires plugin system; fall back to minimal config
+    fs.mkdirSync(instanceRoot, { recursive: true })
     const config: Record<string, unknown> = { instanceName: name, runMode: 'daemon' }
     if (agent) config.defaultAgent = agent
     fs.writeFileSync(path.join(instanceRoot, 'config.json'), JSON.stringify(config, null, 2))

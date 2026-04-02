@@ -228,6 +228,7 @@ describe("OpenACPCore.createSession", () => {
         workingDir: "/tmp/test",
         channelId: "telegram",
       }),
+      { immediate: true },
     );
   });
 });

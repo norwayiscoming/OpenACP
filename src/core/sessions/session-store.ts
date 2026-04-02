@@ -7,6 +7,8 @@ const log = createChildLogger({ module: "session-store" });
 
 export interface SessionStore {
   save(record: SessionRecord): Promise<void>;
+  /** Immediately flush pending writes to disk (no debounce). */
+  flush(): void;
   get(sessionId: string): SessionRecord | undefined;
   findByPlatform(
     channelId: string,
@@ -97,6 +99,10 @@ export class JsonFileSessionStore implements SessionStore {
   async remove(sessionId: string): Promise<void> {
     this.records.delete(sessionId);
     this.scheduleDiskWrite();
+  }
+
+  flush(): void {
+    this.flushSync();
   }
 
   flushSync(): void {

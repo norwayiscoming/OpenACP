@@ -411,7 +411,7 @@ export class OpenACPCore {
       agentSwitchHistory: session.agentSwitchHistory,
       // Cache ACP state for display before agent reconnects on lazy resume
       acpState: session.toAcpStateSnapshot(),
-    });
+    }, { immediate: true });
 
     // 6. Connect SessionBridge — agent events can now fire with threadId available
     if (adapter) {

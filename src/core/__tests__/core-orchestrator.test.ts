@@ -26,6 +26,7 @@ vi.mock("../agent-catalog.js", () => {
 vi.mock("../session-store.js", () => {
   const MockJsonFileSessionStore = class {
     save = vi.fn().mockResolvedValue(undefined);
+    flush = vi.fn();
     get = vi.fn().mockReturnValue(undefined);
     findByPlatform = vi.fn().mockReturnValue(undefined);
     findByAgentSessionId = vi.fn().mockReturnValue(undefined);

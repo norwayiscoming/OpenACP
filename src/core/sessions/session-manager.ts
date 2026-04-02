@@ -98,6 +98,7 @@ export class SessionManager {
   async patchRecord(
     sessionId: string,
     patch: Partial<import("../types.js").SessionRecord>,
+    options?: { immediate?: boolean },
   ): Promise<void> {
     if (!this.store) return;
     const record = this.store.get(sessionId);
@@ -106,6 +107,9 @@ export class SessionManager {
     } else if (patch.sessionId) {
       // Initial save — treat patch as full record
       await this.store.save(patch as import("../types.js").SessionRecord);
+    }
+    if (options?.immediate) {
+      this.store.flush();
     }
   }
 
@@ -173,6 +177,7 @@ export class SessionManager {
           await this.store.save({ ...record, status: "finished" });
         }
       }
+      this.store.flush();
     }
     this.sessions.clear();
   }
@@ -189,6 +194,7 @@ export class SessionManager {
           await this.store.save({ ...record, status: "finished" });
         }
       }
+      this.store.flush();
     }
     const sessionIds = [...this.sessions.keys()];
     for (const session of this.sessions.values()) {

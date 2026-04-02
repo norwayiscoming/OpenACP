@@ -55,6 +55,7 @@ function createMockStore(): SessionStore {
     remove: vi.fn(async (id: string) => {
       records.delete(id);
     }),
+    flush: vi.fn(),
   };
 }
 

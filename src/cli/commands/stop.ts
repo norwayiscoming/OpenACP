@@ -16,6 +16,10 @@ export async function cmdStop(args: string[] = [], instanceRoot?: string): Promi
   openacp stop
 
 Sends a stop signal to the running OpenACP daemon process.
+
+\x1b[1mOptions:\x1b[0m
+  --json          Output result as JSON
+  -h, --help      Show this help message
 `)
     return
   }

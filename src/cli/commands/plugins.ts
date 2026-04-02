@@ -12,6 +12,10 @@ export async function cmdPlugins(args: string[] = [], instanceRoot?: string): Pr
 \x1b[1mUsage:\x1b[0m
   openacp plugins
 
+\x1b[1mOptions:\x1b[0m
+  --json          Output result as JSON
+  -h, --help      Show this help message
+
 Shows all plugins registered in the plugin registry.
 `)
     return
@@ -83,6 +87,10 @@ export async function cmdPlugin(args: string[] = [], instanceRoot?: string): Pro
   openacp plugin disable <name>          Disable a plugin
   openacp plugin configure <name>        Run interactive configuration
   openacp plugin create                  Scaffold a new plugin project
+
+\x1b[1mOptions:\x1b[0m
+  --json          Output result as JSON
+  -h, --help      Show this help message
 
 \x1b[1mExamples:\x1b[0m
   openacp plugin list

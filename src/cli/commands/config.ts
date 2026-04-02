@@ -18,6 +18,7 @@ export async function cmdConfig(args: string[] = [], instanceRoot?: string): Pro
   <value>         New value (JSON-parsed if possible, otherwise string)
 
 \x1b[1mOptions:\x1b[0m
+  --json          Output result as JSON
   -h, --help      Show this help message
 
 Works with both running and stopped daemon. When running, uses
@@ -40,6 +41,7 @@ the API for live updates. When stopped, edits config file directly.
   openacp config set <key> <value>     Set a config value directly
 
 \x1b[1mOptions:\x1b[0m
+  --json                                 Output result as JSON
   -h, --help                           Show this help message
 
 Works with both running and stopped daemon. When running, uses

@@ -106,6 +106,9 @@ Tunnel Management:
   openacp tunnel list
   openacp tunnel stop <port>
   openacp tunnel stop-all
+
+Options:
+  --json          Output result as JSON
 `)
     }
   } catch (err) {

@@ -24,6 +24,10 @@ export async function cmdInstall(args: string[], instanceRoot?: string): Promise
 
 Installs the plugin to ~/.openacp/plugins/.
 
+\x1b[1mOptions:\x1b[0m
+  --json          Output result as JSON
+  -h, --help      Show this help message
+
 \x1b[1mExamples:\x1b[0m
   openacp install @openacp/adapter-discord
 `)

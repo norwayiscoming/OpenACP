@@ -43,6 +43,7 @@ function printApiHelp(): void {
   openacp api version                      Show daemon version
 
 \x1b[1mOptions:\x1b[0m
+  --json                                   Output result as JSON
   -h, --help                               Show this help message
 `)
 }

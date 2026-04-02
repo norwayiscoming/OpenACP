@@ -14,6 +14,7 @@ export async function cmdDoctor(args: string[], instanceRoot?: string): Promise<
 
 \x1b[1mOptions:\x1b[0m
   --dry-run       Check only, don't apply any fixes
+  --json          Output result as JSON
   -h, --help      Show this help message
 
 Checks your OpenACP installation for common issues including

@@ -17,7 +17,7 @@ export async function cmdAdopt(args: string[]): Promise<void> {
 \x1b[1mOptions:\x1b[0m
   --cwd <path>       Working directory for the session (default: current dir)
   --channel <name>   Target channel adapter (e.g. telegram, discord). Default: first registered
-  --json             Output as JSON
+  --json             Output result as JSON
   -h, --help         Show this help message
 
 Transfers an existing agent session into OpenACP so it appears

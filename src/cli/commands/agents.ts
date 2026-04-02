@@ -28,6 +28,7 @@ export async function cmdAgents(args: string[], instanceRoot?: string): Promise<
   openacp agents refresh               Force-refresh agent list from registry
 
 \x1b[1mOptions:\x1b[0m
+  --json                                 Output result as JSON
   -h, --help                           Show this help message
 
 \x1b[1mExamples:\x1b[0m
@@ -162,6 +163,7 @@ async function agentsInstall(nameOrId: string | undefined, force: boolean, help 
 
 \x1b[1mOptions:\x1b[0m
   --force         Reinstall even if already installed
+  --json          Output result as JSON
   -h, --help      Show this help message
 
 \x1b[1mExamples:\x1b[0m
@@ -263,6 +265,10 @@ async function agentsUninstall(name: string | undefined, help = false, instanceR
 \x1b[1mArguments:\x1b[0m
   <name>          Agent name to remove
 
+\x1b[1mOptions:\x1b[0m
+  --json          Output result as JSON
+  -h, --help      Show this help message
+
 \x1b[1mExamples:\x1b[0m
   openacp agents uninstall gemini
 `)
@@ -325,6 +331,10 @@ async function agentsInfo(nameOrId: string | undefined, help = false, instanceRo
 
 Shows version, distribution type, command, setup steps, and
 whether the agent is installed or available from the registry.
+
+\x1b[1mOptions:\x1b[0m
+  --json          Output result as JSON
+  -h, --help      Show this help message
 
 \x1b[1mExamples:\x1b[0m
   openacp agents info claude

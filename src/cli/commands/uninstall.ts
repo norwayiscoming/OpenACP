@@ -22,6 +22,10 @@ export async function cmdUninstall(args: string[], instanceRoot?: string): Promi
 \x1b[1mArguments:\x1b[0m
   <package>       npm package name to remove
 
+\x1b[1mOptions:\x1b[0m
+  --json          Output result as JSON
+  -h, --help      Show this help message
+
 \x1b[1mExamples:\x1b[0m
   openacp uninstall @openacp/adapter-discord
 `)

@@ -21,6 +21,10 @@ export async function cmdRestart(args: string[] = [], instanceRoot?: string): Pr
 
 Stops the running daemon (if any) and starts a new one.
 
+\x1b[1mOptions:\x1b[0m
+  --json          Output result as JSON
+  -h, --help      Show this help message
+
 \x1b[1mSee also:\x1b[0m
   openacp start       Start the daemon
   openacp stop        Stop the daemon

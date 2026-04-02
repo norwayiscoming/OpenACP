@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, afterEach } from 'vitest'
 import { createApiServer } from '../server.js'
 import { TokenStore } from '../auth/token-store.js'
 import { pluginRoutes } from '../routes/plugins.js'

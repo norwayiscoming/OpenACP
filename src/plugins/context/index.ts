@@ -59,8 +59,8 @@ const contextPlugin: OpenACPPlugin = {
     const manager = new ContextManager(cachePath)
     manager.register(new HistoryProvider(store, getRecords))
     manager.register(new EntireProvider())
+    manager.setHistoryStore(store)
     ctx.registerService('context', manager)
-    ctx.registerService('history-store', store)
 
     // Middleware: capture user prompts
     ctx.registerMiddleware('agent:beforePrompt', {

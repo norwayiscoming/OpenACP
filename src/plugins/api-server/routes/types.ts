@@ -2,7 +2,7 @@ import type { preHandlerHookHandler } from 'fastify';
 import type { OpenACPCore } from '../../../core/core.js';
 import type { TopicManager } from '../../telegram/topic-manager.js';
 import type { CommandRegistry } from '../../../core/command-registry.js';
-import type { HistoryStore } from '../../context/history/history-store.js';
+import type { ContextManager } from '../../context/context-manager.js';
 
 /**
  * Dependencies injected into Fastify route plugins.
@@ -16,6 +16,6 @@ export interface RouteDeps {
   commandRegistry?: CommandRegistry;
   /** Auth pre-handler for routes registered without global auth (e.g. system routes). */
   authPreHandler?: preHandlerHookHandler;
-  /** History store for reading session conversation history. */
-  historyStore?: HistoryStore;
+  /** Context manager for reading session conversation history. */
+  contextManager?: ContextManager;
 }

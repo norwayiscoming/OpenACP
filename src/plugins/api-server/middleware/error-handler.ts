@@ -30,6 +30,16 @@ export class BadRequestError extends Error {
   }
 }
 
+export class ServiceUnavailableError extends Error {
+  constructor(
+    public code: string,
+    message: string,
+  ) {
+    super(message);
+    this.name = 'ServiceUnavailableError';
+  }
+}
+
 export class AuthError extends Error {
   constructor(
     public code: string,
@@ -75,6 +85,17 @@ export function globalErrorHandler(
         code: error.code,
         message: error.message,
         statusCode: 404,
+      },
+    });
+    return;
+  }
+
+  if (error instanceof ServiceUnavailableError) {
+    reply.status(503).send({
+      error: {
+        code: error.code,
+        message: error.message,
+        statusCode: 503,
       },
     });
     return;

@@ -6,7 +6,7 @@ import type { OpenACPPlugin, InstallContext } from '../../core/plugin/types.js'
 import type { OpenACPCore } from '../../core/core.js'
 import type { TopicManager } from '../telegram/topic-manager.js'
 import type { CommandRegistry } from '../../core/command-registry.js'
-import type { HistoryStore } from '../context/history/history-store.js'
+import type { ContextManager } from '../context/context-manager.js'
 import type { ApiServerInstance } from './server.js'
 import type { RouteDeps } from './routes/types.js'
 import { createChildLogger } from '../../core/utils/log.js'
@@ -230,7 +230,7 @@ function createApiServerPlugin(): OpenACPPlugin {
       // Resolve optional services for route deps
       const topicManager = ctx.getService<TopicManager>('topic-manager')
       const commandRegistry = ctx.getService<CommandRegistry>('command-registry')
-      const historyStore = ctx.getService<HistoryStore>('history-store')
+      const contextManager = ctx.getService<ContextManager>('context')
 
       // Build auth pre-handler for route-level auth on unauthenticated route groups
       const routeAuthPreHandler = createAuthPreHandler(() => secret, () => jwtSecret, tokenStore)
@@ -242,7 +242,7 @@ function createApiServerPlugin(): OpenACPPlugin {
         getVersion,
         commandRegistry,
         authPreHandler: routeAuthPreHandler,
-        historyStore,
+        contextManager,
       }
 
       // Register all route plugins under /api/v1/

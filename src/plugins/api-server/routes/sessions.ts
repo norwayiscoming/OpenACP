@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import type { RouteDeps } from './types.js';
-import { NotFoundError } from '../middleware/error-handler.js';
+import { NotFoundError, ServiceUnavailableError } from '../middleware/error-handler.js';
 import { requireScopes } from '../middleware/auth.js';
 import {
   SessionIdParamSchema,
@@ -424,8 +424,7 @@ export async function sessionRoutes(
     '/:sessionId/history',
     { preHandler: requireScopes('sessions:read') },
     async (request, reply) => {
-      const { sessionId: rawId } = SessionIdParamSchema.parse(request.params);
-      const sessionId = decodeURIComponent(rawId);
+      const { sessionId } = SessionIdParamSchema.parse(request.params);
       const session = deps.core.sessionManager.getSession(sessionId);
       if (!session) {
         throw new NotFoundError(
@@ -433,12 +432,13 @@ export async function sessionRoutes(
           `Session "${sessionId}" not found`,
         );
       }
-      if (!deps.historyStore) {
-        return reply.status(503).send({
-          error: { code: 'HISTORY_UNAVAILABLE', message: 'History store not available', statusCode: 503 },
-        });
+      if (!deps.contextManager) {
+        throw new ServiceUnavailableError(
+          'HISTORY_UNAVAILABLE',
+          'History store not available',
+        );
       }
-      const history = await deps.historyStore.read(sessionId);
+      const history = await deps.contextManager.getHistory(sessionId);
       if (!history) {
         throw new NotFoundError('HISTORY_NOT_FOUND', `No history for session "${sessionId}"`);
       }

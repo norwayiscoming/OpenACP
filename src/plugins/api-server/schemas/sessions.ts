@@ -40,7 +40,7 @@ export const UpdateSessionBodySchema = z.object({
 });
 
 export const SessionIdParamSchema = z.object({
-  sessionId: z.string().min(1).regex(/^[a-zA-Z0-9_:\-]+$/, 'Invalid session ID format'),
+  sessionId: z.string().min(1),
 });
 
 export const ConfigIdParamSchema = z.object({

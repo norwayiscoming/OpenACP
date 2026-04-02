@@ -151,6 +151,33 @@ describe("HistoryStore", () => {
     });
   });
 
+  describe("path traversal protection", () => {
+    it("strips directory components from session ID on read", async () => {
+      await store.write(makeHistory("legit-session"));
+      const result = await store.read("../../../etc/passwd");
+      expect(result).toBeNull();
+    });
+
+    it("strips directory components from session ID on exists", async () => {
+      const result = await store.exists("../../etc/passwd");
+      expect(result).toBe(false);
+    });
+
+    it("uses only basename when session ID contains path separators", async () => {
+      await store.write(makeHistory("safe-id"));
+      // path.basename("foo/bar/safe-id") => "safe-id", so reading with traversal won't reach it
+      const result = await store.read("../other-dir/safe-id");
+      // Should read basename "safe-id" from the store dir, which exists
+      expect(result?.sessionId).toBe("safe-id");
+    });
+
+    it("rejects session ID that resolves outside store directory", async () => {
+      // path.basename strips traversal, but double-check the resolved path stays within dir
+      const result = await store.read("..%2F..%2Fetc%2Fpasswd");
+      expect(result).toBeNull();
+    });
+  });
+
   describe("corrupt JSON handling", () => {
     it("returns null when the file contains invalid JSON", async () => {
       const corruptPath = path.join(tmpDir, "corrupt-session.json");

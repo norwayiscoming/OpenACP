@@ -127,6 +127,17 @@ export const migrations: Migration[] = [
       return changed;
     },
   },
+  {
+    name: "migrate-tunnel-provider-to-openacp",
+    apply(raw) {
+      const tunnel = raw.tunnel as Record<string, unknown> | undefined;
+      if (!tunnel) return false;
+      if (tunnel.provider !== "cloudflare") return false;
+      tunnel.provider = "openacp";
+      log.info("Migrated tunnel provider: cloudflare → openacp (OpenACP managed tunnel)");
+      return true;
+    },
+  },
 ];
 
 /**

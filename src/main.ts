@@ -14,6 +14,7 @@ import { registerSystemCommands } from './core/commands/index.js'
 import type { IChannelAdapter } from './core/channel.js'
 import type { TunnelService } from './plugins/tunnel/tunnel-service.js'
 import { InstanceRegistry } from './core/instance/instance-registry.js'
+import { randomUUID } from 'node:crypto'
 import fs from 'node:fs'
 
 export const RESTART_EXIT_CODE = 75
@@ -27,11 +28,14 @@ export interface StartServerOptions {
 }
 
 export async function startServer(opts?: StartServerOptions) {
-  const ctx = opts?.instanceContext ?? createInstanceContext({
-    id: 'main',
-    root: getGlobalRoot(),
-    isGlobal: true,
-  })
+  const globalRoot = getGlobalRoot()
+  if (!opts?.instanceContext) {
+    const reg = new InstanceRegistry(path.join(globalRoot, 'instances.json'))
+    reg.load()
+    const entry = reg.getByRoot(globalRoot)
+    opts = { ...opts, instanceContext: createInstanceContext({ id: entry?.id ?? randomUUID(), root: globalRoot, isGlobal: true }) }
+  }
+  const ctx = opts.instanceContext!
 
   // 0. If running as daemon child, check state and write PID file
   if (process.argv.includes('--daemon-child')) {

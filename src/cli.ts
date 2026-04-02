@@ -123,7 +123,8 @@ async function main() {
       const registry = new InstanceRegistry(path.join(getGlobal(), 'instances.json'))
       await registry.load()
       const entry = registry.getByRoot(envRoot)
-      const id = entry?.id ?? 'unknown'
+      const { randomUUID } = await import('node:crypto')
+      const id = entry?.id ?? randomUUID()
       const ctx = createInstanceContext({
         id,
         root: envRoot,

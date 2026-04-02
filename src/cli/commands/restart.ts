@@ -4,6 +4,8 @@ import { printInstanceHint } from '../instance-hint.js'
 import path from 'node:path'
 import os from 'node:os'
 import { createInstanceContext, getGlobalRoot } from '../../core/instance/instance-context.js'
+import { InstanceRegistry } from '../../core/instance/instance-registry.js'
+import { randomUUID } from 'node:crypto'
 
 export async function cmdRestart(args: string[] = [], instanceRoot?: string): Promise<void> {
   const json = isJsonMode(args)
@@ -68,8 +70,11 @@ Stops the running daemon (if any) and starts a new one.
     printInstanceHint(root)
     console.log('Starting in foreground mode...')
     const { startServer } = await import('../../main.js')
+    const reg = new InstanceRegistry(path.join(getGlobalRoot(), 'instances.json'))
+    reg.load()
+    const existingEntry = reg.getByRoot(root)
     const ctx = createInstanceContext({
-      id: 'default',
+      id: existingEntry?.id ?? randomUUID(),
       root,
       isGlobal: root === getGlobalRoot(),
     })

@@ -3,6 +3,8 @@ import { printHelp } from './help.js'
 import path from 'node:path'
 import os from 'node:os'
 import { createInstanceContext, getGlobalRoot } from '../../core/instance/instance-context.js'
+import { InstanceRegistry } from '../../core/instance/instance-registry.js'
+import { randomUUID } from 'node:crypto'
 import { printInstanceHint } from '../instance-hint.js'
 
 export async function cmdDefault(command: string | undefined, instanceRoot?: string): Promise<void> {
@@ -72,8 +74,11 @@ export async function cmdDefault(command: string | undefined, instanceRoot?: str
   markRunning(root)
   printInstanceHint(root)
   const { startServer } = await import('../../main.js')
+  const reg = new InstanceRegistry(path.join(getGlobalRoot(), 'instances.json'))
+  reg.load()
+  const existingEntry = reg.getByRoot(root)
   const ctx = createInstanceContext({
-    id: 'default',
+    id: existingEntry?.id ?? randomUUID(),
     root,
     isGlobal: root === getGlobalRoot(),
   })

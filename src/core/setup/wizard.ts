@@ -17,7 +17,8 @@ import { RegistryClient } from "../plugin/registry-client.js";
 import type { SettingsManager } from "../plugin/settings-manager.js";
 import type { PluginRegistry } from "../plugin/plugin-registry.js";
 import { InstanceRegistry } from "../instance/instance-registry.js";
-import { generateSlug, getGlobalRoot } from "../instance/instance-context.js";
+import { getGlobalRoot } from "../instance/instance-context.js";
+import { randomUUID } from "node:crypto";
 import { copyInstance } from "../instance/instance-copy.js";
 import { protectLocalInstance } from "./git-protect.js";
 
@@ -487,7 +488,7 @@ export async function runSetup(
     // Register instance in the global registry (skip if this root is already registered)
     const existingEntry = instanceRegistry.getByRoot(instanceRoot);
     if (!existingEntry) {
-      const id = instanceRegistry.uniqueId(generateSlug(instanceName));
+      const id = randomUUID();
       instanceRegistry.register(id, instanceRoot);
       await instanceRegistry.save();
     }

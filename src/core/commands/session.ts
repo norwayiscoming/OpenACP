@@ -179,6 +179,56 @@ export function registerSessionCommands(registry: CommandRegistry, _core: unknow
   })
 
   registry.register({
+    name: 'archive',
+    description: 'Archive session (stop agent and delete topic)',
+    category: 'system',
+    handler: async (args) => {
+      const raw = args.raw.trim()
+
+      // /archive yes <sessionId> — confirmation
+      if (raw === 'yes' || raw.startsWith('yes ')) {
+        const sessionId = raw.slice(3).trim() || args.sessionId
+        if (!sessionId) {
+          return { type: 'error', message: 'No session to archive.' } satisfies CommandResponse
+        }
+        const result = await core.archiveSession(sessionId)
+        if (!result.ok) {
+          return { type: 'error', message: `Archive failed: ${result.error}` } satisfies CommandResponse
+        }
+        return { type: 'text', text: 'Session archived.' } satisfies CommandResponse
+      }
+
+      // /archive no — cancel
+      if (raw === 'no') {
+        return { type: 'text', text: 'Archive cancelled.' } satisfies CommandResponse
+      }
+
+      // /archive (no args) — show confirmation
+      if (!args.sessionId) {
+        return { type: 'error', message: 'Use this command in a session topic.' } satisfies CommandResponse
+      }
+
+      const session = core.sessionManager.getSession(args.sessionId)
+      const record = !session ? core.sessionManager.getSessionRecord(args.sessionId) : undefined
+      if (!session && !record) {
+        return { type: 'error', message: 'No session found for this topic.' } satisfies CommandResponse
+      }
+
+      const status = session?.status ?? record?.status
+      if (status === 'initializing') {
+        return { type: 'error', message: 'Cannot archive a session that is still initializing.' } satisfies CommandResponse
+      }
+
+      return {
+        type: 'confirm',
+        question: 'Archive this session?\n\nThis will stop the agent and delete the topic. This cannot be undone.',
+        onYes: `/archive yes ${args.sessionId}`,
+        onNo: '/archive no',
+      } satisfies CommandResponse
+    },
+  })
+
+  registry.register({
     name: 'close',
     description: 'Close this session permanently',
     category: 'system',

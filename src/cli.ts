@@ -22,6 +22,7 @@ import {
   cmdUpdate,
   cmdDefault,
   cmdAdopt,
+  cmdInstances,
   cmdIntegrate,
   cmdDoctor,
   cmdAgents,
@@ -89,6 +90,7 @@ const noInstanceCommands: Record<string, () => Promise<void>> = {
   '-v': () => cmdVersion(args),
   'update': () => cmdUpdate(args),
   'adopt': () => cmdAdopt(args),
+  'instances': async () => cmdInstances(args),
   'integrate': () => cmdIntegrate(args),
   'dev': () => cmdDev(args),
 }

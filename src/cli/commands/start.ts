@@ -4,6 +4,7 @@ import { isJsonMode, jsonSuccess, jsonError, muteForJson, ErrorCodes } from '../
 import { printInstanceHint } from '../instance-hint.js'
 import path from 'node:path'
 import os from 'node:os'
+import fs from 'node:fs'
 
 export async function cmdStart(args: string[] = [], instanceRoot?: string): Promise<void> {
   const json = isJsonMode(args)
@@ -45,7 +46,35 @@ Requires an existing config — run 'openacp' first to set up.
       console.error(result.error)
       process.exit(1)
     }
-    if (json) jsonSuccess({ pid: result.pid, instanceId: path.basename(root), dir: root })
+    if (json) {
+      // Resolve instanceId from registry if available
+      let instanceId: string = path.basename(root)
+      try {
+        const { getGlobalRoot } = await import('../../core/instance/instance-context.js')
+        const { InstanceRegistry } = await import('../../core/instance/instance-registry.js')
+        const reg = new InstanceRegistry(path.join(getGlobalRoot(), 'instances.json'))
+        reg.load()
+        const entry = reg.getByRoot(root)
+        if (entry) instanceId = entry.id
+      } catch {}
+      // Try to read actual port from api.port file written by the server after startup
+      let port: number | null = null
+      try {
+        const portStr = fs.readFileSync(path.join(root, 'api.port'), 'utf-8').trim()
+        port = parseInt(portStr) || null
+      } catch {
+        // Fall back to configured port
+        port = config.api.port ?? null
+      }
+      jsonSuccess({
+        pid: result.pid,
+        instanceId,
+        name: config.instanceName ?? null,
+        directory: path.dirname(root),
+        dir: root,
+        port,
+      })
+    }
     printInstanceHint(root)
     console.log(`OpenACP daemon started (PID ${result.pid})`)
   } else {

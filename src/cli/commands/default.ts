@@ -2,12 +2,18 @@ import { checkAndPromptUpdate } from '../version.js'
 import { printHelp } from './help.js'
 import path from 'node:path'
 import os from 'node:os'
+import fs from 'node:fs'
 import { createInstanceContext, getGlobalRoot } from '../../core/instance/instance-context.js'
 import { InstanceRegistry } from '../../core/instance/instance-registry.js'
 import { randomUUID } from 'node:crypto'
 import { printInstanceHint } from '../instance-hint.js'
+import { isJsonMode, jsonSuccess, jsonError, muteForJson, ErrorCodes } from '../output.js'
 
 export async function cmdDefault(command: string | undefined, instanceRoot?: string): Promise<void> {
+  const args = command ? [command] : []
+  const json = isJsonMode(args)
+  if (json) await muteForJson()
+
   const root = instanceRoot ?? path.join(os.homedir(), '.openacp')
   const pluginsDataDir = path.join(root, 'plugins', 'data')
   const registryPath = path.join(root, 'plugins.json')
@@ -62,8 +68,35 @@ export async function cmdDefault(command: string | undefined, instanceRoot?: str
 
     const result = startDaemon(pidPath, config.logging.logDir, root)
     if ('error' in result) {
+      if (json) jsonError(ErrorCodes.DAEMON_NOT_RUNNING, result.error)
       console.error(result.error)
       process.exit(1)
+    }
+    if (json) {
+      // Resolve instanceId from registry if available
+      let instanceId: string = path.basename(root)
+      try {
+        const reg = new InstanceRegistry(path.join(getGlobalRoot(), 'instances.json'))
+        reg.load()
+        const entry = reg.getByRoot(root)
+        if (entry) instanceId = entry.id
+      } catch {}
+      // Try to read actual port from api.port file written by the server after startup
+      let port: number | null = null
+      try {
+        const portStr = fs.readFileSync(path.join(root, 'api.port'), 'utf-8').trim()
+        port = parseInt(portStr) || null
+      } catch {
+        port = config.api.port ?? null
+      }
+      jsonSuccess({
+        pid: result.pid,
+        instanceId,
+        name: config.instanceName ?? null,
+        directory: path.dirname(root),
+        dir: root,
+        port,
+      })
     }
     printInstanceHint(root)
     console.log(`OpenACP daemon started (PID ${result.pid})`)
@@ -77,11 +110,32 @@ export async function cmdDefault(command: string | undefined, instanceRoot?: str
   const reg = new InstanceRegistry(path.join(getGlobalRoot(), 'instances.json'))
   reg.load()
   const existingEntry = reg.getByRoot(root)
+  const instanceId = existingEntry?.id ?? randomUUID()
   const ctx = createInstanceContext({
-    id: existingEntry?.id ?? randomUUID(),
+    id: instanceId,
     root,
     isGlobal: root === getGlobalRoot(),
   })
+
+  if (json) {
+    // For foreground mode, output JSON before starting the server
+    let port: number | null = null
+    try {
+      const portStr = fs.readFileSync(path.join(root, 'api.port'), 'utf-8').trim()
+      port = parseInt(portStr) || null
+    } catch {
+      port = config.api.port ?? null
+    }
+    jsonSuccess({
+      pid: process.pid,
+      instanceId,
+      name: config.instanceName ?? null,
+      directory: path.dirname(root),
+      dir: root,
+      port,
+    })
+  }
+
   await startServer({ instanceContext: ctx })
 }
 

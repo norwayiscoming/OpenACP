@@ -29,6 +29,20 @@ export async function createApiServer(options: ApiServerOptions): Promise<ApiSer
   app.setValidatorCompiler(validatorCompiler);
   app.setSerializerCompiler(serializerCompiler);
 
+  // CORS — allow any origin (auth is token-based, not cookie-based)
+  app.addHook('onRequest', async (request, reply) => {
+    const origin = request.headers.origin;
+    if (origin) {
+      reply.header('Access-Control-Allow-Origin', origin);
+      reply.header('Access-Control-Allow-Credentials', 'true');
+    }
+    if (request.method === 'OPTIONS') {
+      reply.header('Access-Control-Allow-Methods', 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS');
+      reply.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+      reply.status(204).send();
+    }
+  });
+
   // Plugins
   await app.register(fastifyRateLimit, { max: 100, timeWindow: '1 minute' });
   await app.register(fastifySwagger, {

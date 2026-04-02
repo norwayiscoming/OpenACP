@@ -111,10 +111,11 @@ export async function cmdPlugin(args: string[] = [], instanceRoot?: string): Pro
     case 'install': {
       const pkg = args[1]
       if (!pkg) {
+        if (isJsonMode(args)) jsonError(ErrorCodes.MISSING_ARGUMENT, 'Package name is required')
         console.error('Error: missing package name. Usage: openacp plugin add <package>')
         process.exit(1)
       }
-      await installPlugin(pkg, instanceRoot)
+      await installPlugin(pkg, instanceRoot, isJsonMode(args))
       return
     }
 
@@ -122,11 +123,12 @@ export async function cmdPlugin(args: string[] = [], instanceRoot?: string): Pro
     case 'uninstall': {
       const pkg = args[1]
       if (!pkg) {
+        if (isJsonMode(args)) jsonError(ErrorCodes.MISSING_ARGUMENT, 'Package name is required')
         console.error('Error: missing package name. Usage: openacp plugin remove <package> [--purge]')
         process.exit(1)
       }
       const purge = args.includes('--purge')
-      await uninstallPlugin(pkg, purge, instanceRoot)
+      await uninstallPlugin(pkg, purge, instanceRoot, isJsonMode(args))
       return
     }
 
@@ -227,7 +229,9 @@ async function configurePlugin(name: string, instanceRoot?: string): Promise<voi
   }
 }
 
-async function installPlugin(input: string, instanceRoot?: string): Promise<void> {
+async function installPlugin(input: string, instanceRoot?: string, json = false): Promise<void> {
+  if (json) await muteForJson()
+
   const os = await import('node:os')
   const path = await import('node:path')
   const { execFileSync } = await import('node:child_process')
@@ -275,10 +279,10 @@ async function installPlugin(input: string, instanceRoot?: string): Promise<void
     const registry = await client.getRegistry()
     registryPlugin = registry.plugins.find(p => p.name === pkgName || p.npm === pkgName)
     if (registryPlugin) {
-      console.log(`Resolved from registry: ${pkgName} → ${registryPlugin.npm}`)
+      if (!json) console.log(`Resolved from registry: ${pkgName} → ${registryPlugin.npm}`)
       pkgName = registryPlugin.npm
 
-      if (!registryPlugin.verified) {
+      if (!json && !registryPlugin.verified) {
         console.log('⚠️  This plugin is not verified by the OpenACP team.')
       }
     }
@@ -287,7 +291,7 @@ async function installPlugin(input: string, instanceRoot?: string): Promise<void
   }
 
   const installSpec = pkgVersion ? `${pkgName}@${pkgVersion}` : pkgName
-  console.log(`Installing ${installSpec}...`)
+  if (!json) console.log(`Installing ${installSpec}...`)
 
   // Check if built-in plugin
   const { corePlugins } = await import('../../plugins/core-plugins.js')
@@ -314,6 +318,7 @@ async function installPlugin(input: string, instanceRoot?: string): Promise<void
       description: builtinPlugin.description,
     })
     await pluginRegistry.save()
+    if (json) jsonSuccess({ plugin: builtinPlugin.name, version: builtinPlugin.version, installed: true })
     console.log(`✓ ${builtinPlugin.name} installed! Restart to activate.`)
     return
   }
@@ -324,10 +329,11 @@ async function installPlugin(input: string, instanceRoot?: string): Promise<void
 
   try {
     execFileSync('npm', ['install', installSpec, '--prefix', pluginsDir, '--save'], {
-      stdio: 'inherit',
+      stdio: json ? 'pipe' : 'inherit',
       timeout: 60000,
     })
   } catch {
+    if (json) jsonError(ErrorCodes.INSTALL_FAILED, `Failed to install ${installSpec}`)
     console.error(`Failed to install ${installSpec}. Check the package name and try again.`)
     process.exit(1)
   }
@@ -346,8 +352,10 @@ async function installPlugin(input: string, instanceRoot?: string): Promise<void
     if (minVersion) {
       const { compareVersions } = await import('../version.js')
       if (compareVersions(cliVersion, minVersion) < 0) {
-        console.log(`\n⚠️  This plugin requires OpenACP >= ${minVersion}. You have ${cliVersion}.`)
-        console.log(`   Run 'openacp update' to get the latest version.\n`)
+        if (!json) {
+          console.log(`\n⚠️  This plugin requires OpenACP >= ${minVersion}. You have ${cliVersion}.`)
+          console.log(`   Run 'openacp update' to get the latest version.\n`)
+        }
       }
     }
 
@@ -369,6 +377,7 @@ async function installPlugin(input: string, instanceRoot?: string): Promise<void
     })
     await pluginRegistry.save()
 
+    if (json) jsonSuccess({ plugin: plugin?.name ?? pkgName, version: installedPkg.version, installed: true })
     console.log(`✓ ${plugin?.name ?? pkgName} installed! Restart to activate.`)
   } catch (err) {
     // Plugin installed via npm but no install hook or failed to load — still register
@@ -379,11 +388,14 @@ async function installPlugin(input: string, instanceRoot?: string): Promise<void
       settingsPath: settingsManager.getSettingsPath(pkgName),
     })
     await pluginRegistry.save()
+    if (json) jsonSuccess({ plugin: pkgName, version: pkgVersion ?? 'unknown', installed: true })
     console.log(`✓ ${pkgName} installed (npm only). Restart to activate.`)
   }
 }
 
-async function uninstallPlugin(name: string, purge: boolean, instanceRoot?: string): Promise<void> {
+async function uninstallPlugin(name: string, purge: boolean, instanceRoot?: string, json = false): Promise<void> {
+  if (json) await muteForJson()
+
   const os = await import('node:os')
   const path = await import('node:path')
   const fs = await import('node:fs')
@@ -396,11 +408,13 @@ async function uninstallPlugin(name: string, purge: boolean, instanceRoot?: stri
 
   const entry = registry.get(name)
   if (!entry) {
+    if (json) jsonError(ErrorCodes.PLUGIN_NOT_FOUND, `Plugin "${name}" not installed.`)
     console.error(`Plugin "${name}" not installed.`)
     process.exit(1)
   }
 
   if (entry.source === 'builtin') {
+    if (json) jsonError(ErrorCodes.UNINSTALL_FAILED, `Cannot uninstall built-in plugin "${name}". Use "openacp plugin disable ${name}" instead.`)
     console.error(`Cannot uninstall built-in plugin. Use "openacp plugin disable ${name}" instead.`)
     process.exit(1)
   }
@@ -428,5 +442,6 @@ async function uninstallPlugin(name: string, purge: boolean, instanceRoot?: stri
 
   registry.remove(name)
   await registry.save()
+  if (json) jsonSuccess({ plugin: name, uninstalled: true })
   console.log(`Plugin ${name} uninstalled${purge ? ' (purged)' : ''}.`)
 }

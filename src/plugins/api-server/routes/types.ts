@@ -3,6 +3,7 @@ import type { OpenACPCore } from '../../../core/core.js';
 import type { TopicManager } from '../../telegram/topic-manager.js';
 import type { CommandRegistry } from '../../../core/command-registry.js';
 import type { ContextManager } from '../../context/context-manager.js';
+import type { LifecycleManager } from '../../../core/plugin/lifecycle-manager.js';
 
 /**
  * Dependencies injected into Fastify route plugins.
@@ -18,4 +19,6 @@ export interface RouteDeps {
   authPreHandler?: preHandlerHookHandler;
   /** Context manager for reading session conversation history. */
   contextManager?: ContextManager;
+  /** LifecycleManager for plugin state queries and hot-load operations. */
+  lifecycleManager?: LifecycleManager;
 }

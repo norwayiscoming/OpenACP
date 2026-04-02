@@ -6,7 +6,7 @@ export function registerCoreMenuItems(registry: MenuRegistry): void {
     label: '🆕 New Session',
     priority: 10,
     group: 'session',
-    action: { type: 'delegate', prompt: 'User wants new session. Guide them through agent and workspace selection.' },
+    action: { type: 'callback', callbackData: 'ns:start' },
   })
   registry.register({
     id: 'core:sessions',

@@ -2,7 +2,7 @@ import type { Bot, Context } from "grammy";
 import type { OpenACPCore } from "../../../core/index.js";
 
 // Domain modules
-import { handleNew, handleNewChat, createSessionDirect } from './new-session.js'
+import { handleNew, handleNewChat, createSessionDirect, showAgentPicker, setupNewSessionCallbacks } from './new-session.js'
 import { handleCancel, handleStatus, handleTopics, handleArchive, handleArchiveConfirm, setupSessionCallbacks } from './session.js'
 import { handleUpdate, handleRestart, handleTTS, handleVerbosity, handleOutputMode } from './admin.js'
 import { handleMenu, handleHelp, handleClear, buildMenuKeyboard } from './menu.js'
@@ -61,6 +61,9 @@ export function setupAllCallbacks(
       core.configManager.get().workspace.baseDir,
     );
   });
+
+  // New Session button flow — must be before broad m: handler
+  setupNewSessionCallbacks(bot, core, chatId, getAssistantSession);
 
   // Archive confirmation callbacks
   bot.callbackQuery(/^ar:/, (ctx) => handleArchiveConfirm(ctx, core, chatId));
@@ -145,8 +148,9 @@ export function setupAllCallbacks(
         const cbData = item.action.callbackData
         if (cbData === 's:settings') {
           await handleSettings(ctx, core)
+        } else if (cbData === 'ns:start') {
+          await showAgentPicker(ctx, core, chatId)
         }
-        // ns: callbacks handled in Task 6 (New Session flow)
         break
       }
     }

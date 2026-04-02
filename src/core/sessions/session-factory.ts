@@ -234,7 +234,11 @@ export class SessionFactory {
 
     // Don't resume errored or cancelled sessions
     if (record.status === "error" || record.status === "cancelled") {
-      log.debug({ threadId, sessionId: record.sessionId, status: record.status }, "Skipping resume of error session");
+      log.warn(
+        { threadId, sessionId: record.sessionId, status: record.status },
+        "Session record found but skipped (status: %s) — use /new to start a fresh session",
+        record.status,
+      );
       return null;
     }
 

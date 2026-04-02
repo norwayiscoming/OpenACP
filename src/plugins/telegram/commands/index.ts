@@ -96,6 +96,19 @@ export function setupAllCallbacks(
           } else if (response.type === 'list') {
             const lines = response.items.map((i: { label: string; detail?: string }) => `• ${i.label}${i.detail ? ` — ${i.detail}` : ''}`).join('\n')
             await ctx.reply(`${response.title}\n${lines}`, { parse_mode: 'HTML' }).catch(() => {})
+          } else if (response.type === 'menu') {
+            const { InlineKeyboard } = await import('grammy')
+            const kb = new InlineKeyboard()
+            for (const opt of response.options) {
+              kb.text(opt.label, `c/${opt.command}`).row()
+            }
+            await ctx.reply(response.title, { parse_mode: 'HTML', reply_markup: kb }).catch(() => {})
+          } else if (response.type === 'confirm') {
+            const { InlineKeyboard } = await import('grammy')
+            const kb = new InlineKeyboard()
+              .text('✅ Yes', `c/${response.onYes}`)
+              .text('❌ No', `c/${response.onNo}`)
+            await ctx.reply(response.question, { reply_markup: kb }).catch(() => {})
           }
         }
         break

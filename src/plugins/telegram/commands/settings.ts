@@ -169,10 +169,11 @@ export function setupSettingsCallbacks(
   bot.callbackQuery("s:back", async (ctx) => {
     try { await ctx.answerCallbackQuery(); } catch { /* expired */ }
     const { buildMenuKeyboard } = await import('./menu.js');
+    const menuRegistry = core.lifecycleManager?.serviceRegistry?.get('menu-registry') as import('../../../core/menu-registry.js').MenuRegistry | undefined;
     try {
       await ctx.editMessageText(`<b>OpenACP Menu</b>\nChoose an action:`, {
         parse_mode: "HTML",
-        reply_markup: buildMenuKeyboard(),
+        reply_markup: buildMenuKeyboard(menuRegistry),
       });
     } catch { /* ignore */ }
   });

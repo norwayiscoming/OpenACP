@@ -1,7 +1,11 @@
 import { wantsHelp } from './helpers.js'
+import { isJsonMode, jsonSuccess, muteForJson } from '../output.js'
 
 export async function cmdDoctor(args: string[], instanceRoot?: string): Promise<void> {
-  if (wantsHelp(args)) {
+  const json = isJsonMode(args)
+  if (json) await muteForJson()
+
+  if (!json && wantsHelp(args)) {
     console.log(`
 \x1b[1mopenacp doctor\x1b[0m — Run system diagnostics
 
@@ -19,11 +23,11 @@ Fixable issues can be auto-repaired when not using --dry-run.
     return
   }
 
-  const knownFlags = ["--dry-run"];
+  const knownFlags = ["--dry-run", "--json"];
   const unknownFlags = args.filter(
     (a) => a.startsWith("--") && !knownFlags.includes(a),
   );
-  if (unknownFlags.length > 0) {
+  if (!json && unknownFlags.length > 0) {
     const { suggestMatch } = await import('../suggest.js');
     for (const flag of unknownFlags) {
       const suggestion = suggestMatch(flag, knownFlags);
@@ -33,13 +37,28 @@ Fixable issues can be auto-repaired when not using --dry-run.
     process.exit(1);
   }
 
-  const dryRun = args.includes("--dry-run");
+  // --json implies --dry-run
+  const dryRun = args.includes("--dry-run") || json;
   const { DoctorEngine } = await import("../../core/doctor/index.js");
   const engine = new DoctorEngine({ dryRun, dataDir: instanceRoot });
 
-  console.log("\n🩺 OpenACP Doctor\n");
+  if (!json) console.log("\n🩺 OpenACP Doctor\n");
 
   const report = await engine.runAll();
+
+  if (json) {
+    jsonSuccess({
+      categories: report.categories.map((c: any) => ({
+        name: c.name,
+        results: c.results.map((r: any) => ({ status: r.status, message: r.message })),
+      })),
+      summary: {
+        passed: report.summary.passed,
+        warnings: report.summary.warnings,
+        failed: report.summary.failed,
+      },
+    })
+  }
 
   // Render results
   const icons = { pass: "\x1b[32m✅\x1b[0m", warn: "\x1b[33m⚠️\x1b[0m", fail: "\x1b[31m❌\x1b[0m" };

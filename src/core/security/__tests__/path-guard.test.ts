@@ -126,6 +126,34 @@ describe("PathGuard", () => {
     expect(result.allowed).toBe(true);
   });
 
+  it("allowedPaths overrides ignore patterns for paths inside cwd", () => {
+    // Simulate file-service uploads saved to <cwd>/.openacp/files/
+    // .openacp/ is in DEFAULT_DENY_PATTERNS but files subdir is whitelisted via addAllowedPath
+    const openacpFilesDir = path.join(tmpDir, ".openacp", "files");
+    fs.mkdirSync(openacpFilesDir, { recursive: true });
+    fs.writeFileSync(path.join(openacpFilesDir, "photo.jpg"), "image data");
+
+    // Without allowedPaths: .openacp/ should be blocked
+    const blocked = guard.validatePath(path.join(openacpFilesDir, "photo.jpg"), "read");
+    expect(blocked.allowed).toBe(false);
+    expect(blocked.reason).toContain("ignore");
+
+    // With allowedPaths: explicitly whitelisted subdir overrides the deny pattern
+    const guardWithFiles = new PathGuard({
+      cwd: tmpDir,
+      allowedPaths: [openacpFilesDir],
+      ignorePatterns: [],
+    });
+    const allowed = guardWithFiles.validatePath(path.join(openacpFilesDir, "photo.jpg"), "read");
+    expect(allowed.allowed).toBe(true);
+
+    // .openacp/ outside the whitelisted subdir should still be blocked
+    const secretsDir = path.join(tmpDir, ".openacp");
+    fs.writeFileSync(path.join(secretsDir, "api-secret"), "topsecret");
+    const stillBlocked = guardWithFiles.validatePath(path.join(secretsDir, "api-secret"), "read");
+    expect(stillBlocked.allowed).toBe(false);
+  });
+
   it("rejects path that is prefix but not subdirectory", () => {
     const siblingDir = tmpDir + "bar";
     fs.mkdirSync(siblingDir, { recursive: true });

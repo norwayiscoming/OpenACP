@@ -43,6 +43,7 @@ vi.mock('../core/agents/agent-catalog.js', () => {
     getInstalledAgent = vi.fn((_key: string) => undefined)
     findRegistryAgent = vi.fn((_key: string) => null)
     install = vi.fn().mockResolvedValue({ ok: true })
+    registerFallbackAgent = vi.fn()
     getAvailable = vi.fn(() => [])
     getInstalledEntries = vi.fn(() => ({
       claude: { name: 'Claude Agent', command: 'npx', version: 'bundled', distribution: 'npx' },

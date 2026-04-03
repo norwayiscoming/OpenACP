@@ -80,15 +80,9 @@ async function promptConfiguredAction(label: string): Promise<ConfiguredChannelA
 }
 
 async function configureViaPlugin(channelId: string, settingsManager?: SettingsManager): Promise<void> {
-  const pluginMap: Record<string, { importPath: string; name: string }> = {
-    telegram: { importPath: '../../plugins/telegram/index.js', name: '@openacp/telegram' },
-  };
-
-  const pluginInfo = pluginMap[channelId];
-
   let plugin: any;
-  if (pluginInfo) {
-    const pluginModule = await import(pluginInfo.importPath);
+  if (channelId === 'telegram') {
+    const pluginModule = await import('../../plugins/telegram/index.js');
     plugin = pluginModule.default;
   } else {
     // Try dynamic import for community plugins (npm package name)

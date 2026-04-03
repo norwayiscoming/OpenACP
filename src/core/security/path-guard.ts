@@ -77,7 +77,10 @@ export class PathGuard {
       };
     }
 
-    if (isWithinCwd) {
+    // allowedPaths explicitly whitelists paths — they override ignore patterns.
+    // This lets file-service uploads (e.g. .openacp/files/) be readable even
+    // though .openacp/ is in the default deny list.
+    if (isWithinCwd && !isWithinAllowed) {
       const relativePath = path.relative(this.cwd, realPath);
       // Allow .openacpignore reads — it is a config file, not sensitive
       if (relativePath === ".openacpignore") {

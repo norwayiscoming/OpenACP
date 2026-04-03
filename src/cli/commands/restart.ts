@@ -47,9 +47,9 @@ Stops the running daemon (if any) and starts a new one.
   const pidPath = getPidPath(root)
 
   // Stop existing daemon (ignore errors — it may not be running)
-  console.log('Stopping...')
+  if (!json) console.log('Stopping...')
   const stopResult = await stopDaemon(pidPath, root)
-  if (stopResult.stopped) {
+  if (!json && stopResult.stopped) {
     console.log(`Stopped daemon (was PID ${stopResult.pid})`)
   }
 

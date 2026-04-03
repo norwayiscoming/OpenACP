@@ -309,6 +309,8 @@ export class AgentInstance extends TypedEmitter<AgentInstanceEvents> {
         { sessionId: this.sessionId, exitCode: code, signal },
         "Agent process exited",
       );
+      // SIGINT/SIGTERM are graceful shutdown signals — not crashes
+      if (signal === "SIGINT" || signal === "SIGTERM") return;
       if ((code !== 0 && code !== null) || signal) {
         const stderr = this.stderrCapture.getLastLines();
         this.emit('agent_event', {

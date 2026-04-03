@@ -430,6 +430,18 @@ export class OpenACPCore {
         platform.threadId = session.threadId;
       }
     }
+
+    // Also persist the multi-adapter platforms map so lazy resume can find sessions
+    // by threadId for non-Telegram adapters (which use threadId instead of topicId).
+    const platforms: Record<string, Record<string, unknown>> = {
+      ...(existingRecord?.platforms ?? {}),
+    };
+    if (session.threadId) {
+      platforms[params.channelId] = params.channelId === "telegram"
+        ? { topicId: Number(session.threadId) || session.threadId }
+        : { threadId: session.threadId };
+    }
+
     await this.sessionManager.patchRecord(session.id, {
       sessionId: session.id,
       agentSessionId: session.agentSessionId,
@@ -441,6 +453,7 @@ export class OpenACPCore {
       lastActiveAt: new Date().toISOString(),
       name: session.name,
       platform,
+      platforms,
       firstAgent: session.firstAgent,
       currentPromptCount: session.promptCount,
       agentSwitchHistory: session.agentSwitchHistory,
@@ -630,9 +643,16 @@ export class OpenACPCore {
     } else {
       adoptPlatform.threadId = session.threadId;
     }
+    const adoptPlatforms: Record<string, Record<string, unknown>> = {};
+    if (session.threadId) {
+      adoptPlatforms[adapterChannelId] = adapterChannelId === 'telegram'
+        ? { topicId: Number(session.threadId) || session.threadId }
+        : { threadId: session.threadId };
+    }
     await this.sessionManager.patchRecord(session.id, {
       originalAgentSessionId: agentSessionId,
       platform: adoptPlatform,
+      platforms: adoptPlatforms,
     });
 
     return {

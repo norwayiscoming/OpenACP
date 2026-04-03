@@ -195,11 +195,10 @@ export async function sessionRoutes(
       }
 
       const body = PromptBodySchema.parse(request.body);
-      const { sourceAdapterId, responseAdapterId } = request.body as any;
 
       await session.enqueuePrompt(body.prompt, undefined, {
-        sourceAdapterId: sourceAdapterId ?? 'api',
-        responseAdapterId: responseAdapterId,
+        sourceAdapterId: body.sourceAdapterId ?? 'api',
+        responseAdapterId: body.responseAdapterId,
       });
       return {
         ok: true,
@@ -435,7 +434,7 @@ export async function sessionRoutes(
       const { adapterId } = (request.body ?? {}) as { adapterId?: string };
       if (!adapterId) return reply.code(400).send({ error: 'adapterId is required' });
       try {
-        const result = await (deps.core as any).attachAdapter(sessionId, adapterId);
+        const result = await deps.core.attachAdapter(sessionId, adapterId);
         return { ok: true, threadId: result.threadId };
       } catch (err) {
         return reply.code(400).send({ error: (err as Error).message });
@@ -452,7 +451,7 @@ export async function sessionRoutes(
       const { adapterId } = (request.body ?? {}) as { adapterId?: string };
       if (!adapterId) return reply.code(400).send({ error: 'adapterId is required' });
       try {
-        await (deps.core as any).detachAdapter(sessionId, adapterId);
+        await deps.core.detachAdapter(sessionId, adapterId);
         return { ok: true };
       } catch (err) {
         return reply.code(400).send({ error: (err as Error).message });

@@ -226,7 +226,7 @@ export class SessionFactory {
 
     const record = store.findByPlatform(
       channelId,
-      (p) => String(p.topicId) === threadId,
+      (p) => String(p.topicId) === threadId || String(p.threadId ?? "") === threadId,
     );
     if (!record) {
       log.debug({ threadId, channelId }, "No session record found for thread");

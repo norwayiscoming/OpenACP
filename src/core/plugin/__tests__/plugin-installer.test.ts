@@ -104,6 +104,22 @@ describe('importFromDir', () => {
   })
 })
 
+describe('installNpmPlugin — --ignore-scripts flag', () => {
+  it("includes --ignore-scripts flag in npm install command", async () => {
+    const fs = await import("node:fs");
+    const source = fs.readFileSync(
+      new URL("../plugin-installer.ts", import.meta.url).pathname.replace("__tests__/", ""),
+      "utf-8",
+    );
+    // Match npm install commands inside template literal strings (backtick-delimited)
+    const npmInstallMatches = source.match(/`npm install[^`]+`/g) ?? [];
+    expect(npmInstallMatches.length).toBeGreaterThan(0);
+    for (const match of npmInstallMatches) {
+      expect(match).toContain("--ignore-scripts");
+    }
+  });
+});
+
 describe('installNpmPlugin — package name validation', () => {
   // Shell injection attempts must be rejected before any exec
   const maliciousNames = [

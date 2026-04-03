@@ -112,6 +112,12 @@ export const ConfigSchema = z.object({
   workspace: z
     .object({
       baseDir: z.string().default("~/openacp-workspace"),
+      security: z
+        .object({
+          allowedPaths: z.array(z.string()).default([]),
+          envWhitelist: z.array(z.string()).default([]),
+        })
+        .default({}),
     })
     .default({}),
   security: z
@@ -319,14 +325,32 @@ export class ConfigManager extends EventEmitter {
       fs.mkdirSync(resolved, { recursive: true });
       return resolved;
     }
+
+    // Absolute or tilde paths: must resolve under baseDir
     if (input.startsWith("/") || input.startsWith("~")) {
       const resolved = expandHome(input);
-      fs.mkdirSync(resolved, { recursive: true });
-      return resolved;
+      const base = expandHome(this.config.workspace.baseDir);
+      // Allow baseDir itself and paths under it
+      if (resolved === base || resolved.startsWith(base + path.sep)) {
+        fs.mkdirSync(resolved, { recursive: true });
+        return resolved;
+      }
+      throw new Error(
+        `Workspace path "${input}" is outside base directory "${this.config.workspace.baseDir}".`,
+      );
     }
-    // Named workspace → lowercase, under baseDir
-    const name = input.toLowerCase();
-    const resolved = path.join(expandHome(this.config.workspace.baseDir), name);
+
+    // Named workspace: alphanumeric, hyphens, underscores only
+    const name = input.replace(/[^a-zA-Z0-9_-]/g, "");
+    if (name !== input) {
+      throw new Error(
+        `Invalid workspace name: "${input}". Only alphanumeric characters, hyphens, and underscores are allowed.`,
+      );
+    }
+    const resolved = path.join(
+      expandHome(this.config.workspace.baseDir),
+      name.toLowerCase(),
+    );
     fs.mkdirSync(resolved, { recursive: true });
     return resolved;
   }

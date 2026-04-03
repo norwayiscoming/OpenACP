@@ -1,6 +1,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
+import crypto from "node:crypto";
 import { createChildLogger } from "../utils/log.js";
 import type { InstalledAgent, RegistryAgent, InstallProgress, InstallResult } from "../types.js";
 import { getAgentAlias, checkDependencies, checkRuntimeAvailable, getAgentSetup } from "./agent-dependencies.js";
@@ -9,6 +10,39 @@ import { AgentStore } from "./agent-store.js";
 const log = createChildLogger({ module: "agent-installer" });
 
 const DEFAULT_AGENTS_DIR = path.join(os.homedir(), ".openacp", "agents");
+
+export const MAX_DOWNLOAD_SIZE = 500 * 1024 * 1024; // 500MB
+
+export function verifyChecksum(buffer: Buffer, expectedHash: string): void {
+  const actualHash = crypto.createHash("sha256").update(buffer).digest("hex");
+  if (actualHash !== expectedHash) {
+    throw new Error(
+      `Integrity check failed: expected ${expectedHash}, got ${actualHash}`,
+    );
+  }
+}
+
+export function validateTarContents(entries: string[], destDir: string): void {
+  for (const entry of entries) {
+    // Check for path traversal segments, not just substring — avoids false positives
+    // on filenames like "setup..sh" or "..config" that are not traversal attacks.
+    const segments = entry.split("/");
+    if (segments.includes("..")) {
+      throw new Error(`Archive contains unsafe path traversal: ${entry}`);
+    }
+    if (entry.startsWith("/")) {
+      throw new Error(`Archive contains unsafe absolute path: ${entry}`);
+    }
+  }
+}
+
+export function validateUninstallPath(binaryPath: string, agentsDir: string): void {
+  const realPath = path.resolve(binaryPath);
+  const realAgentsDir = path.resolve(agentsDir);
+  if (!realPath.startsWith(realAgentsDir + path.sep) && realPath !== realAgentsDir) {
+    throw new Error(`Refusing to delete path outside agents directory: ${realPath}`);
+  }
+}
 
 const ARCH_MAP: Record<string, string> = {
   arm64: "aarch64",
@@ -209,12 +243,12 @@ async function downloadAndExtract(
   return destDir;
 }
 
-async function readResponseWithProgress(
+export async function readResponseWithProgress(
   response: Response,
   contentLength: number,
   progress?: InstallProgress,
 ): Promise<Buffer> {
-  if (!response.body || contentLength === 0) {
+  if (!response.body) {
     const arrayBuffer = await response.arrayBuffer();
     return Buffer.from(arrayBuffer);
   }
@@ -228,6 +262,9 @@ async function readResponseWithProgress(
     if (done) break;
     chunks.push(value);
     received += value.length;
+    if (received > MAX_DOWNLOAD_SIZE) {
+      throw new Error(`Download exceeds size limit of ${MAX_DOWNLOAD_SIZE} bytes`);
+    }
     if (contentLength > 0) {
       await progress?.onDownloadProgress(Math.round((received / contentLength) * 100));
     }
@@ -264,6 +301,11 @@ async function extractTarGz(buffer: Buffer, destDir: string): Promise<void> {
   const tmpFile = path.join(destDir, "_archive.tar.gz");
   fs.writeFileSync(tmpFile, buffer);
   try {
+    // Validate contents BEFORE extraction
+    const listing = execFileSync("tar", ["tf", tmpFile], { stdio: "pipe" })
+      .toString().trim().split("\n").filter(Boolean);
+    validateTarContents(listing, destDir);
+    // Safe to extract
     execFileSync("tar", ["xzf", tmpFile, "-C", destDir], { stdio: "pipe" });
   } finally {
     fs.unlinkSync(tmpFile);
@@ -286,11 +328,13 @@ async function extractZip(buffer: Buffer, destDir: string): Promise<void> {
 export async function uninstallAgent(
   agentKey: string,
   store: AgentStore,
+  agentsDir?: string,
 ): Promise<void> {
   const agent = store.getAgent(agentKey);
   if (!agent) return;
 
   if (agent.binaryPath && fs.existsSync(agent.binaryPath)) {
+    validateUninstallPath(agent.binaryPath, agentsDir ?? DEFAULT_AGENTS_DIR);
     fs.rmSync(agent.binaryPath, { recursive: true, force: true });
     log.info({ agentKey, binaryPath: agent.binaryPath }, "Deleted agent binary");
   }

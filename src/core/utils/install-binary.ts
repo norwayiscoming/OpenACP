@@ -5,6 +5,7 @@ import os from 'node:os'
 import { execSync } from 'node:child_process'
 import { createChildLogger } from './log.js'
 import { commandExists } from '../agents/agent-dependencies.js'
+import { MAX_DOWNLOAD_SIZE, validateTarContents } from '../agents/agent-installer.js'
 
 const log = createChildLogger({ module: 'binary-installer' })
 
@@ -45,6 +46,20 @@ function downloadFile(url: string, dest: string): Promise<string> {
         })
         return
       }
+
+      let totalBytes = 0
+      const request = response
+
+      response.on('data', (chunk: Buffer) => {
+        totalBytes += chunk.length
+        if (totalBytes > MAX_DOWNLOAD_SIZE) {
+          request.destroy()
+          file.close(() => {
+            cleanup()
+            reject(new Error(`Download exceeds size limit of ${MAX_DOWNLOAD_SIZE} bytes`))
+          })
+        }
+      })
 
       response.pipe(file)
       file.on('finish', () => file.close(() => resolve(dest)))
@@ -108,6 +123,9 @@ export async function ensureBinary(spec: BinarySpec, binDir?: string): Promise<s
   await downloadFile(url, downloadDest)
 
   if (isArchive) {
+    const listing = execSync(`tar -tf "${downloadDest}"`, { stdio: 'pipe' })
+      .toString().trim().split("\n").filter(Boolean);
+    validateTarContents(listing, resolvedBinDir);
     execSync(`tar -xzf "${downloadDest}" -C "${resolvedBinDir}"`, { stdio: 'pipe' })
     try { fs.unlinkSync(downloadDest) } catch { /* ignore */ }
   }

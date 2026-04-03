@@ -60,7 +60,7 @@ export class AgentCatalog {
         data,
       };
       fs.mkdirSync(path.dirname(this.cachePath), { recursive: true });
-      fs.writeFileSync(this.cachePath, JSON.stringify(cache, null, 2));
+      fs.writeFileSync(this.cachePath, JSON.stringify(cache, null, 2), { mode: 0o600 });
       log.info({ count: this.registryAgents.length }, "Registry updated");
     } catch (err) {
       log.warn({ err }, "Failed to fetch registry, using cached data");

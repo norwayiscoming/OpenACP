@@ -301,7 +301,7 @@ export async function runSetup(
         if (!fs.existsSync(installedPath)) {
           try {
             clack.log.step(`Installing ${npmPackage}...`);
-            execFileSync('npm', ['install', npmPackage, '--prefix', pluginsDir, '--save'], {
+            execFileSync('npm', ['install', npmPackage, '--prefix', pluginsDir, '--save', '--ignore-scripts'], {
               stdio: 'inherit',
               timeout: 60000,
             });
@@ -354,7 +354,7 @@ export async function runSetup(
 
         // Install from npm
         try {
-          execFileSync('npm', ['install', npmPackage, '--prefix', pluginsDir, '--save'], {
+          execFileSync('npm', ['install', npmPackage, '--prefix', pluginsDir, '--save', '--ignore-scripts'], {
             stdio: 'inherit',
             timeout: 60000,
           });
@@ -431,7 +431,7 @@ export async function runSetup(
       channels: {},
       agents: {},
       defaultAgent,
-      workspace,
+      workspace: { ...workspace, security: { allowedPaths: [], envWhitelist: [] } },
       security,
       logging: {
         level: "info",

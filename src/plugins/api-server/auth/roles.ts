@@ -1,3 +1,5 @@
+// sessions:dangerous is intentionally not assigned to any named role.
+// Only admin (via wildcard '*') has it. Operators must be explicitly granted it.
 export const ROLES = {
   admin: ['*'],
   operator: [
@@ -6,6 +8,13 @@ export const ROLES = {
   ],
   viewer: ['sessions:read', 'agents:read', 'system:health'],
 } as const;
+
+// Known scopes — used for documentation and validation.
+// sessions:dangerous grants access to destructive session operations.
+export const KNOWN_SCOPES = [
+  'sessions:read', 'sessions:write', 'sessions:prompt', 'sessions:permission', 'sessions:dangerous',
+  'agents:read', 'commands:execute', 'system:health', 'config:read',
+] as const;
 
 export type RoleName = keyof typeof ROLES;
 

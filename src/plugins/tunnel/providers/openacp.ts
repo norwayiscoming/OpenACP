@@ -142,7 +142,7 @@ export class OpenACPTunnelProvider implements TunnelProvider {
     // `--url` with `--token` is a documented cloudflared shorthand: it sets up a
     // simple HTTP proxy to the given local service without requiring ingress rules
     // to be configured on the Cloudflare dashboard side.
-    const args = ['tunnel', 'run', '--token', token, '--url', `http://localhost:${port}`]
+    const args = ['tunnel', 'run', '--url', `http://localhost:${port}`, '--token', token]
 
     return new Promise<void>((resolve, reject) => {
       let settled = false

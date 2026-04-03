@@ -51,6 +51,7 @@
     "fastify": "^5.8.4",
     "fastify-type-provider-zod": "~5.1.0",
     "grammy": "^1.41.1",
+    "ignore": "^7.0.5",
     "jsonwebtoken": "^9.0.3",
     "nanoid": "^5.0.0",
     "node-wav": "^0.0.2",

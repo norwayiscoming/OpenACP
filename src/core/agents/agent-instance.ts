@@ -3,6 +3,8 @@ import { Transform } from "node:stream";
 import fs from "node:fs";
 import path from "node:path";
 import { ClientSideConnection, ndJsonStream } from "@agentclientprotocol/sdk";
+import { PathGuard } from "../security/path-guard.js";
+import { filterEnv } from "../security/env-filter.js";
 import type {
   Agent,
   Client,
@@ -154,6 +156,7 @@ export class AgentInstance extends TypedEmitter<AgentInstanceEvents> {
   private terminalManager = new TerminalManager();
   private static mcpManager = new McpManager();
   private _destroying = false;
+  private pathGuard!: PathGuard;
 
   sessionId!: string;
   agentName: string;
@@ -188,13 +191,25 @@ export class AgentInstance extends TypedEmitter<AgentInstanceEvents> {
       "Resolved agent command",
     );
 
+    const ignorePatterns = PathGuard.loadIgnoreFile(workingDirectory);
+    instance.pathGuard = new PathGuard({
+      cwd: workingDirectory,
+      // allowedPaths is wired from workspace.security.allowedPaths config;
+      // spawnSubprocess would need to receive a SecurityConfig param to use it.
+      // Tracked as follow-up: pass workspace security config through spawn/resume call chain.
+      allowedPaths: [],
+      ignorePatterns,
+    });
+
     instance.child = spawn(
       resolved.command,
       [...resolved.args, ...agentDef.args],
       {
         stdio: ["pipe", "pipe", "pipe"],
         cwd: workingDirectory,
-        env: { ...process.env, ...agentDef.env },
+        // envWhitelist from workspace.security.envWhitelist config would extend DEFAULT_ENV_WHITELIST.
+        // Tracked as follow-up: pass workspace security config through spawn/resume call chain.
+        env: filterEnv(process.env as Record<string, string>, agentDef.env),
       },
     );
 
@@ -565,6 +580,11 @@ export class AgentInstance extends TypedEmitter<AgentInstanceEvents> {
       // ── File operations ──────────────────────────────────────────────────
       async readTextFile(params) {
         const p = params as unknown as SdkReadTextFileParams;
+        // Security: validate path against workspace boundary
+        const pathCheck = self.pathGuard.validatePath(p.path, "read");
+        if (!pathCheck.allowed) {
+          throw new Error(`[Access denied] ${pathCheck.reason}`);
+        }
         // Hook: fs:beforeRead — modifiable, can block
         if (self.middlewareChain) {
           const result = await self.middlewareChain.execute('fs:beforeRead', { sessionId: self.sessionId, path: p.path, line: p.line, limit: p.limit }, async (r) => r);
@@ -579,9 +599,14 @@ export class AgentInstance extends TypedEmitter<AgentInstanceEvents> {
       },
 
       async writeTextFile(params) {
-        // Hook: fs:beforeWrite — modifiable, can block
         let writePath = params.path;
         let writeContent = params.content;
+        // Security: validate path against workspace boundary
+        const pathCheck = self.pathGuard.validatePath(writePath, "write");
+        if (!pathCheck.allowed) {
+          throw new Error(`[Access denied] ${pathCheck.reason}`);
+        }
+        // Hook: fs:beforeWrite — modifiable, can block
         if (self.middlewareChain) {
           const result = await self.middlewareChain.execute('fs:beforeWrite', { sessionId: self.sessionId, path: writePath, content: writeContent }, async (r) => r);
           if (!result) return {}; // blocked by middleware
@@ -696,9 +721,19 @@ export class AgentInstance extends TypedEmitter<AgentInstanceEvents> {
       const tooLarge = att.size > 10 * 1024 * 1024; // 10MB base64 guard
 
       if (att.type === "image" && this.promptCapabilities?.image && !tooLarge && SUPPORTED_IMAGE_MIMES.has(att.mimeType)) {
+        const attCheck = this.pathGuard.validatePath(att.filePath, "read");
+        if (!attCheck.allowed) {
+          (contentBlocks[0] as { text: string }).text += `\n\n[Attachment access denied: ${attCheck.reason}]`;
+          continue;
+        }
         const data = await fs.promises.readFile(att.filePath);
         contentBlocks.push({ type: "image", data: data.toString("base64"), mimeType: att.mimeType });
       } else if (att.type === "audio" && this.promptCapabilities?.audio && !tooLarge) {
+        const attCheck = this.pathGuard.validatePath(att.filePath, "read");
+        if (!attCheck.allowed) {
+          (contentBlocks[0] as { text: string }).text += `\n\n[Attachment access denied: ${attCheck.reason}]`;
+          continue;
+        }
         const data = await fs.promises.readFile(att.filePath);
         contentBlocks.push({ type: "audio", data: data.toString("base64"), mimeType: att.mimeType });
       } else {

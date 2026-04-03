@@ -64,7 +64,7 @@ export async function installNpmPlugin(packageName: string, pluginsDir?: string)
     // Not installed, proceed with install
   }
 
-  await execAsync(`npm install ${packageName} --prefix "${dir}" --save`, {
+  await execAsync(`npm install ${packageName} --prefix "${dir}" --save --ignore-scripts`, {
     timeout: 60000,
   })
 

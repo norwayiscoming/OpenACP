@@ -85,7 +85,7 @@ export class AgentStore {
   private save(): void {
     fs.mkdirSync(path.dirname(this.filePath), { recursive: true });
     const tmpPath = this.filePath + ".tmp";
-    fs.writeFileSync(tmpPath, JSON.stringify(this.data, null, 2));
+    fs.writeFileSync(tmpPath, JSON.stringify(this.data, null, 2), { mode: 0o600 });
     fs.renameSync(tmpPath, this.filePath);
   }
 }

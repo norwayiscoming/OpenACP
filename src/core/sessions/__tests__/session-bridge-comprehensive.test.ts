@@ -368,8 +368,8 @@ describe("SessionBridge — Permission Auto-Approve", () => {
     bridge.connect();
   });
 
-  it("auto-approves permission with 'openacp' in description (case insensitive)", async () => {
-    const result = await agent.onPermissionRequest({
+  it("does NOT auto-approve permission with 'openacp' in description when bypass mode is off", async () => {
+    const promise = agent.onPermissionRequest({
       id: "p1",
       description: "Run OpenACP install command",
       options: [
@@ -378,9 +378,11 @@ describe("SessionBridge — Permission Auto-Approve", () => {
       ],
     });
 
+    // Should forward to adapter's permission handler, not auto-approve
+    expect(adapter.sendPermissionRequest).toHaveBeenCalled();
+    session.permissionGate.resolve("allow");
+    const result = await promise;
     expect(result).toBe("allow");
-    // Should NOT have sent UI to adapter
-    expect(adapter.sendPermissionRequest).not.toHaveBeenCalled();
   });
 
   it("auto-approves when clientOverrides.bypassPermissions is true", async () => {

@@ -280,7 +280,7 @@ export async function sessionRoutes(
   // PATCH /sessions/:sessionId/dangerous — toggle bypass permissions
   app.patch<{ Params: { sessionId: string } }>(
     '/:sessionId/dangerous',
-    { preHandler: requireScopes('sessions:write') },
+    { preHandler: requireScopes('sessions:dangerous') },
     async (request) => {
       const { sessionId: rawId } = SessionIdParamSchema.parse(request.params);
       const sessionId = decodeURIComponent(rawId);

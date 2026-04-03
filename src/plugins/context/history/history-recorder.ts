@@ -284,7 +284,7 @@ export class HistoryRecorder {
       state.currentAssistantTurn = null;
       await this.store.write(state.history);
     }
-    this.states.delete(sessionId);
+    this.finalize(sessionId);
   }
 
   finalize(sessionId: string): void {

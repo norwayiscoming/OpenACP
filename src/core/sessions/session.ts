@@ -299,10 +299,12 @@ export class Session extends TypedEmitter<SessionEvents> {
       if (accumulatorListener) {
         this.off("agent_event", accumulatorListener);
       }
-      // Hook: turn:end — always fires, even on error or cancel
+      // Hook: turn:end — always fires, even on error
       if (this.middlewareChain) {
         this.middlewareChain.execute('turn:end', { sessionId: this.id, stopReason: stopReason as import('../types.js').StopReason, durationMs: Date.now() - promptStart }, async (p) => p).catch(() => {});
       }
+      // Always clear turn context so routing state is never stale after a failed turn
+      this.activeTurnContext = null;
     }
 
     // Re-throw so PromptQueue error handler can call this.fail()
@@ -321,9 +323,6 @@ export class Session extends TypedEmitter<SessionEvents> {
         this.log.warn({ err }, "TTS post-processing failed");
       });
     }
-
-    // Clear turn context at end of turn
-    this.activeTurnContext = null;
 
     if (!this.name) {
       await this.autoName();

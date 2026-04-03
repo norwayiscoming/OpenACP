@@ -531,6 +531,15 @@ describe("HistoryRecorder", () => {
       await vi.advanceTimersByTimeAsync(2000);
       expect(store.write).not.toHaveBeenCalled();
     });
+
+    it("onSessionDestroy cancels debounce timer before writing", async () => {
+      recorder.onBeforePrompt("s1", "Go", undefined);
+      recorder.onAfterEvent("s1", { type: "text", content: "Hello" });
+      await recorder.onSessionDestroy("s1");
+      expect(store.write).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(2000);
+      expect(store.write).toHaveBeenCalledTimes(1);
+    });
   });
 
   // ── onSessionDestroy ──
@@ -555,17 +564,6 @@ describe("HistoryRecorder", () => {
     it("is a no-op for unknown session", async () => {
       await recorder.onSessionDestroy("unknown");
       expect(store.write).not.toHaveBeenCalled();
-    });
-
-    it("cancels debounce timer before writing", async () => {
-      vi.useFakeTimers();
-      recorder.onBeforePrompt("s1", "Go", undefined);
-      recorder.onAfterEvent("s1", { type: "text", content: "Hello" });
-      await recorder.onSessionDestroy("s1");
-      expect(store.write).toHaveBeenCalledTimes(1);
-      await vi.advanceTimersByTimeAsync(2000);
-      expect(store.write).toHaveBeenCalledTimes(1);
-      vi.useRealTimers();
     });
 
     it("does not write if no active turn (between turns)", async () => {

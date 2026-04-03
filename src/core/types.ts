@@ -393,7 +393,9 @@ export type StopReason =
   | "max_tokens"
   | "max_turn_requests"
   | "refusal"
-  | "cancelled";
+  | "cancelled"
+  | "error"
+  | "interrupted";
 
 export interface PromptResponse {
   stopReason: StopReason;

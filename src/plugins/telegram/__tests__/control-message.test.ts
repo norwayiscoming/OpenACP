@@ -384,6 +384,7 @@ describe("session:configChanged event emission", () => {
       clientOverrides: {},
       getConfigByCategory: (cat: string) => configOptions.find((o) => o.category === cat),
       getConfigOption: (id: string) => configOptions.find((o) => o.id === id),
+      setConfigOption: vi.fn().mockResolvedValue(undefined),
       agentInstance: {
         setConfigOption: vi.fn().mockResolvedValue({ configOptions }),
       },
@@ -423,6 +424,7 @@ describe("session:configChanged event emission", () => {
       clientOverrides: {},
       getConfigByCategory: (cat: string) => configOptions.find((o) => o.category === cat),
       getConfigOption: (id: string) => configOptions.find((o) => o.id === id),
+      setConfigOption: vi.fn().mockResolvedValue(undefined),
       agentInstance: {
         setConfigOption: vi.fn().mockResolvedValue({ configOptions }),
       },
@@ -462,6 +464,7 @@ describe("session:configChanged event emission", () => {
       clientOverrides: {},
       getConfigByCategory: (cat: string) => configOptions.find((o) => o.category === cat),
       getConfigOption: (id: string) => configOptions.find((o) => o.id === id),
+      setConfigOption: vi.fn().mockResolvedValue(undefined),
       agentInstance: {
         setConfigOption: vi.fn().mockResolvedValue({ configOptions }),
       },

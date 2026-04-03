@@ -1,7 +1,7 @@
 import type { CommandRegistry } from '../command-registry.js'
 import type { CommandResponse } from '../plugin/types.js'
 import type { OpenACPCore } from '../core.js'
-import type { ConfigOption, ConfigSelectChoice, ConfigSelectGroup } from '../types.js'
+import type { ConfigSelectChoice, ConfigSelectGroup } from '../types.js'
 import { createChildLogger } from '../utils/log.js'
 
 const log = createChildLogger({ module: 'commands/config' })
@@ -123,31 +123,8 @@ function registerCategoryCommand(
         return { type: 'text', text: `Already using **${match.name}**.` } satisfies CommandResponse
       }
 
-      // Fire middleware hook BEFORE sending to agent
-      if (session.middlewareChain) {
-        const result = await session.middlewareChain.execute('config:beforeChange', {
-          sessionId: session.id, configId: configOption.id,
-          oldValue: configOption.currentValue, newValue: raw,
-        }, async (p) => p)
-        if (!result) return { type: 'error', message: `This change was blocked by a plugin.` } satisfies CommandResponse
-      }
-
-      // Set value via agent
       try {
-        const response = await session.agentInstance.setConfigOption(
-          configOption.id,
-          { type: 'select', value: raw },
-        )
-        if (response.configOptions && response.configOptions.length > 0) {
-          // Skip middleware hook on update — already validated above
-          session.configOptions = response.configOptions as ConfigOption[]
-        } else {
-          // Legacy agents (e.g. Gemini) fall back to setSessionMode/setSessionModel
-          // and return empty configOptions — update currentValue optimistically.
-          session.configOptions = session.configOptions.map((o): ConfigOption =>
-            o.id === configOption.id && o.type === 'select' ? { ...o, currentValue: raw } : o
-          )
-        }
+        await session.setConfigOption(configOption.id, { type: 'select', value: raw })
         core.eventBus.emit('session:configChanged', { sessionId: session.id })
         return { type: 'text', text: labels.successMsg(match.name, configOption.name) } satisfies CommandResponse
       } catch (err) {
@@ -232,17 +209,7 @@ function registerDangerousCommand(registry: CommandRegistry, core: OpenACPCore):
       if (bypassValue && modeConfig) {
         try {
           const targetValue = wantOn ? bypassValue : nonBypassDefault!
-          const response = await session.agentInstance.setConfigOption(
-            modeConfig.id,
-            { type: 'select', value: targetValue },
-          )
-          if (response.configOptions && response.configOptions.length > 0) {
-            session.configOptions = response.configOptions as ConfigOption[]
-          } else {
-            session.configOptions = session.configOptions.map((o): ConfigOption =>
-              o.id === modeConfig.id && o.type === 'select' ? { ...o, currentValue: targetValue } : o
-            )
-          }
+          await session.setConfigOption(modeConfig.id, { type: 'select', value: targetValue })
           core.eventBus.emit('session:configChanged', { sessionId: session.id })
           return {
             type: 'text',

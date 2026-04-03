@@ -53,7 +53,7 @@ const booleanOption: ConfigOption = {
 // ── Helpers ──────────────────────────────────────────────────────────
 
 function mockSession(configOptions: ConfigOption[] = [], overrides?: Partial<any>) {
-  return {
+  const session: any = {
     id: 'test-session',
     configOptions,
     clientOverrides: {} as { bypassPermissions?: boolean },
@@ -72,6 +72,18 @@ function mockSession(configOptions: ConfigOption[] = [], overrides?: Partial<any
     middlewareChain: undefined as any,
     ...overrides,
   }
+  // session.setConfigOption delegates to agentInstance and updates configOptions
+  session.setConfigOption = vi.fn(async (configId: string, value: any) => {
+    const response = await session.agentInstance.setConfigOption(configId, value)
+    if (response.configOptions && response.configOptions.length > 0) {
+      session.configOptions = response.configOptions
+    } else if (value.type === 'select') {
+      session.configOptions = session.configOptions.map((o: ConfigOption) =>
+        o.id === configId && o.type === 'select' ? { ...o, currentValue: value.value } : o
+      )
+    }
+  })
+  return session
 }
 
 function mockCore(session?: ReturnType<typeof mockSession>) {
@@ -180,7 +192,7 @@ describe('Config Commands', () => {
     it('sets mode when valid value provided', async () => {
       const res = await registry.execute('/mode architect', baseArgs('test-session'))
       expect(res.type).toBe('text')
-      expect(session.agentInstance.setConfigOption).toHaveBeenCalledWith(
+      expect(session.setConfigOption).toHaveBeenCalledWith(
         'mode',
         { type: 'select', value: 'architect' },
       )
@@ -204,7 +216,7 @@ describe('Config Commands', () => {
         expect(res.text).toContain('Code')
       }
       // Agent should NOT be called when already at target value
-      expect(session.agentInstance.setConfigOption).not.toHaveBeenCalled()
+      expect(session.setConfigOption).not.toHaveBeenCalled()
     })
 
     it('returns error for invalid value with "Unknown option" message', async () => {
@@ -230,7 +242,11 @@ describe('Config Commands', () => {
       })
 
       await registry.execute('/mode architect', baseArgs('test-session'))
-      // configOptions set directly (skips middleware — already fired before agent call)
+      // setConfigOption on session updates configOptions from agent response
+      expect(session.setConfigOption).toHaveBeenCalledWith(
+        'mode',
+        { type: 'select', value: 'architect' },
+      )
       expect(session.configOptions).toEqual(updatedOptions)
     })
 
@@ -324,7 +340,7 @@ describe('Config Commands', () => {
     it('sets model correctly with valid value', async () => {
       const res = await registry.execute('/model opus', baseArgs('test-session'))
       expect(res.type).toBe('text')
-      expect(session.agentInstance.setConfigOption).toHaveBeenCalledWith(
+      expect(session.setConfigOption).toHaveBeenCalledWith(
         'model',
         { type: 'select', value: 'opus' },
       )
@@ -341,7 +357,7 @@ describe('Config Commands', () => {
       if (res.type === 'text') {
         expect(res.text).toContain('Already using')
       }
-      expect(session.agentInstance.setConfigOption).not.toHaveBeenCalled()
+      expect(session.setConfigOption).not.toHaveBeenCalled()
     })
   })
 
@@ -381,7 +397,7 @@ describe('Config Commands', () => {
     it('sets thought level correctly', async () => {
       const res = await registry.execute('/thought extended', baseArgs('test-session'))
       expect(res.type).toBe('text')
-      expect(session.agentInstance.setConfigOption).toHaveBeenCalledWith(
+      expect(session.setConfigOption).toHaveBeenCalledWith(
         'thinking',
         { type: 'select', value: 'extended' },
       )
@@ -404,7 +420,7 @@ describe('Config Commands', () => {
       it('/bypass_permissions on switches to bypass mode', async () => {
         const res = await registry.execute('/bypass_permissions on', baseArgs('test-session'))
         expect(res.type).toBe('text')
-        expect(session.agentInstance.setConfigOption).toHaveBeenCalledWith(
+        expect(session.setConfigOption).toHaveBeenCalledWith(
           'mode',
           { type: 'select', value: 'bypassPermissions' },
         )
@@ -419,7 +435,7 @@ describe('Config Commands', () => {
         const res = await registry.execute('/bypass_permissions off', baseArgs('test-session'))
         expect(res.type).toBe('text')
         // Should set to first non-bypass option
-        expect(session.agentInstance.setConfigOption).toHaveBeenCalledWith(
+        expect(session.setConfigOption).toHaveBeenCalledWith(
           'mode',
           { type: 'select', value: 'code' },
         )
@@ -459,7 +475,7 @@ describe('Config Commands', () => {
         if (res.type === 'text') {
           expect(res.text).toContain('already')
         }
-        expect(session.agentInstance.setConfigOption).not.toHaveBeenCalled()
+        expect(session.setConfigOption).not.toHaveBeenCalled()
       })
 
       it('/bypass_permissions off when already off returns "already disabled" text', async () => {
@@ -469,7 +485,7 @@ describe('Config Commands', () => {
         if (res.type === 'text') {
           expect(res.text).toContain('already')
         }
-        expect(session.agentInstance.setConfigOption).not.toHaveBeenCalled()
+        expect(session.setConfigOption).not.toHaveBeenCalled()
       })
     })
 
@@ -650,7 +666,7 @@ describe('Config Commands', () => {
 
     it('setConfigOption failure returns error', async () => {
       session = mockSession([modeOption])
-      session.agentInstance.setConfigOption.mockRejectedValue(new Error('Agent rejected'))
+      session.setConfigOption.mockRejectedValue(new Error('Agent rejected'))
       core = mockCore(session)
       registry = new CommandRegistry()
       const { registerConfigCommands } = await loadModule()
@@ -697,7 +713,7 @@ describe('Config Commands', () => {
       }
     })
 
-    it('setConfigOption returns no configOptions, skips update', async () => {
+    it('setConfigOption returns no configOptions, falls back to optimistic update', async () => {
       session = mockSession([modeOption])
       session.agentInstance.setConfigOption.mockResolvedValue({})
       core = mockCore(session)
@@ -707,7 +723,11 @@ describe('Config Commands', () => {
 
       const res = await registry.execute('/mode architect', baseArgs('test-session'))
       expect(res.type).toBe('text')
-      expect(session.updateConfigOptions).not.toHaveBeenCalled()
+      // session.setConfigOption is still called — optimistic update path handles empty response
+      expect(session.setConfigOption).toHaveBeenCalledWith(
+        'mode',
+        { type: 'select', value: 'architect' },
+      )
     })
   })
 })

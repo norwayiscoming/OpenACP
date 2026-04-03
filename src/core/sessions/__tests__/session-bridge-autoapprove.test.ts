@@ -100,22 +100,30 @@ describe("SessionBridge auto-approve", () => {
     bridge.connect();
   });
 
-  it("auto-approves openacp commands without reaching the adapter", async () => {
+  it("does NOT auto-approve requests with 'openacp' in the description when bypass is OFF", async () => {
     const request = makePermissionRequest("Run openacp install plugin");
 
-    const result = await agent.onPermissionRequest(request);
+    const resultPromise = agent.onPermissionRequest(request);
 
-    expect(result).toBe("allow-1");
-    expect(adapter.sendPermissionRequest).not.toHaveBeenCalled();
+    // Should be forwarded to adapter, not auto-approved
+    expect(adapter.sendPermissionRequest).toHaveBeenCalled();
+
+    session.permissionGate.resolve("deny-1");
+    const result = await resultPromise;
+    expect(result).toBe("deny-1");
   });
 
-  it("auto-approves openacp commands case-insensitively", async () => {
+  it("does NOT auto-approve requests with 'OpenACP' (case-insensitive) in description when bypass is OFF", async () => {
     const request = makePermissionRequest("Run OpenACP config command");
 
-    const result = await agent.onPermissionRequest(request);
+    const resultPromise = agent.onPermissionRequest(request);
 
-    expect(result).toBe("allow-1");
-    expect(adapter.sendPermissionRequest).not.toHaveBeenCalled();
+    // Should be forwarded to adapter, not auto-approved
+    expect(adapter.sendPermissionRequest).toHaveBeenCalled();
+
+    session.permissionGate.resolve("deny-1");
+    const result = await resultPromise;
+    expect(result).toBe("deny-1");
   });
 
   // --- Client-side bypass via clientOverrides ---

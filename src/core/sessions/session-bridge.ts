@@ -361,20 +361,8 @@ export class SessionBridge {
     return optionId;
   }
 
-  /** Check if a permission request should be auto-approved (openacp commands or bypass mode) */
+  /** Check if a permission request should be auto-approved (bypass mode only) */
   private checkAutoApprove(request: PermissionRequest): string | null {
-    // Auto-approve openacp CLI commands
-    if (request.description.toLowerCase().includes("openacp")) {
-      const allowOption = request.options.find((o) => o.isAllow);
-      if (allowOption) {
-        log.info(
-          { sessionId: this.session.id, requestId: request.id },
-          "Auto-approving openacp command",
-        );
-        return allowOption.id;
-      }
-    }
-
     // Bypass mode: auto-approve all permissions (agent-side or client-side)
     const modeOption = this.session.getConfigByCategory("mode");
     const isAgentBypass = modeOption && isPermissionBypass(

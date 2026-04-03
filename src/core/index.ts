@@ -35,6 +35,8 @@ export { MessageTransformer } from "./message-transformer.js";
 export type { FileServiceInterface } from "./plugin/types.js";
 export { SessionManager } from "./sessions/session-manager.js";
 export { SessionBridge, type BridgeDeps } from "./sessions/session-bridge.js";
+export type { TurnContext, TurnRouting } from "./sessions/turn-context.js";
+export { createTurnContext, getEffectiveTarget, isSystemEvent } from "./sessions/turn-context.js";
 export {
   SessionFactory,
   type SessionCreateParams,

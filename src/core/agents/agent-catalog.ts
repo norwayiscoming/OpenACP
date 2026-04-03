@@ -186,6 +186,15 @@ export class AgentCatalog {
     return installAgent(agent, this.store, progress, this.agentsDir);
   }
 
+  /**
+   * Register an agent directly into the catalog store without going through
+   * the registry installer. Used to pre-register bundled agents (e.g. Claude)
+   * when their CLI dependency is not yet installed.
+   */
+  registerFallbackAgent(key: string, data: InstalledAgent): void {
+    this.store.addAgent(key, data);
+  }
+
   async uninstall(key: string): Promise<{ ok: boolean; error?: string }> {
     if (!this.store.hasAgent(key)) {
       return { ok: false, error: `"${key}" is not installed.` };

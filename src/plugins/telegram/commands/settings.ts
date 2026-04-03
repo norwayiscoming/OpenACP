@@ -1,18 +1,24 @@
 import type { Bot, Context } from "grammy";
 import { InlineKeyboard } from "grammy";
 import type { OpenACPCore } from "../../../core/index.js";
-import { getSafeFields, resolveOptions, getConfigValue, isHotReloadable, type ConfigFieldDef } from "../../../core/config/config-registry.js";
+import {
+  getSafeFields,
+  resolveOptions,
+  getFieldValueAsync,
+  setFieldValueAsync,
+  isHotReloadable,
+  type ConfigFieldDef,
+} from "../../../core/config/config-registry.js";
 import { createChildLogger } from "../../../core/utils/log.js";
 
 const log = createChildLogger({ module: "telegram-settings" });
 
-function buildSettingsKeyboard(core: OpenACPCore): InlineKeyboard {
-  const config = core.configManager.get();
+async function buildSettingsKeyboard(core: OpenACPCore): Promise<InlineKeyboard> {
   const fields = getSafeFields();
   const kb = new InlineKeyboard();
 
   for (const field of fields) {
-    const value = getConfigValue(config, field.path);
+    const value = await getFieldValueAsync(field, core.configManager, core.settingsManager);
     const label = formatFieldLabel(field, value);
 
     if (field.type === 'toggle') {
@@ -43,7 +49,7 @@ function formatFieldLabel(field: ConfigFieldDef, value: unknown): string {
 }
 
 export async function handleSettings(ctx: Context, core: OpenACPCore): Promise<void> {
-  const kb = buildSettingsKeyboard(core);
+  const kb = await buildSettingsKeyboard(core);
   await ctx.reply(`<b>⚙️ Settings</b>\nTap to change:`, {
     parse_mode: "HTML",
     reply_markup: kb,
@@ -57,21 +63,21 @@ export function setupSettingsCallbacks(
 ): void {
   bot.callbackQuery(/^s:toggle:/, async (ctx) => {
     const fieldPath = ctx.callbackQuery.data.replace('s:toggle:', '');
-    const config = core.configManager.get();
-    const currentValue = getConfigValue(config, fieldPath);
+    const fieldDef = getSafeFields().find(f => f.path === fieldPath);
+    if (!fieldDef) return;
+
+    const settingsManager = core.settingsManager;
+    const currentValue = await getFieldValueAsync(fieldDef, core.configManager, settingsManager);
     const newValue = !currentValue;
 
     try {
-      const updates = buildNestedUpdate(fieldPath, newValue);
-      await core.configManager.save(updates, fieldPath);
-
+      await setFieldValueAsync(fieldDef, newValue, core.configManager, settingsManager);
       const toast = isHotReloadable(fieldPath)
         ? `✅ ${fieldPath} = ${newValue}`
         : `✅ ${fieldPath} = ${newValue} (restart needed)`;
       try { await ctx.answerCallbackQuery({ text: toast }); } catch { /* expired */ }
-
       try {
-        await ctx.editMessageReplyMarkup({ reply_markup: buildSettingsKeyboard(core) });
+        await ctx.editMessageReplyMarkup({ reply_markup: await buildSettingsKeyboard(core) });
       } catch { /* ignore */ }
     } catch (err) {
       log.error({ err, fieldPath }, 'Failed to toggle config');
@@ -86,7 +92,7 @@ export function setupSettingsCallbacks(
     if (!fieldDef) return;
 
     const options = resolveOptions(fieldDef, config) ?? [];
-    const currentValue = getConfigValue(config, fieldPath);
+    const currentValue = await getFieldValueAsync(fieldDef, core.configManager, core.settingsManager);
     const kb = new InlineKeyboard();
 
     for (const opt of options) {
@@ -109,13 +115,23 @@ export function setupSettingsCallbacks(
     const parts = ctx.callbackQuery.data.replace('s:pick:', '').split(':');
     const fieldPath = parts.slice(0, -1).join(':');
     const newValue = parts[parts.length - 1];
+    const fieldDef = getSafeFields().find(f => f.path === fieldPath);
+    if (!fieldDef) return;
 
     try {
       // For speech.stt.provider: check if the selected provider has an API key configured
       if (fieldPath === 'speech.stt.provider') {
-        const config = core.configManager.get();
-        const providerConfig = config.speech?.stt?.providers?.[newValue];
-        if (!providerConfig?.apiKey) {
+        const sm = core.settingsManager;
+        let hasApiKey = false;
+        if (sm) {
+          const speechSettings = await sm.loadSettings('@openacp/speech');
+          hasApiKey = !!(speechSettings.groqApiKey as string);
+        } else {
+          const config = core.configManager.get();
+          const providerConfig = config.speech?.stt?.providers?.[newValue];
+          hasApiKey = !!providerConfig?.apiKey;
+        }
+        if (!hasApiKey) {
           // No API key — delegate to assistant to collect it
           const assistant = getAssistantSession();
           if (assistant) {
@@ -130,14 +146,13 @@ export function setupSettingsCallbacks(
         }
       }
 
-      const updates = buildNestedUpdate(fieldPath, newValue);
-      await core.configManager.save(updates, fieldPath);
+      await setFieldValueAsync(fieldDef, newValue, core.configManager, core.settingsManager);
 
       try { await ctx.answerCallbackQuery({ text: `✅ ${fieldPath} = ${newValue}` }); } catch { /* expired */ }
       try {
         await ctx.editMessageText(`<b>⚙️ Settings</b>\nTap to change:`, {
           parse_mode: "HTML",
-          reply_markup: buildSettingsKeyboard(core),
+          reply_markup: await buildSettingsKeyboard(core),
         });
       } catch { /* ignore */ }
     } catch (err) {
@@ -148,11 +163,10 @@ export function setupSettingsCallbacks(
 
   bot.callbackQuery(/^s:input:/, async (ctx) => {
     const fieldPath = ctx.callbackQuery.data.replace('s:input:', '');
-    const config = core.configManager.get();
     const fieldDef = getSafeFields().find(f => f.path === fieldPath);
     if (!fieldDef) return;
 
-    const currentValue = getConfigValue(config, fieldPath);
+    const currentValue = await getFieldValueAsync(fieldDef, core.configManager, core.settingsManager);
     const assistant = getAssistantSession();
 
     if (!assistant) {
@@ -183,20 +197,8 @@ export function setupSettingsCallbacks(
     try {
       await ctx.editMessageText(`<b>⚙️ Settings</b>\nTap to change:`, {
         parse_mode: "HTML",
-        reply_markup: buildSettingsKeyboard(core),
+        reply_markup: await buildSettingsKeyboard(core),
       });
     } catch { /* ignore */ }
   });
-}
-
-function buildNestedUpdate(dotPath: string, value: unknown): Record<string, unknown> {
-  const parts = dotPath.split('.');
-  const result: Record<string, unknown> = {};
-  let target = result;
-  for (let i = 0; i < parts.length - 1; i++) {
-    target[parts[i]] = {};
-    target = target[parts[i]] as Record<string, unknown>;
-  }
-  target[parts[parts.length - 1]] = value;
-  return result;
 }

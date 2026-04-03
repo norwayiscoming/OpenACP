@@ -383,7 +383,21 @@ export class OpenACPCore {
     }
 
     // Forward to session
-    await session.enqueuePrompt(text, message.attachments, message.routing);
+    const turnId = await session.enqueuePrompt(text, message.attachments, message.routing);
+
+    // Emit message:queued for cross-adapter input visibility (SSE clients see messages from external adapters)
+    const sourceAdapterId = message.routing?.sourceAdapterId;
+    if (sourceAdapterId && sourceAdapterId !== 'sse' && sourceAdapterId !== 'api') {
+      this.eventBus.emit("message:queued", {
+        sessionId: session.id,
+        turnId,
+        text,
+        sourceAdapterId,
+        attachments: message.attachments,
+        timestamp: new Date().toISOString(),
+        queueDepth: session.queueDepth,
+      });
+    }
   }
 
   // --- Unified Session Creation Pipeline ---

@@ -5,31 +5,31 @@ import type { TurnRouting } from './turn-context.js'
  * Serial prompt queue — ensures prompts are processed one at a time.
  */
 export class PromptQueue {
-  private queue: Array<{ text: string; attachments?: Attachment[]; routing?: TurnRouting; resolve: () => void }> = []
+  private queue: Array<{ text: string; attachments?: Attachment[]; routing?: TurnRouting; turnId?: string; resolve: () => void }> = []
   private processing = false
   private abortController: AbortController | null = null
 
   constructor(
-    private processor: (text: string, attachments?: Attachment[], routing?: TurnRouting) => Promise<void>,
+    private processor: (text: string, attachments?: Attachment[], routing?: TurnRouting, turnId?: string) => Promise<void>,
     private onError?: (err: unknown) => void,
   ) {}
 
-  async enqueue(text: string, attachments?: Attachment[], routing?: TurnRouting): Promise<void> {
+  async enqueue(text: string, attachments?: Attachment[], routing?: TurnRouting, turnId?: string): Promise<void> {
     if (this.processing) {
       return new Promise<void>((resolve) => {
-        this.queue.push({ text, attachments, routing, resolve })
+        this.queue.push({ text, attachments, routing, turnId, resolve })
       })
     }
-    await this.process(text, attachments, routing)
+    await this.process(text, attachments, routing, turnId)
   }
 
-  private async process(text: string, attachments?: Attachment[], routing?: TurnRouting): Promise<void> {
+  private async process(text: string, attachments?: Attachment[], routing?: TurnRouting, turnId?: string): Promise<void> {
     this.processing = true
     this.abortController = new AbortController()
     const { signal } = this.abortController
     try {
       await Promise.race([
-        this.processor(text, attachments, routing),
+        this.processor(text, attachments, routing, turnId),
         new Promise<never>((_, reject) => {
           signal.addEventListener('abort', () => reject(new Error('Prompt aborted')), { once: true })
         }),
@@ -49,7 +49,7 @@ export class PromptQueue {
   private drainNext(): void {
     const next = this.queue.shift()
     if (next) {
-      this.process(next.text, next.attachments, next.routing).then(next.resolve)
+      this.process(next.text, next.attachments, next.routing, next.turnId).then(next.resolve)
     }
   }
 

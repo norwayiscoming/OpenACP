@@ -61,6 +61,23 @@ export interface EventBusEvents {
   // Config changed (used by adapters to update control messages)
   "session:configChanged": (data: { sessionId: string }) => void;
 
+  // Cross-adapter input visibility (SSE clients see messages from other adapters)
+  "message:queued": (data: {
+    sessionId: string;
+    turnId: string;
+    text: string;
+    sourceAdapterId: string;
+    attachments?: unknown[];
+    timestamp: string;
+    queueDepth: number;
+  }) => void;
+  "message:processing": (data: {
+    sessionId: string;
+    turnId: string;
+    sourceAdapterId: string;
+    timestamp: string;
+  }) => void;
+
   // Agent switch lifecycle (used by UI & dashboards)
   "session:agentSwitch": (data: {
     sessionId: string;

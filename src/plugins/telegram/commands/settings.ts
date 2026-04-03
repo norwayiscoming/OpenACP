@@ -59,7 +59,7 @@ export async function handleSettings(ctx: Context, core: OpenACPCore): Promise<v
 export function setupSettingsCallbacks(
   bot: Bot,
   core: OpenACPCore,
-  getAssistantSession: () => { topicId: number; enqueuePrompt: (p: string) => Promise<void> } | undefined,
+  getAssistantSession: () => { topicId: number; enqueuePrompt: (p: string) => Promise<string> } | undefined,
 ): void {
   bot.callbackQuery(/^s:toggle:/, async (ctx) => {
     const fieldPath = ctx.callbackQuery.data.replace('s:toggle:', '');

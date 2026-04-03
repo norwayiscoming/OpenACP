@@ -10,7 +10,7 @@ import type { MiddlewareChain } from "../plugin/middleware-chain.js";
 import type { DebugTracer } from "../utils/debug-tracer.js";
 import { createChildLogger } from "../utils/log.js";
 import { isPermissionBypass } from "../utils/bypass-detection.js";
-import { isSystemEvent, getEffectiveTarget } from "./turn-context.js";
+import { isSystemEvent, getEffectiveTarget, type TurnContext } from "./turn-context.js";
 
 const log = createChildLogger({ module: "session-bridge" });
 
@@ -175,6 +175,18 @@ export class SessionBridge {
     // Wire lifecycle: persist prompt count after each prompt for resume decisions
     this.listen(this.session, "prompt_count_changed", (count: number) => {
       this.deps.sessionManager.patchRecord(this.session.id, { currentPromptCount: count });
+    });
+
+    // Wire turn_started: emit message:processing on EventBus for external adapter turns
+    this.listen(this.session, "turn_started", (ctx: TurnContext) => {
+      if (ctx.sourceAdapterId !== 'sse' && ctx.sourceAdapterId !== 'api') {
+        this.deps.eventBus?.emit("message:processing", {
+          sessionId: this.session.id,
+          turnId: ctx.turnId,
+          sourceAdapterId: ctx.sourceAdapterId,
+          timestamp: new Date().toISOString(),
+        });
+      }
     });
 
     // Replay any commands_update that arrived before the bridge connected

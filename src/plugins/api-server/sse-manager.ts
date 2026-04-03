@@ -40,6 +40,8 @@ export class SSEManager {
       "session:deleted",
       "agent:event",
       "permission:request",
+      "message:queued",
+      "message:processing",
     ] as const;
 
     for (const eventName of events) {
@@ -119,6 +121,8 @@ export class SSEManager {
       "agent:event",
       "permission:request",
       "session:updated",
+      "message:queued",
+      "message:processing",
     ];
     for (const res of this.sseConnections) {
       const filter = (res as SSEResponse).sessionFilter;

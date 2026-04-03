@@ -9,7 +9,7 @@ describe("PromptQueue — Comprehensive Edge Cases", () => {
 
       await queue.enqueue("hello");
 
-      expect(processor).toHaveBeenCalledWith("hello", undefined, undefined);
+      expect(processor).toHaveBeenCalledWith("hello", undefined, undefined, undefined);
     });
 
     it("passes attachments to processor", async () => {
@@ -19,7 +19,7 @@ describe("PromptQueue — Comprehensive Edge Cases", () => {
 
       await queue.enqueue("hello", attachments);
 
-      expect(processor).toHaveBeenCalledWith("hello", attachments, undefined);
+      expect(processor).toHaveBeenCalledWith("hello", attachments, undefined, undefined);
     });
   });
 
@@ -186,7 +186,7 @@ describe("PromptQueue — Comprehensive Edge Cases", () => {
 
       // Should be able to process new items
       await queue.enqueue("after-clear");
-      expect(processor).toHaveBeenCalledWith("after-clear", undefined, undefined);
+      expect(processor).toHaveBeenCalledWith("after-clear", undefined, undefined, undefined);
     });
   });
 
@@ -204,7 +204,7 @@ describe("PromptQueue — Comprehensive Edge Cases", () => {
 
       // Queue should still work
       await queue.enqueue("second");
-      expect(processor).toHaveBeenCalledWith("second", undefined, undefined);
+      expect(processor).toHaveBeenCalledWith("second", undefined, undefined, undefined);
     });
 
     it("abort error is NOT forwarded to onError", async () => {

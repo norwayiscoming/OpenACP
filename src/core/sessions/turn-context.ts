@@ -14,13 +14,15 @@ export interface TurnRouting {
 
 /**
  * Create a new TurnContext. Called when a prompt is dequeued from the queue.
+ * If a pre-generated turnId is provided (from enqueuePrompt), it is used; otherwise a new one is generated.
  */
 export function createTurnContext(
   sourceAdapterId: string,
   responseAdapterId?: string | null,
+  turnId?: string,
 ): TurnContext {
   return {
-    turnId: nanoid(8),
+    turnId: turnId ?? nanoid(8),
     sourceAdapterId,
     responseAdapterId,
   };

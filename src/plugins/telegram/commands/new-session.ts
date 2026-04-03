@@ -301,7 +301,7 @@ export function setupNewSessionCallbacks(
   bot: Bot,
   core: OpenACPCore,
   chatId: number,
-  getAssistantSession?: () => { topicId: number; enqueuePrompt: (p: string) => Promise<void> } | undefined,
+  getAssistantSession?: () => { topicId: number; enqueuePrompt: (p: string) => Promise<string> } | undefined,
 ): void {
   // Agent picker (also triggered from m: handler callback case)
   bot.callbackQuery('ns:start', async (ctx) => {

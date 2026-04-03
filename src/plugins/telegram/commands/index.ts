@@ -26,7 +26,7 @@ export function setupAllCallbacks(
   chatId: number,
   systemTopicIds?: { notificationTopicId: number; assistantTopicId: number },
   getAssistantSession?: () =>
-    | { topicId: number; enqueuePrompt: (p: string) => Promise<void> }
+    | { topicId: number; enqueuePrompt: (p: string) => Promise<string> }
     | undefined,
   onControlMessage?: (sessionId: string, msgId: number) => void,
 ): void {

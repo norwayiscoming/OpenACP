@@ -1,12 +1,13 @@
 import type { OpenACPPlugin, InstallContext, MiddlewarePayloadMap } from '../../core/plugin/types.js'
 import { SecurityGuard } from './security-guard.js'
+import type { SecurityConfig } from './security-guard.js'
 import type { IncomingMessage } from '../../core/types.js'
 
 // Structural type for the core fields SecurityGuard needs, avoiding
 // a direct dependency on OpenACPCore's full interface.
 interface SecurityCoreAccess {
-  configManager: ConstructorParameters<typeof SecurityGuard>[0]
   sessionManager: ConstructorParameters<typeof SecurityGuard>[1]
+  lifecycleManager?: { settingsManager?: import('../../core/plugin/settings-manager.js').SettingsManager }
 }
 
 // Factory function pattern (closure for state)
@@ -17,7 +18,7 @@ function createSecurityPlugin(): OpenACPPlugin {
     description: 'User access control and session limits',
     essential: false,
     permissions: ['services:register', 'middleware:register', 'kernel:access', 'commands:register'],
-    inheritableKeys: ['allowedUsers', 'maxSessionsPerUser', 'rateLimits'],
+    inheritableKeys: ['allowedUserIds', 'maxConcurrentSessions', 'sessionTimeoutMinutes'],
 
     async install(ctx: InstallContext) {
       const { settings, legacyConfig, terminal } = ctx
@@ -104,12 +105,32 @@ function createSecurityPlugin(): OpenACPPlugin {
 
     async setup(ctx) {
       const core = ctx.core as SecurityCoreAccess
-      const guard = new SecurityGuard(core.configManager, core.sessionManager)
+      const settingsManager = core.lifecycleManager?.settingsManager
+      const pluginName = ctx.pluginName
+
+      const getSecurityConfig = async (): Promise<SecurityConfig> => {
+        if (settingsManager) {
+          const settings = await settingsManager.loadSettings(pluginName)
+          if (Object.keys(settings).length > 0) {
+            return {
+              allowedUserIds: (settings.allowedUserIds as string[]) ?? [],
+              maxConcurrentSessions: (settings.maxConcurrentSessions as number) ?? 20,
+            }
+          }
+        }
+        const cfg = ctx.pluginConfig as Record<string, unknown>
+        return {
+          allowedUserIds: (cfg.allowedUserIds as string[]) ?? [],
+          maxConcurrentSessions: (cfg.maxConcurrentSessions as number) ?? 20,
+        }
+      }
+
+      const guard = new SecurityGuard(getSecurityConfig, core.sessionManager)
 
       // Register middleware for message:incoming — block unauthorized users
       ctx.registerMiddleware('message:incoming', {
         handler: async (payload: MiddlewarePayloadMap['message:incoming'], next) => {
-          const access = guard.checkAccess(payload as unknown as IncomingMessage)
+          const access = await guard.checkAccess(payload as unknown as IncomingMessage)
           if (!access.allowed) {
             ctx.log.info(`Access denied: ${access.reason}`)
             return null  // block

@@ -122,10 +122,17 @@ function mockAdapter(): IChannelAdapter {
 /** Register mock core services in ServiceRegistry so lazy getters resolve. */
 function registerMockServices(core: OpenACPCore, configMgr?: any): void {
   const sr = core.lifecycleManager.serviceRegistry;
-  // SecurityGuard needs configManager and sessionManager
+  // SecurityGuard needs a config accessor and sessionManager
   if (!sr.has("security")) {
+    const getConfig = async () => {
+      const cfg = (configMgr ?? core.configManager).get();
+      return {
+        allowedUserIds: cfg.security.allowedUserIds,
+        maxConcurrentSessions: cfg.security.maxConcurrentSessions,
+      };
+    };
     sr.register("security", new SecurityGuard(
-      configMgr ?? core.configManager,
+      getConfig,
       core.sessionManager,
     ), "@openacp/security");
   }

@@ -309,7 +309,7 @@ export class OpenACPCore {
     }
 
     // Security: check user access and session limits
-    const access = this.securityGuard.checkAccess(message);
+    const access = await this.securityGuard.checkAccess(message);
     if (!access.allowed) {
       log.warn({ userId: message.userId, reason: access.reason }, "Access denied");
       if (access.reason.includes("Session limit")) {

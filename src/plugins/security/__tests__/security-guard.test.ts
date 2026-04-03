@@ -1,84 +1,109 @@
-import { describe, it, expect, vi } from "vitest";
-import { SecurityGuard } from "../security-guard.js";
-import type { IncomingMessage } from "../../../core/types.js";
+import { describe, it, expect, vi } from 'vitest';
+import { SecurityGuard } from '../security-guard.js';
+import type { SecurityConfig } from '../security-guard.js';
 
-function makeMessage(overrides: Partial<IncomingMessage> = {}): IncomingMessage {
-  return {
-    channelId: "telegram",
-    threadId: "t1",
-    userId: "user-1",
-    text: "hello",
-    ...overrides,
-  };
+function mockSessionManager(sessions: Array<{ status: string }> = []) {
+  return { listSessions: () => sessions };
 }
 
-function makeConfigManager(overrides: {
-  allowedUserIds?: string[];
-  maxConcurrentSessions?: number;
-} = {}) {
-  return {
-    get: () => ({
-      security: {
-        allowedUserIds: overrides.allowedUserIds ?? [],
-        maxConcurrentSessions: overrides.maxConcurrentSessions ?? 5,
-      },
-    }),
-  } as any;
-}
+describe('SecurityGuard', () => {
+  describe('checkAccess', () => {
+    it('allows all users when allowedUserIds is empty', async () => {
+      const getConfig = vi.fn<() => Promise<SecurityConfig>>().mockResolvedValue({
+        allowedUserIds: [],
+        maxConcurrentSessions: 20,
+      });
+      const guard = new SecurityGuard(getConfig, mockSessionManager());
+      const result = await guard.checkAccess({ userId: 'anyone' });
+      expect(result).toEqual({ allowed: true });
+    });
 
-function makeSessionManager(sessions: Array<{ status: string }> = []) {
-  return {
-    listSessions: () => sessions,
-  } as any;
-}
+    it('blocks unauthorized users', async () => {
+      const getConfig = vi.fn<() => Promise<SecurityConfig>>().mockResolvedValue({
+        allowedUserIds: ['123', '456'],
+        maxConcurrentSessions: 20,
+      });
+      const guard = new SecurityGuard(getConfig, mockSessionManager());
+      const result = await guard.checkAccess({ userId: '789' });
+      expect(result).toEqual({ allowed: false, reason: 'Unauthorized user' });
+    });
 
-describe("SecurityGuard", () => {
-  it("allows when no restrictions", () => {
-    const guard = new SecurityGuard(makeConfigManager(), makeSessionManager());
-    const result = guard.checkAccess(makeMessage());
-    expect(result).toEqual({ allowed: true });
-  });
+    it('allows authorized users (numeric userId coerced to string)', async () => {
+      const getConfig = vi.fn<() => Promise<SecurityConfig>>().mockResolvedValue({
+        allowedUserIds: ['123'],
+        maxConcurrentSessions: 20,
+      });
+      const guard = new SecurityGuard(getConfig, mockSessionManager());
+      const result = await guard.checkAccess({ userId: 123 });
+      expect(result).toEqual({ allowed: true });
+    });
 
-  it("rejects unauthorized user", () => {
-    const guard = new SecurityGuard(
-      makeConfigManager({ allowedUserIds: ["user-2", "user-3"] }),
-      makeSessionManager(),
-    );
-    const result = guard.checkAccess(makeMessage({ userId: "user-1" }));
-    expect(result).toEqual({ allowed: false, reason: "Unauthorized user" });
-  });
+    it('blocks when session limit reached (exact boundary)', async () => {
+      const getConfig = vi.fn<() => Promise<SecurityConfig>>().mockResolvedValue({
+        allowedUserIds: [],
+        maxConcurrentSessions: 2,
+      });
+      const sessions = [{ status: 'active' }, { status: 'active' }];
+      const guard = new SecurityGuard(getConfig, mockSessionManager(sessions));
+      const result = await guard.checkAccess({ userId: '1' });
+      expect(result).toEqual({ allowed: false, reason: 'Session limit reached (2)' });
+    });
 
-  it("allows authorized user", () => {
-    const guard = new SecurityGuard(
-      makeConfigManager({ allowedUserIds: ["user-1", "user-2"] }),
-      makeSessionManager(),
-    );
-    const result = guard.checkAccess(makeMessage({ userId: "user-1" }));
-    expect(result).toEqual({ allowed: true });
-  });
+    it('allows when under session limit (one below boundary)', async () => {
+      const getConfig = vi.fn<() => Promise<SecurityConfig>>().mockResolvedValue({
+        allowedUserIds: [],
+        maxConcurrentSessions: 2,
+      });
+      const guard = new SecurityGuard(getConfig, mockSessionManager([{ status: 'active' }]));
+      const result = await guard.checkAccess({ userId: '1' });
+      expect(result).toEqual({ allowed: true });
+    });
 
-  it("rejects when session limit reached", () => {
-    const guard = new SecurityGuard(
-      makeConfigManager({ maxConcurrentSessions: 2 }),
-      makeSessionManager([
-        { status: "active" },
-        { status: "initializing" },
-      ]),
-    );
-    const result = guard.checkAccess(makeMessage());
-    expect(result).toEqual({ allowed: false, reason: "Session limit reached (2)" });
-  });
+    it('ignores finished/error/cancelled sessions in limit count', async () => {
+      const getConfig = vi.fn<() => Promise<SecurityConfig>>().mockResolvedValue({
+        allowedUserIds: [],
+        maxConcurrentSessions: 1,
+      });
+      const sessions = [{ status: 'finished' }, { status: 'error' }, { status: 'cancelled' }];
+      const guard = new SecurityGuard(getConfig, mockSessionManager(sessions));
+      const result = await guard.checkAccess({ userId: '1' });
+      expect(result).toEqual({ allowed: true });
+    });
 
-  it("ignores finished/cancelled sessions for limit check", () => {
-    const guard = new SecurityGuard(
-      makeConfigManager({ maxConcurrentSessions: 2 }),
-      makeSessionManager([
-        { status: "active" },
-        { status: "finished" },
-        { status: "cancelled" },
-      ]),
-    );
-    const result = guard.checkAccess(makeMessage());
-    expect(result).toEqual({ allowed: true });
+    it('counts initializing sessions toward the limit', async () => {
+      const getConfig = vi.fn<() => Promise<SecurityConfig>>().mockResolvedValue({
+        allowedUserIds: [],
+        maxConcurrentSessions: 1,
+      });
+      const guard = new SecurityGuard(getConfig, mockSessionManager([{ status: 'initializing' }]));
+      const result = await guard.checkAccess({ userId: '1' });
+      expect(result).toEqual({ allowed: false, reason: 'Session limit reached (1)' });
+    });
+
+    it('reads config on EACH checkAccess call (live settings)', async () => {
+      const getConfig = vi.fn<() => Promise<SecurityConfig>>()
+        .mockResolvedValueOnce({ allowedUserIds: ['1'], maxConcurrentSessions: 20 })
+        .mockResolvedValueOnce({ allowedUserIds: [], maxConcurrentSessions: 20 });
+
+      const guard = new SecurityGuard(getConfig, mockSessionManager());
+
+      const r1 = await guard.checkAccess({ userId: '999' });
+      expect(r1.allowed).toBe(false);
+
+      const r2 = await guard.checkAccess({ userId: '999' });
+      expect(r2.allowed).toBe(true);
+
+      expect(getConfig).toHaveBeenCalledTimes(2);
+    });
+
+    it('uses defaults when config returns unexpected types', async () => {
+      const getConfig = vi.fn<() => Promise<SecurityConfig>>().mockResolvedValue({
+        allowedUserIds: undefined as any,
+        maxConcurrentSessions: undefined as any,
+      });
+      const guard = new SecurityGuard(getConfig, mockSessionManager());
+      const result = await guard.checkAccess({ userId: '1' });
+      expect(result).toEqual({ allowed: true });
+    });
   });
 });

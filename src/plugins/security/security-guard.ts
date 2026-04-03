@@ -1,28 +1,31 @@
-import type { ConfigManager } from "../../core/config/config.js";
-import type { SessionManager } from "../../core/sessions/session-manager.js";
-import type { IncomingMessage } from "../../core/types.js";
+export interface SecurityConfig {
+  allowedUserIds: string[];
+  maxConcurrentSessions: number;
+}
 
 export class SecurityGuard {
   constructor(
-    private configManager: ConfigManager,
-    private sessionManager: SessionManager,
+    private getSecurityConfig: () => Promise<SecurityConfig>,
+    private sessionManager: { listSessions(): Array<{ status: string }> },
   ) {}
 
-  checkAccess(message: IncomingMessage):
-    | { allowed: true }
-    | { allowed: false; reason: string }
+  async checkAccess(message: { userId: string | number }):
+    Promise<{ allowed: true } | { allowed: false; reason: string }>
   {
-    const config = this.configManager.get();
-    if (config.security.allowedUserIds.length > 0) {
+    const config = await this.getSecurityConfig();
+    const allowedIds = config.allowedUserIds ?? [];
+    const maxSessions = config.maxConcurrentSessions ?? 20;
+
+    if (allowedIds.length > 0) {
       const userId = String(message.userId);
-      if (!config.security.allowedUserIds.includes(userId)) {
+      if (!allowedIds.includes(userId)) {
         return { allowed: false, reason: "Unauthorized user" };
       }
     }
     const active = this.sessionManager.listSessions()
       .filter(s => s.status === "active" || s.status === "initializing");
-    if (active.length >= config.security.maxConcurrentSessions) {
-      return { allowed: false, reason: `Session limit reached (${config.security.maxConcurrentSessions})` };
+    if (active.length >= maxSessions) {
+      return { allowed: false, reason: `Session limit reached (${maxSessions})` };
     }
     return { allowed: true };
   }

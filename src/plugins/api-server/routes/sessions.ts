@@ -20,25 +20,25 @@ export async function sessionRoutes(
   app: FastifyInstance,
   deps: RouteDeps,
 ): Promise<void> {
-  // GET /sessions — list all sessions
+  // GET /sessions — list all sessions (live + historical)
   app.get('/', { preHandler: requireScopes('sessions:read') }, async () => {
-    const sessions = deps.core.sessionManager.listSessions();
+    const summaries = deps.core.sessionManager.listAllSessions();
     return {
-      sessions: sessions.map((s) => ({
+      sessions: summaries.map((s) => ({
         id: s.id,
-        agent: s.agentName,
+        agent: s.agent,
         status: s.status,
-        name: s.name ?? null,
-        workspace: s.workingDirectory,
-        createdAt: s.createdAt.toISOString(),
-        dangerousMode: s.clientOverrides.bypassPermissions ?? false,
+        name: s.name,
+        workspace: s.workspace,
+        channelId: s.channelId,
+        createdAt: s.createdAt,
+        lastActiveAt: s.lastActiveAt,
+        dangerousMode: s.dangerousMode,
         queueDepth: s.queueDepth,
         promptRunning: s.promptRunning,
-        lastActiveAt:
-          deps.core.sessionManager.getSessionRecord(s.id)?.lastActiveAt ?? null,
-        // ACP state
-        configOptions: s.configOptions?.length ? s.configOptions : undefined,
-        capabilities: s.agentCapabilities ?? null,
+        configOptions: s.configOptions,
+        capabilities: s.capabilities,
+        isLive: s.isLive,
       })),
     };
   });

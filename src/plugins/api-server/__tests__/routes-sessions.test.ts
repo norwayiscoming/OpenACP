@@ -40,6 +40,24 @@ function createMockDeps(overrides: Partial<RouteDeps> = {}): RouteDeps {
     core: {
       sessionManager: {
         listSessions: vi.fn().mockReturnValue([mockSession]),
+        listAllSessions: vi.fn().mockReturnValue([
+          {
+            id: 'sess-1',
+            agent: 'claude',
+            status: 'active',
+            name: 'Test Session',
+            workspace: '/tmp/test',
+            channelId: 'api',
+            createdAt: '2026-01-01T00:00:00Z',
+            lastActiveAt: '2026-01-01T00:00:00Z',
+            dangerousMode: false,
+            queueDepth: 0,
+            promptRunning: false,
+            configOptions: undefined,
+            capabilities: null,
+            isLive: true,
+          },
+        ]),
         getSession: vi.fn().mockReturnValue(mockSession),
         getSessionRecord: vi.fn().mockReturnValue({ lastActiveAt: '2026-01-01T00:00:00Z' }),
         cancelSession: vi.fn().mockResolvedValue(undefined),
@@ -97,7 +115,7 @@ describe('session routes', () => {
   });
 
   describe('GET /api/v1/sessions', () => {
-    it('returns list of sessions', async () => {
+    it('returns list of sessions with isLive and lastActiveAt', async () => {
       const response = await app.inject({
         method: 'GET',
         url: '/api/v1/sessions',
@@ -109,6 +127,41 @@ describe('session routes', () => {
       expect(body.sessions[0].id).toBe('sess-1');
       expect(body.sessions[0].agent).toBe('claude');
       expect(body.sessions[0].status).toBe('active');
+      expect(body.sessions[0].isLive).toBe(true);
+      expect(body.sessions[0].lastActiveAt).toBe('2026-01-01T00:00:00Z');
+      expect(body.sessions[0].channelId).toBe('api');
+    });
+
+    it('returns historical (non-live) sessions', async () => {
+      (deps.core.sessionManager.listAllSessions as any).mockReturnValue([
+        {
+          id: 'old-sess',
+          agent: 'claude',
+          status: 'cancelled',
+          name: 'Old Session',
+          workspace: '/tmp/old',
+          channelId: 'telegram',
+          createdAt: '2026-01-01T00:00:00Z',
+          lastActiveAt: '2026-01-02T00:00:00Z',
+          dangerousMode: false,
+          queueDepth: 0,
+          promptRunning: false,
+          configOptions: undefined,
+          capabilities: null,
+          isLive: false,
+        },
+      ]);
+
+      const response = await app.inject({
+        method: 'GET',
+        url: '/api/v1/sessions',
+      });
+
+      expect(response.statusCode).toBe(200);
+      const body = JSON.parse(response.body);
+      expect(body.sessions[0].id).toBe('old-sess');
+      expect(body.sessions[0].status).toBe('cancelled');
+      expect(body.sessions[0].isLive).toBe(false);
     });
   });
 

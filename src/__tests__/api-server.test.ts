@@ -26,6 +26,7 @@ describe("ApiServer", () => {
     sessionManager: {
       getSession: vi.fn(),
       listSessions: vi.fn(() => []),
+      listAllSessions: vi.fn(() => []),
       listRecords: vi.fn(() => []),
       updateSessionDangerousMode: vi.fn(), // legacy — kept for backward compat tests
       patchRecord: vi.fn(),
@@ -362,28 +363,38 @@ describe("ApiServer", () => {
   });
 
   it("GET /api/sessions returns session list", async () => {
-    mockCore.sessionManager.listSessions.mockReturnValueOnce([
+    mockCore.sessionManager.listAllSessions.mockReturnValueOnce([
       {
         id: "abc",
-        agentName: "claude",
+        agent: "claude",
         status: "active",
         name: "Fix bug",
-        workingDirectory: "/tmp/a",
-        createdAt: new Date("2026-01-01T00:00:00Z"),
-        clientOverrides: { bypassPermissions: false },
+        workspace: "/tmp/a",
+        channelId: "api",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        lastActiveAt: null,
+        dangerousMode: false,
         queueDepth: 0,
         promptRunning: false,
+        configOptions: undefined,
+        capabilities: null,
+        isLive: true,
       },
       {
         id: "def",
-        agentName: "codex",
+        agent: "codex",
         status: "initializing",
-        name: undefined,
-        workingDirectory: "/tmp/b",
-        createdAt: new Date("2026-01-02T00:00:00Z"),
-        clientOverrides: { bypassPermissions: false },
+        name: null,
+        workspace: "/tmp/b",
+        channelId: "api",
+        createdAt: "2026-01-02T00:00:00.000Z",
+        lastActiveAt: null,
+        dangerousMode: false,
         queueDepth: 0,
         promptRunning: false,
+        configOptions: undefined,
+        capabilities: null,
+        isLive: true,
       },
     ]);
     const port = await startServer();
@@ -410,20 +421,24 @@ describe("ApiServer", () => {
 
   it("GET /api/sessions returns extended fields", async () => {
     const created = new Date("2026-01-01T00:00:00Z");
-    mockCore.sessionManager.listSessions.mockReturnValueOnce([
+    mockCore.sessionManager.listAllSessions.mockReturnValueOnce([
       {
         id: "abc",
-        agentName: "claude",
+        agent: "claude",
         status: "active",
         name: "Test",
-        workingDirectory: "/tmp",
-        createdAt: created,
-        clientOverrides: { bypassPermissions: true },
+        workspace: "/tmp",
+        channelId: "api",
+        createdAt: created.toISOString(),
+        lastActiveAt: null,
+        dangerousMode: true,
         queueDepth: 2,
         promptRunning: true,
+        configOptions: undefined,
+        capabilities: null,
+        isLive: true,
       },
     ]);
-    mockCore.sessionManager.getSessionRecord.mockReturnValueOnce(null);
     const port = await startServer();
 
     const res = await apiFetch(port, "/api/v1/sessions");
@@ -1549,7 +1564,7 @@ describe("ApiServer", () => {
     });
 
     it("accepts requests with valid auth token", async () => {
-      mockCore.sessionManager.listSessions.mockReturnValueOnce([]);
+      mockCore.sessionManager.listAllSessions.mockReturnValueOnce([]);
       const port = await startServer();
       const token = readTestSecret();
       const res = await globalThis.fetch(

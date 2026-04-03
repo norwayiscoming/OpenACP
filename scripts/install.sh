@@ -741,6 +741,32 @@ print_nvm_upgrade_hint() {
     echo "Then open a new shell and rerun the installer."
 }
 
+# Ensure nvm init lines are present in all relevant shell config files.
+# nvm's own installer only writes to ~/.bashrc (run via bash), missing ~/.zshrc on macOS.
+patch_nvm_shell_configs() {
+    local nvm_dir="${NVM_DIR:-${HOME}/.nvm}"
+    # shellcheck disable=SC2016
+    local nvm_init_lines
+    nvm_init_lines="$(cat <<'EOF'
+export NVM_DIR="$([ -z "${XDG_CONFIG_HOME-}" ] && printf %s "${HOME}/.nvm" || printf %s "${XDG_CONFIG_HOME}/nvm")"
+[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+EOF
+)"
+    local marker='nvm.sh'
+    for rc in "$HOME/.zshrc" "$HOME/.bashrc" "$HOME/.bash_profile"; do
+        # Only patch files that exist; skip if already patched
+        if [[ -f "$rc" ]] && ! grep -q "$marker" "$rc" 2>/dev/null; then
+            printf '\n# nvm (Node Version Manager)\n%s\n' "$nvm_init_lines" >> "$rc"
+            ui_info "Added nvm init to $rc"
+        fi
+    done
+    # If none of the rc files exist yet (fresh system), create .zshrc or .bashrc
+    if [[ ! -f "$HOME/.zshrc" && ! -f "$HOME/.bashrc" && ! -f "$HOME/.bash_profile" ]]; then
+        printf '# nvm (Node Version Manager)\n%s\n' "$nvm_init_lines" > "$HOME/.zshrc"
+        ui_info "Created ~/.zshrc with nvm init"
+    fi
+}
+
 install_node() {
     if [[ "$OS" == "macos" ]]; then
         ensure_xcode_clt
@@ -754,6 +780,7 @@ install_node() {
             export NVM_DIR="$([ -z "${XDG_CONFIG_HOME-}" ] && printf %s "${HOME}/.nvm" || printf %s "${XDG_CONFIG_HOME}/nvm")"
             # shellcheck source=/dev/null
             [[ -s "${NVM_DIR}/nvm.sh" ]] && source "${NVM_DIR}/nvm.sh"
+            patch_nvm_shell_configs
         fi
 
         if [[ -s "${NVM_DIR:-${HOME}/.nvm}/nvm.sh" ]]; then
@@ -783,6 +810,7 @@ install_node() {
             export NVM_DIR="$([ -z "${XDG_CONFIG_HOME-}" ] && printf %s "${HOME}/.nvm" || printf %s "${XDG_CONFIG_HOME}/nvm")"
             # shellcheck source=/dev/null
             [[ -s "${NVM_DIR}/nvm.sh" ]] && source "${NVM_DIR}/nvm.sh"
+            patch_nvm_shell_configs
         fi
 
         if [[ -n "${NVM_DIR:-}" && -s "${NVM_DIR}/nvm.sh" ]] || [[ -s "${HOME}/.nvm/nvm.sh" ]]; then

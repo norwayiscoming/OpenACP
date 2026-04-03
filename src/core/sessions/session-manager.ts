@@ -174,7 +174,14 @@ export class SessionManager {
       for (const session of this.sessions.values()) {
         const record = this.store.get(session.id);
         if (record) {
-          await this.store.save({ ...record, status: "finished" });
+          await this.store.save({
+            ...record,
+            status: "finished",
+            acpState: session.toAcpStateSnapshot(),
+            clientOverrides: session.clientOverrides,
+            currentPromptCount: session.promptCount,
+            agentSwitchHistory: session.agentSwitchHistory,
+          });
         }
       }
       this.store.flush();

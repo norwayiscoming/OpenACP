@@ -3,6 +3,7 @@ import { Session } from '../sessions/session.js';
 import { TypedEmitter } from '../utils/typed-emitter.js';
 import type { AgentEvent } from '../types.js';
 import { SessionBridge } from '../sessions/session-bridge.js';
+import { SessionManager } from '../sessions/session-manager.js';
 
 function mockAgentInstance(overrides?: { sessionId?: string }) {
   const emitter = new TypedEmitter<{ agent_event: (event: AgentEvent) => void }>();
@@ -259,5 +260,91 @@ describe('Agent Switch — Session-level integration', () => {
     });
 
     expect(session.latestCommands).toEqual([{ name: '/test', description: 'test cmd' }]);
+  });
+});
+
+describe('SessionManager.shutdownAll()', () => {
+  it('snapshots full session state including acpState and promptCount', async () => {
+    const savedRecords: any[] = [];
+    const mockStore = {
+      save: vi.fn(async (record: any) => { savedRecords.push(structuredClone(record)); }),
+      get: vi.fn((id: string) => ({
+        sessionId: id,
+        agentSessionId: 'agent-1',
+        agentName: 'claude',
+        workingDir: '/workspace',
+        channelId: 'telegram',
+        status: 'active',
+        createdAt: new Date().toISOString(),
+        lastActiveAt: new Date().toISOString(),
+        platform: {},
+        acpState: { configOptions: [{ id: 'model', currentValue: 'old-model' }] },
+      })),
+      flush: vi.fn(),
+      list: vi.fn(() => []),
+      findByPlatform: vi.fn(),
+      findByAgentSessionId: vi.fn(),
+      remove: vi.fn(),
+    } as any;
+
+    const manager = new SessionManager(mockStore);
+    const agent = mockAgentInstance({ sessionId: 'agent-1' });
+    const session = createTestSession(agent, 'claude');
+    session.name = 'test-session';
+    session.configOptions = [
+      { id: 'model', name: 'Model', category: 'model', type: 'select', currentValue: 'new-model', options: [] },
+    ];
+    session.clientOverrides = { bypassPermissions: true };
+    await session.enqueuePrompt('test');
+    manager.registerSession(session);
+
+    await manager.shutdownAll();
+
+    const saved = savedRecords[0];
+    expect(saved.status).toBe('finished');
+    expect(saved.acpState.configOptions[0].currentValue).toBe('new-model');
+    expect(saved.clientOverrides).toEqual({ bypassPermissions: true });
+    expect(saved.currentPromptCount).toBe(1);
+    expect(mockStore.flush).toHaveBeenCalled();
+  });
+});
+
+describe('Lazy resume — acpState restore ordering', () => {
+  it('does not overwrite fresh agent configOptions with stale cache', () => {
+    const agent = mockAgentInstance({ sessionId: 'sess-1' });
+    (agent as any).initialSessionResponse = {
+      configOptions: [{ id: 'model', name: 'Model', category: 'model', type: 'select', currentValue: 'opus', options: [] }],
+    };
+    (agent as any).agentCapabilities = { supportsResume: true };
+
+    const session = createTestSession(agent, 'claude');
+    session.applySpawnResponse(agent.initialSessionResponse, agent.agentCapabilities);
+
+    expect(session.configOptions[0].currentValue).toBe('opus');
+
+    const cachedOptions = [{ id: 'model', name: 'Model', category: 'model', type: 'select', currentValue: 'sonnet', options: [] }];
+    if (session.configOptions.length === 0) {
+      session.setInitialConfigOptions(cachedOptions);
+    }
+
+    expect(session.configOptions[0].currentValue).toBe('opus');
+  });
+
+  it('uses cached configOptions when agent provides none', () => {
+    const agent = mockAgentInstance({ sessionId: 'sess-1' });
+    (agent as any).initialSessionResponse = {};
+    (agent as any).agentCapabilities = {};
+
+    const session = createTestSession(agent, 'claude');
+    session.applySpawnResponse(agent.initialSessionResponse, agent.agentCapabilities);
+
+    expect(session.configOptions).toEqual([]);
+
+    const cachedOptions = [{ id: 'model', name: 'Model', category: 'model', type: 'select', currentValue: 'sonnet', options: [] }];
+    if (session.configOptions.length === 0) {
+      session.setInitialConfigOptions(cachedOptions);
+    }
+
+    expect(session.configOptions[0].currentValue).toBe('sonnet');
   });
 });

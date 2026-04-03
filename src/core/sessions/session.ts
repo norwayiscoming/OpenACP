@@ -89,8 +89,9 @@ export class Session extends TypedEmitter<SessionEvents> {
     this.queue = new PromptQueue(
       (text, attachments) => this.processPrompt(text, attachments),
       (err) => {
-        this.fail("Prompt execution failed");
         this.log.error({ err }, "Prompt execution failed");
+        const message = err instanceof Error ? err.message : String(err);
+        this.emit("agent_event", { type: "error", message: `Prompt execution failed: ${message}` });
       },
     );
 

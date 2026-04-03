@@ -96,7 +96,12 @@ export class Session extends TypedEmitter<SessionEvents> {
       },
     );
 
-    // Buffer the latest commands_update so it survives until the bridge connects
+    this.wireCommandsBuffer();
+  }
+
+  /** Wire a listener on the current agentInstance to buffer commands_update events.
+   *  Must be called after every agentInstance replacement (constructor + switchAgent). */
+  private wireCommandsBuffer(): void {
     this.agentInstance.on("agent_event", (event: AgentEvent) => {
       if (event.type === "commands_update") {
         this.latestCommands = event.commands;
@@ -572,6 +577,7 @@ export class Session extends TypedEmitter<SessionEvents> {
     this.configOptions = [];
     this.latestCommands = null;
     this.applySpawnResponse(newAgent.initialSessionResponse, newAgent.agentCapabilities);
+    this.wireCommandsBuffer();
 
     this.log.info({ from: this.agentSwitchHistory.at(-1)!.agentName, to: agentName }, "Agent switched");
   }

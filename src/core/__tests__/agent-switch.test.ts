@@ -180,4 +180,20 @@ describe('Agent Switch — Session-level integration', () => {
     expect(session.channelId).toBe(originalChannelId);
     expect(session.workingDirectory).toBe(originalWorkDir);
   });
+
+  it('buffers commands_update from new agent after switch', async () => {
+    const oldAgent = mockAgentInstance({ sessionId: 'old' });
+    const session = createTestSession(oldAgent, 'claude');
+
+    const newAgent = mockAgentInstance({ sessionId: 'new' });
+    await session.switchAgent('gemini', async () => newAgent);
+
+    // Emit commands_update from new agent BEFORE bridge connects
+    newAgent.emit('agent_event', {
+      type: 'commands_update',
+      commands: [{ name: '/test', description: 'test cmd' }],
+    });
+
+    expect(session.latestCommands).toEqual([{ name: '/test', description: 'test cmd' }]);
+  });
 });

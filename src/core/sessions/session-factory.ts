@@ -267,12 +267,12 @@ export class SessionFactory {
         if (record.agentSwitchHistory) session.agentSwitchHistory = record.agentSwitchHistory;
         if (record.currentPromptCount != null) session.promptCount = record.currentPromptCount;
 
-        // Hydrate cached ACP state (will be overridden by agent events on resume)
+        // Hydrate cached ACP state only as fallback — fresh agent data takes precedence
         if (record.acpState) {
-          if (record.acpState.configOptions) {
+          if (record.acpState.configOptions && session.configOptions.length === 0) {
             session.setInitialConfigOptions(record.acpState.configOptions);
           }
-          if (record.acpState.agentCapabilities) {
+          if (record.acpState.agentCapabilities && !session.agentCapabilities) {
             session.setAgentCapabilities(record.acpState.agentCapabilities);
           }
         }

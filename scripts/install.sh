@@ -763,12 +763,9 @@ EOF
     }
 
     if [[ "$OS" == "macos" ]]; then
-        # macOS default shell is zsh — always ensure ~/.zshrc has nvm init
-        # (nvm installer runs under bash so may only write to ~/.bash_profile)
-        touch "$HOME/.zshrc"
-        patch_rc "$HOME/.zshrc"
-        # Also patch bash configs if they exist
-        for rc in "$HOME/.bashrc" "$HOME/.bash_profile"; do
+        # macOS default shell is zsh — nvm installer uses $SHELL to detect the right rc file,
+        # so it should patch ~/.zshrc automatically. We patch here as a safety net only.
+        for rc in "$HOME/.zshrc" "$HOME/.bashrc" "$HOME/.bash_profile"; do
             [[ -f "$rc" ]] && patch_rc "$rc"
         done
     else
@@ -1268,9 +1265,18 @@ warn_path_missing() {
     if [[ -z "$dir" ]]; then
         return 0
     fi
+    # Skip if already present in the original PATH (before nvm/npm were loaded)
     case ":${ORIGINAL_PATH}:" in
         *":${dir}:"*) return 0 ;;
     esac
+    # Also skip if this dir is inside the nvm prefix — nvm adds itself to PATH via
+    # shell rc files automatically, so no manual PATH fix is needed.
+    if [[ -n "${NVM_DIR:-}" && "$dir" == "${NVM_DIR}"* ]]; then
+        return 0
+    fi
+    if [[ "$dir" == "${HOME}/.nvm"* ]]; then
+        return 0
+    fi
 
     echo ""
     ui_warn "PATH missing ${label}: ${dir}"
@@ -1393,6 +1399,14 @@ main() {
         ui_kv "Wrapper" "$HOME/.local/bin/openacp"
     fi
 
+    # If nvm was used to install Node, the current shell session doesn't have nvm sourced yet.
+    # Instruct user to open a new terminal (the simplest and most reliable approach).
+    if [[ -s "${NVM_DIR:-${HOME}/.nvm}/nvm.sh" ]]; then
+        echo ""
+        ui_warn "Open a new terminal tab/window before running openacp"
+        echo "  (nvm needs to be loaded, which happens automatically in new terminals)"
+    fi
+
     if [[ "$NO_ONBOARD" != "1" ]]; then
         if [[ -n "$OPENACP_BIN" && -r /dev/tty && -w /dev/tty ]]; then
             ui_info "Starting setup wizard..."
@@ -1400,10 +1414,10 @@ main() {
             exec </dev/tty
             exec "$OPENACP_BIN"
         else
-            ui_info "Run openacp to start the setup wizard"
+            ui_info "Then run: openacp"
         fi
     else
-        ui_info "Run openacp to get started"
+        ui_info "Then run: openacp"
     fi
 }
 

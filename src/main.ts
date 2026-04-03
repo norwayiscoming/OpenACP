@@ -85,6 +85,9 @@ export async function startServer(opts?: StartServerOptions) {
   initLogger(config.logging)
   log.debug({ configPath: configManager.getConfigPath() }, 'Config loaded')
 
+  // 2b. Apply env var overrides to plugin settings
+  await configManager.applyEnvToPluginSettings(settingsManager)
+
   // First boot: auto-register built-in plugins if registry is empty
   if (pluginRegistry.list().size === 0) {
     await autoRegisterBuiltinPlugins(settingsManager, pluginRegistry, configManager)

@@ -5,6 +5,7 @@ import * as os from "node:os";
 import { EventEmitter } from "node:events";
 import { applyMigrations } from "./config-migrations.js";
 import { createChildLogger } from "../utils/log.js";
+import type { SettingsManager } from "../plugin/settings-manager.js";
 const log = createChildLogger({ module: "config" });
 
 const BaseChannelSchema = z
@@ -342,6 +343,33 @@ export class ConfigManager extends EventEmitter {
     const dir = path.dirname(this.configPath);
     fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(this.configPath, JSON.stringify(config, null, 2));
+  }
+
+  async applyEnvToPluginSettings(settingsManager: SettingsManager): Promise<void> {
+    const pluginOverrides: Array<{
+      envVar: string;
+      pluginName: string;
+      key: string;
+      transform?: (v: string) => unknown;
+    }> = [
+      { envVar: 'OPENACP_TUNNEL_ENABLED', pluginName: '@openacp/tunnel', key: 'enabled', transform: v => v === 'true' },
+      { envVar: 'OPENACP_TUNNEL_PORT', pluginName: '@openacp/tunnel', key: 'port', transform: v => Number(v) },
+      { envVar: 'OPENACP_TUNNEL_PROVIDER', pluginName: '@openacp/tunnel', key: 'provider' },
+      { envVar: 'OPENACP_API_PORT', pluginName: '@openacp/api-server', key: 'port', transform: v => Number(v) },
+      { envVar: 'OPENACP_SPEECH_STT_PROVIDER', pluginName: '@openacp/speech', key: 'sttProvider' },
+      { envVar: 'OPENACP_SPEECH_GROQ_API_KEY', pluginName: '@openacp/speech', key: 'groqApiKey' },
+      { envVar: 'OPENACP_TELEGRAM_BOT_TOKEN', pluginName: '@openacp/telegram', key: 'botToken' },
+      { envVar: 'OPENACP_TELEGRAM_CHAT_ID', pluginName: '@openacp/telegram', key: 'chatId', transform: v => Number(v) },
+    ];
+
+    for (const { envVar, pluginName, key, transform } of pluginOverrides) {
+      const value = process.env[envVar];
+      if (value !== undefined) {
+        const resolved = transform ? transform(value) : value;
+        await settingsManager.updatePluginSettings(pluginName, { [key]: resolved });
+        log.debug({ envVar, pluginName, key }, 'Env var override applied to plugin settings');
+      }
+    }
   }
 
   private applyEnvOverrides(raw: Record<string, unknown>): void {

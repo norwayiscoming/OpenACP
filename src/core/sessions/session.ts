@@ -8,6 +8,8 @@ import { createChildLogger, createSessionLogger, closeSessionLogger, type Logger
 import type { SpeechService } from "../../plugins/speech/exports.js";
 import type { MiddlewareChain } from "../plugin/middleware-chain.js";
 import * as fs from "node:fs";
+import type { TurnRouting } from "./turn-context.js";
+import { createTurnContext, type TurnContext } from "./turn-context.js";
 const moduleLog = createChildLogger({ module: "session" });
 
 // TTS constants
@@ -38,7 +40,15 @@ export interface SessionEvents {
 export class Session extends TypedEmitter<SessionEvents> {
   id: string;
   channelId: string;
-  threadId: string = "";
+  /** @deprecated Use threadIds map directly. Getter returns primary adapter's threadId. */
+  get threadId(): string {
+    return this.threadIds.get(this.channelId) ?? "";
+  }
+  set threadId(value: string) {
+    if (value) {
+      this.threadIds.set(this.channelId, value);
+    }
+  }
   agentName: string;
   workingDirectory: string;
   agentInstance: AgentInstance;
@@ -59,6 +69,12 @@ export class Session extends TypedEmitter<SessionEvents> {
   middlewareChain?: MiddlewareChain;
   /** Latest commands emitted by the agent — buffered before bridge connects so they're not lost */
   latestCommands: AgentCommand[] | null = null;
+  /** Adapters currently attached to this session (including primary) */
+  attachedAdapters: string[] = [];
+  /** Per-adapter thread IDs: adapterId → threadId */
+  threadIds: Map<string, string> = new Map();
+  /** Active turn context — sealed on prompt dequeue, cleared on turn end */
+  activeTurnContext: TurnContext | null = null;
 
   readonly permissionGate = new PermissionGate();
   private readonly queue: PromptQueue;
@@ -77,6 +93,7 @@ export class Session extends TypedEmitter<SessionEvents> {
     super();
     this.id = opts.id || nanoid(12);
     this.channelId = opts.channelId;
+    this.attachedAdapters = [opts.channelId];
     this.agentName = opts.agentName;
     this.firstAgent = opts.agentName;
     this.workingDirectory = opts.workingDirectory;
@@ -87,7 +104,7 @@ export class Session extends TypedEmitter<SessionEvents> {
     this.log.info({ agentName: this.agentName }, "Session created");
 
     this.queue = new PromptQueue(
-      (text, attachments) => this.processPrompt(text, attachments),
+      (text, attachments, routing) => this.processPrompt(text, attachments, routing),
       (err) => {
         this.log.error({ err }, "Prompt execution failed");
         const message = err instanceof Error ? err.message : String(err);
@@ -181,7 +198,7 @@ export class Session extends TypedEmitter<SessionEvents> {
 
   // --- Public API ---
 
-  async enqueuePrompt(text: string, attachments?: Attachment[]): Promise<void> {
+  async enqueuePrompt(text: string, attachments?: Attachment[], routing?: TurnRouting): Promise<void> {
     // Hook: agent:beforePrompt — modifiable, can block
     if (this.middlewareChain) {
       const payload = { text, attachments, sessionId: this.id };
@@ -190,12 +207,18 @@ export class Session extends TypedEmitter<SessionEvents> {
       text = result.text;
       attachments = result.attachments;
     }
-    await this.queue.enqueue(text, attachments);
+    await this.queue.enqueue(text, attachments, routing);
   }
 
-  private async processPrompt(text: string, attachments?: Attachment[]): Promise<void> {
+  private async processPrompt(text: string, attachments?: Attachment[], routing?: TurnRouting): Promise<void> {
     // Don't process prompts for finished sessions (queue may still drain)
     if (this._status === "finished") return;
+
+    // Seal turn context — bridges use this to decide routing for every emitted event
+    this.activeTurnContext = createTurnContext(
+      routing?.sourceAdapterId ?? this.channelId,
+      routing?.responseAdapterId,
+    );
 
     this.promptCount++;
     this.emit('prompt_count_changed', this.promptCount);
@@ -281,6 +304,9 @@ export class Session extends TypedEmitter<SessionEvents> {
         this.log.warn({ err }, "TTS post-processing failed");
       });
     }
+
+    // Clear turn context at end of turn
+    this.activeTurnContext = null;
 
     if (!this.name) {
       await this.autoName();

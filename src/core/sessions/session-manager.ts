@@ -192,6 +192,8 @@ export class SessionManager {
   /**
    * Forcefully destroy all sessions (kill agent subprocesses).
    * Use only when sessions must be fully torn down (e.g. archive).
+   * Unlike shutdownAll(), this does NOT snapshot live session state (acpState, etc.)
+   * because destroyed sessions are terminal and will not be resumed.
    */
   async destroyAll(): Promise<void> {
     if (this.store) {

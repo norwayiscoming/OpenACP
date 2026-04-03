@@ -101,12 +101,17 @@ export class Session extends TypedEmitter<SessionEvents> {
 
   /** Wire a listener on the current agentInstance to buffer commands_update events.
    *  Must be called after every agentInstance replacement (constructor + switchAgent). */
+  private commandsBufferCleanup?: () => void;
   private wireCommandsBuffer(): void {
-    this.agentInstance.on("agent_event", (event: AgentEvent) => {
+    // Remove previous listener (if switching agents) to avoid leaks
+    this.commandsBufferCleanup?.();
+    const handler = (event: AgentEvent) => {
       if (event.type === "commands_update") {
         this.latestCommands = event.commands;
       }
-    });
+    };
+    this.agentInstance.on("agent_event", handler);
+    this.commandsBufferCleanup = () => this.agentInstance.off("agent_event", handler);
   }
 
   // --- State Machine ---

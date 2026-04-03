@@ -285,7 +285,7 @@ export class SessionBridge {
         case "config_option_update":
           this.session.updateConfigOptions(event.options).then(() => {
             this.persistAcpState();
-          }).catch(() => {});  // middleware block = no persist needed
+          }).catch(() => { /* middleware blocked or error — skip persist */ });
           outgoing = this.deps.messageTransformer.transform(event);
           this.sendMessage(this.session.id, outgoing);
           break;

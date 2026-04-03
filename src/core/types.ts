@@ -1,4 +1,7 @@
 import type { OutputMode } from "./adapter-primitives/format-types.js";
+import type { TurnRouting } from "./sessions/turn-context.js";
+
+export type { TurnRouting };
 
 export interface Attachment {
   type: 'image' | 'audio' | 'file';
@@ -15,6 +18,7 @@ export interface IncomingMessage {
   userId: string;
   text: string;
   attachments?: Attachment[];
+  routing?: TurnRouting;
 }
 
 export interface OutgoingMessage {

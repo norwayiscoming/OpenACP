@@ -67,7 +67,12 @@ export class JsonFileSessionStore implements SessionStore {
     predicate: (platform: Record<string, unknown>) => boolean,
   ): SessionRecord | undefined {
     for (const record of this.records.values()) {
-      if (record.channelId === channelId && predicate(record.platform)) {
+      // Check new platforms format first
+      if (record.platforms?.[channelId]) {
+        if (predicate(record.platforms[channelId])) return record;
+      }
+      // Fallback to legacy platform field
+      if (record.channelId === channelId && predicate(record.platform as Record<string, unknown>)) {
         return record;
       }
     }

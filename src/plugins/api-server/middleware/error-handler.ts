@@ -1,5 +1,6 @@
 import type { FastifyError, FastifyReply, FastifyRequest } from 'fastify';
 import { ZodError } from 'zod';
+import { ConfigValidationError } from '../../../core/config/config-registry.js';
 
 export interface ApiErrorResponse {
   error: {
@@ -63,6 +64,17 @@ export function globalErrorHandler(
         message: error.errors.map((e) => e.message).join(', '),
         statusCode: 400,
         details: error.errors,
+      },
+    });
+    return;
+  }
+
+  if (error instanceof ConfigValidationError) {
+    reply.status(400).send({
+      error: {
+        code: 'VALIDATION_ERROR',
+        message: error.message,
+        statusCode: 400,
       },
     });
     return;

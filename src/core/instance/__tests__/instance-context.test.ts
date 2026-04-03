@@ -84,8 +84,14 @@ describe('resolveInstanceRoot', () => {
     }
   })
   it('returns null when no flag and no .openacp in cwd (needs prompt)', () => {
-    const result = resolveInstanceRoot({ cwd: tmpdir() })
-    expect(result).toBeNull()
+    const saved = process.env.OPENACP_INSTANCE_ROOT
+    delete process.env.OPENACP_INSTANCE_ROOT
+    try {
+      const result = resolveInstanceRoot({ cwd: tmpdir() })
+      expect(result).toBeNull()
+    } finally {
+      if (saved !== undefined) process.env.OPENACP_INSTANCE_ROOT = saved
+    }
   })
   it('expands ~ in --dir path', () => {
     const result = resolveInstanceRoot({ dir: '~/my-project' })

@@ -12,7 +12,7 @@ vi.mock('../../../core/config/config.js', () => ({
   ConfigManager: class {
     exists = vi.fn().mockResolvedValue(true)
     load = vi.fn().mockResolvedValue(undefined)
-    get = vi.fn().mockReturnValue({ logging: { logDir: '/tmp/logs' }, runMode: 'daemon' })
+    get = vi.fn().mockReturnValue({ logging: { logDir: '/tmp/logs' }, runMode: 'daemon', api: { port: 21420 } })
   },
 }))
 

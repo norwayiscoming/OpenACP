@@ -79,9 +79,14 @@ describe("ApiServer", () => {
         },
       })),
       save: vi.fn(),
+      setPath: vi.fn(),
       resolveWorkspace: vi.fn(() => "/tmp/ws"),
       on: vi.fn(),
       emit: vi.fn(),
+    },
+    settingsManager: {
+      loadSettings: vi.fn().mockResolvedValue({}),
+      updatePluginSettings: vi.fn().mockResolvedValue(undefined),
     },
     adapters: new Map(),
     notificationManager: { notifyAll: vi.fn() },
@@ -893,9 +898,9 @@ describe("ApiServer", () => {
     expect(res.status).toBe(200);
     const data = await res.json();
     expect(data.ok).toBe(true);
-    expect(mockCore.configManager.save).toHaveBeenCalledWith(
-      { defaultAgent: "codex" },
+    expect(mockCore.configManager.setPath).toHaveBeenCalledWith(
       "defaultAgent",
+      "codex",
     );
   });
 
@@ -1012,7 +1017,7 @@ describe("ApiServer", () => {
     });
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toBe("text/event-stream");
-    expect(res.headers.get("cache-control")).toBe("no-cache");
+    expect(res.headers.get("cache-control")).toBe("no-cache, no-transform");
     controller.abort();
   });
 
@@ -1028,6 +1033,9 @@ describe("ApiServer", () => {
     const reader = res.body!.getReader();
     const decoder = new TextDecoder();
 
+    // Read initial `: connected` comment
+    await reader.read();
+
     // Wait for SSE connection to be registered
     await new Promise((r) => setTimeout(r, 50));
 
@@ -1038,7 +1046,7 @@ describe("ApiServer", () => {
       status: "initializing",
     });
 
-    // Read SSE data
+    // Read SSE event data
     const { value } = await reader.read();
     const text = decoder.decode(value);
     expect(text).toContain("event: session:created");
@@ -1057,6 +1065,9 @@ describe("ApiServer", () => {
     });
     const reader = res.body!.getReader();
     const decoder = new TextDecoder();
+
+    // Read initial `: connected` comment
+    await reader.read();
 
     // Wait for SSE connection to be registered
     await new Promise((r) => setTimeout(r, 50));
@@ -1413,7 +1424,7 @@ describe("ApiServer", () => {
 
     it("rejects invalid config values (string for number field)", async () => {
       const port = await startServer();
-      // Pass a string where Zod expects a number — ConfigSchema.safeParse will fail
+      // Pass a string where the field expects a number
       const res = await apiFetch(port, "/api/v1/config", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -1422,10 +1433,10 @@ describe("ApiServer", () => {
           value: "not-a-number",
         }),
       });
-      // Fails Zod validation → 400
+      // Fails type validation → 400
       expect(res.status).toBe(400);
       const data = (await res.json()) as any;
-      expect(data.error).toBe("Validation failed");
+      expect(data.error.code).toBe("VALIDATION_ERROR");
     });
 
     // --- Redact config with arrays ---

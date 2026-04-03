@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { Session } from "../session.js";
 import type { AgentInstance } from "../../agents/agent-instance.js";
 import type { SpeechService } from "../../../plugins/speech/exports.js";
+import { TypedEmitter } from "../../utils/typed-emitter.js";
 
 vi.mock("node:fs", () => ({
   promises: {
@@ -10,13 +11,14 @@ vi.mock("node:fs", () => ({
 }));
 
 function mockAgent(hasAudio = false): AgentInstance {
-  return {
+  const emitter = new TypedEmitter();
+  return Object.assign(emitter, {
     sessionId: "test-session",
     promptCapabilities: hasAudio ? { audio: true } : {},
     prompt: vi.fn().mockResolvedValue({}),
     cancel: vi.fn(),
     cleanup: vi.fn(),
-  } as any;
+  }) as any;
 }
 
 function mockSpeechService(available: boolean, transcribeResult?: string): SpeechService {

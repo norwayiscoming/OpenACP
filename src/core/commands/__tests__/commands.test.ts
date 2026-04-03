@@ -5,7 +5,9 @@ import { registerSystemCommands } from '../index.js'
 describe('System Commands', () => {
   function createRegistry() {
     const registry = new CommandRegistry()
-    const mockCore = {} // system commands use core minimally in fallback mode
+    const mockCore = {
+      agentCatalog: { getAvailable: () => [{ name: 'claude', key: 'claude', installed: true }] },
+    }
     registerSystemCommands(registry, mockCore)
     return registry
   }

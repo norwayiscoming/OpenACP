@@ -3,16 +3,18 @@ import { SessionManager } from '../session-manager.js'
 import { Session } from '../session.js'
 import type { SessionStore } from '../session-store.js'
 import type { SessionRecord } from '../../types.js'
+import { TypedEmitter } from '../../utils/typed-emitter.js'
 
 function mockAgentInstance(sessionId = 'agent-sess-1') {
-  return {
+  const emitter = new TypedEmitter()
+  return Object.assign(emitter, {
     sessionId,
     prompt: vi.fn().mockResolvedValue(undefined),
     cancel: vi.fn().mockResolvedValue(undefined),
     destroy: vi.fn().mockResolvedValue(undefined),
     onSessionUpdate: vi.fn(),
     onPermissionRequest: vi.fn(),
-  } as any
+  }) as any
 }
 
 function createSession(overrides: Partial<{ id: string; channelId: string; threadId: string; agentName: string; agentSessionId: string }> = {}): Session {

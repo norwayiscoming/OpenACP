@@ -185,12 +185,46 @@ export async function getFieldValueAsync(
   return getConfigValue(configManager.get() as any, field.path);
 }
 
+export class ConfigValidationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ConfigValidationError";
+  }
+}
+
+function validateFieldValue(field: ConfigFieldDef, value: unknown): void {
+  switch (field.type) {
+    case "number":
+      if (typeof value !== "number" || Number.isNaN(value)) {
+        throw new ConfigValidationError(`"${field.path}" expects a number, got ${typeof value}`);
+      }
+      break;
+    case "toggle":
+      if (typeof value !== "boolean") {
+        throw new ConfigValidationError(`"${field.path}" expects a boolean, got ${typeof value}`);
+      }
+      break;
+    case "string":
+      if (typeof value !== "string") {
+        throw new ConfigValidationError(`"${field.path}" expects a string, got ${typeof value}`);
+      }
+      break;
+    case "select": {
+      if (typeof value !== "string") {
+        throw new ConfigValidationError(`"${field.path}" expects a string, got ${typeof value}`);
+      }
+      break;
+    }
+  }
+}
+
 export async function setFieldValueAsync(
   field: ConfigFieldDef,
   value: unknown,
   configManager: { setPath(path: string, value: unknown): Promise<void>; emit?(event: string, data: unknown): void },
   settingsManager?: SettingsManager,
 ): Promise<{ needsRestart: boolean }> {
+  validateFieldValue(field, value);
   if (field.plugin && settingsManager) {
     await settingsManager.updatePluginSettings(field.plugin.name, {
       [field.plugin.key]: value,

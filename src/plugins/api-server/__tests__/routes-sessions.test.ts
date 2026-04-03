@@ -371,28 +371,17 @@ describe('session routes', () => {
           options: [{ value: 'code', label: 'Code' }, { value: 'architect', label: 'Architect' }],
         },
       ];
-      const mockSetConfigOption = vi.fn().mockResolvedValue({
-        configOptions: updatedConfigOptions,
-      });
+      const mockSessionSetConfigOption = vi.fn().mockResolvedValue(undefined);
       const session = createMockSession({
-        configOptions: [
-          {
-            id: 'mode',
-            name: 'Mode',
-            type: 'select',
-            currentValue: 'code',
-            options: [{ value: 'code', label: 'Code' }, { value: 'architect', label: 'Architect' }],
-          },
-        ],
+        configOptions: updatedConfigOptions,
         clientOverrides: { bypassPermissions: false },
-        agentInstance: { setConfigOption: mockSetConfigOption },
-        updateConfigOptions: vi.fn().mockImplementation(async function (this: any, opts: any) {
-          this.configOptions = opts;
-        }),
+        setConfigOption: mockSessionSetConfigOption,
         toAcpStateSnapshot: vi.fn().mockReturnValue({ configOptions: updatedConfigOptions }),
       });
-      // Bind updateConfigOptions to session context
-      session.updateConfigOptions = session.updateConfigOptions.bind(session);
+      // Make setConfigOption update configOptions on the session
+      mockSessionSetConfigOption.mockImplementation(async () => {
+        session.configOptions = updatedConfigOptions;
+      });
       (deps.core.sessionManager.getSession as any).mockReturnValue(session);
 
       const response = await app.inject({
@@ -405,7 +394,7 @@ describe('session routes', () => {
       const body = JSON.parse(response.body);
       expect(body.configOptions).toEqual(updatedConfigOptions);
       expect(body.clientOverrides).toEqual({ bypassPermissions: false });
-      expect(mockSetConfigOption).toHaveBeenCalledWith('mode', { type: 'select', value: 'architect' });
+      expect(mockSessionSetConfigOption).toHaveBeenCalledWith('mode', { type: 'select', value: 'architect' });
       expect(deps.core.sessionManager.patchRecord).toHaveBeenCalled();
     });
 

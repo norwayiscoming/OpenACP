@@ -10,7 +10,7 @@ describe('Config Migrations', () => {
       expect(raw.tunnel).toEqual({
         enabled: true,
         port: 3100,
-        provider: 'cloudflare',
+        provider: 'openacp',
         options: {},
         storeTtlMinutes: 60,
         auth: { enabled: false },
@@ -96,7 +96,7 @@ describe('Config Migrations', () => {
         channels: {},
         agents: { claude: { command: 'claude-agent-acp', args: [] } },
         defaultAgent: 'claude',
-        tunnel: { enabled: true, port: 3100, provider: 'cloudflare', options: {}, storeTtlMinutes: 60, auth: { enabled: false } },
+        tunnel: { enabled: true, port: 3100, provider: 'openacp', options: {}, storeTtlMinutes: 60, auth: { enabled: false } },
         instanceName: 'Main',
       }
       const { changed } = applyMigrations(raw)

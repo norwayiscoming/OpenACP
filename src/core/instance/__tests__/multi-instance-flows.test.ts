@@ -48,6 +48,8 @@ describe('CLI flag resolution flow', () => {
   })
 
   it('no flags + no .openacp in cwd returns null (needs prompt)', () => {
+    const saved = process.env.OPENACP_INSTANCE_ROOT
+    delete process.env.OPENACP_INSTANCE_ROOT
     // Use a temp dir that definitely has no .openacp
     const tmp = makeTmpDir('empty')
     try {
@@ -55,6 +57,7 @@ describe('CLI flag resolution flow', () => {
       expect(root).toBeNull()
     } finally {
       fs.rmSync(tmp, { recursive: true, force: true })
+      if (saved !== undefined) process.env.OPENACP_INSTANCE_ROOT = saved
     }
   })
 

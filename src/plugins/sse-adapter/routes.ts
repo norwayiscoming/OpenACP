@@ -107,7 +107,7 @@ export async function sseRoutes(app: FastifyInstance, deps: SSERouteDeps): Promi
       }
 
       const body = PromptBodySchema.parse(request.body);
-      await session.enqueuePrompt(body.prompt);
+      await session.enqueuePrompt(body.prompt, undefined, { sourceAdapterId: 'sse' });
 
       return { ok: true, sessionId, queueDepth: session.queueDepth };
     },

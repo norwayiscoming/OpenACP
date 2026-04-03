@@ -389,6 +389,15 @@ export class SessionBridge {
     // Wait for user response — adapter resolves this promise
     const optionId = await promise;
 
+    // Broadcast permission:resolved so other adapters can dismiss their UI
+    this.deps.eventBus?.emit("permission:resolved", {
+      sessionId: this.session.id,
+      requestId: permReq.id,
+      decision: optionId,
+      optionId,
+      resolvedBy: this.adapterId,
+    });
+
     this.emitAfterResolve(mw, permReq.id, optionId, 'user', startTime);
     return optionId;
   }

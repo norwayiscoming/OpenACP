@@ -23,6 +23,8 @@ export interface EventBusEvents {
     sessionId: string;
     requestId: string;
     decision: string;
+    optionId?: string;
+    resolvedBy?: string;
   }) => void;
 
   // System lifecycle

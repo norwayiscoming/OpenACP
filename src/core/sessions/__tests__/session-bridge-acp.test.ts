@@ -32,7 +32,7 @@ function createMockSession() {
     finish: vi.fn(),
     fail: vi.fn(),
     getConfigByCategory: vi.fn(),
-    updateConfigOptions: vi.fn(),
+    updateConfigOptions: vi.fn().mockResolvedValue(undefined),
     toAcpStateSnapshot: vi.fn().mockReturnValue({}),
   }) as unknown as Session
 }

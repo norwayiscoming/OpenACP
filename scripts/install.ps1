@@ -1,5 +1,5 @@
 # OpenACP Installer for Windows
-# Usage: powershell -c "irm https://raw.githubusercontent.com/Open-ACP/OpenACP/main/scripts/install.ps1 | iex"
+# Usage: powershell -c "irm https://raw.githubusercontent.com/Open-ACP/OpenACP/main/scripts/install.ps1?v=1.0.0 | iex"
 
 [CmdletBinding()]
 param(
@@ -30,6 +30,8 @@ $ERROR_C   = "$ESC[38;2;239;68;68m"      # red #ef4444
 $MUTED     = "$ESC[38;2;90;100;128m"     # text-muted #5a6480
 $NC        = "$ESC[0m"
 
+$INSTALLER_VERSION = "1.0.0"
+
 $NODE_MIN_MAJOR = 20
 
 function Write-Msg {
@@ -50,6 +52,7 @@ function Write-Banner {
     Write-Host ""
     Write-Host "${ACCENT}${BOLD}  OpenACP Installer${NC}"
     Write-Host "${MUTED}  AI coding agents, anywhere.${NC}"
+    Write-Host "${MUTED}  installer v$INSTALLER_VERSION${NC}"
     Write-Host ""
 }
 

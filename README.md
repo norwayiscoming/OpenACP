@@ -54,13 +54,13 @@ Your Codebase
 ### macOS
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Open-ACP/OpenACP/main/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Open-ACP/OpenACP/main/scripts/install.sh?v=1.0.0 | bash
 ```
 
 ### Linux
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Open-ACP/OpenACP/main/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Open-ACP/OpenACP/main/scripts/install.sh?v=1.0.0 | bash
 ```
 
 > Works on Debian/Ubuntu, Fedora/RHEL, Arch, and other distros. Also supports WSL (Windows Subsystem for Linux).
@@ -70,7 +70,7 @@ curl -fsSL https://raw.githubusercontent.com/Open-ACP/OpenACP/main/scripts/insta
 Open PowerShell and run:
 
 ```powershell
-powershell -c "irm https://raw.githubusercontent.com/Open-ACP/OpenACP/main/scripts/install.ps1 | iex"
+powershell -c "irm https://raw.githubusercontent.com/Open-ACP/OpenACP/main/scripts/install.ps1?v=1.0.0 | iex"
 ```
 
 > Requires PowerShell 5.1+ (built into Windows 10/11).

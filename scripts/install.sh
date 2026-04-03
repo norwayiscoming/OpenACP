@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # OpenACP Installer for macOS and Linux
-# Usage: curl -fsSL https://raw.githubusercontent.com/Open-ACP/OpenACP/main/scripts/install.sh | bash
+# Usage: curl -fsSL https://raw.githubusercontent.com/Open-ACP/OpenACP/main/scripts/install.sh?v=1.0.0 | bash
 
 # ─── Section 1: Initialization & Utilities ────────────────────────────────────
 
@@ -14,6 +14,8 @@ WARN='\033[38;2;250;204;21m'           # yellow #facc15
 ERROR='\033[38;2;239;68;68m'           # red #ef4444
 MUTED='\033[38;2;90;100;128m'          # text-muted #5a6480
 NC='\033[0m'
+
+INSTALLER_VERSION="1.0.0"
 
 DEFAULT_TAGLINE="AI coding agents, anywhere."
 NODE_DEFAULT_MAJOR=20
@@ -239,7 +241,7 @@ print_installer_banner() {
         local title tagline hint card
         title="$("$GUM" style --foreground "#6366f1" --bold "⚡ OpenACP Installer")"
         tagline="$("$GUM" style --foreground "#8892b0" "$TAGLINE")"
-        hint="$("$GUM" style --foreground "#5a6480" "modern installer mode")"
+        hint="$("$GUM" style --foreground "#5a6480" "installer v${INSTALLER_VERSION}")"
         card="$(printf '%s\n%s\n%s' "$title" "$tagline" "$hint")"
         "$GUM" style --border rounded --border-foreground "#6366f1" --padding "1 2" "$card"
         echo ""
@@ -249,6 +251,7 @@ print_installer_banner() {
     echo -e "${ACCENT}${BOLD}"
     echo "  ⚡ OpenACP Installer"
     echo -e "${NC}${INFO}  ${TAGLINE}${NC}"
+    echo -e "${MUTED}  installer v${INSTALLER_VERSION}${NC}"
     echo ""
 }
 

@@ -479,6 +479,104 @@ describe("HistoryRecorder", () => {
     });
   });
 
+  // ── Debounced auto-save ──
+
+  describe("debounced auto-save", () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("does not write immediately after an event", () => {
+      recorder.onBeforePrompt("s1", "Go", undefined);
+      recorder.onAfterEvent("s1", { type: "text", content: "Hello" });
+      expect(store.write).not.toHaveBeenCalled();
+    });
+
+    it("writes after 2000ms debounce delay", async () => {
+      recorder.onBeforePrompt("s1", "Go", undefined);
+      recorder.onAfterEvent("s1", { type: "text", content: "Hello" });
+      await vi.advanceTimersByTimeAsync(2000);
+      expect(store.write).toHaveBeenCalledTimes(1);
+    });
+
+    it("resets debounce timer on each new event", async () => {
+      recorder.onBeforePrompt("s1", "Go", undefined);
+      recorder.onAfterEvent("s1", { type: "text", content: "A" });
+      await vi.advanceTimersByTimeAsync(1500);
+      recorder.onAfterEvent("s1", { type: "text", content: "B" });
+      await vi.advanceTimersByTimeAsync(1500);
+      // Only 1500ms passed since last event — should not have written yet
+      expect(store.write).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(500);
+      // Now 2000ms since last event
+      expect(store.write).toHaveBeenCalledTimes(1);
+    });
+
+    it("onTurnEnd cancels debounce and writes once", async () => {
+      recorder.onBeforePrompt("s1", "Go", undefined);
+      recorder.onAfterEvent("s1", { type: "text", content: "Hello" });
+      await recorder.onTurnEnd("s1", "end_turn");
+      expect(store.write).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(2000);
+      expect(store.write).toHaveBeenCalledTimes(1);
+    });
+
+    it("finalize cancels pending debounce timer", async () => {
+      recorder.onBeforePrompt("s1", "Go", undefined);
+      recorder.onAfterEvent("s1", { type: "text", content: "Hello" });
+      recorder.finalize("s1");
+      await vi.advanceTimersByTimeAsync(2000);
+      expect(store.write).not.toHaveBeenCalled();
+    });
+  });
+
+  // ── onSessionDestroy ──
+
+  describe("onSessionDestroy", () => {
+    it("flushes in-progress turn with stopReason 'interrupted'", async () => {
+      recorder.onBeforePrompt("s1", "Go", undefined);
+      recorder.onAfterEvent("s1", { type: "text", content: "Partial" });
+      await recorder.onSessionDestroy("s1");
+      expect(store.write).toHaveBeenCalledTimes(1);
+      const written = store.write.mock.calls[0][0] as SessionHistory;
+      const assistantTurn = written.turns[1];
+      expect(assistantTurn.stopReason).toBe("interrupted");
+    });
+
+    it("cleans up state after flush", async () => {
+      recorder.onBeforePrompt("s1", "Go", undefined);
+      await recorder.onSessionDestroy("s1");
+      expect(recorder.getState("s1")).toBeUndefined();
+    });
+
+    it("is a no-op for unknown session", async () => {
+      await recorder.onSessionDestroy("unknown");
+      expect(store.write).not.toHaveBeenCalled();
+    });
+
+    it("cancels debounce timer before writing", async () => {
+      vi.useFakeTimers();
+      recorder.onBeforePrompt("s1", "Go", undefined);
+      recorder.onAfterEvent("s1", { type: "text", content: "Hello" });
+      await recorder.onSessionDestroy("s1");
+      expect(store.write).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(2000);
+      expect(store.write).toHaveBeenCalledTimes(1);
+      vi.useRealTimers();
+    });
+
+    it("does not write if no active turn (between turns)", async () => {
+      recorder.onBeforePrompt("s1", "Go", undefined);
+      await recorder.onTurnEnd("s1", "end_turn");
+      store.write.mockClear();
+      await recorder.onSessionDestroy("s1");
+      expect(store.write).not.toHaveBeenCalled();
+    });
+  });
+
   // ── Ignored events ──
 
   describe("ignored events", () => {

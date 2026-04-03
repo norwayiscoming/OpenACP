@@ -386,7 +386,7 @@ export class OpenACPCore {
     const turnId = await session.enqueuePrompt(text, message.attachments, message.routing);
 
     // Emit message:queued for cross-adapter input visibility (SSE clients see messages from external adapters)
-    const sourceAdapterId = message.routing?.sourceAdapterId;
+    const sourceAdapterId = message.routing?.sourceAdapterId ?? message.channelId;
     if (sourceAdapterId && sourceAdapterId !== 'sse' && sourceAdapterId !== 'api') {
       this.eventBus.emit("message:queued", {
         sessionId: session.id,

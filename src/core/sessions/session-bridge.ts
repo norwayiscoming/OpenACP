@@ -10,6 +10,7 @@ import type { MiddlewareChain } from "../plugin/middleware-chain.js";
 import type { DebugTracer } from "../utils/debug-tracer.js";
 import { createChildLogger } from "../utils/log.js";
 import { isPermissionBypass } from "../utils/bypass-detection.js";
+import { isSystemEvent, getEffectiveTarget } from "./turn-context.js";
 
 const log = createChildLogger({ module: "session-bridge" });
 
@@ -25,12 +26,16 @@ export interface BridgeDeps {
 export class SessionBridge {
   private connected = false;
   private cleanupFns: Array<() => void> = [];
+  readonly adapterId: string;
 
   constructor(
     private session: Session,
     private adapter: IChannelAdapter,
     private deps: BridgeDeps,
-  ) {}
+    adapterId?: string,
+  ) {
+    this.adapterId = adapterId ?? adapter.name;
+  }
 
   private get tracer(): DebugTracer | null {
     return this.session.agentInstance.debugTracer ?? null;
@@ -65,6 +70,25 @@ export class SessionBridge {
     }
   }
 
+  /** Determine if this bridge should forward the given event based on turn routing. */
+  shouldForward(event: AgentEvent): boolean {
+    // System events → always forward to all bridges
+    if (isSystemEvent(event)) return true;
+
+    // No active turn context → forward (backward compat)
+    const ctx = this.session.activeTurnContext;
+    if (!ctx) return true;
+
+    // Get effective target (null = silent, string = target adapterId)
+    const target = getEffectiveTarget(ctx);
+
+    // Silent turn → suppress all turn events
+    if (target === null) return false;
+
+    // Turn events → only forward to target adapter
+    return this.adapterId === target;
+  }
+
   connect(): void {
     if (this.connected) return;
     this.connected = true;
@@ -76,7 +100,9 @@ export class SessionBridge {
 
     // Wire session events to adapter (session → adapter dispatch)
     this.listen(this.session, "agent_event", (event: AgentEvent) => {
-      this.dispatchAgentEvent(event);
+      if (this.shouldForward(event)) {
+        this.dispatchAgentEvent(event);
+      }
     });
 
     // Wire permissions

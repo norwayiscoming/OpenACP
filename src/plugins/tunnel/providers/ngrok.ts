@@ -22,8 +22,10 @@ export class NgrokTunnelProvider implements TunnelProvider {
 
   async start(localPort: number): Promise<string> {
     const args = ['http', String(localPort), '--log', 'stdout', '--log-format', 'json']
+    // authtoken passed via env var, not CLI args (ps aux safe)
+    const providerEnv: Record<string, string> = {};
     if (this.options.authtoken) {
-      args.push('--authtoken', String(this.options.authtoken))
+      providerEnv.NGROK_AUTHTOKEN = String(this.options.authtoken);
     }
     if (this.options.domain) {
       args.push('--domain', String(this.options.domain))
@@ -42,7 +44,7 @@ export class NgrokTunnelProvider implements TunnelProvider {
       }, 30_000)
 
       try {
-        this.child = spawn('ngrok', args, { stdio: ['ignore', 'pipe', 'pipe'], detached: true })
+        this.child = spawn('ngrok', args, { stdio: ['ignore', 'pipe', 'pipe'], detached: true, env: { ...process.env, ...providerEnv } })
       } catch {
         clearTimeout(timeout)
         settle(() => reject(new Error(

@@ -1,3 +1,4 @@
+import path from 'node:path'
 import type { FastifyPluginAsync } from 'fastify'
 import type { ViewerStore } from './viewer-store.js'
 import { renderFileViewer } from './templates/file-viewer.js'
@@ -43,7 +44,7 @@ export function createViewerRoutes(store: ViewerStore): FastifyPluginAsync {
         return reply.status(404).send({ error: 'not found' })
       }
       return reply.send({
-        filePath: entry.filePath,
+        filePath: entry.filePath ? path.basename(entry.filePath) : null,
         content: entry.content,
         language: entry.language,
       })
@@ -55,7 +56,7 @@ export function createViewerRoutes(store: ViewerStore): FastifyPluginAsync {
         return reply.status(404).send({ error: 'not found' })
       }
       return reply.send({
-        filePath: entry.filePath,
+        filePath: entry.filePath ? path.basename(entry.filePath) : null,
         oldContent: entry.oldContent,
         newContent: entry.content,
         language: entry.language,

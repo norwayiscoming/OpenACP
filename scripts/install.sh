@@ -15,7 +15,7 @@ ERROR='\033[38;2;239;68;68m'           # red #ef4444
 MUTED='\033[38;2;90;100;128m'          # text-muted #5a6480
 NC='\033[0m'
 
-INSTALLER_VERSION="1.0.0"
+INSTALLER_VERSION="1.0.1"
 
 DEFAULT_TAGLINE="AI coding agents, anywhere."
 NODE_DEFAULT_MAJOR=20

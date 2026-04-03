@@ -20,7 +20,8 @@ export interface AgentSwitchDeps {
   eventBus: EventBus;
   adapters: Map<string, IChannelAdapter>;
   bridges: Map<string, SessionBridge>;
-  createBridge: (session: Session, adapter: IChannelAdapter) => SessionBridge;
+  createBridge: (session: Session, adapter: IChannelAdapter, adapterId?: string) => SessionBridge;
+  getSessionBridgeKeys: (sessionId: string) => string[];
   getMiddlewareChain: () => MiddlewareChain | undefined;
   getService: <T>(name: string) => T | undefined;
 }
@@ -82,12 +83,15 @@ export class AgentSwitchHandler {
       status: "starting",
     });
 
-    // 3. Disconnect bridge — remove from map first to prevent stale references
-    const hadBridge = bridges.has(sessionId);
-    const bridge = bridges.get(sessionId);
-    if (bridge) {
-      bridges.delete(sessionId);
-      bridge.disconnect();
+    // 3. Disconnect ALL bridges for this session
+    const sessionBridgeKeys = this.deps.getSessionBridgeKeys(sessionId);
+    const hadBridges = sessionBridgeKeys.length > 0;
+    for (const key of sessionBridgeKeys) {
+      const bridge = bridges.get(key);
+      if (bridge) {
+        bridges.delete(key);
+        bridge.disconnect();
+      }
     }
 
     const switchAdapter = adapters.get(session.channelId);
@@ -176,9 +180,12 @@ export class AgentSwitchHandler {
         session.agentInstance = oldInstance;
         session.agentName = fromAgent;
         session.agentSessionId = oldInstance.sessionId;
-        const adapter = adapters.get(session.channelId);
-        if (adapter) {
-          createBridge(session, adapter).connect();
+        // Reconnect all bridges on rollback
+        for (const adapterId of session.attachedAdapters) {
+          const adapter = adapters.get(adapterId);
+          if (adapter) {
+            createBridge(session, adapter, adapterId).connect();
+          }
         }
         log.warn({ sessionId, fromAgent, toAgent, err }, "Agent switch failed, rolled back to previous agent");
       } catch (rollbackErr) {
@@ -188,13 +195,15 @@ export class AgentSwitchHandler {
       throw err;
     }
 
-    // 5. Reconnect bridge
-    if (hadBridge) {
-      const adapter = adapters.get(session.channelId);
-      if (adapter) {
-        createBridge(session, adapter).connect();
-      } else {
-        log.warn({ sessionId, channelId: session.channelId }, "Adapter disconnected during switch, cannot reconnect bridge");
+    // 5. Reconnect bridges for ALL attached adapters
+    if (hadBridges) {
+      for (const adapterId of session.attachedAdapters) {
+        const adapter = adapters.get(adapterId);
+        if (adapter) {
+          createBridge(session, adapter, adapterId).connect();
+        } else {
+          log.warn({ sessionId, adapterId }, "Adapter not available during switch reconnect, skipping bridge");
+        }
       }
     }
 

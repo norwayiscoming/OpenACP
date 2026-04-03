@@ -226,7 +226,7 @@ export class SessionFactory {
 
     const record = store.findByPlatform(
       channelId,
-      (p) => String(p.topicId) === threadId,
+      (p) => String(p.topicId) === threadId || String(p.threadId ?? "") === threadId,
     );
     if (!record) {
       log.debug({ threadId, channelId }, "No session record found for thread");
@@ -266,6 +266,20 @@ export class SessionFactory {
         if (record.firstAgent) session.firstAgent = record.firstAgent;
         if (record.agentSwitchHistory) session.agentSwitchHistory = record.agentSwitchHistory;
         if (record.currentPromptCount != null) session.promptCount = record.currentPromptCount;
+
+        // Restore multi-adapter state
+        if (record.attachedAdapters) {
+          session.attachedAdapters = record.attachedAdapters;
+        }
+        if (record.platforms) {
+          for (const [adapterId, platformData] of Object.entries(record.platforms)) {
+            const data = platformData as Record<string, unknown>;
+            const tid = adapterId === "telegram"
+              ? String(data.topicId ?? "")
+              : String(data.threadId ?? "");
+            if (tid) session.threadIds.set(adapterId, tid);
+          }
+        }
 
         // Hydrate cached ACP state only as fallback — fresh agent data takes precedence
         if (record.acpState) {

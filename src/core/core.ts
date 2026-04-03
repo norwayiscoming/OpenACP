@@ -41,7 +41,7 @@ export class OpenACPCore {
   sessionManager: SessionManager;
   messageTransformer: MessageTransformer;
   adapters: Map<string, IChannelAdapter> = new Map();
-  /** sessionId → SessionBridge — tracks active bridges for disconnect/reconnect during agent switch */
+  /** "adapterId:sessionId" → SessionBridge — tracks active bridges for disconnect/reconnect */
   private bridges: Map<string, SessionBridge> = new Map();
   /** Set by main.ts — triggers graceful shutdown with restart exit code */
   requestRestart: (() => Promise<void>) | null = null;
@@ -158,7 +158,8 @@ export class OpenACPCore {
       eventBus: this.eventBus,
       adapters: this.adapters,
       bridges: this.bridges,
-      createBridge: (session, adapter) => this.createBridge(session, adapter),
+      createBridge: (session, adapter, adapterId) => this.createBridge(session, adapter, adapterId),
+      getSessionBridgeKeys: (sessionId: string) => this.getSessionBridgeKeys(sessionId),
       getMiddlewareChain: () => this.lifecycleManager?.middlewareChain,
       getService: <T>(name: string) => this.lifecycleManager.serviceRegistry.get<T>(name),
     });
@@ -382,7 +383,7 @@ export class OpenACPCore {
     }
 
     // Forward to session
-    await session.enqueuePrompt(text, message.attachments);
+    await session.enqueuePrompt(text, message.attachments, message.routing);
   }
 
   // --- Unified Session Creation Pipeline ---
@@ -429,6 +430,18 @@ export class OpenACPCore {
         platform.threadId = session.threadId;
       }
     }
+
+    // Also persist the multi-adapter platforms map so lazy resume can find sessions
+    // by threadId for non-Telegram adapters (which use threadId instead of topicId).
+    const platforms: Record<string, Record<string, unknown>> = {
+      ...(existingRecord?.platforms ?? {}),
+    };
+    if (session.threadId) {
+      platforms[params.channelId] = params.channelId === "telegram"
+        ? { topicId: Number(session.threadId) || session.threadId }
+        : { threadId: session.threadId };
+    }
+
     await this.sessionManager.patchRecord(session.id, {
       sessionId: session.id,
       agentSessionId: session.agentSessionId,
@@ -440,6 +453,7 @@ export class OpenACPCore {
       lastActiveAt: new Date().toISOString(),
       name: session.name,
       platform,
+      platforms,
       firstAgent: session.firstAgent,
       currentPromptCount: session.promptCount,
       agentSwitchHistory: session.agentSwitchHistory,
@@ -449,7 +463,7 @@ export class OpenACPCore {
 
     // 6. Connect SessionBridge — agent events can now fire with threadId available
     if (adapter) {
-      const bridge = this.createBridge(session, adapter);
+      const bridge = this.createBridge(session, adapter, session.channelId);
       bridge.connect();
       // Flush any skill commands that arrived before threadId was set (safety net)
       adapter.flushPendingSkillCommands?.(session.id).catch((err) => {
@@ -629,9 +643,16 @@ export class OpenACPCore {
     } else {
       adoptPlatform.threadId = session.threadId;
     }
+    const adoptPlatforms: Record<string, Record<string, unknown>> = {};
+    if (session.threadId) {
+      adoptPlatforms[adapterChannelId] = adapterChannelId === 'telegram'
+        ? { topicId: Number(session.threadId) || session.threadId }
+        : { threadId: session.threadId };
+    }
     await this.sessionManager.patchRecord(session.id, {
       originalAgentSessionId: agentSessionId,
       platform: adoptPlatform,
+      platforms: adoptPlatforms,
     });
 
     return {
@@ -668,20 +689,124 @@ export class OpenACPCore {
     return this.sessionFactory.getOrResume(channelId, threadId);
   }
 
+  async attachAdapter(sessionId: string, adapterId: string): Promise<{ threadId: string }> {
+    const session = this.sessionManager.getSession(sessionId);
+    if (!session) throw new Error(`Session ${sessionId} not found`);
+
+    const adapter = this.adapters.get(adapterId);
+    if (!adapter) throw new Error(`Adapter "${adapterId}" not found or not running`);
+
+    // Already attached — return existing threadId
+    if (session.attachedAdapters.includes(adapterId)) {
+      const existingThread = session.threadIds.get(adapterId) ?? session.id;
+      return { threadId: existingThread };
+    }
+
+    // Create thread on target adapter
+    const threadId = await adapter.createSessionThread(
+      session.id,
+      session.name ?? `Session ${session.id.slice(0, 6)}`,
+    );
+    session.threadIds.set(adapterId, threadId);
+    session.attachedAdapters.push(adapterId);
+
+    // Create and connect bridge
+    const bridge = this.createBridge(session, adapter, adapterId);
+    bridge.connect();
+
+    // Persist
+    await this.sessionManager.patchRecord(session.id, {
+      attachedAdapters: session.attachedAdapters,
+      platforms: this.buildPlatformsFromSession(session),
+    });
+
+    return { threadId };
+  }
+
+  async detachAdapter(sessionId: string, adapterId: string): Promise<void> {
+    const session = this.sessionManager.getSession(sessionId);
+    if (!session) throw new Error(`Session ${sessionId} not found`);
+
+    if (adapterId === session.channelId) {
+      throw new Error("Cannot detach primary adapter (channelId)");
+    }
+
+    if (!session.attachedAdapters.includes(adapterId)) {
+      return; // Already detached, idempotent
+    }
+
+    // Send detach notice before disconnecting
+    const adapter = this.adapters.get(adapterId);
+    if (adapter) {
+      try {
+        await adapter.sendMessage(session.id, {
+          type: "system_message",
+          text: "Session detached from this adapter.",
+        });
+      } catch { /* best effort */ }
+    }
+
+    // Disconnect bridge
+    const key = this.bridgeKey(adapterId, session.id);
+    const bridge = this.bridges.get(key);
+    if (bridge) {
+      bridge.disconnect();
+      this.bridges.delete(key);
+    }
+
+    // Update session state
+    session.attachedAdapters = session.attachedAdapters.filter(a => a !== adapterId);
+    session.threadIds.delete(adapterId);
+
+    // Persist
+    await this.sessionManager.patchRecord(session.id, {
+      attachedAdapters: session.attachedAdapters,
+      platforms: this.buildPlatformsFromSession(session),
+    });
+  }
+
+  private buildPlatformsFromSession(session: Session): Record<string, Record<string, unknown>> {
+    const platforms: Record<string, Record<string, unknown>> = {};
+    for (const [adapterId, threadId] of session.threadIds) {
+      if (adapterId === "telegram") {
+        platforms.telegram = { topicId: Number(threadId) || threadId };
+      } else {
+        platforms[adapterId] = { threadId };
+      }
+    }
+    return platforms;
+  }
+
   // --- Event Wiring ---
+
+  /** Composite bridge key: "adapterId:sessionId" */
+  private bridgeKey(adapterId: string, sessionId: string): string {
+    return `${adapterId}:${sessionId}`;
+  }
+
+  /** Get all bridge keys for a session (regardless of adapter) */
+  private getSessionBridgeKeys(sessionId: string): string[] {
+    const keys: string[] = [];
+    for (const key of this.bridges.keys()) {
+      if (key.endsWith(`:${sessionId}`)) keys.push(key);
+    }
+    return keys;
+  }
 
   /** Connect a session bridge for the given session (used by AssistantManager) */
   connectSessionBridge(session: Session): void {
     const adapter = this.adapters.get(session.channelId);
     if (!adapter) return;
-    const bridge = this.createBridge(session, adapter);
+    const bridge = this.createBridge(session, adapter, session.channelId);
     bridge.connect();
   }
 
   /** Create a SessionBridge for the given session and adapter.
-   *  Disconnects any existing bridge for the same session first. */
-  createBridge(session: Session, adapter: IChannelAdapter): SessionBridge {
-    const existing = this.bridges.get(session.id);
+   *  Disconnects any existing bridge for the same adapter+session first. */
+  createBridge(session: Session, adapter: IChannelAdapter, adapterId?: string): SessionBridge {
+    const id = adapterId ?? adapter.name;
+    const key = this.bridgeKey(id, session.id);
+    const existing = this.bridges.get(key);
     if (existing) {
       existing.disconnect();
     }
@@ -692,8 +817,8 @@ export class OpenACPCore {
       eventBus: this.eventBus,
       fileService: this.fileService,
       middlewareChain: this.lifecycleManager?.middlewareChain,
-    });
-    this.bridges.set(session.id, bridge);
+    }, id);
+    this.bridges.set(key, bridge);
     return bridge;
   }
 }

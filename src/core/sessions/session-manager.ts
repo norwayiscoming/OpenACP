@@ -77,6 +77,10 @@ export class SessionManager {
 
   getSessionByThread(channelId: string, threadId: string): Session | undefined {
     for (const session of this.sessions.values()) {
+      // New: check per-adapter threadIds map
+      const adapterThread = session.threadIds.get(channelId);
+      if (adapterThread === threadId) return session;
+      // Backward compat: check legacy channelId + threadId
       if (session.channelId === channelId && session.threadId === threadId) {
         return session;
       }

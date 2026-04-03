@@ -34,6 +34,9 @@ export const AdoptSessionBodySchema = z.object({
 export const PromptBodySchema = z.object({
   // 100 KB limit — prevents memory exhaustion / DoS via enormous payloads
   prompt: z.string().min(1).max(100_000),
+  // Multi-adapter routing fields
+  sourceAdapterId: z.string().optional(),
+  responseAdapterId: z.string().nullable().optional(),
 });
 
 export const PermissionResponseBodySchema = z.object({

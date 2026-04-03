@@ -1,4 +1,7 @@
 import type { OutputMode } from "./adapter-primitives/format-types.js";
+import type { TurnRouting } from "./sessions/turn-context.js";
+
+export type { TurnRouting };
 
 export interface Attachment {
   type: 'image' | 'audio' | 'file';
@@ -15,6 +18,7 @@ export interface IncomingMessage {
   userId: string;
   text: string;
   attachments?: Attachment[];
+  routing?: TurnRouting;
 }
 
 export interface OutgoingMessage {
@@ -235,6 +239,10 @@ export interface SessionRecord<P = Record<string, unknown>> {
   clientOverrides?: { bypassPermissions?: boolean };
   outputMode?: OutputMode;
   platform: P;
+  /** Per-adapter platform data. Key = adapterId, value = adapter-specific data. */
+  platforms?: Record<string, Record<string, unknown>>;
+  /** Adapters currently attached to this session. Defaults to [channelId] for old records. */
+  attachedAdapters?: string[];
   firstAgent?: string;
   currentPromptCount?: number;
   agentSwitchHistory?: AgentSwitchEntry[];

@@ -10,6 +10,7 @@ import type { MiddlewareChain } from "../plugin/middleware-chain.js";
 import type { DebugTracer } from "../utils/debug-tracer.js";
 import { createChildLogger } from "../utils/log.js";
 import { isPermissionBypass } from "../utils/bypass-detection.js";
+import { isSystemEvent, getEffectiveTarget } from "./turn-context.js";
 
 const log = createChildLogger({ module: "session-bridge" });
 
@@ -25,12 +26,16 @@ export interface BridgeDeps {
 export class SessionBridge {
   private connected = false;
   private cleanupFns: Array<() => void> = [];
+  readonly adapterId: string;
 
   constructor(
     private session: Session,
     private adapter: IChannelAdapter,
     private deps: BridgeDeps,
-  ) {}
+    adapterId?: string,
+  ) {
+    this.adapterId = adapterId ?? adapter.name;
+  }
 
   private get tracer(): DebugTracer | null {
     return this.session.agentInstance.debugTracer ?? null;
@@ -65,6 +70,25 @@ export class SessionBridge {
     }
   }
 
+  /** Determine if this bridge should forward the given event based on turn routing. */
+  shouldForward(event: AgentEvent): boolean {
+    // System events → always forward to all bridges
+    if (isSystemEvent(event)) return true;
+
+    // No active turn context → forward (backward compat)
+    const ctx = this.session.activeTurnContext;
+    if (!ctx) return true;
+
+    // Get effective target (null = silent, string = target adapterId)
+    const target = getEffectiveTarget(ctx);
+
+    // Silent turn → suppress all turn events
+    if (target === null) return false;
+
+    // Turn events → only forward to target adapter
+    return this.adapterId === target;
+  }
+
   connect(): void {
     if (this.connected) return;
     this.connected = true;
@@ -76,13 +100,41 @@ export class SessionBridge {
 
     // Wire session events to adapter (session → adapter dispatch)
     this.listen(this.session, "agent_event", (event: AgentEvent) => {
-      this.dispatchAgentEvent(event);
+      if (this.shouldForward(event)) {
+        this.dispatchAgentEvent(event);
+      }
     });
 
     // Wire permissions
-    this.session.agentInstance.onPermissionRequest = async (request: PermissionRequest) => {
-      return this.resolvePermission(request);
-    };
+    // Only register the onPermissionRequest handler for the primary adapter (first bridge to connect).
+    // Secondary bridges must not overwrite it — each bridge receives the permission_request session
+    // event and sends UI to its own adapter via the listener below.
+    if (!this.session.agentInstance.onPermissionRequest ||
+        (this.session.agentInstance.onPermissionRequest as any).__bridgeId === undefined) {
+      const handler = async (request: PermissionRequest) => {
+        return this.resolvePermission(request);
+      };
+      (handler as any).__bridgeId = this.adapterId;
+      this.session.agentInstance.onPermissionRequest = handler;
+    }
+
+    // Wire permission UI for secondary bridges — when the primary bridge emits
+    // "permission_request" (after setPending), secondary bridges forward it to their adapter.
+    // The primary bridge sends its UI directly in resolvePermission (awaited, preserving
+    // ordering guarantees). Secondary bridges use this fire-and-forget listener.
+    this.listen(this.session, "permission_request", async (request: PermissionRequest) => {
+      // Skip if this is the primary bridge — it handles UI directly in resolvePermission.
+      const current = this.session.agentInstance.onPermissionRequest as any;
+      if (current?.__bridgeId === this.adapterId) return;
+      // Only send UI when the gate is pending (guard against informational-only emits
+      // from auto-approve paths).
+      if (!this.session.permissionGate.isPending) return;
+      try {
+        await this.adapter.sendPermissionRequest(this.session.id, request);
+      } catch (err) {
+        log.error({ err, sessionId: this.session.id, adapterId: this.adapterId }, "Failed to send permission request to adapter");
+      }
+    });
 
     // Wire lifecycle: persist status changes and auto-disconnect on terminal states
     this.listen(this.session, "status_change", (from: SessionStatus, to: SessionStatus) => {
@@ -137,7 +189,13 @@ export class SessionBridge {
     this.connected = false;
     this.cleanupFns.forEach(fn => fn());
     this.cleanupFns = [];
-    this.session.agentInstance.onPermissionRequest = async () => "";
+    // Only clear onPermissionRequest if this bridge currently owns it.
+    // This prevents a disconnecting secondary bridge from killing permission
+    // handling for all surviving bridges.
+    const current = this.session.agentInstance.onPermissionRequest as any;
+    if (current?.__bridgeId === this.adapterId) {
+      this.session.agentInstance.onPermissionRequest = async () => "";
+    }
   }
 
   /** Dispatch an agent event through middleware and to the adapter */
@@ -340,7 +398,6 @@ export class SessionBridge {
       }
     }
 
-    this.session.emit("permission_request", permReq);
     this.deps.eventBus?.emit("permission:request", {
       sessionId: this.session.id,
       permission: permReq,
@@ -349,19 +406,37 @@ export class SessionBridge {
     // Step 2: Auto-approve
     const autoDecision = this.checkAutoApprove(permReq);
     if (autoDecision) {
+      // Emit informational event even on auto-approve (for SSE / monitoring consumers)
+      this.session.emit("permission_request", permReq);
       this.emitAfterResolve(mw, permReq.id, autoDecision, 'system', startTime);
       return autoDecision;
     }
 
     // Step 3: Ask user
-    // Set pending BEFORE sending UI to avoid race condition
+    // Set pending BEFORE emitting "permission_request" so that secondary bridge listeners
+    // can guard on isPending. This also prevents a race where the user resolves before we
+    // start waiting.
     const promise = this.session.permissionGate.setPending(permReq);
 
-    // Send permission UI to session topic
+    // Emit the session event AFTER setPending — secondary bridges listen to this and forward
+    // the permission UI to their own adapters (fire-and-forget).
+    this.session.emit("permission_request", permReq);
+
+    // Send permission UI to this bridge's own adapter (primary bridge path, awaited to
+    // preserve the ordering guarantee: setPending → sendPermissionRequest).
     await this.adapter.sendPermissionRequest(this.session.id, permReq);
 
     // Wait for user response — adapter resolves this promise
     const optionId = await promise;
+
+    // Broadcast permission:resolved so other adapters can dismiss their UI
+    this.deps.eventBus?.emit("permission:resolved", {
+      sessionId: this.session.id,
+      requestId: permReq.id,
+      decision: optionId,
+      optionId,
+      resolvedBy: this.adapterId,
+    });
 
     this.emitAfterResolve(mw, permReq.id, optionId, 'user', startTime);
     return optionId;

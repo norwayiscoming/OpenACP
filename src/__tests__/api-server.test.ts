@@ -90,6 +90,9 @@ describe("ApiServer", () => {
       updatePluginSettings: vi.fn().mockResolvedValue(undefined),
     },
     adapters: new Map(),
+    getOrResumeSessionById: vi.fn((id: string) =>
+      Promise.resolve(mockCore.sessionManager.getSession(id))
+    ),
     notificationManager: { notifyAll: vi.fn() },
     requestRestart: vi.fn(),
     tunnelService: undefined as unknown,

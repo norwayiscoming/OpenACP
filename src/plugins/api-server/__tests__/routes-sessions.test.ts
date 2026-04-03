@@ -36,33 +36,35 @@ function createMockSession(overrides: Record<string, unknown> = {}) {
 function createMockDeps(overrides: Partial<RouteDeps> = {}): RouteDeps {
   const mockSession = createMockSession();
 
+  const sessionManager = {
+    listSessions: vi.fn().mockReturnValue([mockSession]),
+    listAllSessions: vi.fn().mockReturnValue([
+      {
+        id: 'sess-1',
+        agent: 'claude',
+        status: 'active',
+        name: 'Test Session',
+        workspace: '/tmp/test',
+        channelId: 'api',
+        createdAt: '2026-01-01T00:00:00Z',
+        lastActiveAt: '2026-01-01T00:00:00Z',
+        dangerousMode: false,
+        queueDepth: 0,
+        promptRunning: false,
+        configOptions: undefined,
+        capabilities: null,
+        isLive: true,
+      },
+    ]),
+    getSession: vi.fn().mockReturnValue(mockSession),
+    getSessionRecord: vi.fn().mockReturnValue({ lastActiveAt: '2026-01-01T00:00:00Z' }),
+    cancelSession: vi.fn().mockResolvedValue(undefined),
+    patchRecord: vi.fn().mockResolvedValue(undefined),
+  };
+
   return {
     core: {
-      sessionManager: {
-        listSessions: vi.fn().mockReturnValue([mockSession]),
-        listAllSessions: vi.fn().mockReturnValue([
-          {
-            id: 'sess-1',
-            agent: 'claude',
-            status: 'active',
-            name: 'Test Session',
-            workspace: '/tmp/test',
-            channelId: 'api',
-            createdAt: '2026-01-01T00:00:00Z',
-            lastActiveAt: '2026-01-01T00:00:00Z',
-            dangerousMode: false,
-            queueDepth: 0,
-            promptRunning: false,
-            configOptions: undefined,
-            capabilities: null,
-            isLive: true,
-          },
-        ]),
-        getSession: vi.fn().mockReturnValue(mockSession),
-        getSessionRecord: vi.fn().mockReturnValue({ lastActiveAt: '2026-01-01T00:00:00Z' }),
-        cancelSession: vi.fn().mockResolvedValue(undefined),
-        patchRecord: vi.fn().mockResolvedValue(undefined),
-      },
+      sessionManager,
       configManager: {
         get: vi.fn().mockReturnValue({
           defaultAgent: 'claude',
@@ -77,6 +79,10 @@ function createMockDeps(overrides: Partial<RouteDeps> = {}): RouteDeps {
       createSession: vi.fn().mockResolvedValue(mockSession),
       adoptSession: vi.fn().mockResolvedValue({ ok: true, sessionId: 'sess-1' }),
       archiveSession: vi.fn().mockResolvedValue({ ok: true }),
+      // Delegates to sessionManager.getSession so tests can control both via one mock
+      getOrResumeSessionById: vi.fn().mockImplementation((id: string) =>
+        Promise.resolve(sessionManager.getSession(id))
+      ),
       agentManager: {
         getAvailableAgents: vi.fn().mockReturnValue([]),
       },

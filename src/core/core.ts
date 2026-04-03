@@ -689,6 +689,10 @@ export class OpenACPCore {
     return this.sessionFactory.getOrResume(channelId, threadId);
   }
 
+  async getOrResumeSessionById(sessionId: string): Promise<Session | null> {
+    return this.sessionFactory.getOrResumeById(sessionId);
+  }
+
   async attachAdapter(sessionId: string, adapterId: string): Promise<{ threadId: string }> {
     const session = this.sessionManager.getSession(sessionId);
     if (!session) throw new Error(`Session ${sessionId} not found`);

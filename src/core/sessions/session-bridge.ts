@@ -102,6 +102,10 @@ export class SessionBridge {
     this.listen(this.session, "agent_event", (event: AgentEvent) => {
       if (this.shouldForward(event)) {
         this.dispatchAgentEvent(event);
+      } else {
+        // Event is not forwarded to this adapter's channel, but EventBus observers
+        // (e.g. /events SSE stream) still need to see it for cross-adapter visibility.
+        this.deps.eventBus?.emit("agent:event", { sessionId: this.session.id, event });
       }
     });
 

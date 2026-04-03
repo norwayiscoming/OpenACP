@@ -214,6 +214,73 @@ export class SessionFactory {
     return this.lazyResume(channelId, threadId);
   }
 
+  async getOrResumeById(sessionId: string): Promise<Session | null> {
+    const live = this.sessionManager.getSession(sessionId);
+    if (live) return live;
+
+    if (!this.sessionStore || !this.createFullSession) return null;
+    const record = this.sessionStore.get(sessionId);
+    if (!record) return null;
+    if (record.status === "error" || record.status === "cancelled") return null;
+
+    // Deduplicate concurrent resumes for the same session
+    const existing = this.resumeLocks.get(sessionId);
+    if (existing) return existing;
+
+    const resumePromise = (async (): Promise<Session | null> => {
+      try {
+        const p = record.platform as { topicId?: number; threadId?: string } | undefined;
+        const existingThreadId = p?.topicId ? String(p.topicId) : p?.threadId;
+        const session = await this.createFullSession!({
+          channelId: record.channelId,
+          agentName: record.agentName,
+          workingDirectory: record.workingDir,
+          resumeAgentSessionId: record.agentSessionId,
+          existingSessionId: record.sessionId,
+          initialName: record.name,
+          threadId: existingThreadId,
+        });
+        session.activate();
+        if (record.clientOverrides) {
+          session.clientOverrides = record.clientOverrides;
+        } else if (record.dangerousMode) {
+          session.clientOverrides = { bypassPermissions: true };
+        }
+        if (record.firstAgent) session.firstAgent = record.firstAgent;
+        if (record.agentSwitchHistory) session.agentSwitchHistory = record.agentSwitchHistory;
+        if (record.currentPromptCount != null) session.promptCount = record.currentPromptCount;
+        if (record.attachedAdapters) session.attachedAdapters = record.attachedAdapters;
+        if (record.platforms) {
+          for (const [adapterId, platformData] of Object.entries(record.platforms)) {
+            const data = platformData as Record<string, unknown>;
+            const tid = adapterId === "telegram"
+              ? String(data.topicId ?? "")
+              : String(data.threadId ?? "");
+            if (tid) session.threadIds.set(adapterId, tid);
+          }
+        }
+        if (record.acpState) {
+          if (record.acpState.configOptions && session.configOptions.length === 0) {
+            session.setInitialConfigOptions(record.acpState.configOptions);
+          }
+          if (record.acpState.agentCapabilities && !session.agentCapabilities) {
+            session.setAgentCapabilities(record.acpState.agentCapabilities);
+          }
+        }
+        log.info({ sessionId }, "Lazy resume by ID successful");
+        return session;
+      } catch (err) {
+        log.error({ err, sessionId }, "Lazy resume by ID failed");
+        return null;
+      } finally {
+        this.resumeLocks.delete(sessionId);
+      }
+    })();
+
+    this.resumeLocks.set(sessionId, resumePromise);
+    return resumePromise;
+  }
+
   private async lazyResume(channelId: string, threadId: string): Promise<Session | null> {
     const store = this.sessionStore;
     if (!store || !this.createFullSession) return null;

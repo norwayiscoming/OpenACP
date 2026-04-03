@@ -178,7 +178,7 @@ export async function sessionRoutes(
     async (request, reply) => {
       const { sessionId: rawId } = SessionIdParamSchema.parse(request.params);
       const sessionId = decodeURIComponent(rawId);
-      const session = deps.core.sessionManager.getSession(sessionId);
+      const session = await deps.core.getOrResumeSessionById(sessionId);
       if (!session) {
         throw new NotFoundError(
           'SESSION_NOT_FOUND',

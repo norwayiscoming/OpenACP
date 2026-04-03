@@ -86,7 +86,7 @@ describe('SSE Routes', () => {
       const body = response.json();
       expect(body.ok).toBe(true);
       expect(body.sessionId).toBe('sess-1');
-      expect(session.enqueuePrompt).toHaveBeenCalledWith('Hello world');
+      expect(session.enqueuePrompt).toHaveBeenCalledWith('Hello world', undefined, expect.objectContaining({ sourceAdapterId: 'sse' }));
     });
 
     it('returns 404 for non-existent session', async () => {

@@ -214,7 +214,7 @@ describe('session routes', () => {
       const body = JSON.parse(response.body);
       expect(body.ok).toBe(true);
       const session = (deps.core.sessionManager.getSession as any).mock.results[0].value;
-      expect(session.enqueuePrompt).toHaveBeenCalledWith('Hello!');
+      expect(session.enqueuePrompt).toHaveBeenCalledWith('Hello!', undefined, expect.objectContaining({ sourceAdapterId: 'api' }));
     });
 
     it('returns 404 for unknown session', async () => {

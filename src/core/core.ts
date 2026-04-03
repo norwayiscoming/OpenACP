@@ -158,7 +158,8 @@ export class OpenACPCore {
       eventBus: this.eventBus,
       adapters: this.adapters,
       bridges: this.bridges,
-      createBridge: (session, adapter) => this.createBridge(session, adapter),
+      createBridge: (session, adapter, adapterId) => this.createBridge(session, adapter, adapterId),
+      getSessionBridgeKeys: (sessionId: string) => this.getSessionBridgeKeys(sessionId),
       getMiddlewareChain: () => this.lifecycleManager?.middlewareChain,
       getService: <T>(name: string) => this.lifecycleManager.serviceRegistry.get<T>(name),
     });

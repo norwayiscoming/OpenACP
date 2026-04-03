@@ -11,6 +11,7 @@ interface AssistantManagerCore {
     workingDirectory: string
     initialName?: string
     isAssistant?: boolean
+    threadId?: string
   }): Promise<Session>
   connectSessionBridge(session: Session): void
   configManager: {
@@ -36,8 +37,8 @@ export class AssistantManager {
       workingDirectory: this.core.configManager.resolveWorkspace(),
       initialName: 'Assistant',
       isAssistant: true,
+      threadId,
     })
-    session.threadId = threadId
     this.sessions.set(channelId, session)
 
     // Store system prompt for lazy initialization — it will be prepended

@@ -74,10 +74,7 @@ export async function createSessionDirect(
       parse_mode: "HTML",
     });
 
-    const session = await core.handleNewSession("telegram", agentName, workspace);
-    session.threadId = String(threadId);
-
-    await core.sessionManager.patchRecord(session.id, { platform: { topicId: threadId } });
+    const session = await core.handleNewSession("telegram", agentName, workspace, { threadId: String(threadId) });
 
     const finalName = `🔄 ${session.agentName} — New Session`;
     try {
@@ -172,13 +169,8 @@ export async function handleNewChat(
       "telegram",
       agentName,
       workspace,
+      { threadId: String(newThreadId) },
     );
-    session.threadId = String(newThreadId);
-
-    // Persist platform mapping for new chat
-    await core.sessionManager.patchRecord(session.id, { platform: {
-      topicId: newThreadId,
-    } });
 
     const controlMsg = await ctx.api.sendMessage(
       chatId,
@@ -423,12 +415,8 @@ export async function executeNewSession(
       "telegram",
       agentName,
       workspace,
+      { threadId: String(threadId) },
     );
-    session.threadId = String(threadId);
-
-    await core.sessionManager.patchRecord(session.id, { platform: {
-      topicId: threadId,
-    } });
 
     // Rename topic with agent name after session is created
     const finalName = `🔄 ${session.agentName} — New Session`;

@@ -315,7 +315,7 @@ export class SessionFactory {
     channelId: string,
     agentName?: string,
     workspacePath?: string,
-    options?: { createThread?: boolean },
+    options?: { createThread?: boolean; threadId?: string },
   ): Promise<Session> {
     if (!this.configManager || !this.agentCatalog || !this.createFullSession) {
       throw new Error("SessionFactory not fully initialized");
@@ -377,6 +377,7 @@ export class SessionFactory {
     contextQuery: ContextQuery;
     contextOptions?: ContextOptions;
     createThread?: boolean;
+    threadId?: string;
   }): Promise<{ session: Session; contextResult: ContextResult | null }> {
     if (!this.createFullSession) throw new Error("SessionFactory not fully initialized");
 
@@ -398,6 +399,7 @@ export class SessionFactory {
       agentName: params.agentName,
       workingDirectory: params.workingDirectory,
       createThread: params.createThread,
+      threadId: params.threadId,
     });
 
     if (contextResult) {

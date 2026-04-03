@@ -130,10 +130,8 @@ async function executeResume(
       workingDirectory: repoPath,
       contextQuery: fullQuery,
       contextOptions: { maxTokens: DEFAULT_MAX_TOKENS },
+      threadId: String(threadId),
     });
-
-    session.threadId = String(threadId);
-    await core.sessionManager.patchRecord(session.id, { platform: { topicId: threadId } });
 
     // Build summary info
     const sessionCount = contextResult?.sessionCount ?? listResult.sessions.length;

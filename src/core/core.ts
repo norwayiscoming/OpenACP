@@ -503,7 +503,7 @@ export class OpenACPCore {
     channelId: string,
     agentName?: string,
     workspacePath?: string,
-    options?: { createThread?: boolean },
+    options?: { createThread?: boolean; threadId?: string },
   ): Promise<Session> {
     return this.sessionFactory.handleNewSession(channelId, agentName, workspacePath, options);
   }
@@ -653,6 +653,7 @@ export class OpenACPCore {
     contextQuery: import("../plugins/context/context-provider.js").ContextQuery;
     contextOptions?: import("../plugins/context/context-provider.js").ContextOptions;
     createThread?: boolean;
+    threadId?: string;
   }): Promise<{ session: Session; contextResult: import("../plugins/context/context-provider.js").ContextResult | null }> {
     return this.sessionFactory.createSessionWithContext(params);
   }

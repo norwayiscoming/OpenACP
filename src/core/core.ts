@@ -167,15 +167,29 @@ export class OpenACPCore {
           log.info({ level: value }, "Log level changed at runtime");
         }
         if (configPath.startsWith("speech.")) {
-          const speechSvc = this.speechService;
+          const speechSvc = this.lifecycleManager.serviceRegistry.get<SpeechService>('speech');
           if (speechSvc) {
-            const newConfig = this.configManager.get();
-            const newSpeechConfig = newConfig.speech ?? {
-              stt: { provider: null, providers: {} },
-              tts: { provider: null, providers: {} },
-            };
-            speechSvc.refreshProviders(newSpeechConfig);
-            log.info("Speech service config updated at runtime");
+            const settingsMgr = this.settingsManager;
+            if (settingsMgr) {
+              const pluginCfg = await settingsMgr.loadSettings('@openacp/speech');
+              const groqApiKey = pluginCfg.groqApiKey as string | undefined;
+              const sttProviders: Record<string, { apiKey: string }> = {};
+              if (groqApiKey) {
+                sttProviders.groq = { apiKey: groqApiKey };
+              }
+              const newSpeechConfig = {
+                stt: {
+                  provider: groqApiKey ? 'groq' : null,
+                  providers: sttProviders,
+                },
+                tts: {
+                  provider: (pluginCfg.ttsProvider as string) ?? null,
+                  providers: {} as Record<string, never>,
+                },
+              };
+              speechSvc.refreshProviders(newSpeechConfig);
+              log.info("Speech service config updated at runtime (from plugin settings)");
+            }
           }
         }
       },

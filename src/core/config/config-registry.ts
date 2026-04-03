@@ -188,13 +188,17 @@ export async function getFieldValueAsync(
 export async function setFieldValueAsync(
   field: ConfigFieldDef,
   value: unknown,
-  configManager: { setPath(path: string, value: unknown): Promise<void> },
+  configManager: { setPath(path: string, value: unknown): Promise<void>; emit?(event: string, data: unknown): void },
   settingsManager?: SettingsManager,
 ): Promise<{ needsRestart: boolean }> {
   if (field.plugin && settingsManager) {
     await settingsManager.updatePluginSettings(field.plugin.name, {
       [field.plugin.key]: value,
     });
+    // Emit config:changed so hot-reload handlers can pick up the change
+    if (configManager.emit) {
+      configManager.emit('config:changed', { path: field.path, value, oldValue: undefined });
+    }
     return { needsRestart: !field.hotReload };
   }
   await configManager.setPath(field.path, value);

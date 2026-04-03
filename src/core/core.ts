@@ -1,5 +1,6 @@
 import path from "node:path";
 import os from "node:os";
+import type { SettingsManager } from "./plugin/settings-manager.js";
 import { ConfigManager } from "./config/config.js";
 import { AgentManager } from "./agents/agent-manager.js";
 import { SessionManager } from "./sessions/session-manager.js";
@@ -81,6 +82,10 @@ export class OpenACPCore {
 
   get contextManager(): ContextManager {
     return this.getService<ContextManager>('context');
+  }
+
+  get settingsManager(): SettingsManager | undefined {
+    return this.lifecycleManager.settingsManager;
   }
 
   constructor(configManager: ConfigManager, ctx?: InstanceContext) {

@@ -39,21 +39,22 @@ export async function configRoutes(
 ): Promise<void> {
   // GET /config/editable — list safe-to-edit config fields
   app.get('/editable', { preHandler: requireScopes('config:read') }, async () => {
-    const { getSafeFields, resolveOptions, getConfigValue } = await import(
+    const { getSafeFields, resolveOptions, getFieldValueAsync } = await import(
       '../../../core/config/config-registry.js'
     );
     const config = deps.core.configManager.get();
+    const settingsManager = deps.core.settingsManager;
     const safeFields = getSafeFields();
 
-    const fields = safeFields.map((def) => ({
+    const fields = await Promise.all(safeFields.map(async (def) => ({
       path: def.path,
       displayName: def.displayName,
       group: def.group,
       type: def.type,
       options: resolveOptions(def, config),
-      value: getConfigValue(config, def.path),
+      value: await getFieldValueAsync(def, deps.core.configManager, settingsManager),
       hotReload: def.hotReload,
-    }));
+    })));
 
     return { fields };
   });
@@ -84,7 +85,7 @@ export async function configRoutes(
     }
 
     // Enforce safe-fields scope — only fields marked 'safe' can be modified via API
-    const { getFieldDef } = await import(
+    const { getFieldDef, setFieldValueAsync } = await import(
       '../../../core/config/config-registry.js'
     );
     const fieldDef = getFieldDef(configPath);
@@ -94,12 +95,10 @@ export async function configRoutes(
       });
     }
 
-    await deps.core.configManager.setPath(configPath, value);
-
-    const { isHotReloadable } = await import(
-      '../../../core/config/config-registry.js'
+    const settingsManager = deps.core.settingsManager;
+    const { needsRestart } = await setFieldValueAsync(
+      fieldDef, value, deps.core.configManager, settingsManager,
     );
-    const needsRestart = !isHotReloadable(configPath);
 
     return {
       ok: true,

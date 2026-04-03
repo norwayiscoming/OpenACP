@@ -82,9 +82,13 @@ export class AgentSwitchHandler {
       status: "starting",
     });
 
-    // 3. Disconnect bridge
+    // 3. Disconnect bridge — remove from map first to prevent stale references
+    const hadBridge = bridges.has(sessionId);
     const bridge = bridges.get(sessionId);
-    if (bridge) bridge.disconnect();
+    if (bridge) {
+      bridges.delete(sessionId);
+      bridge.disconnect();
+    }
 
     const switchAdapter = adapters.get(session.channelId);
     if (switchAdapter?.sendSkillCommands) {
@@ -185,10 +189,12 @@ export class AgentSwitchHandler {
     }
 
     // 5. Reconnect bridge
-    if (bridge) {
+    if (hadBridge) {
       const adapter = adapters.get(session.channelId);
       if (adapter) {
         createBridge(session, adapter).connect();
+      } else {
+        log.warn({ sessionId, channelId: session.channelId }, "Adapter disconnected during switch, cannot reconnect bridge");
       }
     }
 

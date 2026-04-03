@@ -742,9 +742,9 @@ print_nvm_upgrade_hint() {
 }
 
 # Ensure nvm init lines are present in all relevant shell config files.
-# nvm's own installer only writes to ~/.bashrc (run via bash), missing ~/.zshrc on macOS.
+# nvm's own installer only writes based on $SHELL, which may miss some configs.
+# On macOS the primary shell is zsh — always patch ~/.zshrc regardless of other rc files.
 patch_nvm_shell_configs() {
-    local nvm_dir="${NVM_DIR:-${HOME}/.nvm}"
     # shellcheck disable=SC2016
     local nvm_init_lines
     nvm_init_lines="$(cat <<'EOF'
@@ -753,17 +753,37 @@ export NVM_DIR="$([ -z "${XDG_CONFIG_HOME-}" ] && printf %s "${HOME}/.nvm" || pr
 EOF
 )"
     local marker='nvm.sh'
-    for rc in "$HOME/.zshrc" "$HOME/.bashrc" "$HOME/.bash_profile"; do
-        # Only patch files that exist; skip if already patched
-        if [[ -f "$rc" ]] && ! grep -q "$marker" "$rc" 2>/dev/null; then
+
+    patch_rc() {
+        local rc="$1"
+        if ! grep -q "$marker" "$rc" 2>/dev/null; then
             printf '\n# nvm (Node Version Manager)\n%s\n' "$nvm_init_lines" >> "$rc"
             ui_info "Added nvm init to $rc"
         fi
-    done
-    # If none of the rc files exist yet (fresh system), create .zshrc or .bashrc
-    if [[ ! -f "$HOME/.zshrc" && ! -f "$HOME/.bashrc" && ! -f "$HOME/.bash_profile" ]]; then
-        printf '# nvm (Node Version Manager)\n%s\n' "$nvm_init_lines" > "$HOME/.zshrc"
-        ui_info "Created ~/.zshrc with nvm init"
+    }
+
+    if [[ "$OS" == "macos" ]]; then
+        # macOS default shell is zsh — always ensure ~/.zshrc has nvm init
+        # (nvm installer runs under bash so may only write to ~/.bash_profile)
+        touch "$HOME/.zshrc"
+        patch_rc "$HOME/.zshrc"
+        # Also patch bash configs if they exist
+        for rc in "$HOME/.bashrc" "$HOME/.bash_profile"; do
+            [[ -f "$rc" ]] && patch_rc "$rc"
+        done
+    else
+        # Linux: patch whichever rc files exist; create ~/.bashrc if none present
+        local patched_any=0
+        for rc in "$HOME/.zshrc" "$HOME/.bashrc" "$HOME/.bash_profile"; do
+            if [[ -f "$rc" ]]; then
+                patch_rc "$rc"
+                patched_any=1
+            fi
+        done
+        if [[ "$patched_any" -eq 0 ]]; then
+            printf '# nvm (Node Version Manager)\n%s\n' "$nvm_init_lines" > "$HOME/.bashrc"
+            ui_info "Created ~/.bashrc with nvm init"
+        fi
     fi
 }
 

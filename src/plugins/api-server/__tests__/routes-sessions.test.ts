@@ -162,6 +162,7 @@ describe('session routes', () => {
       expect(body.sessions[0].id).toBe('old-sess');
       expect(body.sessions[0].status).toBe('cancelled');
       expect(body.sessions[0].isLive).toBe(false);
+      expect(body.sessions[0].lastActiveAt).toBe('2026-01-02T00:00:00Z');
     });
   });
 

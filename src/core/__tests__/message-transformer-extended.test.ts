@@ -405,5 +405,91 @@ describe("MessageTransformer - extended", () => {
       });
       expect(tunnelStore.storeFile).not.toHaveBeenCalled();
     });
+
+    describe("binary file skip (issue #195 — voice attachments outside workspace)", () => {
+      function makeTunnelWithStore() {
+        const tunnelStore = { storeFile: vi.fn().mockReturnValue("id"), storeDiff: vi.fn().mockReturnValue("id") };
+        const tunnelService = {
+          getPublicUrl: vi.fn().mockReturnValue("https://tunnel.example"),
+          getStore: vi.fn().mockReturnValue(tunnelStore),
+          fileUrl: vi.fn().mockReturnValue("https://tunnel.example/view/id"),
+          diffUrl: vi.fn().mockReturnValue("https://tunnel.example/diff/id"),
+        } as any;
+        return { tunnelStore, tunnelService };
+      }
+
+      const binaryExtensions = [".wav", ".ogg", ".mp3", ".m4a", ".mp4", ".jpg", ".jpeg", ".png", ".gif", ".webp", ".pdf", ".zip"];
+
+      for (const ext of binaryExtensions) {
+        it(`does not call storeFile for binary extension ${ext}`, () => {
+          const { tunnelStore, tunnelService } = makeTunnelWithStore();
+          const t = new MessageTransformer(tunnelService);
+
+          const event: AgentEvent = {
+            type: "tool_call",
+            id: "tc-binary",
+            name: "Read",
+            kind: "read",
+            status: "completed",
+            rawInput: { file_path: `/home/user/.openacp/files/sess1/voice${ext}` },
+            content: "binary data",
+          };
+          const result = t.transform(event, { id: "sess-1", workingDirectory: "/home/user/project" });
+          expect(tunnelStore.storeFile).not.toHaveBeenCalled();
+          expect(result.metadata?.viewerLinks).toBeUndefined();
+        });
+      }
+
+      it("does not call storeFile for voice.wav saved in openacp files dir outside workspace", () => {
+        // Regression test for issue #195:
+        // Telegram voice attachments saved to ~/.openacp/files/<sessionId>/voice.wav
+        // were causing WARN logs when the agent read them, because the viewer-store
+        // rejected the path as outside the workspace.
+        const { tunnelStore, tunnelService } = makeTunnelWithStore();
+        const t = new MessageTransformer(tunnelService);
+
+        const event: AgentEvent = {
+          type: "tool_call",
+          id: "tc-voice",
+          name: "Read",
+          kind: "read",
+          status: "completed",
+          rawInput: { file_path: "/home/codex/.openacp/files/wAmobthop7go/1775184611644-voice.wav" },
+          content: "<binary wav data>",
+        };
+        const result = t.transform(event, {
+          id: "wAmobthop7go",
+          workingDirectory: "/home/codex/flutter_web_test",
+        });
+
+        expect(tunnelStore.storeFile).not.toHaveBeenCalled();
+        expect(result.metadata?.viewerLinks).toBeUndefined();
+      });
+
+      it("still generates viewer links for text files in openacp files dir outside workspace", () => {
+        // Text files that happen to be outside the workspace SHOULD be handled by
+        // viewer-store (which will silently skip them via DEBUG log), not early-exited.
+        // This test ensures we only skip on extension, not on path location.
+        const { tunnelStore, tunnelService } = makeTunnelWithStore();
+        const t = new MessageTransformer(tunnelService);
+
+        const event: AgentEvent = {
+          type: "tool_call",
+          id: "tc-text",
+          name: "Read",
+          kind: "read",
+          status: "completed",
+          rawInput: { file_path: "/home/codex/project/src/main.ts" },
+          content: "const x = 1",
+        };
+        t.transform(event, {
+          id: "sess-1",
+          workingDirectory: "/home/codex/project",
+        });
+
+        // storeFile IS called for .ts files — path check is handled inside viewer-store
+        expect(tunnelStore.storeFile).toHaveBeenCalled();
+      });
+    });
   });
 });

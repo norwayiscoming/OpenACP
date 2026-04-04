@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { Session } from '../session.js'
 import { TypedEmitter } from '../../utils/typed-emitter.js'
 import type { AgentEvent } from '../../types.js'
+import { MiddlewareChain } from '../../plugin/middleware-chain.js'
 
 function mockAgentInstance() {
   const emitter = new TypedEmitter<{ agent_event: (event: AgentEvent) => void }>()
@@ -54,7 +55,7 @@ describe('Session - Lifecycle & Prompt Processing', () => {
       expect(session.workingDirectory).toBe('/workspace')
       expect(session.threadId).toBe('')
       expect(session.name).toBeUndefined()
-      expect(session.dangerousMode).toBe(false)
+      expect(session.clientOverrides).toEqual({})
     })
   })
 
@@ -140,77 +141,6 @@ describe('Session - Lifecycle & Prompt Processing', () => {
         'start:first', 'end:first',
         'start:second', 'end:second',
       ])
-    })
-  })
-
-  describe('warmup()', () => {
-    it('sends warmup prompt through queue', async () => {
-      const agent = mockAgentInstance()
-      const session = createTestSession(agent)
-
-      await session.warmup()
-
-      expect(agent.prompt).toHaveBeenCalledWith(
-        expect.stringContaining('ready'),
-      )
-    })
-
-    it('activates session after warmup', async () => {
-      const session = createTestSession()
-
-      await session.warmup()
-
-      expect(session.status).toBe('active')
-    })
-
-    it('pauses events during warmup and clears buffer after', async () => {
-      const agent = mockAgentInstance()
-      const events: any[] = []
-      const session = createTestSession(agent)
-
-      session.on('agent_event', (e) => events.push(e))
-
-      // Simulate agent emitting events during warmup
-      agent.prompt.mockImplementation(async () => {
-        session.emit('agent_event', { type: 'text', content: 'warmup noise' })
-      })
-
-      await session.warmup()
-
-      // Warmup events should have been buffered and cleared
-      // Events list should be empty since buffer was cleared before resume
-      expect(events).toHaveLength(0)
-    })
-
-    it('lets commands_update pass through during warmup', async () => {
-      const agent = mockAgentInstance()
-      const events: any[] = []
-      const session = createTestSession(agent)
-
-      session.on('agent_event', (e) => events.push(e))
-
-      agent.prompt.mockImplementation(async () => {
-        // commands_update should pass through the pause filter
-        session.emit('agent_event', { type: 'commands_update', commands: [] })
-      })
-
-      await session.warmup()
-
-      // commands_update should have passed through
-      expect(events.some(e => e.type === 'commands_update')).toBe(true)
-    })
-
-    it('handles warmup failure gracefully', async () => {
-      const agent = mockAgentInstance()
-      agent.prompt.mockRejectedValue(new Error('warmup failed'))
-
-      const session = createTestSession(agent)
-
-      // Should not throw
-      await session.warmup()
-
-      // Session should still be usable (resume calls resume -> unpause)
-      expect(session.isPaused).toBe(false)
     })
   })
 
@@ -402,5 +332,55 @@ describe("Session - Context Injection", () => {
     await session.enqueuePrompt("hello after finish");
     await new Promise((r) => setTimeout(r, 50));
     expect(agent.prompt.mock.calls.length).toBe(callsBefore);
+  });
+});
+
+describe("Session - turn:end middleware on error", () => {
+  it("fires turn:end with stopReason 'error' even when prompt throws", async () => {
+    const agent = mockAgentInstance();
+    agent.prompt.mockRejectedValue(new Error("agent crash"));
+
+    const turnEndPayloads: { stopReason: string }[] = [];
+    const chain = new MiddlewareChain();
+    chain.add("turn:end", "test", {
+      priority: 100,
+      handler: async (payload: any, next: any) => {
+        turnEndPayloads.push({ stopReason: payload.stopReason });
+        return next(payload);
+      },
+    });
+
+    const session = createTestSession(agent);
+    session.name = "skip-autoname";
+    session.middlewareChain = chain;
+
+    await session.enqueuePrompt("hello");
+    await vi.waitFor(() => expect(turnEndPayloads).toHaveLength(1), { timeout: 1000 });
+
+    expect(turnEndPayloads[0].stopReason).toBe("error");
+  });
+
+  it("fires turn:end with stopReason 'end_turn' on success", async () => {
+    const agent = mockAgentInstance();
+    agent.prompt.mockResolvedValue(undefined);
+
+    const turnEndPayloads: { stopReason: string }[] = [];
+    const chain = new MiddlewareChain();
+    chain.add("turn:end", "test", {
+      priority: 100,
+      handler: async (payload: any, next: any) => {
+        turnEndPayloads.push({ stopReason: payload.stopReason });
+        return next(payload);
+      },
+    });
+
+    const session = createTestSession(agent);
+    session.name = "skip-autoname";
+    session.middlewareChain = chain;
+
+    await session.enqueuePrompt("hello");
+    await vi.waitFor(() => expect(turnEndPayloads).toHaveLength(1), { timeout: 1000 });
+
+    expect(turnEndPayloads[0].stopReason).toBe("end_turn");
   });
 });

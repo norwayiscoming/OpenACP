@@ -1,13 +1,22 @@
 import type { CommandRegistry } from '../command-registry.js'
 import type { CommandResponse } from '../plugin/types.js'
+import type { OpenACPCore } from '../core.js'
 
 export function registerAdminCommands(registry: CommandRegistry, _core: unknown): void {
+  const core = _core as OpenACPCore;
   registry.register({
     name: 'restart',
     description: 'Restart the server',
     category: 'system',
-    handler: async () => {
-      return { type: 'silent' } satisfies CommandResponse
+    handler: async (args) => {
+      if (!core.requestRestart) {
+        return { type: 'error', message: 'Restart is not available (no restart handler registered).' } satisfies CommandResponse
+      }
+      // Reply first, then restart after a short delay
+      setTimeout(async () => {
+        await core.requestRestart!()
+      }, 500)
+      return { type: 'text', text: '🔄 <b>Restarting OpenACP...</b>\nRebuilding and restarting. Be back shortly.' } satisfies CommandResponse
     },
   })
 
@@ -15,8 +24,11 @@ export function registerAdminCommands(registry: CommandRegistry, _core: unknown)
     name: 'update',
     description: 'Check for and apply updates',
     category: 'system',
-    handler: async () => {
-      return { type: 'text', text: 'Checking for updates...' } satisfies CommandResponse
+    handler: async (args) => {
+      if (!core.requestRestart) {
+        return { type: 'error', message: 'Update is not available (no restart handler registered).' } satisfies CommandResponse
+      }
+      return { type: 'text', text: '⬆️ Checking for updates...\nUse the Telegram /update command for the full update flow.' } satisfies CommandResponse
     },
   })
 

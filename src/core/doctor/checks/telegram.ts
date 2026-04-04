@@ -1,3 +1,4 @@
+import * as path from "node:path";
 import type { DoctorCheck, CheckResult } from "../types.js";
 
 const BOT_TOKEN_REGEX = /^\d+:[A-Za-z0-9_-]{35,}$/;
@@ -13,14 +14,20 @@ export const telegramCheck: DoctorCheck = {
       return results;
     }
 
-    const tgConfig = ctx.config.channels.telegram as Record<string, unknown> | undefined;
-    if (!tgConfig || !tgConfig.enabled) {
-      results.push({ status: "pass", message: "Telegram not enabled (skipped)" });
+    // Check plugin settings first (new-style), then fall back to legacy config.channels
+    const { SettingsManager } = await import("../../plugin/settings-manager.js");
+    const sm = new SettingsManager(path.join(ctx.pluginsDir, "data"));
+    const ps = await sm.loadSettings("@openacp/telegram");
+
+    const legacyCh = ctx.config.channels.telegram as Record<string, unknown> | undefined;
+
+    const botToken = (ps.botToken as string | undefined) ?? (legacyCh?.botToken as string | undefined);
+    const chatId = (ps.chatId as number | undefined) ?? (legacyCh?.chatId as number | undefined);
+
+    if (!botToken && !chatId) {
+      results.push({ status: "pass", message: "Telegram not configured (skipped)" });
       return results;
     }
-
-    const botToken = tgConfig.botToken as string | undefined;
-    const chatId = tgConfig.chatId as number | undefined;
 
     if (!botToken || !BOT_TOKEN_REGEX.test(botToken)) {
       results.push({ status: "fail", message: "Bot token format invalid" });

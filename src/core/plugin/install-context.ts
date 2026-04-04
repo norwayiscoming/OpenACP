@@ -9,10 +9,11 @@ export interface CreateInstallContextOpts {
   settingsManager: SettingsManager
   basePath: string
   legacyConfig?: Record<string, unknown>
+  instanceRoot?: string
 }
 
 export function createInstallContext(opts: CreateInstallContextOpts): InstallContext {
-  const { pluginName, settingsManager, basePath, legacyConfig } = opts
+  const { pluginName, settingsManager, basePath, legacyConfig, instanceRoot } = opts
   const dataDir = path.join(basePath, pluginName, 'data')
 
   return {
@@ -22,5 +23,6 @@ export function createInstallContext(opts: CreateInstallContextOpts): InstallCon
     legacyConfig,
     dataDir,
     log: rootLog.child({ plugin: pluginName }),
+    instanceRoot,
   }
 }

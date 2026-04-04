@@ -31,7 +31,7 @@ Channel adapters. Each adapter key under `channels` is an object. The built-in T
 | `channels.discord.forumChannelId` | string \| null | `null` | Forum channel ID for session threads |
 | `channels.discord.notificationChannelId` | string \| null | `null` | Channel ID for system notifications |
 | `channels.discord.assistantThreadId` | string \| null | `null` | Thread ID for the Assistant |
-| `channels.discord.outputMode` | `"low"` \| `"medium"` \| `"high"` | `"medium"` | Controls message verbosity. The legacy key `displayVerbosity` is accepted for backward compatibility. |
+| `channels.discord.outputMode` | `"low"` \| `"medium"` \| `"high"` | `"medium"` | Adapter-level output detail. Overridden per session via `/outputmode session`. 3-level cascade: session → adapter → global → `"medium"`. The legacy key `displayVerbosity` is auto-migrated on startup. |
 
 ### channels.slack.*
 
@@ -77,6 +77,14 @@ Map of named agent configurations. Each key is an agent name used in `defaultAge
   "codex":  { "command": "codex", "args": ["--acp"], "env": {} }
 }
 ```
+
+---
+
+## outputMode
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `outputMode` | `"low"` \| `"medium"` \| `"high"` | `"medium"` | Global default output mode. Overridden per adapter via `channels.<name>.outputMode` and per session via `/outputmode session`. See [Output Modes](../features/output-modes.md). |
 
 ---
 
@@ -155,14 +163,11 @@ Map of named agent configurations. Each key is an agent name used in `defaultAge
 
 | Field | Type | Default | Description |
 |---|---|---|---|
-| `tunnel.enabled` | boolean | `false` | Enable the built-in tunnel service |
-| `tunnel.port` | number | `3100` | Default local port the tunnel service listens on |
+| `tunnel.enabled` | boolean | `false` | Enable the built-in tunnel service. When `true`, the tunnel auto-starts on server boot with keepalive monitoring. |
 | `tunnel.provider` | `"cloudflare"` \| `"ngrok"` \| `"bore"` \| `"tailscale"` | `"cloudflare"` | Tunnel provider |
 | `tunnel.options` | object | `{}` | Provider-specific options (passed through to the tunnel process) |
 | `tunnel.maxUserTunnels` | number | `5` | Maximum number of simultaneous user-created tunnels |
 | `tunnel.storeTtlMinutes` | number | `60` | Minutes before expired tunnel entries are cleaned up |
-| `tunnel.auth.enabled` | boolean | `false` | Require authentication to access tunnel endpoints |
-| `tunnel.auth.token` | string | — | Auth token for tunnel access (when `tunnel.auth.enabled` is true) |
 
 ---
 
@@ -195,6 +200,23 @@ Map of named agent configurations. Each key is an agent name used in `defaultAge
 | `speech.tts.provider` | string \| null | `null` | Active TTS provider name |
 | `speech.tts.providers.<name>.apiKey` | string | — | API key for the named provider |
 | `speech.tts.providers.<name>.model` | string | — | Model identifier for the named provider |
+
+---
+
+## agentSwitch
+
+Controls the behavior of the `/switch` command.
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `agentSwitch.labelHistory` | boolean | `true` | When `true`, agent names are prepended to messages in the conversation history injected into the new agent during a switch. Helps the incoming agent distinguish which AI produced which response. |
+
+**Example**
+```json
+"agentSwitch": {
+  "labelHistory": true
+}
+```
 
 ---
 

@@ -36,8 +36,6 @@ export class AgentStore {
   }
 
   load(): void {
-    fs.mkdirSync(path.dirname(this.filePath), { recursive: true });
-
     if (!fs.existsSync(this.filePath)) {
       this.data = { version: 1, installed: {} };
       return;
@@ -85,8 +83,9 @@ export class AgentStore {
   }
 
   private save(): void {
+    fs.mkdirSync(path.dirname(this.filePath), { recursive: true });
     const tmpPath = this.filePath + ".tmp";
-    fs.writeFileSync(tmpPath, JSON.stringify(this.data, null, 2));
+    fs.writeFileSync(tmpPath, JSON.stringify(this.data, null, 2), { mode: 0o600 });
     fs.renameSync(tmpPath, this.filePath);
   }
 }

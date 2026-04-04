@@ -55,6 +55,7 @@ function createMockDeps(overrides: Record<string, unknown> = {}) {
     } as unknown as NotificationManager,
     sessionManager: {
       patchRecord: vi.fn().mockResolvedValue(undefined),
+      getSessionRecord: vi.fn().mockReturnValue(undefined),
     } as unknown as SessionManager,
     eventBus: {
       emit: vi.fn(),
@@ -285,7 +286,7 @@ describe("SessionBridge — EventBus integration", () => {
     );
   });
 
-  it("emits session:updated on named event", () => {
+  it("emits session:updated on named event", async () => {
     const agent = createMockAgentInstance();
     const session = createSession(agent);
     const adapter = createMockAdapter();
@@ -296,13 +297,15 @@ describe("SessionBridge — EventBus integration", () => {
 
     session.emit("named", "Test Name");
 
-    expect((deps.eventBus as any).emit).toHaveBeenCalledWith(
-      "session:updated",
-      expect.objectContaining({
-        sessionId: session.id,
-        name: "Test Name",
-      }),
-    );
+    await vi.waitFor(() => {
+      expect((deps.eventBus as any).emit).toHaveBeenCalledWith(
+        "session:updated",
+        expect.objectContaining({
+          sessionId: session.id,
+          name: "Test Name",
+        }),
+      );
+    });
   });
 
   it("emits permission:request to eventBus", async () => {
@@ -365,8 +368,8 @@ describe("SessionBridge — Permission Auto-Approve", () => {
     bridge.connect();
   });
 
-  it("auto-approves permission with 'openacp' in description (case insensitive)", async () => {
-    const result = await agent.onPermissionRequest({
+  it("does NOT auto-approve permission with 'openacp' in description when bypass mode is off", async () => {
+    const promise = agent.onPermissionRequest({
       id: "p1",
       description: "Run OpenACP install command",
       options: [
@@ -375,13 +378,15 @@ describe("SessionBridge — Permission Auto-Approve", () => {
       ],
     });
 
+    // Should forward to adapter's permission handler, not auto-approve
+    expect(adapter.sendPermissionRequest).toHaveBeenCalled();
+    session.permissionGate.resolve("allow");
+    const result = await promise;
     expect(result).toBe("allow");
-    // Should NOT have sent UI to adapter
-    expect(adapter.sendPermissionRequest).not.toHaveBeenCalled();
   });
 
-  it("auto-approves in dangerous mode", async () => {
-    session.dangerousMode = true;
+  it("auto-approves when clientOverrides.bypassPermissions is true", async () => {
+    session.clientOverrides = { bypassPermissions: true };
 
     const result = await agent.onPermissionRequest({
       id: "p2",
@@ -396,8 +401,8 @@ describe("SessionBridge — Permission Auto-Approve", () => {
     expect(adapter.sendPermissionRequest).not.toHaveBeenCalled();
   });
 
-  it("does not auto-approve in dangerous mode if no isAllow option", async () => {
-    session.dangerousMode = true;
+  it("does not auto-approve with bypass if no isAllow option", async () => {
+    session.clientOverrides = { bypassPermissions: true };
 
     const promise = agent.onPermissionRequest({
       id: "p3",

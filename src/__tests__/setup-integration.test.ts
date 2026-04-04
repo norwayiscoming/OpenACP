@@ -43,6 +43,7 @@ vi.mock('../core/agents/agent-catalog.js', () => {
     getInstalledAgent = vi.fn((_key: string) => undefined)
     findRegistryAgent = vi.fn((_key: string) => null)
     install = vi.fn().mockResolvedValue({ ok: true })
+    registerFallbackAgent = vi.fn()
     getAvailable = vi.fn(() => [])
     getInstalledEntries = vi.fn(() => ({
       claude: { name: 'Claude Agent', command: 'npx', version: 'bundled', distribution: 'npx' },
@@ -163,8 +164,10 @@ describe('runSetup integration', () => {
   })
 
   it('creates valid config file via plugin install and auto-starts', { timeout: 15000 }, async () => {
-    // text() call order (no more setupTelegram — plugin owns that):
-    // 1. setupWorkspace: workspace base dir
+    // text() call order:
+    // 1. Instance name prompt
+    mockedText.mockResolvedValueOnce('Main' as any)
+    // 2. setupWorkspace: workspace base dir
     mockedText.mockResolvedValueOnce('~/my-workspace' as any)
 
     // Confirm call order:

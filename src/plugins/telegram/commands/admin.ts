@@ -1,16 +1,25 @@
 import type { Bot, Context } from "grammy";
 import { InlineKeyboard } from "grammy";
 import type { OpenACPCore } from "../../../core/index.js";
+import type { Session } from "../../../core/sessions/session.js";
+import { isPermissionBypass } from "../../../core/utils/bypass-detection.js";
+import type { CommandRegistry } from "../../../core/command-registry.js";
 import { escapeHtml } from "../formatting.js";
 import { createChildLogger } from "../../../core/utils/log.js";
 const log = createChildLogger({ module: "telegram-cmd-admin" });
+
+export function isBypassActive(session: Session): boolean {
+  const modeOpt = session.getConfigByCategory("mode");
+  return (modeOpt?.type === "select" && isPermissionBypass(String(modeOpt.currentValue)))
+    || !!session.clientOverrides.bypassPermissions;
+}
 
 export function buildDangerousModeKeyboard(
   sessionId: string,
   enabled: boolean,
 ): InlineKeyboard {
   return new InlineKeyboard().text(
-    enabled ? "🔐 Disable Dangerous Mode" : "☠️ Enable Dangerous Mode",
+    enabled ? "🔐 Disable Bypass Permissions" : "☠️ Enable Bypass Permissions",
     `d:${sessionId}`,
   );
 }
@@ -20,33 +29,34 @@ export function setupDangerousModeCallbacks(bot: Bot, core: OpenACPCore): void {
     const sessionId = ctx.callbackQuery.data.slice(2);
     const session = core.sessionManager.getSession(sessionId);
 
-    // Session live in memory — toggle directly
+    // Session live in memory — delegate to /bypass command (handles ACP + client-side fallback)
     if (session) {
-      session.dangerousMode = !session.dangerousMode;
-      log.info(
-        { sessionId, dangerousMode: session.dangerousMode },
-        "Dangerous mode toggled via button",
-      );
-      core.sessionManager
-        .patchRecord(sessionId, { dangerousMode: session.dangerousMode })
-        .catch(() => {});
-
-      const toastText = session.dangerousMode
-        ? "☠️ Dangerous mode enabled — permissions auto-approved"
-        : "🔐 Dangerous mode disabled — permissions shown normally";
+      const wantOn = !isBypassActive(session);
+      const toastText = wantOn
+        ? "☠️ Bypass Permissions enabled — permissions auto-approved"
+        : "🔐 Bypass Permissions disabled — approvals required";
       try {
         await ctx.answerCallbackQuery({ text: toastText });
       } catch {
         /* expired */
       }
 
+      const registry = core.lifecycleManager?.serviceRegistry?.get<CommandRegistry>("command-registry");
+      if (registry) {
+        await registry.execute(wantOn ? "/bypass_permissions on" : "/bypass_permissions off", {
+          raw: wantOn ? "on" : "off",
+          sessionId,
+          channelId: "telegram",
+          userId: String(ctx.from?.id ?? ""),
+          reply: async () => {},
+        }).catch(() => {});
+      }
+      log.info({ sessionId, wantOn }, "Bypass permissions toggled via button");
+
       try {
-        await ctx.editMessageReplyMarkup({
-          reply_markup: buildSessionControlKeyboard(
-            sessionId,
-            session.dangerousMode,
-            session.voiceMode === "on",
-          ),
+        await ctx.editMessageText(buildSessionStatusText(session), {
+          parse_mode: "HTML",
+          reply_markup: buildSessionControlKeyboard(sessionId, isBypassActive(session), session.voiceMode === "on"),
         });
       } catch {
         /* ignore */
@@ -67,18 +77,18 @@ export function setupDangerousModeCallbacks(bot: Bot, core: OpenACPCore): void {
       return;
     }
 
-    const newDangerousMode = !(record.dangerousMode ?? false);
+    const newDangerousMode = !(record.clientOverrides?.bypassPermissions ?? record.dangerousMode ?? false);
     core.sessionManager
-      .patchRecord(sessionId, { dangerousMode: newDangerousMode })
+      .patchRecord(sessionId, { clientOverrides: { bypassPermissions: newDangerousMode } })
       .catch(() => {});
     log.info(
       { sessionId, dangerousMode: newDangerousMode },
-      "Dangerous mode toggled via button (store-only, session not in memory)",
+      "Bypass permissions toggled via button (store-only, session not in memory)",
     );
 
     const toastText = newDangerousMode
-      ? "☠️ Dangerous mode enabled — permissions auto-approved"
-      : "🔐 Dangerous mode disabled — permissions shown normally";
+      ? "☠️ Bypass Permissions enabled — permissions auto-approved"
+      : "🔐 Bypass Permissions disabled — approvals required";
     try {
       await ctx.answerCallbackQuery({ text: toastText });
     } catch {
@@ -99,113 +109,6 @@ export function setupDangerousModeCallbacks(bot: Bot, core: OpenACPCore): void {
   });
 }
 
-export async function handleEnableDangerous(
-  ctx: Context,
-  core: OpenACPCore,
-): Promise<void> {
-  const threadId = ctx.message?.message_thread_id;
-  if (!threadId) {
-    await ctx.reply("⚠️ This command only works inside a session topic.", {
-      parse_mode: "HTML",
-    });
-    return;
-  }
-  const session = core.sessionManager.getSessionByThread(
-    "telegram",
-    String(threadId),
-  );
-  if (session) {
-    if (session.dangerousMode) {
-      await ctx.reply("☠️ Dangerous mode is already enabled.", {
-        parse_mode: "HTML",
-      });
-      return;
-    }
-    session.dangerousMode = true;
-    core.sessionManager
-      .patchRecord(session.id, { dangerousMode: true })
-      .catch(() => {});
-  } else {
-    // Session not in memory (e.g. after restart) — update store directly
-    const record = core.sessionManager.getRecordByThread(
-      "telegram",
-      String(threadId),
-    );
-    if (!record || record.status === "cancelled" || record.status === "error") {
-      await ctx.reply("⚠️ No active session in this topic.", {
-        parse_mode: "HTML",
-      });
-      return;
-    }
-    if (record.dangerousMode) {
-      await ctx.reply("☠️ Dangerous mode is already enabled.", {
-        parse_mode: "HTML",
-      });
-      return;
-    }
-    core.sessionManager
-      .patchRecord(record.sessionId, { dangerousMode: true })
-      .catch(() => {});
-  }
-  await ctx.reply(
-    `⚠️ <b>Dangerous mode enabled</b>\n\nAll permission requests will be auto-approved. Claude can run arbitrary commands without asking.\n\nUse /disable_dangerous to restore normal behaviour.`,
-    { parse_mode: "HTML" },
-  );
-}
-
-export async function handleDisableDangerous(
-  ctx: Context,
-  core: OpenACPCore,
-): Promise<void> {
-  const threadId = ctx.message?.message_thread_id;
-  if (!threadId) {
-    await ctx.reply("⚠️ This command only works inside a session topic.", {
-      parse_mode: "HTML",
-    });
-    return;
-  }
-  const session = core.sessionManager.getSessionByThread(
-    "telegram",
-    String(threadId),
-  );
-  if (session) {
-    if (!session.dangerousMode) {
-      await ctx.reply("🔐 Dangerous mode is already disabled.", {
-        parse_mode: "HTML",
-      });
-      return;
-    }
-    session.dangerousMode = false;
-    core.sessionManager
-      .patchRecord(session.id, { dangerousMode: false })
-      .catch(() => {});
-  } else {
-    // Session not in memory (e.g. after restart) — update store directly
-    const record = core.sessionManager.getRecordByThread(
-      "telegram",
-      String(threadId),
-    );
-    if (!record || record.status === "cancelled" || record.status === "error") {
-      await ctx.reply("⚠️ No active session in this topic.", {
-        parse_mode: "HTML",
-      });
-      return;
-    }
-    if (!record.dangerousMode) {
-      await ctx.reply("🔐 Dangerous mode is already disabled.", {
-        parse_mode: "HTML",
-      });
-      return;
-    }
-    core.sessionManager
-      .patchRecord(record.sessionId, { dangerousMode: false })
-      .catch(() => {});
-  }
-  await ctx.reply(
-    "🔐 <b>Dangerous mode disabled</b>\n\nPermission requests will be shown normally.",
-    { parse_mode: "HTML" },
-  );
-}
 
 export function buildTTSKeyboard(
   sessionId: string,
@@ -224,7 +127,7 @@ export function buildSessionControlKeyboard(
 ): InlineKeyboard {
   return new InlineKeyboard()
     .text(
-      dangerousMode ? "🔐 Disable Dangerous Mode" : "☠️ Enable Dangerous Mode",
+      dangerousMode ? "🔐 Disable Bypass Permissions" : "☠️ Enable Bypass Permissions",
       `d:${sessionId}`,
     )
     .row()
@@ -232,6 +135,47 @@ export function buildSessionControlKeyboard(
       voiceMode ? "🔊 Text to Speech" : "🔇 Text to Speech",
       `v:${sessionId}`,
     );
+}
+
+/**
+ * Build the status text shown in the session control message.
+ * Includes agent, workspace, and current config info (model, thought, mode).
+ */
+export function buildSessionStatusText(
+  session: Session,
+  heading: string = "✅ New chat (same agent &amp; workspace)",
+): string {
+  const lines: string[] = [heading];
+  lines.push(`<b>Agent:</b> ${escapeHtml(session.agentName)}`);
+  lines.push(`<b>Workspace:</b> <code>${escapeHtml(session.workingDirectory)}</code>`);
+
+  const modelOpt = session.getConfigByCategory("model");
+  if (modelOpt && modelOpt.type === "select") {
+    const choice = modelOpt.options
+      .flatMap((o) => "group" in o ? o.options : [o])
+      .find((c) => c.value === modelOpt.currentValue);
+    lines.push(`<b>Model:</b> ${escapeHtml(choice?.name ?? modelOpt.currentValue)}`);
+  }
+
+  const thoughtOpt = session.getConfigByCategory("thought_level");
+  if (thoughtOpt && thoughtOpt.type === "select") {
+    const choice = thoughtOpt.options
+      .flatMap((o) => "group" in o ? o.options : [o])
+      .find((c) => c.value === thoughtOpt.currentValue);
+    lines.push(`<b>Thinking:</b> ${escapeHtml(choice?.name ?? thoughtOpt.currentValue)}`);
+  }
+
+  const modeOpt = session.getConfigByCategory("mode");
+  if (isBypassActive(session)) {
+    lines.push(`<b>Mode:</b> ☠️ Bypass Permissions enabled`);
+  } else if (modeOpt && modeOpt.type === "select") {
+    const choice = modeOpt.options
+      .flatMap((o) => "group" in o ? o.options : [o])
+      .find((c) => c.value === modeOpt.currentValue);
+    lines.push(`<b>Mode:</b> ${escapeHtml(choice?.name ?? modeOpt.currentValue)}`);
+  }
+
+  return lines.join("\n");
 }
 
 export function setupTTSCallbacks(bot: Bot, core: OpenACPCore): void {
@@ -270,12 +214,14 @@ export function setupTTSCallbacks(bot: Bot, core: OpenACPCore): void {
     } catch {}
 
     try {
-      await ctx.editMessageReplyMarkup({
-        reply_markup: buildSessionControlKeyboard(
-          sessionId,
-          session.dangerousMode,
-          newMode === "on",
-        ),
+      const keyboard = buildSessionControlKeyboard(
+        sessionId,
+        isBypassActive(session),
+        newMode === "on",
+      );
+      await ctx.editMessageText(buildSessionStatusText(session), {
+        parse_mode: "HTML",
+        reply_markup: keyboard,
       });
     } catch {
       /* ignore */
@@ -368,7 +314,7 @@ export async function handleOutputMode(
       return;
     }
 
-    const session = core.sessionManager.getSessionByThread(
+    const session = await core.getOrResumeSession(
       "telegram",
       String(threadId),
     );

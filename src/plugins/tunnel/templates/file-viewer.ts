@@ -77,6 +77,17 @@ export function renderFileViewer(entry: ViewerEntry): string {
   ${lang === 'markdown' ? '<script src="https://cdn.jsdelivr.net/npm/marked@15.0.0/marked.min.js"></script>' : ''}
   <script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.52.2/min/vs/loader.js"></script>
   <script>
+    function sanitizeHtml(html) {
+      let result = html;
+      for (let i = 0; i < 3; i++) {
+        result = result.replace(/<script\\b[^<]*(?:(?!<\\/script>)<[^<]*)*<\\/script>/gi, '');
+      }
+      result = result.replace(/<\\/?script\\b[^>]*>/gi, '');
+      result = result.replace(/\\s+on\\w+\\s*=\\s*(?:"[^"]*"|'[^']*'|[^\\s>]*)/gi, '');
+      result = result.replace(/(href|src)\\s*=\\s*(?:"(?:javascript|data):[^"]*"|'(?:javascript|data):[^']*')/gi, '$1=""');
+      return result;
+    }
+
     const content = ${safeContent};
     const lang = ${JSON.stringify(lang)};
     let editor;
@@ -155,7 +166,12 @@ export function renderFileViewer(entry: ViewerEntry): string {
       if (previewMode) {
         editorEl.style.display = 'none';
         wrapperEl.style.display = 'block';
-        previewEl.innerHTML = typeof marked !== 'undefined' ? marked.parse(content) : content.replace(/\\n/g, '<br>');
+        if (typeof marked !== 'undefined') {
+          const rawHtml = marked.parse(content)
+          previewEl.innerHTML = sanitizeHtml(rawHtml)
+        } else {
+          previewEl.innerHTML = sanitizeHtml(content.replace(/\\n/g, '<br>'));
+        }
         previewEl.style.color = isDark ? '#d4d4d4' : '#1e1e1e';
         wrapperEl.style.background = isDark ? '#1e1e1e' : '#ffffff';
         btn.classList.add('active');

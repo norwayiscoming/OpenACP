@@ -1,6 +1,7 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import type { MiddlewareChain } from "../plugin/middleware-chain.js";
+import { filterEnv } from "../security/env-filter.js";
 
 interface TerminalState {
   process: ChildProcess;
@@ -75,7 +76,7 @@ export class TerminalManager {
 
     const childProcess = spawn(termCommand, args, {
       cwd: termCwd,
-      env: { ...process.env, ...env },
+      env: filterEnv(process.env as Record<string, string>, env),
       shell: false,
     });
 

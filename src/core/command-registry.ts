@@ -156,7 +156,7 @@ export class CommandRegistry {
     try {
       const result = await cmd.handler(args)
       if (result === undefined || result === null) {
-        return { type: 'silent' }
+        return { type: 'delegated' }
       }
       return result
     } catch (err) {

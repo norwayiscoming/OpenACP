@@ -11,13 +11,6 @@ vi.mock('../plugins/telegram/streaming.js', () => {
   return { MessageDraft: MockMessageDraft }
 })
 
-// Mock action-detect module
-vi.mock('../plugins/telegram/action-detect.js', () => ({
-  detectAction: vi.fn().mockReturnValue(null),
-  storeAction: vi.fn().mockReturnValue('action-id'),
-  buildActionKeyboard: vi.fn().mockReturnValue({ inline_keyboard: [] }),
-}))
-
 function mockBot() {
   return {
     api: {
@@ -104,39 +97,6 @@ describe('DraftManager', () => {
       manager.appendText('sess-1', 'some text')
       await manager.finalize('sess-1')
       // Text buffer should be cleaned up
-    })
-
-    it('detects actions in assistant responses', async () => {
-      const { detectAction } = await import('../plugins/telegram/action-detect.js')
-      ;(detectAction as any).mockReturnValue({ action: 'new_session', agent: 'claude' })
-
-      manager.getOrCreate('assistant-sess', 100)
-      manager.appendText('assistant-sess', '/new claude workspace')
-      await manager.finalize('assistant-sess', 'assistant-sess')
-
-      expect(detectAction).toHaveBeenCalledWith('/new claude workspace')
-      expect(bot.api.editMessageReplyMarkup).toHaveBeenCalled()
-    })
-
-    it('does not detect actions for non-assistant sessions', async () => {
-      const { detectAction } = await import('../plugins/telegram/action-detect.js')
-
-      manager.getOrCreate('regular-sess', 100)
-      manager.appendText('regular-sess', '/new claude')
-      await manager.finalize('regular-sess')
-
-      expect(detectAction).not.toHaveBeenCalled()
-    })
-
-    it('handles editMessageReplyMarkup failure gracefully', async () => {
-      const { detectAction } = await import('../plugins/telegram/action-detect.js')
-      ;(detectAction as any).mockReturnValue({ action: 'new_session' })
-      bot.api.editMessageReplyMarkup.mockRejectedValue(new Error('API error'))
-
-      manager.getOrCreate('assistant-sess', 100)
-      manager.appendText('assistant-sess', '/new')
-      // Should not throw
-      await manager.finalize('assistant-sess', 'assistant-sess')
     })
   })
 

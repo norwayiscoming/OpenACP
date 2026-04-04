@@ -3,6 +3,8 @@ import { Transform } from "node:stream";
 import fs from "node:fs";
 import path from "node:path";
 import { ClientSideConnection, ndJsonStream } from "@agentclientprotocol/sdk";
+import { PathGuard } from "../security/path-guard.js";
+import { filterEnv } from "../security/env-filter.js";
 import type {
   Agent,
   Client,
@@ -125,17 +127,12 @@ interface SdkSessionInfoUpdate {
   _meta?: Record<string, unknown>;
 }
 
-interface SdkCurrentModeUpdate {
-  sessionUpdate: 'current_mode_update';
-  currentModeId: string;
-  _meta?: Record<string, unknown>;
-}
-
 interface SdkConfigOptionUpdate {
   sessionUpdate: 'config_option_update';
   configOptions: unknown[];
   _meta?: Record<string, unknown>;
 }
+
 
 interface SdkUserMessageChunk {
   sessionUpdate: 'user_message_chunk';
@@ -159,12 +156,21 @@ export class AgentInstance extends TypedEmitter<AgentInstanceEvents> {
   private terminalManager = new TerminalManager();
   private static mcpManager = new McpManager();
   private _destroying = false;
+  private pathGuard!: PathGuard;
 
   sessionId!: string;
   agentName: string;
   promptCapabilities?: { image?: boolean; audio?: boolean };
+  agentCapabilities?: import("../types.js").AgentCapabilities;
+  /** Preserved from newSession/resumeSession response for ACP state propagation */
+  initialSessionResponse?: { modes?: unknown; configOptions?: unknown; models?: unknown };
   middlewareChain?: MiddlewareChain;
   debugTracer: DebugTracer | null = null;
+
+  /** Allow external callers (e.g. SessionFactory) to whitelist additional read paths */
+  addAllowedPath(p: string): void {
+    this.pathGuard.addAllowedPath(p);
+  }
 
   // Callback — set by core when wiring events
   onPermissionRequest: (request: PermissionRequest) => Promise<string> =
@@ -190,13 +196,25 @@ export class AgentInstance extends TypedEmitter<AgentInstanceEvents> {
       "Resolved agent command",
     );
 
+    const ignorePatterns = PathGuard.loadIgnoreFile(workingDirectory);
+    instance.pathGuard = new PathGuard({
+      cwd: workingDirectory,
+      // allowedPaths is wired from workspace.security.allowedPaths config;
+      // spawnSubprocess would need to receive a SecurityConfig param to use it.
+      // Tracked as follow-up: pass workspace security config through spawn/resume call chain.
+      allowedPaths: [],
+      ignorePatterns,
+    });
+
     instance.child = spawn(
       resolved.command,
       [...resolved.args, ...agentDef.args],
       {
         stdio: ["pipe", "pipe", "pipe"],
         cwd: workingDirectory,
-        env: { ...process.env, ...agentDef.env },
+        // envWhitelist from workspace.security.envWhitelist config would extend DEFAULT_ENV_WHITELIST.
+        // Tracked as follow-up: pass workspace security config through spawn/resume call chain.
+        env: filterEnv(process.env as Record<string, string>, agentDef.env),
       },
     );
 
@@ -273,6 +291,9 @@ export class AgentInstance extends TypedEmitter<AgentInstanceEvents> {
     instance.promptCapabilities =
       initResponse.agentCapabilities?.promptCapabilities;
 
+    // Store full agent capabilities for introspection (session list, fork, close, etc.)
+    instance.agentCapabilities = initResponse.agentCapabilities as import("../types.js").AgentCapabilities | undefined;
+
     log.info(
       { promptCapabilities: instance.promptCapabilities ?? {} },
       "Agent prompt capabilities",
@@ -288,6 +309,8 @@ export class AgentInstance extends TypedEmitter<AgentInstanceEvents> {
         { sessionId: this.sessionId, exitCode: code, signal },
         "Agent process exited",
       );
+      // SIGINT/SIGTERM are graceful shutdown signals — not crashes
+      if (signal === "SIGINT" || signal === "SIGTERM") return;
       if ((code !== 0 && code !== null) || signal) {
         const stderr = this.stderrCapture.getLastLines();
         this.emit('agent_event', {
@@ -325,12 +348,20 @@ export class AgentInstance extends TypedEmitter<AgentInstanceEvents> {
       cwd: workingDirectory,
       mcpServers: resolvedMcp as any,
     });
+
+    log.info(response, 'newSession response');
     instance.sessionId = response.sessionId;
+    instance.initialSessionResponse = response;
     instance.debugTracer = createDebugTracer(response.sessionId, workingDirectory);
     instance.setupCrashDetection();
 
     log.info(
-      { sessionId: response.sessionId, durationMs: Date.now() - spawnStart },
+      {
+        sessionId: response.sessionId,
+        durationMs: Date.now() - spawnStart,
+        configOptions: (response as any).configOptions ?? [],
+        agentCapabilities: instance.agentCapabilities ?? null,
+      },
       "Agent spawn complete",
     );
     return instance;
@@ -350,28 +381,55 @@ export class AgentInstance extends TypedEmitter<AgentInstanceEvents> {
       workingDirectory,
     );
 
+    const resolvedMcp = AgentInstance.mcpManager.resolve(mcpServers);
+
     try {
-      const response = await instance.connection.unstable_resumeSession({
-        sessionId: agentSessionId,
-        cwd: workingDirectory,
-      });
-      instance.sessionId = response.sessionId;
-      instance.debugTracer = createDebugTracer(response.sessionId, workingDirectory);
-      log.info(
-        { sessionId: response.sessionId, durationMs: Date.now() - spawnStart },
-        "Agent resume complete",
-      );
+      if (instance.agentCapabilities?.loadSession) {
+        // Agent supports session/load — preferred over unstable session/resume
+        const response = await instance.connection.loadSession({
+          sessionId: agentSessionId,
+          cwd: workingDirectory,
+          mcpServers: resolvedMcp as any,
+        });
+        instance.sessionId = agentSessionId;
+        instance.initialSessionResponse = response;
+        instance.debugTracer = createDebugTracer(agentSessionId, workingDirectory);
+        log.info(
+          {
+            sessionId: agentSessionId,
+            durationMs: Date.now() - spawnStart,
+            agentCapabilities: instance.agentCapabilities ?? null,
+          },
+          "Agent load complete",
+        );
+      } else {
+        const response = await instance.connection.unstable_resumeSession({
+          sessionId: agentSessionId,
+          cwd: workingDirectory,
+        });
+        instance.sessionId = response.sessionId;
+        instance.initialSessionResponse = response;
+        instance.debugTracer = createDebugTracer(response.sessionId, workingDirectory);
+        log.info(
+          {
+            sessionId: response.sessionId,
+            durationMs: Date.now() - spawnStart,
+            agentCapabilities: instance.agentCapabilities ?? null,
+          },
+          "Agent resume complete",
+        );
+      }
     } catch (err) {
       log.warn(
         { err, agentSessionId },
         "Resume failed, falling back to new session",
       );
-      const resolvedMcp = AgentInstance.mcpManager.resolve(mcpServers);
       const response = await instance.connection.newSession({
         cwd: workingDirectory,
         mcpServers: resolvedMcp as any,
       });
       instance.sessionId = response.sessionId;
+      instance.initialSessionResponse = response;
       instance.debugTracer = createDebugTracer(response.sessionId, workingDirectory);
       log.info(
         { sessionId: response.sessionId, durationMs: Date.now() - spawnStart },
@@ -507,14 +565,6 @@ export class AgentInstance extends TypedEmitter<AgentInstanceEvents> {
             };
             break;
           }
-          case "current_mode_update": {
-            const cm = update as unknown as SdkCurrentModeUpdate;
-            event = {
-              type: "current_mode_update",
-              modeId: cm.currentModeId,
-            };
-            break;
-          }
           case "config_option_update": {
             const co = update as unknown as SdkConfigOptionUpdate;
             event = {
@@ -532,10 +582,10 @@ export class AgentInstance extends TypedEmitter<AgentInstanceEvents> {
             break;
           }
           // NOTE: model_update is NOT a session update type in the ACP SDK schema.
-          // Model changes are applied via the unstable_setSessionModel() method and
-          // the response is synchronous — the SDK does not push a model_update
-          // notification to the client. Therefore AgentEvent "model_update" cannot
-          // originate from sessionUpdate and must be emitted by callers of setModel()
+          // Model changes are applied via setSessionConfigOption() and the response
+          // is synchronous — the SDK does not push a model_update notification to
+          // the client. Therefore AgentEvent "model_update" cannot originate from
+          // sessionUpdate and must be emitted by callers of setConfigOption()
           // if they need to propagate the change downstream.
           default:
             // Unknown update type — ignore
@@ -569,6 +619,11 @@ export class AgentInstance extends TypedEmitter<AgentInstanceEvents> {
       // ── File operations ──────────────────────────────────────────────────
       async readTextFile(params) {
         const p = params as unknown as SdkReadTextFileParams;
+        // Security: validate path against workspace boundary
+        const pathCheck = self.pathGuard.validatePath(p.path, "read");
+        if (!pathCheck.allowed) {
+          throw new Error(`[Access denied] ${pathCheck.reason}`);
+        }
         // Hook: fs:beforeRead — modifiable, can block
         if (self.middlewareChain) {
           const result = await self.middlewareChain.execute('fs:beforeRead', { sessionId: self.sessionId, path: p.path, line: p.line, limit: p.limit }, async (r) => r);
@@ -583,9 +638,14 @@ export class AgentInstance extends TypedEmitter<AgentInstanceEvents> {
       },
 
       async writeTextFile(params) {
-        // Hook: fs:beforeWrite — modifiable, can block
         let writePath = params.path;
         let writeContent = params.content;
+        // Security: validate path against workspace boundary
+        const pathCheck = self.pathGuard.validatePath(writePath, "write");
+        if (!pathCheck.allowed) {
+          throw new Error(`[Access denied] ${pathCheck.reason}`);
+        }
+        // Hook: fs:beforeWrite — modifiable, can block
         if (self.middlewareChain) {
           const result = await self.middlewareChain.execute('fs:beforeWrite', { sessionId: self.sessionId, path: writePath, content: writeContent }, async (r) => r);
           if (!result) return {}; // blocked by middleware
@@ -633,26 +693,38 @@ export class AgentInstance extends TypedEmitter<AgentInstanceEvents> {
 
   // ── New ACP methods ──────────────────────────────────────────────────
 
-  async setMode(modeId: string): Promise<void> {
-    await this.connection.setSessionMode({ sessionId: this.sessionId, modeId });
-  }
-
   async setConfigOption(
     configId: string,
     value: SetConfigOptionValue,
   ): Promise<SetSessionConfigOptionResponse> {
-    return await this.connection.setSessionConfigOption({
-      sessionId: this.sessionId,
-      configId,
-      ...value,
-    } as any);
-  }
-
-  async setModel(modelId: string): Promise<void> {
-    await this.connection.unstable_setSessionModel({
-      sessionId: this.sessionId,
-      modelId,
-    });
+    try {
+      return await this.connection.setSessionConfigOption({
+        sessionId: this.sessionId,
+        configId,
+        ...value,
+      } as any);
+    } catch (err) {
+      // Fall back to legacy setSessionMode / unstable_setSessionModel for agents
+      // (e.g. Gemini CLI) that implement the old separate methods instead of the
+      // unified session/set_config_option method (ACP -32601 Method Not Found).
+      if (typeof err === 'object' && err !== null && (err as any).code === -32601) {
+        if (configId === 'mode' && value.type === 'select') {
+          await this.connection.setSessionMode({
+            sessionId: this.sessionId,
+            modeId: value.value as string,
+          });
+          return { configOptions: [] };
+        }
+        if (configId === 'model' && value.type === 'select') {
+          await this.connection.unstable_setSessionModel({
+            sessionId: this.sessionId,
+            modelId: value.value as string,
+          });
+          return { configOptions: [] };
+        }
+      }
+      throw err;
+    }
   }
 
   async listSessions(
@@ -711,9 +783,19 @@ export class AgentInstance extends TypedEmitter<AgentInstanceEvents> {
       const tooLarge = att.size > 10 * 1024 * 1024; // 10MB base64 guard
 
       if (att.type === "image" && this.promptCapabilities?.image && !tooLarge && SUPPORTED_IMAGE_MIMES.has(att.mimeType)) {
+        const attCheck = this.pathGuard.validatePath(att.filePath, "read");
+        if (!attCheck.allowed) {
+          (contentBlocks[0] as { text: string }).text += `\n\n[Attachment access denied: ${attCheck.reason}]`;
+          continue;
+        }
         const data = await fs.promises.readFile(att.filePath);
         contentBlocks.push({ type: "image", data: data.toString("base64"), mimeType: att.mimeType });
       } else if (att.type === "audio" && this.promptCapabilities?.audio && !tooLarge) {
+        const attCheck = this.pathGuard.validatePath(att.filePath, "read");
+        if (!attCheck.allowed) {
+          (contentBlocks[0] as { text: string }).text += `\n\n[Attachment access denied: ${attCheck.reason}]`;
+          continue;
+        }
         const data = await fs.promises.readFile(att.filePath);
         contentBlocks.push({ type: "audio", data: data.toString("base64"), mimeType: att.mimeType });
       } else {

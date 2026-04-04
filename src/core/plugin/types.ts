@@ -54,6 +54,8 @@ export interface OpenACPPlugin {
   migrate?(ctx: MigrateContext, oldSettings: unknown, oldVersion: string): Promise<unknown>
   settingsSchema?: import('zod').ZodSchema
   essential?: boolean
+  /** Settings keys that can be copied when creating a new instance from this one */
+  inheritableKeys?: string[]
 }
 
 // ============================================================
@@ -138,6 +140,8 @@ export interface InstallContext {
   legacyConfig?: Record<string, unknown>
   dataDir: string
   log: Logger
+  /** Root of the OpenACP instance directory (e.g. ~/.openacp) */
+  instanceRoot?: string
 }
 
 // ─── Migrate Context (for boot-time migration) ───
@@ -157,6 +161,21 @@ export type CommandResponse =
   | { type: 'confirm'; question: string; onYes: string; onNo: string }
   | { type: 'error'; message: string }
   | { type: 'silent' }
+  | { type: 'delegated' }
+
+// ─── Menu Types ───
+
+export interface MenuItem {
+  id: string
+  label: string
+  priority: number
+  group?: string
+  action:
+    | { type: 'command'; command: string }
+    | { type: 'delegate'; prompt: string }
+    | { type: 'callback'; callbackData: string }
+  visible?: () => boolean
+}
 
 export interface MenuOption {
   label: string
@@ -257,6 +276,14 @@ export interface PluginContext {
   getService<T>(name: string): T | undefined
   /** Register slash command. Requires 'commands:register'. */
   registerCommand(def: CommandDef): void
+  /** Register a menu item. Requires 'commands:register'. */
+  registerMenuItem(item: MenuItem): void
+  /** Unregister a menu item by id. Requires 'commands:register'. */
+  unregisterMenuItem(id: string): void
+  /** Register an assistant section. Requires 'commands:register'. */
+  registerAssistantSection(section: import('../assistant/assistant-registry.js').AssistantSection): void
+  /** Unregister an assistant section by id. Requires 'commands:register'. */
+  unregisterAssistantSection(id: string): void
   /** Plugin-scoped storage. Requires 'storage:read' and/or 'storage:write'. */
   storage: PluginStorage
   /** Plugin-scoped logger. Always available (no permission needed). */
@@ -275,6 +302,12 @@ export interface PluginContext {
   eventBus: EventBus
   /** Direct access to OpenACPCore instance. Requires 'kernel:access'. */
   core: unknown
+
+  /**
+   * Root directory for this OpenACP instance (default: ~/.openacp).
+   * Plugins should derive file paths from this instead of hardcoding ~/.openacp.
+   */
+  instanceRoot: string
 }
 
 // ============================================================
@@ -382,25 +415,28 @@ export interface MiddlewarePayloadMap {
   }
 
   // === Control ===
-  'mode:beforeChange': {
-    sessionId: string
-    fromMode: string | undefined
-    toMode: string
-  }
   'config:beforeChange': {
     sessionId: string
     configId: string
     oldValue: unknown
     newValue: unknown
   }
-  'model:beforeChange': {
-    sessionId: string
-    fromModel: string | undefined
-    toModel: string
-  }
   'agent:beforeCancel': {
     sessionId: string
     reason?: string
+  }
+
+  // === Agent switch ===
+  'agent:beforeSwitch': {
+    sessionId: string
+    fromAgent: string
+    toAgent: string
+  }
+  'agent:afterSwitch': {
+    sessionId: string
+    fromAgent: string
+    toAgent: string
+    resumed: boolean
   }
 }
 
@@ -510,7 +546,7 @@ export interface ViewerStoreInterface {
 
 export interface TunnelServiceInterface {
   getPublicUrl(): string
-  start(): Promise<string>
+  start(apiPort: number): Promise<string>
   stop(): Promise<void>
   getStore(): ViewerStoreInterface
   fileUrl(entryId: string): string

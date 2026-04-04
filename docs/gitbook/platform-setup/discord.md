@@ -190,6 +190,16 @@ Slash commands are registered automatically when OpenACP starts (guild-scoped, s
 | `/handoff` | Get a terminal command to resume the session locally |
 | `/agents` | Browse available agents |
 | `/install <name>` | Install an agent |
+| `/outputmode [low\|medium\|high\|reset] [session]` | Set output detail level; use `session` scope to override for the current thread only |
+| `/verbosity` | Deprecated alias for `/outputmode` |
+| `/bypass` | Toggle auto-approval of all permission requests |
+| `/tts [on\|off]` | Toggle text-to-speech for the current session |
+| `/settings` | Change configuration in-chat |
+| `/doctor` | Run system diagnostics |
+| `/integrate` | Manage agent integrations |
+| `/restart` | Restart OpenACP |
+| `/update` | Update to the latest version |
+| `/clear` | Reset the assistant session history |
 | `/help` | Show help |
 
 ---
@@ -199,6 +209,7 @@ Slash commands are registered automatically when OpenACP starts (guild-scoped, s
 Each `/new` command creates a **forum thread** in `#openacp-sessions`:
 
 - **Real-time streaming** — agent responses appear as the model generates output, with periodic message edits to minimize Discord API calls.
+- **Tool card embeds** — while the agent is working, tool activity is grouped into a single embed with a colored sidebar (🔵 running, 🟢 done, 🔴 error). An action row appears below with `[🔇 Low] [📊 Medium] [🔍 High] [❌ Cancel]` buttons to switch output detail level or abort the session without any slash commands.
 - **Auto-naming** — after the first prompt, the thread is renamed to a short summary of the task.
 - **File and image support** — attach files, screenshots, or voice messages directly in the thread (up to 25 MB per file).
 - **Permission buttons** — when the agent needs approval to run a command or modify a file, **Allow** and **Reject** buttons appear in the thread.

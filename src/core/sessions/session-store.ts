@@ -7,6 +7,8 @@ const log = createChildLogger({ module: "session-store" });
 
 export interface SessionStore {
   save(record: SessionRecord): Promise<void>;
+  /** Immediately flush pending writes to disk (no debounce). */
+  flush(): void;
   get(sessionId: string): SessionRecord | undefined;
   findByPlatform(
     channelId: string,
@@ -65,7 +67,12 @@ export class JsonFileSessionStore implements SessionStore {
     predicate: (platform: Record<string, unknown>) => boolean,
   ): SessionRecord | undefined {
     for (const record of this.records.values()) {
-      if (record.channelId === channelId && predicate(record.platform)) {
+      // Check new platforms format first
+      if (record.platforms?.[channelId]) {
+        if (predicate(record.platforms[channelId])) return record;
+      }
+      // Fallback to legacy platform field
+      if (record.channelId === channelId && predicate(record.platform as Record<string, unknown>)) {
         return record;
       }
     }
@@ -73,11 +80,19 @@ export class JsonFileSessionStore implements SessionStore {
   }
 
   findByAgentSessionId(agentSessionId: string): SessionRecord | undefined {
-    return [...this.records.values()].find(
-      (r) =>
-        r.agentSessionId === agentSessionId ||
-        r.originalAgentSessionId === agentSessionId,
-    );
+    for (const record of this.records.values()) {
+      if (
+        record.agentSessionId === agentSessionId ||
+        record.originalAgentSessionId === agentSessionId
+      ) {
+        return record;
+      }
+      // Also search switch history
+      if (record.agentSwitchHistory?.some((e) => e.agentSessionId === agentSessionId)) {
+        return record;
+      }
+    }
+    return undefined;
   }
 
   list(channelId?: string): SessionRecord[] {
@@ -89,6 +104,10 @@ export class JsonFileSessionStore implements SessionStore {
   async remove(sessionId: string): Promise<void> {
     this.records.delete(sessionId);
     this.scheduleDiskWrite();
+  }
+
+  flush(): void {
+    this.flushSync();
   }
 
   flushSync(): void {
@@ -130,7 +149,7 @@ export class JsonFileSessionStore implements SessionStore {
         return;
       }
       for (const [id, record] of Object.entries(raw.sessions)) {
-        this.records.set(id, record);
+        this.records.set(id, this.migrateRecord(record));
       }
       log.debug({ count: this.records.size }, "Loaded session records");
     } catch (err) {
@@ -139,6 +158,22 @@ export class JsonFileSessionStore implements SessionStore {
         fs.renameSync(this.filePath, `${this.filePath}.bak`);
       } catch { /* best effort */ }
     }
+  }
+
+  /** Migrate old SessionRecord format to new multi-adapter format. */
+  private migrateRecord(record: SessionRecord): SessionRecord {
+    // Migrate platform → platforms
+    if (!record.platforms && record.platform && typeof record.platform === "object") {
+      const platformData = record.platform as Record<string, unknown>;
+      if (Object.keys(platformData).length > 0) {
+        record.platforms = { [record.channelId]: platformData };
+      }
+    }
+    // Default attachedAdapters
+    if (!record.attachedAdapters) {
+      record.attachedAdapters = [record.channelId];
+    }
+    return record;
   }
 
   private cleanup(): void {

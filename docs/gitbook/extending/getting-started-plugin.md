@@ -1,6 +1,8 @@
 # Getting Started: Your First Plugin
 
-This tutorial walks you through creating, developing, testing, and publishing an OpenACP plugin from scratch. No prior knowledge of OpenACP internals is required.
+This is a **hands-on tutorial** that walks you through creating, developing, testing, and publishing an OpenACP plugin from scratch. No prior knowledge of OpenACP internals is required.
+
+> **Looking for the full API reference?** See [Writing Plugins — Full API Reference](../architecture/writing-plugins.md) for every API surface including services, middleware, events, settings, storage, and overrides.
 
 ---
 

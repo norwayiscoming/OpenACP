@@ -43,6 +43,10 @@ export { MessagingAdapter, StreamAdapter, BaseRenderer } from '@openacp/cli'
 
 // --- Adapter primitives (runtime) ---
 export { SendQueue, DraftManager, ToolCallTracker, ActivityTracker } from '@openacp/cli'
+export { ToolStateMap, ThoughtBuffer } from '@openacp/cli'
+export { DisplaySpecBuilder } from '@openacp/cli'
+export { OutputModeResolver } from '@openacp/cli'
+export { ToolCardState } from '@openacp/cli'
 
 // --- Core types ---
 export type {
@@ -51,6 +55,12 @@ export type {
   UsageRecord, InstallProgress,
   DisplayVerbosity, ToolCallMeta, ToolUpdateMeta, ViewerLinks,
   TelegramPlatformData,
+} from '@openacp/cli'
+
+// --- New adapter primitive types ---
+export type {
+  ToolDisplaySpec, ThoughtDisplaySpec, ToolEntry,
+  OutputMode, ToolCardSnapshot, ToolCardStateConfig,
 } from '@openacp/cli'
 
 // --- Logging (runtime) ---

@@ -91,7 +91,7 @@
       "license": "proprietary",
       "distribution": {
         "npx": {
-          "package": "@zed-industries/claude-agent-acp@0.22.2"
+          "package": "@agentclientprotocol/claude-agent-acp@0.24.2"
         }
       },
       "icon": "https://cdn.agentclientprotocol.com/registry/v1/latest/claude-acp.svg"

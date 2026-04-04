@@ -18,6 +18,7 @@ function createTelegramPlugin(): OpenACPPlugin {
       '@openacp/speech': '^1.0.0',
     },
     permissions: ['services:register', 'kernel:access', 'events:read'],
+    inheritableKeys: [],
 
     async install(ctx: InstallContext) {
       const { terminal, settings, legacyConfig } = ctx
@@ -173,14 +174,42 @@ function createTelegramPlugin(): OpenACPPlugin {
         return
       }
 
+      const core = ctx.core as OpenACPCore
+      const settingsManager = core.lifecycleManager?.settingsManager
+
+      // If topic IDs are null in plugin settings but present in main config, migrate them.
+      // This handles users who ran a version where ensureTopics saved to main config instead of plugin settings.
+      if ((config.notificationTopicId == null || config.assistantTopicId == null) && settingsManager) {
+        const mainCfg = core.configManager.get()
+        const legacy = (mainCfg as any)?.channels?.telegram as Record<string, unknown> | undefined
+        const migrated: Record<string, unknown> = {}
+        if (legacy?.notificationTopicId != null && config.notificationTopicId == null) {
+          config.notificationTopicId = legacy.notificationTopicId
+          migrated.notificationTopicId = legacy.notificationTopicId
+        }
+        if (legacy?.assistantTopicId != null && config.assistantTopicId == null) {
+          config.assistantTopicId = legacy.assistantTopicId
+          migrated.assistantTopicId = legacy.assistantTopicId
+        }
+        if (Object.keys(migrated).length > 0) {
+          await settingsManager.updatePluginSettings(ctx.pluginName, migrated)
+          ctx.log.info('Migrated topic IDs from main config to plugin settings')
+        }
+      }
+
       const { TelegramAdapter } = await import('./adapter.js')
       // config is a Record<string, unknown> from pluginConfig; at runtime it
       // contains all TelegramChannelConfig fields populated from the migrated config.
-      adapter = new TelegramAdapter(ctx.core as OpenACPCore, {
+      adapter = new TelegramAdapter(core, {
         ...config,
         enabled: true,
         maxMessageLength: 4096,
-      } as unknown as TelegramChannelConfig)
+      } as unknown as TelegramChannelConfig, async (updates) => {
+        // Save topic IDs to plugin settings so they persist across restarts
+        if (settingsManager) {
+          await settingsManager.updatePluginSettings(ctx.pluginName, updates)
+        }
+      })
 
       ctx.registerService('adapter:telegram', adapter)
       ctx.log.info('Telegram adapter registered')

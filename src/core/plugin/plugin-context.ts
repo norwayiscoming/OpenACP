@@ -1,3 +1,5 @@
+import path from 'node:path'
+import os from 'node:os'
 import type {
   PluginContext,
   PluginPermission,
@@ -9,7 +11,11 @@ import type {
   EventBus,
   Logger,
   OutgoingMessage,
+  MenuItem,
 } from './types.js'
+import type { MenuRegistry } from '../menu-registry.js'
+import type { AssistantSection } from '../assistant/assistant-registry.js'
+import type { AssistantRegistry } from '../assistant/assistant-registry.js'
 import { ServiceRegistry } from './service-registry.js'
 import { MiddlewareChain } from './middleware-chain.js'
 import { ErrorTracker } from './error-tracker.js'
@@ -32,6 +38,7 @@ interface CreatePluginContextOpts {
   config: unknown
   core?: unknown
   log?: Logger
+  instanceRoot?: string
 }
 
 function requirePermission(permissions: PluginPermission[], required: PluginPermission, action: string): void {
@@ -53,6 +60,7 @@ export function createPluginContext(opts: CreatePluginContextOpts): PluginContex
     config,
     core,
   } = opts
+  const instanceRoot = opts.instanceRoot ?? path.join(os.homedir(), '.openacp')
 
   // Track registered items for cleanup
   const registeredListeners: Array<{ event: string; handler: (...args: unknown[]) => void }> = []
@@ -156,6 +164,34 @@ export function createPluginContext(opts: CreatePluginContextOpts): PluginContex
       }
     },
 
+    registerMenuItem(item: MenuItem): void {
+      requirePermission(permissions, 'commands:register', 'registerMenuItem()')
+      const menuRegistry = serviceRegistry.get('menu-registry') as MenuRegistry | undefined
+      if (!menuRegistry) return
+      menuRegistry.register({ ...item, id: `${pluginName}:${item.id}` })
+    },
+
+    unregisterMenuItem(id: string): void {
+      requirePermission(permissions, 'commands:register', 'unregisterMenuItem()')
+      const menuRegistry = serviceRegistry.get('menu-registry') as MenuRegistry | undefined
+      if (!menuRegistry) return
+      menuRegistry.unregister(`${pluginName}:${id}`)
+    },
+
+    registerAssistantSection(section: AssistantSection): void {
+      requirePermission(permissions, 'commands:register', 'registerAssistantSection()')
+      const assistantRegistry = serviceRegistry.get('assistant-registry') as AssistantRegistry | undefined
+      if (!assistantRegistry) return
+      assistantRegistry.register({ ...section, id: `${pluginName}:${section.id}` })
+    },
+
+    unregisterAssistantSection(id: string): void {
+      requirePermission(permissions, 'commands:register', 'unregisterAssistantSection()')
+      const assistantRegistry = serviceRegistry.get('assistant-registry') as AssistantRegistry | undefined
+      if (!assistantRegistry) return
+      assistantRegistry.unregister(`${pluginName}:${id}`)
+    },
+
     get sessions() {
       requirePermission(permissions, 'kernel:access', 'sessions')
       return sessions as any
@@ -175,6 +211,8 @@ export function createPluginContext(opts: CreatePluginContextOpts): PluginContex
       requirePermission(permissions, 'kernel:access', 'core')
       return core
     },
+
+    instanceRoot,
 
     cleanup(): void {
       // Remove all event listeners registered by this plugin

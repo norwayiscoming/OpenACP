@@ -5,6 +5,7 @@ import * as os from "node:os";
 import { EventEmitter } from "node:events";
 import { applyMigrations } from "./config-migrations.js";
 import { createChildLogger } from "../utils/log.js";
+import type { SettingsManager } from "../plugin/settings-manager.js";
 const log = createChildLogger({ module: "config" });
 
 const BaseChannelSchema = z
@@ -17,11 +18,6 @@ const BaseChannelSchema = z
     outputMode: z.enum(["low", "medium", "high"]).optional(),
   })
   .passthrough();
-
-export const OPENACP_DIR = path.join(os.homedir(), ".openacp");
-export const PLUGINS_DIR = path.join(OPENACP_DIR, "plugins");
-export const PLUGINS_DATA_DIR = path.join(OPENACP_DIR, "plugins", "data");
-export const REGISTRY_PATH = path.join(OPENACP_DIR, "plugins.json");
 
 const AgentSchema = z.object({
   command: z.string(),
@@ -56,8 +52,8 @@ const TunnelSchema = z
     enabled: z.boolean().default(false),
     port: z.number().default(3100),
     provider: z
-      .enum(["cloudflare", "ngrok", "bore", "tailscale"])
-      .default("cloudflare"),
+      .enum(["openacp", "cloudflare", "ngrok", "bore", "tailscale"])
+      .default("openacp"),
     options: z.record(z.string(), z.unknown()).default({}),
     maxUserTunnels: z.number().default(5),
     storeTtlMinutes: z.number().default(60),
@@ -106,14 +102,22 @@ const SpeechSchema = z
   .default({});
 
 export const ConfigSchema = z.object({
+  instanceName: z.string().optional(),
   channels: z
     .object({})
-    .catchall(BaseChannelSchema),
+    .catchall(BaseChannelSchema)
+    .default({}),
   agents: z.record(z.string(), AgentSchema).optional().default({}),
   defaultAgent: z.string(),
   workspace: z
     .object({
       baseDir: z.string().default("~/openacp-workspace"),
+      security: z
+        .object({
+          allowedPaths: z.array(z.string()).default([]),
+          envWhitelist: z.array(z.string()).default([]),
+        })
+        .default({}),
     })
     .default({}),
   security: z
@@ -150,6 +154,9 @@ export const ConfigSchema = z.object({
     .default({}),
   speech: SpeechSchema,
   outputMode: z.enum(["low", "medium", "high"]).default("medium").optional(),
+  agentSwitch: z.object({
+    labelHistory: z.boolean().default(true),
+  }).default({}),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;
@@ -194,7 +201,7 @@ const DEFAULT_CONFIG = {
   tunnel: {
     enabled: true,
     port: 3100,
-    provider: "cloudflare",
+    provider: "openacp",
     options: {},
     storeTtlMinutes: 60,
     auth: { enabled: false },
@@ -206,10 +213,10 @@ export class ConfigManager extends EventEmitter {
   private config!: Config;
   private configPath: string;
 
-  constructor() {
+  constructor(configPath?: string) {
     super();
     this.configPath =
-      process.env.OPENACP_CONFIG_PATH || expandHome("~/.openacp/config.json");
+      process.env.OPENACP_CONFIG_PATH || configPath || expandHome("~/.openacp/config.json");
   }
 
   async load(): Promise<void> {
@@ -234,7 +241,7 @@ export class ConfigManager extends EventEmitter {
     const raw = JSON.parse(fs.readFileSync(this.configPath, "utf-8"));
 
     // 3.5. Auto-migrate config
-    const { changed: configUpdated } = applyMigrations(raw);
+    const { changed: configUpdated } = applyMigrations(raw, undefined, { configDir: path.dirname(this.configPath) });
     if (configUpdated) {
       fs.writeFileSync(this.configPath, JSON.stringify(raw, null, 2));
     }
@@ -288,20 +295,62 @@ export class ConfigManager extends EventEmitter {
     }
   }
 
+  /**
+   * Set a single config value by dot-path (e.g. "security.maxConcurrentSessions").
+   * Builds the nested update object, validates, and saves.
+   * Throws if the path contains blocked keys or the value fails Zod validation.
+   */
+  async setPath(dotPath: string, value: unknown): Promise<void> {
+    const BLOCKED_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+    const parts = dotPath.split('.');
+    if (parts.some((p) => BLOCKED_KEYS.has(p))) {
+      throw new Error(`Invalid config path: ${dotPath}`);
+    }
+
+    // Build nested updates object from dot-path
+    const updates: Record<string, unknown> = {};
+    let target = updates;
+    for (let i = 0; i < parts.length - 1; i++) {
+      target[parts[i]!] = {};
+      target = target[parts[i]!] as Record<string, unknown>;
+    }
+    target[parts[parts.length - 1]!] = value;
+
+    await this.save(updates, dotPath);
+  }
+
   resolveWorkspace(input?: string): string {
     if (!input) {
       const resolved = expandHome(this.config.workspace.baseDir);
       fs.mkdirSync(resolved, { recursive: true });
       return resolved;
     }
+
+    // Absolute or tilde paths: must resolve under baseDir
     if (input.startsWith("/") || input.startsWith("~")) {
       const resolved = expandHome(input);
-      fs.mkdirSync(resolved, { recursive: true });
-      return resolved;
+      const base = expandHome(this.config.workspace.baseDir);
+      // Allow baseDir itself and paths under it
+      if (resolved === base || resolved.startsWith(base + path.sep)) {
+        fs.mkdirSync(resolved, { recursive: true });
+        return resolved;
+      }
+      throw new Error(
+        `Workspace path "${input}" is outside base directory "${this.config.workspace.baseDir}".`,
+      );
     }
-    // Named workspace → lowercase, under baseDir
-    const name = input.toLowerCase();
-    const resolved = path.join(expandHome(this.config.workspace.baseDir), name);
+
+    // Named workspace: alphanumeric, hyphens, underscores only
+    const name = input.replace(/[^a-zA-Z0-9_-]/g, "");
+    if (name !== input) {
+      throw new Error(
+        `Invalid workspace name: "${input}". Only alphanumeric characters, hyphens, and underscores are allowed.`,
+      );
+    }
+    const resolved = path.join(
+      expandHome(this.config.workspace.baseDir),
+      name.toLowerCase(),
+    );
     fs.mkdirSync(resolved, { recursive: true });
     return resolved;
   }
@@ -318,6 +367,33 @@ export class ConfigManager extends EventEmitter {
     const dir = path.dirname(this.configPath);
     fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(this.configPath, JSON.stringify(config, null, 2));
+  }
+
+  async applyEnvToPluginSettings(settingsManager: SettingsManager): Promise<void> {
+    const pluginOverrides: Array<{
+      envVar: string;
+      pluginName: string;
+      key: string;
+      transform?: (v: string) => unknown;
+    }> = [
+      { envVar: 'OPENACP_TUNNEL_ENABLED', pluginName: '@openacp/tunnel', key: 'enabled', transform: v => v === 'true' },
+      { envVar: 'OPENACP_TUNNEL_PORT', pluginName: '@openacp/tunnel', key: 'port', transform: v => Number(v) },
+      { envVar: 'OPENACP_TUNNEL_PROVIDER', pluginName: '@openacp/tunnel', key: 'provider' },
+      { envVar: 'OPENACP_API_PORT', pluginName: '@openacp/api-server', key: 'port', transform: v => Number(v) },
+      { envVar: 'OPENACP_SPEECH_STT_PROVIDER', pluginName: '@openacp/speech', key: 'sttProvider' },
+      { envVar: 'OPENACP_SPEECH_GROQ_API_KEY', pluginName: '@openacp/speech', key: 'groqApiKey' },
+      { envVar: 'OPENACP_TELEGRAM_BOT_TOKEN', pluginName: '@openacp/telegram', key: 'botToken' },
+      { envVar: 'OPENACP_TELEGRAM_CHAT_ID', pluginName: '@openacp/telegram', key: 'chatId', transform: v => Number(v) },
+    ];
+
+    for (const { envVar, pluginName, key, transform } of pluginOverrides) {
+      const value = process.env[envVar];
+      if (value !== undefined) {
+        const resolved = transform ? transform(value) : value;
+        await settingsManager.updatePluginSettings(pluginName, { [key]: resolved });
+        log.debug({ envVar, pluginName, key }, 'Env var override applied to plugin settings');
+      }
+    }
   }
 
   private applyEnvOverrides(raw: Record<string, unknown>): void {

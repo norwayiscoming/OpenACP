@@ -13,13 +13,6 @@ describe('MessageTransformer ACP events', () => {
     expect(msg.metadata?.title).toBe('My Session')
   })
 
-  it('transforms current_mode_update', () => {
-    const event: AgentEvent = { type: 'current_mode_update', modeId: 'architect' }
-    const msg = transformer.transform(event)
-    expect(msg.type).toBe('mode_change')
-    expect(msg.metadata?.modeId).toBe('architect')
-  })
-
   it('transforms config_option_update', () => {
     const event: AgentEvent = {
       type: 'config_option_update',
@@ -28,13 +21,6 @@ describe('MessageTransformer ACP events', () => {
     const msg = transformer.transform(event)
     expect(msg.type).toBe('config_update')
     expect(msg.metadata?.options).toHaveLength(1)
-  })
-
-  it('transforms model_update', () => {
-    const event: AgentEvent = { type: 'model_update', modelId: 'opus' }
-    const msg = transformer.transform(event)
-    expect(msg.type).toBe('model_update')
-    expect(msg.metadata?.modelId).toBe('opus')
   })
 
   it('transforms user_message_chunk', () => {

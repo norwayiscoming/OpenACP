@@ -74,8 +74,11 @@ const IGNORED_TYPES = new Set([
   "tts_strip",
 ]);
 
+const DEBOUNCE_MS = 2000;
+
 export class HistoryRecorder {
   private states = new Map<string, RecorderState>();
+  private debounceTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
   constructor(private readonly store: HistoryStore) {}
 
@@ -235,11 +238,6 @@ export class HistoryRecorder {
         break;
       }
 
-      case "current_mode_update": {
-        steps.push({ type: "mode_change", modeId: event.modeId });
-        break;
-      }
-
       case "config_option_update": {
         for (const opt of event.options) {
           steps.push({
@@ -251,6 +249,8 @@ export class HistoryRecorder {
         break;
       }
     }
+
+    this.scheduleDebounce(sessionId);
   }
 
   onPermissionResolved(
@@ -268,17 +268,51 @@ export class HistoryRecorder {
   async onTurnEnd(sessionId: string, stopReason: string): Promise<void> {
     const state = this.states.get(sessionId);
     if (!state || !state.currentAssistantTurn) return;
+    this.cancelDebounce(sessionId);
     state.currentAssistantTurn.stopReason = stopReason;
     state.currentAssistantTurn = null;
     await this.store.write(state.history);
   }
 
+  /** Flush any in-progress turn as "interrupted" and clean up. Called on session destroy. */
+  async onSessionDestroy(sessionId: string): Promise<void> {
+    const state = this.states.get(sessionId);
+    if (!state) return;
+    this.cancelDebounce(sessionId);
+    if (state.currentAssistantTurn) {
+      state.currentAssistantTurn.stopReason = "interrupted";
+      state.currentAssistantTurn = null;
+      await this.store.write(state.history);
+    }
+    this.finalize(sessionId);
+  }
+
   finalize(sessionId: string): void {
+    this.cancelDebounce(sessionId);
     this.states.delete(sessionId);
   }
 
   getState(sessionId: string): RecorderState | undefined {
     return this.states.get(sessionId);
+  }
+
+  private scheduleDebounce(sessionId: string): void {
+    this.cancelDebounce(sessionId);
+    const state = this.states.get(sessionId);
+    if (!state) return;
+    const timer = setTimeout(() => {
+      this.debounceTimers.delete(sessionId);
+      this.store.write(state.history).catch(() => {});
+    }, DEBOUNCE_MS);
+    this.debounceTimers.set(sessionId, timer);
+  }
+
+  private cancelDebounce(sessionId: string): void {
+    const timer = this.debounceTimers.get(sessionId);
+    if (timer !== undefined) {
+      clearTimeout(timer);
+      this.debounceTimers.delete(sessionId);
+    }
   }
 
   private findToolCall(steps: Step[], id: string): ToolCallStep | undefined {

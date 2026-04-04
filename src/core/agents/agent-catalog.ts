@@ -18,7 +18,6 @@ import { createChildLogger } from "../utils/log.js";
 const log = createChildLogger({ module: "agent-catalog" });
 
 const REGISTRY_URL = "https://cdn.agentclientprotocol.com/registry/v1/latest/registry.json";
-const CACHE_PATH = path.join(os.homedir(), ".openacp", "registry-cache.json");
 const DEFAULT_TTL_HOURS = 24;
 
 interface RegistryCache {
@@ -30,9 +29,13 @@ interface RegistryCache {
 export class AgentCatalog {
   private store: AgentStore;
   private registryAgents: RegistryAgent[] = [];
+  private cachePath: string;
+  private agentsDir: string | undefined;
 
-  constructor(store?: AgentStore) {
+  constructor(store?: AgentStore, cachePath?: string, agentsDir?: string) {
     this.store = store ?? new AgentStore();
+    this.cachePath = cachePath ?? path.join(os.homedir(), ".openacp", "registry-cache.json");
+    this.agentsDir = agentsDir;
   }
 
   load(): void {
@@ -56,8 +59,8 @@ export class AgentCatalog {
         ttlHours: DEFAULT_TTL_HOURS,
         data,
       };
-      fs.mkdirSync(path.dirname(CACHE_PATH), { recursive: true });
-      fs.writeFileSync(CACHE_PATH, JSON.stringify(cache, null, 2));
+      fs.mkdirSync(path.dirname(this.cachePath), { recursive: true });
+      fs.writeFileSync(this.cachePath, JSON.stringify(cache, null, 2), { mode: 0o600 });
       log.info({ count: this.registryAgents.length }, "Registry updated");
     } catch (err) {
       log.warn({ err }, "Failed to fetch registry, using cached data");
@@ -180,7 +183,16 @@ export class AgentCatalog {
       return { ok: false, agentKey, error: msg };
     }
 
-    return installAgent(agent, this.store, progress);
+    return installAgent(agent, this.store, progress, this.agentsDir);
+  }
+
+  /**
+   * Register an agent directly into the catalog store without going through
+   * the registry installer. Used to pre-register bundled agents (e.g. Claude)
+   * when their CLI dependency is not yet installed.
+   */
+  registerFallbackAgent(key: string, data: InstalledAgent): void {
+    this.store.addAgent(key, data);
   }
 
   async uninstall(key: string): Promise<{ ok: boolean; error?: string }> {
@@ -264,9 +276,9 @@ export class AgentCatalog {
   }
 
   private isCacheStale(): boolean {
-    if (!fs.existsSync(CACHE_PATH)) return true;
+    if (!fs.existsSync(this.cachePath)) return true;
     try {
-      const raw = JSON.parse(fs.readFileSync(CACHE_PATH, "utf-8") as string) as RegistryCache;
+      const raw = JSON.parse(fs.readFileSync(this.cachePath, "utf-8") as string) as RegistryCache;
       const fetchedAt = new Date(raw.fetchedAt).getTime();
       const ttlMs = (raw.ttlHours ?? DEFAULT_TTL_HOURS) * 60 * 60 * 1000;
       return Date.now() - fetchedAt > ttlMs;
@@ -277,9 +289,9 @@ export class AgentCatalog {
 
   private loadRegistryFromCacheOrSnapshot(): void {
     // Try cache first
-    if (fs.existsSync(CACHE_PATH)) {
+    if (fs.existsSync(this.cachePath)) {
       try {
-        const raw = JSON.parse(fs.readFileSync(CACHE_PATH, "utf-8") as string) as RegistryCache;
+        const raw = JSON.parse(fs.readFileSync(this.cachePath, "utf-8") as string) as RegistryCache;
         if (raw.data?.agents) {
           this.registryAgents = raw.data.agents;
           log.debug({ count: this.registryAgents.length }, "Loaded registry from cache");

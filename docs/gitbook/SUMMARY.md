@@ -39,9 +39,13 @@
 * [Overview](features/README.md)
 * [Tunnel & Port Forwarding](features/tunnel.md)
 * [Context Resume](features/context-resume.md)
+* [Output Modes](features/output-modes.md)
 * [Usage & Budget](features/usage-and-budget.md)
 * [Session Persistence](features/session-persistence.md)
 * [Session Handoff](features/session-handoff.md)
+* [Agent Switch](features/agent-switch.md)
+* [Workspaces](features/multi-instance.md)
+* [App Connectivity](features/app-connectivity.md)
 * [Doctor Diagnostics](features/doctor.md)
 * [Assistant Mode](features/assistant-mode.md)
 

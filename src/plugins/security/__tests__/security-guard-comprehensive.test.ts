@@ -1,8 +1,9 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { SecurityGuard } from "../security-guard.js";
-import type { IncomingMessage, SessionStatus } from "../../../core/types.js";
+import type { SecurityConfig } from "../security-guard.js";
+import type { SessionStatus } from "../../../core/types.js";
 
-function makeMessage(overrides: Partial<IncomingMessage> = {}): IncomingMessage {
+function makeMessage(overrides: Partial<{ channelId: string; threadId: string; userId: string | number; text: string }> = {}) {
   return {
     channelId: "telegram",
     threadId: "t1",
@@ -12,18 +13,14 @@ function makeMessage(overrides: Partial<IncomingMessage> = {}): IncomingMessage 
   };
 }
 
-function makeConfigManager(overrides: {
+function makeConfigGetter(overrides: {
   allowedUserIds?: string[];
   maxConcurrentSessions?: number;
 } = {}) {
-  return {
-    get: () => ({
-      security: {
-        allowedUserIds: overrides.allowedUserIds ?? [],
-        maxConcurrentSessions: overrides.maxConcurrentSessions ?? 5,
-      },
-    }),
-  } as any;
+  return vi.fn<() => Promise<SecurityConfig>>().mockResolvedValue({
+    allowedUserIds: overrides.allowedUserIds ?? [],
+    maxConcurrentSessions: overrides.maxConcurrentSessions ?? 5,
+  });
 }
 
 function makeSessionManager(sessions: Array<{ status: SessionStatus }> = []) {
@@ -34,59 +31,59 @@ function makeSessionManager(sessions: Array<{ status: SessionStatus }> = []) {
 
 describe("SecurityGuard — Comprehensive Edge Cases", () => {
   describe("user access control", () => {
-    it("allows all users when allowedUserIds is empty", () => {
+    it("allows all users when allowedUserIds is empty", async () => {
       const guard = new SecurityGuard(
-        makeConfigManager({ allowedUserIds: [] }),
+        makeConfigGetter({ allowedUserIds: [] }),
         makeSessionManager(),
       );
-      expect(guard.checkAccess(makeMessage())).toEqual({ allowed: true });
+      expect(await guard.checkAccess(makeMessage())).toEqual({ allowed: true });
     });
 
-    it("converts numeric userId to string for comparison", () => {
+    it("converts numeric userId to string for comparison", async () => {
       const guard = new SecurityGuard(
-        makeConfigManager({ allowedUserIds: ["12345"] }),
+        makeConfigGetter({ allowedUserIds: ["12345"] }),
         makeSessionManager(),
       );
       // userId comes as number from Telegram but config stores as string
-      const result = guard.checkAccess(makeMessage({ userId: 12345 as any }));
+      const result = await guard.checkAccess(makeMessage({ userId: 12345 as any }));
       expect(result).toEqual({ allowed: true });
     });
 
-    it("rejects user not in allowed list", () => {
+    it("rejects user not in allowed list", async () => {
       const guard = new SecurityGuard(
-        makeConfigManager({ allowedUserIds: ["user-2", "user-3"] }),
+        makeConfigGetter({ allowedUserIds: ["user-2", "user-3"] }),
         makeSessionManager(),
       );
-      const result = guard.checkAccess(makeMessage({ userId: "user-1" }));
+      const result = await guard.checkAccess(makeMessage({ userId: "user-1" }));
       expect(result).toEqual({ allowed: false, reason: "Unauthorized user" });
     });
 
-    it("allows user in allowed list (exact match)", () => {
+    it("allows user in allowed list (exact match)", async () => {
       const guard = new SecurityGuard(
-        makeConfigManager({ allowedUserIds: ["user-1", "user-2"] }),
+        makeConfigGetter({ allowedUserIds: ["user-1", "user-2"] }),
         makeSessionManager(),
       );
-      expect(guard.checkAccess(makeMessage({ userId: "user-1" }))).toEqual({
+      expect(await guard.checkAccess(makeMessage({ userId: "user-1" }))).toEqual({
         allowed: true,
       });
     });
 
-    it("single allowed user - authorized", () => {
+    it("single allowed user - authorized", async () => {
       const guard = new SecurityGuard(
-        makeConfigManager({ allowedUserIds: ["only-me"] }),
+        makeConfigGetter({ allowedUserIds: ["only-me"] }),
         makeSessionManager(),
       );
-      expect(guard.checkAccess(makeMessage({ userId: "only-me" }))).toEqual({
+      expect(await guard.checkAccess(makeMessage({ userId: "only-me" }))).toEqual({
         allowed: true,
       });
     });
 
-    it("single allowed user - unauthorized", () => {
+    it("single allowed user - unauthorized", async () => {
       const guard = new SecurityGuard(
-        makeConfigManager({ allowedUserIds: ["only-me"] }),
+        makeConfigGetter({ allowedUserIds: ["only-me"] }),
         makeSessionManager(),
       );
-      expect(guard.checkAccess(makeMessage({ userId: "not-me" }))).toEqual({
+      expect(await guard.checkAccess(makeMessage({ userId: "not-me" }))).toEqual({
         allowed: false,
         reason: "Unauthorized user",
       });
@@ -94,142 +91,141 @@ describe("SecurityGuard — Comprehensive Edge Cases", () => {
   });
 
   describe("session limit enforcement", () => {
-    it("allows when active sessions < max", () => {
+    it("allows when active sessions < max", async () => {
       const guard = new SecurityGuard(
-        makeConfigManager({ maxConcurrentSessions: 3 }),
+        makeConfigGetter({ maxConcurrentSessions: 3 }),
         makeSessionManager([{ status: "active" }, { status: "active" }]),
       );
-      expect(guard.checkAccess(makeMessage())).toEqual({ allowed: true });
+      expect(await guard.checkAccess(makeMessage())).toEqual({ allowed: true });
     });
 
-    it("rejects when active sessions == max (boundary)", () => {
+    it("rejects when active sessions == max (boundary)", async () => {
       const guard = new SecurityGuard(
-        makeConfigManager({ maxConcurrentSessions: 2 }),
+        makeConfigGetter({ maxConcurrentSessions: 2 }),
         makeSessionManager([{ status: "active" }, { status: "active" }]),
       );
-      const result = guard.checkAccess(makeMessage());
+      const result = await guard.checkAccess(makeMessage());
       expect(result).toEqual({
         allowed: false,
         reason: "Session limit reached (2)",
       });
     });
 
-    it("rejects when active sessions > max", () => {
+    it("rejects when active sessions > max", async () => {
       const guard = new SecurityGuard(
-        makeConfigManager({ maxConcurrentSessions: 1 }),
+        makeConfigGetter({ maxConcurrentSessions: 1 }),
         makeSessionManager([
           { status: "active" },
           { status: "active" },
         ]),
       );
-      expect(guard.checkAccess(makeMessage()).allowed).toBe(false);
+      expect((await guard.checkAccess(makeMessage())).allowed).toBe(false);
     });
 
-    it("counts initializing sessions toward limit", () => {
+    it("counts initializing sessions toward limit", async () => {
       const guard = new SecurityGuard(
-        makeConfigManager({ maxConcurrentSessions: 2 }),
+        makeConfigGetter({ maxConcurrentSessions: 2 }),
         makeSessionManager([
           { status: "initializing" },
           { status: "initializing" },
         ]),
       );
-      expect(guard.checkAccess(makeMessage()).allowed).toBe(false);
+      expect((await guard.checkAccess(makeMessage())).allowed).toBe(false);
     });
 
-    it("counts mix of active and initializing", () => {
+    it("counts mix of active and initializing", async () => {
       const guard = new SecurityGuard(
-        makeConfigManager({ maxConcurrentSessions: 2 }),
+        makeConfigGetter({ maxConcurrentSessions: 2 }),
         makeSessionManager([
           { status: "active" },
           { status: "initializing" },
         ]),
       );
-      expect(guard.checkAccess(makeMessage()).allowed).toBe(false);
+      expect((await guard.checkAccess(makeMessage())).allowed).toBe(false);
     });
 
-    it("ignores finished sessions for limit", () => {
+    it("ignores finished sessions for limit", async () => {
       const guard = new SecurityGuard(
-        makeConfigManager({ maxConcurrentSessions: 1 }),
+        makeConfigGetter({ maxConcurrentSessions: 1 }),
         makeSessionManager([
           { status: "finished" },
           { status: "finished" },
           { status: "finished" },
         ]),
       );
-      expect(guard.checkAccess(makeMessage())).toEqual({ allowed: true });
+      expect(await guard.checkAccess(makeMessage())).toEqual({ allowed: true });
     });
 
-    it("ignores cancelled sessions for limit", () => {
+    it("ignores cancelled sessions for limit", async () => {
       const guard = new SecurityGuard(
-        makeConfigManager({ maxConcurrentSessions: 1 }),
+        makeConfigGetter({ maxConcurrentSessions: 1 }),
         makeSessionManager([{ status: "cancelled" }]),
       );
-      expect(guard.checkAccess(makeMessage())).toEqual({ allowed: true });
+      expect(await guard.checkAccess(makeMessage())).toEqual({ allowed: true });
     });
 
-    it("ignores error sessions for limit", () => {
+    it("ignores error sessions for limit", async () => {
       const guard = new SecurityGuard(
-        makeConfigManager({ maxConcurrentSessions: 1 }),
+        makeConfigGetter({ maxConcurrentSessions: 1 }),
         makeSessionManager([{ status: "error" }]),
       );
-      expect(guard.checkAccess(makeMessage())).toEqual({ allowed: true });
+      expect(await guard.checkAccess(makeMessage())).toEqual({ allowed: true });
     });
 
-    it("maxConcurrentSessions of 0 always rejects", () => {
+    it("maxConcurrentSessions of 0 always rejects", async () => {
       const guard = new SecurityGuard(
-        makeConfigManager({ maxConcurrentSessions: 0 }),
+        makeConfigGetter({ maxConcurrentSessions: 0 }),
         makeSessionManager([]),
       );
-      expect(guard.checkAccess(makeMessage()).allowed).toBe(false);
+      expect((await guard.checkAccess(makeMessage())).allowed).toBe(false);
     });
   });
 
   describe("combined checks (user + session limit)", () => {
-    it("user check runs before session limit check", () => {
+    it("user check runs before session limit check", async () => {
       // If user is unauthorized, should return "Unauthorized user" not "Session limit"
       const guard = new SecurityGuard(
-        makeConfigManager({
+        makeConfigGetter({
           allowedUserIds: ["admin"],
           maxConcurrentSessions: 0,
         }),
         makeSessionManager(),
       );
-      const result = guard.checkAccess(makeMessage({ userId: "hacker" }));
+      const result = await guard.checkAccess(makeMessage({ userId: "hacker" }));
       expect(result).toEqual({ allowed: false, reason: "Unauthorized user" });
     });
 
-    it("authorized user still blocked by session limit", () => {
+    it("authorized user still blocked by session limit", async () => {
       const guard = new SecurityGuard(
-        makeConfigManager({
+        makeConfigGetter({
           allowedUserIds: ["user-1"],
           maxConcurrentSessions: 1,
         }),
         makeSessionManager([{ status: "active" }]),
       );
-      const result = guard.checkAccess(makeMessage({ userId: "user-1" }));
+      const result = await guard.checkAccess(makeMessage({ userId: "user-1" }));
       expect(result.allowed).toBe(false);
       expect((result as any).reason).toContain("Session limit");
     });
   });
 
   describe("config reads fresh on each call", () => {
-    it("reflects config changes between calls", () => {
+    it("reflects config changes between calls", async () => {
       let allowedUserIds: string[] = [];
-      const configManager = {
-        get: () => ({
-          security: { allowedUserIds, maxConcurrentSessions: 5 },
-        }),
-      } as any;
-      const guard = new SecurityGuard(configManager, makeSessionManager());
+      const getConfig = vi.fn<() => Promise<SecurityConfig>>().mockImplementation(async () => ({
+        allowedUserIds,
+        maxConcurrentSessions: 5,
+      }));
+      const guard = new SecurityGuard(getConfig, makeSessionManager());
 
       // First: no restrictions
-      expect(guard.checkAccess(makeMessage())).toEqual({ allowed: true });
+      expect(await guard.checkAccess(makeMessage())).toEqual({ allowed: true });
 
       // Update config
       allowedUserIds = ["user-2"];
 
       // Now user-1 should be blocked
-      expect(guard.checkAccess(makeMessage({ userId: "user-1" })).allowed).toBe(false);
+      expect((await guard.checkAccess(makeMessage({ userId: "user-1" }))).allowed).toBe(false);
     });
   });
 });

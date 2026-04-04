@@ -43,13 +43,8 @@ Add a `tunnel` block to `~/.openacp/config.json` (see [Configuration](../self-ho
   "tunnel": {
     "enabled": true,
     "provider": "cloudflare",
-    "port": 7080,
     "maxUserTunnels": 5,
     "storeTtlMinutes": 60,
-    "auth": {
-      "enabled": false,
-      "token": ""
-    },
     "options": {}
   }
 }
@@ -57,12 +52,10 @@ Add a `tunnel` block to `~/.openacp/config.json` (see [Configuration](../self-ho
 
 | Field | Default | Description |
 |-------|---------|-------------|
-| `enabled` | `false` | Enable or disable the tunnel feature |
+| `enabled` | `false` | Enable or disable the tunnel feature. When `true`, the tunnel auto-starts on server boot. |
 | `provider` | `"cloudflare"` | One of `cloudflare`, `ngrok`, `bore`, `tailscale` |
-| `port` | `7080` | Local port for the internal file viewer server. Auto-increments if in use. |
 | `maxUserTunnels` | `5` | Maximum number of simultaneous user-created tunnels |
 | `storeTtlMinutes` | `60` | How long file/diff viewer entries are kept in memory |
-| `auth.enabled` | `false` | Require a bearer token to access the file viewer |
 | `options` | `{}` | Provider-specific options (see below) |
 
 ### Provider-specific options
@@ -113,24 +106,24 @@ Inside Telegram or Discord, if you have the agent integration installed, the age
 
 ## File viewer
 
-The file viewer is an internal HTTP server that OpenACP starts alongside the tunnel. When an agent reads, edits, or writes a file, it can register that file or diff in the viewer and send you a clickable link.
+When an agent reads, edits, or writes a file, OpenACP can generate a clickable link that opens the content in a web-based viewer with syntax highlighting and side-by-side diff view. This is especially useful when reviewing changes from your phone.
 
-- **File view** — renders file content with Monaco editor syntax highlighting. Supported languages include TypeScript, JavaScript, Python, Rust, Go, Java, Kotlin, Ruby, PHP, C/C++, C#, Swift, Bash, JSON, YAML, TOML, XML, HTML, CSS, SCSS, SQL, Markdown, Dockerfile, HCL, Vue, and Svelte.
-- **Diff view** — renders a side-by-side diff of old vs. new content.
+The viewer supports dozens of languages including TypeScript, JavaScript, Python, Rust, Go, Java, and many more. Large tool output that does not fit inline in chat is also viewable through these links.
 
-The viewer enforces a 1 MB per-entry size limit and rejects file paths that fall outside the session's working directory (path traversal protection). Entries expire automatically after `storeTtlMinutes` (default 60 minutes).
+Viewer links expire automatically after the configured `storeTtlMinutes` (default 60 minutes).
 
 ---
 
-## Per-user tunnel limits
+## Limits and auto-recovery
 
-Each user or session can open up to `maxUserTunnels` tunnels simultaneously (default 5). This prevents runaway tunnel creation. Tunnels created by a session are tracked and can be stopped when the session ends via `stopBySession`.
+- Each user or session can open up to `maxUserTunnels` tunnels simultaneously (default 5).
+- When `tunnel.enabled` is `true`, the tunnel starts automatically on server boot — no manual start needed.
+- If the tunnel connection drops, OpenACP automatically detects the failure and restarts the tunnel within about 90 seconds.
 
 ---
 
 ## Security
 
-- **Auth token**: When `auth.enabled` is true, all requests to the file viewer require a `Bearer <token>` header. Set `auth.token` to a secret value.
-- **Path validation**: The viewer validates every file path against the session's `workingDirectory`. Files outside that directory are rejected.
-- **TTL**: Viewer entries expire after `storeTtlMinutes`. Expired entries are cleaned up every 5 minutes.
-- **Tunnel timeouts**: If a provider process does not establish a tunnel within 30 seconds, it is killed and an error is returned.
+- Files outside the session's working directory cannot be viewed — path access is restricted to prevent unauthorized file access.
+- Viewer entries expire automatically and are cleaned up periodically.
+- When connecting apps remotely, `openacp remote` generates a single-use access code instead of embedding secrets in the URL. See [App Connectivity](app-connectivity.md) for details.

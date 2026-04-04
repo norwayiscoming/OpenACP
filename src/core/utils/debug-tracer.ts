@@ -32,7 +32,15 @@ export class DebugTracer {
         this.dirCreated = true;
       }
       const filePath = path.join(this.logDir, `${this.sessionId}_${layer}.jsonl`);
-      const line = JSON.stringify({ ts: Date.now(), ...data }) + "\n";
+      const seen = new WeakSet();
+      const line =
+        JSON.stringify({ ts: Date.now(), ...data }, (_key, value) => {
+          if (typeof value === "object" && value !== null) {
+            if (seen.has(value)) return "[Circular]";
+            seen.add(value);
+          }
+          return value;
+        }) + "\n";
       fs.appendFileSync(filePath, line);
     } catch {
       // Debug logging must never crash the app

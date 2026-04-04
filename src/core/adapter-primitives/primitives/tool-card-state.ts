@@ -40,16 +40,13 @@ export class ToolCardState {
   }
 
   updateFromSpec(spec: ToolDisplaySpec): void {
+    if (this.finalized) return;
+
     const existingIdx = this.specs.findIndex((s) => s.id === spec.id);
     if (existingIdx >= 0) {
       this.specs[existingIdx] = spec;
     } else {
       this.specs.push(spec);
-    }
-
-    if (this.finalized) {
-      this.onFlush(this.snapshot());
-      return;
     }
 
     if (this.isFirstFlush) {

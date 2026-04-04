@@ -17,14 +17,6 @@ Each summary includes total tokens, total cost, number of distinct sessions, and
 
 ---
 
-## Storage
-
-Usage data is written to `~/.openacp/usage.json` with a debounce of 2 seconds to avoid hammering disk on rapid completions. The file is flushed synchronously on `SIGTERM`, `SIGINT`, and process exit to prevent data loss.
-
-If the file is corrupt on startup, OpenACP saves a `.bak` backup and starts fresh.
-
----
-
 ## Monthly budget
 
 Set a spending limit in `~/.openacp/config.json`:
@@ -66,7 +58,7 @@ Monthly usage: $16.32 / $20.00 (82%)
 
 ## Retention
 
-Usage records older than the configured retention period are deleted automatically. The default retention is **90 days**. Cleanup runs on startup and then every 24 hours for long-running daemon instances.
+Usage records older than the configured retention period are deleted automatically. The default is **90 days**.
 
 To configure retention:
 
@@ -77,3 +69,9 @@ To configure retention:
   }
 }
 ```
+
+---
+
+## Technical details
+
+Usage data is stored in `~/.openacp/usage.json`. Writes are batched to avoid excessive disk I/O. The file is saved on process exit to prevent data loss. If the file is corrupt on startup, OpenACP saves a backup and starts fresh.

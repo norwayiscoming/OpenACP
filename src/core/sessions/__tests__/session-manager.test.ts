@@ -3,16 +3,18 @@ import { SessionManager } from '../session-manager.js'
 import { Session } from '../session.js'
 import type { SessionStore } from '../session-store.js'
 import type { SessionRecord } from '../../types.js'
+import { TypedEmitter } from '../../utils/typed-emitter.js'
 
 function mockAgentInstance(sessionId = 'agent-sess-1') {
-  return {
+  const emitter = new TypedEmitter()
+  return Object.assign(emitter, {
     sessionId,
     prompt: vi.fn().mockResolvedValue(undefined),
     cancel: vi.fn().mockResolvedValue(undefined),
     destroy: vi.fn().mockResolvedValue(undefined),
     onSessionUpdate: vi.fn(),
     onPermissionRequest: vi.fn(),
-  } as any
+  }) as any
 }
 
 function createSession(overrides: Partial<{ id: string; channelId: string; threadId: string; agentName: string; agentSessionId: string }> = {}): Session {
@@ -51,6 +53,7 @@ function mockStore(): SessionStore {
       return all
     }),
     remove: vi.fn(async (id: string) => { records.delete(id) }),
+    flush: vi.fn(),
   } as unknown as SessionStore
 }
 
@@ -142,7 +145,7 @@ describe('SessionManager', () => {
         status: 'active',
         createdAt: new Date().toISOString(),
         lastActiveAt: new Date().toISOString(),
-        dangerousMode: false,
+        clientOverrides: {},
         platform: {},
       }
       await store.save(record)
@@ -164,7 +167,7 @@ describe('SessionManager', () => {
         status: 'initializing',
         createdAt: new Date().toISOString(),
         lastActiveAt: new Date().toISOString(),
-        dangerousMode: false,
+        clientOverrides: {},
         platform: {},
       })
       expect(store.save).toHaveBeenCalled()
@@ -198,7 +201,7 @@ describe('SessionManager', () => {
         status: 'active',
         createdAt: new Date().toISOString(),
         lastActiveAt: new Date().toISOString(),
-        dangerousMode: false,
+        clientOverrides: {},
         platform: {},
       })
 
@@ -221,7 +224,7 @@ describe('SessionManager', () => {
         status: 'active',
         createdAt: new Date().toISOString(),
         lastActiveAt: new Date().toISOString(),
-        dangerousMode: false,
+        clientOverrides: {},
         platform: {},
       })
 
@@ -271,7 +274,7 @@ describe('SessionManager', () => {
         status: 'cancelled',
         createdAt: new Date().toISOString(),
         lastActiveAt: new Date().toISOString(),
-        dangerousMode: false,
+        clientOverrides: {},
         platform: {},
       })
       const callCount = (store.save as any).mock.calls.length
@@ -314,12 +317,12 @@ describe('SessionManager', () => {
       await store.save({
         sessionId: 'r1', agentSessionId: 'a1', agentName: 'claude',
         workingDir: '/ws', channelId: 'tg', status: 'active',
-        createdAt: '', lastActiveAt: '', dangerousMode: false, platform: {},
+        createdAt: '', lastActiveAt: '', clientOverrides: {}, platform: {},
       })
       await store.save({
         sessionId: 'r2', agentSessionId: 'a2', agentName: 'claude',
         workingDir: '/ws', channelId: 'tg', status: 'finished',
-        createdAt: '', lastActiveAt: '', dangerousMode: false, platform: {},
+        createdAt: '', lastActiveAt: '', clientOverrides: {}, platform: {},
       })
 
       expect(manager.listRecords()).toHaveLength(2)
@@ -329,12 +332,12 @@ describe('SessionManager', () => {
       await store.save({
         sessionId: 'r1', agentSessionId: 'a1', agentName: 'claude',
         workingDir: '/ws', channelId: 'tg', status: 'active',
-        createdAt: '', lastActiveAt: '', dangerousMode: false, platform: {},
+        createdAt: '', lastActiveAt: '', clientOverrides: {}, platform: {},
       })
       await store.save({
         sessionId: 'r2', agentSessionId: 'a2', agentName: 'claude',
         workingDir: '/ws', channelId: 'tg', status: 'finished',
-        createdAt: '', lastActiveAt: '', dangerousMode: false, platform: {},
+        createdAt: '', lastActiveAt: '', clientOverrides: {}, platform: {},
       })
 
       const result = manager.listRecords({ statuses: ['active'] })
@@ -353,7 +356,7 @@ describe('SessionManager', () => {
       await store.save({
         sessionId: 'to-remove', agentSessionId: 'a1', agentName: 'claude',
         workingDir: '/ws', channelId: 'tg', status: 'finished',
-        createdAt: '', lastActiveAt: '', dangerousMode: false, platform: {},
+        createdAt: '', lastActiveAt: '', clientOverrides: {}, platform: {},
       })
 
       await manager.removeRecord('to-remove')
@@ -377,12 +380,12 @@ describe('SessionManager', () => {
       await store.save({
         sessionId: 'ds-1', agentSessionId: 'a1', agentName: 'claude',
         workingDir: '/ws', channelId: 'tg', status: 'active',
-        createdAt: '', lastActiveAt: '', dangerousMode: false, platform: {},
+        createdAt: '', lastActiveAt: '', clientOverrides: {}, platform: {},
       })
       await store.save({
         sessionId: 'ds-2', agentSessionId: 'a2', agentName: 'claude',
         workingDir: '/ws', channelId: 'tg', status: 'active',
-        createdAt: '', lastActiveAt: '', dangerousMode: false, platform: {},
+        createdAt: '', lastActiveAt: '', clientOverrides: {}, platform: {},
       })
 
       await manager.destroyAll()
@@ -402,7 +405,7 @@ describe('SessionManager', () => {
       await store.save({
         sessionId: 'rec-1', agentSessionId: 'a1', agentName: 'claude',
         workingDir: '/ws', channelId: 'tg', status: 'active',
-        createdAt: '', lastActiveAt: '', dangerousMode: false, platform: {},
+        createdAt: '', lastActiveAt: '', clientOverrides: {}, platform: {},
       })
 
       const record = manager.getSessionRecord('rec-1')
@@ -413,5 +416,205 @@ describe('SessionManager', () => {
       const noStoreManager = new SessionManager(null)
       expect(noStoreManager.getSessionRecord('any')).toBeUndefined()
     })
+  })
+
+  describe('listAllSessions', () => {
+  it('returns live session with isLive=true and runtime fields', () => {
+    const manager = new SessionManager(null)
+    const session = createSession({ id: 'sess-1', channelId: 'telegram' })
+    session.activate()
+    manager.registerSession(session)
+
+    const summaries = manager.listAllSessions()
+
+    expect(summaries).toHaveLength(1)
+    expect(summaries[0]).toMatchObject({
+      id: 'sess-1',
+      agent: 'claude',
+      status: 'active',
+      channelId: 'telegram',
+      workspace: '/workspace',
+      isLive: true,
+      promptRunning: false,
+      queueDepth: 0,
+    })
+  })
+
+  it('returns historical session (store only) with isLive=false and zero runtime fields', async () => {
+    const store = mockStore()
+    const manager = new SessionManager(store)
+
+    await store.save({
+      sessionId: 'old-sess',
+      agentSessionId: 'agent-old',
+      agentName: 'gemini',
+      workingDir: '/old',
+      channelId: 'telegram',
+      status: 'cancelled',
+      createdAt: '2026-01-01T00:00:00Z',
+      lastActiveAt: '2026-01-02T00:00:00Z',
+      name: 'Old Session',
+      platform: {},
+    })
+
+    const summaries = manager.listAllSessions()
+
+    expect(summaries).toHaveLength(1)
+    expect(summaries[0]).toMatchObject({
+      id: 'old-sess',
+      agent: 'gemini',
+      status: 'cancelled',
+      name: 'Old Session',
+      workspace: '/old',
+      lastActiveAt: '2026-01-02T00:00:00Z',
+      dangerousMode: false,
+      queueDepth: 0,
+      promptRunning: false,
+      capabilities: null,
+      isLive: false,
+    })
+    expect(summaries[0].configOptions).toBeUndefined()
+  })
+
+  it('overlays live data onto store record when session is in memory', async () => {
+    const store = mockStore()
+    const manager = new SessionManager(store)
+    const session = createSession({ id: 'live-sess', channelId: 'telegram' })
+    session.activate()
+    manager.registerSession(session)
+
+    await store.save({
+      sessionId: 'live-sess',
+      agentSessionId: 'agent-live',
+      agentName: 'claude',
+      workingDir: '/workspace',
+      channelId: 'telegram',
+      status: 'active',
+      createdAt: session.createdAt.toISOString(),
+      lastActiveAt: '2026-04-03T10:00:00Z',
+      platform: {},
+    })
+
+    const summaries = manager.listAllSessions()
+
+    expect(summaries).toHaveLength(1)
+    expect(summaries[0].isLive).toBe(true)
+    expect(summaries[0].id).toBe('live-sess')
+    // lastActiveAt comes from store record
+    expect(summaries[0].lastActiveAt).toBe('2026-04-03T10:00:00Z')
+  })
+
+  it('returns both live and historical when mixed', async () => {
+    const store = mockStore()
+    const manager = new SessionManager(store)
+
+    // Live session registered in memory AND store
+    const live = createSession({ id: 'live-sess', channelId: 'telegram' })
+    live.activate()
+    manager.registerSession(live)
+    await store.save({
+      sessionId: 'live-sess',
+      agentSessionId: 'agent-live',
+      agentName: 'claude',
+      workingDir: '/workspace',
+      channelId: 'telegram',
+      status: 'active',
+      createdAt: live.createdAt.toISOString(),
+      lastActiveAt: '2026-04-03T10:00:00Z',
+      platform: {},
+    })
+
+    // Historical session only in store
+    await store.save({
+      sessionId: 'old-sess',
+      agentSessionId: 'agent-old',
+      agentName: 'gemini',
+      workingDir: '/old',
+      channelId: 'telegram',
+      status: 'cancelled',
+      createdAt: '2026-01-01T00:00:00Z',
+      lastActiveAt: '2026-01-02T00:00:00Z',
+      platform: {},
+    })
+
+    const summaries = manager.listAllSessions()
+
+    expect(summaries).toHaveLength(2)
+    const liveResult = summaries.find(s => s.id === 'live-sess')!
+    const histResult = summaries.find(s => s.id === 'old-sess')!
+    expect(liveResult.isLive).toBe(true)
+    expect(histResult.isLive).toBe(false)
+    // No duplicates
+    expect(summaries.filter(s => s.id === 'live-sess')).toHaveLength(1)
+  })
+
+  it('falls back to live-only when no store', () => {
+    const manager = new SessionManager(null)
+    const session = createSession({ id: 'sess-1', channelId: 'telegram' })
+    session.activate()
+    manager.registerSession(session)
+
+    const summaries = manager.listAllSessions()
+
+    expect(summaries).toHaveLength(1)
+    expect(summaries[0].isLive).toBe(true)
+    expect(summaries[0].id).toBe('sess-1')
+  })
+
+  it('filters by channelId', async () => {
+    const store = mockStore()
+    const manager = new SessionManager(store)
+
+    await store.save({
+      sessionId: 'tg-sess',
+      agentSessionId: 'a1',
+      agentName: 'claude',
+      workingDir: '/w',
+      channelId: 'telegram',
+      status: 'cancelled',
+      createdAt: '2026-01-01T00:00:00Z',
+      lastActiveAt: '2026-01-01T00:00:00Z',
+      platform: {},
+    })
+    await store.save({
+      sessionId: 'api-sess',
+      agentSessionId: 'a2',
+      agentName: 'claude',
+      workingDir: '/w',
+      channelId: 'api',
+      status: 'finished',
+      createdAt: '2026-01-01T00:00:00Z',
+      lastActiveAt: '2026-01-01T00:00:00Z',
+      platform: {},
+    })
+
+    const summaries = manager.listAllSessions('telegram')
+
+    expect(summaries).toHaveLength(1)
+    expect(summaries[0].id).toBe('tg-sess')
+  })
+
+  it('historical session with acpState returns configOptions and capabilities', async () => {
+    const store = mockStore()
+    const manager = new SessionManager(store)
+    const configOptions = [{ id: 'mode', name: 'Mode', category: 'mode', type: 'select' as const, currentValue: 'auto', options: [] }]
+
+    await store.save({
+      sessionId: 'sess-acp',
+      agentSessionId: 'agent-acp',
+      agentName: 'claude',
+      workingDir: '/w',
+      channelId: 'api',
+      status: 'finished',
+      createdAt: '2026-01-01T00:00:00Z',
+      lastActiveAt: '2026-01-01T00:00:00Z',
+      platform: {},
+      acpState: { configOptions },
+    })
+
+    const summaries = manager.listAllSessions()
+
+    expect(summaries[0].configOptions).toEqual(configOptions)
+  })
   })
 })

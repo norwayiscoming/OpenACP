@@ -19,12 +19,8 @@ function createMockSession() {
     status: 'active',
     createdAt: new Date(),
     promptCount: 0,
-    dangerousMode: false,
-    currentMode: undefined,
-    availableModes: [],
     configOptions: [],
-    currentModel: undefined,
-    availableModels: [],
+    clientOverrides: {},
     agentCapabilities: undefined,
     permissionGate: { setPending: vi.fn() },
     agentInstance: Object.assign(new TypedEmitter(), {
@@ -36,9 +32,8 @@ function createMockSession() {
     setName: vi.fn(),
     finish: vi.fn(),
     fail: vi.fn(),
-    updateMode: vi.fn(),
-    updateConfigOptions: vi.fn(),
-    updateModel: vi.fn(),
+    updateConfigOptions: vi.fn().mockResolvedValue(undefined),
+    toAcpStateSnapshot: vi.fn().mockReturnValue({}),
   }) as unknown as Session
 }
 
@@ -72,17 +67,6 @@ describe('ACP Event Pipeline Integration', () => {
     bridge.connect()
   })
 
-  describe('mode switching flow', () => {
-    it('agent mode update → session state + adapter message', async () => {
-      session.emit('agent_event', { type: 'current_mode_update', modeId: 'architect' } as AgentEvent)
-      await vi.waitFor(() => {
-        expect(session.updateMode).toHaveBeenCalledWith('architect')
-        expect(adapter.sendMessage).toHaveBeenCalledWith('test-session',
-          expect.objectContaining({ type: 'mode_change', metadata: expect.objectContaining({ modeId: 'architect' }) }))
-      })
-    })
-  })
-
   describe('config options flow', () => {
     it('agent config update → session state + adapter message', async () => {
       const options = [{ id: 'model', name: 'Model', type: 'select' as const, currentValue: 'sonnet', options: [] }]
@@ -91,17 +75,6 @@ describe('ACP Event Pipeline Integration', () => {
         expect(session.updateConfigOptions).toHaveBeenCalledWith(options)
         expect(adapter.sendMessage).toHaveBeenCalledWith('test-session',
           expect.objectContaining({ type: 'config_update' }))
-      })
-    })
-  })
-
-  describe('model update flow', () => {
-    it('agent model update → session state + adapter message', async () => {
-      session.emit('agent_event', { type: 'model_update', modelId: 'opus' } as AgentEvent)
-      await vi.waitFor(() => {
-        expect(session.updateModel).toHaveBeenCalledWith('opus')
-        expect(adapter.sendMessage).toHaveBeenCalledWith('test-session',
-          expect.objectContaining({ type: 'model_update' }))
       })
     })
   })

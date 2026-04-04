@@ -11,7 +11,7 @@ export interface EventBusEvents {
     sessionId: string;
     status?: SessionStatus;
     name?: string;
-    dangerousMode?: boolean;
+    clientOverrides?: { bypassPermissions?: boolean };
   }) => void;
   "session:deleted": (data: { sessionId: string }) => void;
   "agent:event": (data: { sessionId: string; event: AgentEvent }) => void;
@@ -23,6 +23,8 @@ export interface EventBusEvents {
     sessionId: string;
     requestId: string;
     decision: string;
+    optionId?: string;
+    resolvedBy?: string;
   }) => void;
 
   // System lifecycle
@@ -52,6 +54,39 @@ export interface EventBusEvents {
 
   // Usage tracking (consumed by usage plugin)
   "usage:recorded": (data: UsageRecordEvent) => void;
+
+  // Emitted after a new session thread is created and bridge connected
+  "session:threadReady": (data: { sessionId: string; channelId: string; threadId: string }) => void;
+
+  // Config changed (used by adapters to update control messages)
+  "session:configChanged": (data: { sessionId: string }) => void;
+
+  // Cross-adapter input visibility (SSE clients see messages from other adapters)
+  "message:queued": (data: {
+    sessionId: string;
+    turnId: string;
+    text: string;
+    sourceAdapterId: string;
+    attachments?: unknown[];
+    timestamp: string;
+    queueDepth: number;
+  }) => void;
+  "message:processing": (data: {
+    sessionId: string;
+    turnId: string;
+    sourceAdapterId: string;
+    timestamp: string;
+  }) => void;
+
+  // Agent switch lifecycle (used by UI & dashboards)
+  "session:agentSwitch": (data: {
+    sessionId: string;
+    fromAgent: string;
+    toAgent: string;
+    status: "starting" | "succeeded" | "failed";
+    resumed?: boolean;
+    error?: string;
+  }) => void;
 }
 
 export class EventBus extends TypedEmitter<EventBusEvents> {}

@@ -99,7 +99,7 @@ describe('/tts command', () => {
       await ctx.executeCommand('tts', { raw: 'install' })
 
       expect(mockInstallNpmPlugin).toHaveBeenCalledOnce()
-      expect(mockInstallNpmPlugin).toHaveBeenCalledWith('@openacp/msedge-tts-plugin')
+      expect(mockInstallNpmPlugin).toHaveBeenCalledWith('@openacp/msedge-tts-plugin', expect.anything())
     })
 
     it('returns a success text response after a successful install', async () => {

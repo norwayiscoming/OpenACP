@@ -49,7 +49,7 @@ export async function handleCancel(
 export async function handleStatus(ctx: Context, core: OpenACPCore): Promise<void> {
   const threadId = ctx.message?.message_thread_id;
   if (threadId) {
-    const session = core.sessionManager.getSessionByThread(
+    const session = await core.getOrResumeSession(
       "telegram",
       String(threadId),
     );
@@ -353,6 +353,12 @@ export function setupSessionCallbacks(
         break;
     }
   });
+
+  // Refresh sessions list (button created by handleTopics)
+  bot.callbackQuery('m:topics', async (ctx) => {
+    try { await ctx.answerCallbackQuery() } catch { /* expired */ }
+    await handleTopics(ctx, core)
+  })
 }
 
 export async function handleArchive(
@@ -388,9 +394,9 @@ export async function handleArchive(
   await ctx.reply(
     "⚠️ <b>Archive this session?</b>\n\n" +
     "This will:\n" +
-    "• Delete this topic and recreate it (clearing chat history)\n" +
-    "• The agent session will keep running\n\n" +
-    "<i>Chat history cannot be recovered.</i>",
+    "• Stop the agent session\n" +
+    "• Delete this topic permanently\n\n" +
+    "<i>This cannot be undone.</i>",
     {
       parse_mode: "HTML",
       reply_markup: new InlineKeyboard()
@@ -425,20 +431,7 @@ export async function handleArchiveConfirm(
   // Note: we don't editMessageText here because the topic is about to be deleted
 
   const result = await core.archiveSession(identifier);
-  if (result.ok) {
-    // Send confirmation in the new topic
-    const adapter = core.adapters.get("telegram");
-    if (adapter) {
-      try {
-        await adapter.sendMessage(identifier, {
-          type: "text",
-          text: "Chat history cleared. Session is still active — send a message to continue.",
-        });
-      } catch {
-        // Best effort — the new topic is already created
-      }
-    }
-  } else {
+  if (!result.ok) {
     try {
       await ctx.editMessageText(`Failed to archive: <code>${escapeHtml(result.error)}</code>`, { parse_mode: "HTML" });
     } catch {

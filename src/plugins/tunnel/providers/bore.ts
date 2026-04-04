@@ -4,13 +4,20 @@ import type { TunnelProvider } from '../provider.js'
 
 const log = createChildLogger({ module: 'bore-tunnel' })
 
+const SIGKILL_TIMEOUT_MS = 5_000
+
 export class BoreTunnelProvider implements TunnelProvider {
   private child: ChildProcess | null = null
   private publicUrl = ''
   private options: Record<string, unknown>
+  private exitCallback: ((code: number | null) => void) | null = null
 
   constructor(options: Record<string, unknown> = {}) {
     this.options = options
+  }
+
+  onExit(callback: (code: number | null) => void): void {
+    this.exitCallback = callback
   }
 
   async start(localPort: number): Promise<string> {
@@ -24,18 +31,21 @@ export class BoreTunnelProvider implements TunnelProvider {
     }
 
     return new Promise<string>((resolve, reject) => {
+      let settled = false
+      const settle = (fn: () => void) => { if (!settled) { settled = true; fn() } }
+
       const timeout = setTimeout(() => {
         this.stop()
-        reject(new Error('Bore tunnel timed out after 30s. Is bore installed?'))
+        settle(() => reject(new Error('Bore tunnel timed out after 30s. Is bore installed?')))
       }, 30_000)
 
       try {
-        this.child = spawn('bore', args, { stdio: ['ignore', 'pipe', 'pipe'] })
+        this.child = spawn('bore', args, { stdio: ['ignore', 'pipe', 'pipe'], detached: true })
       } catch {
         clearTimeout(timeout)
-        reject(new Error(
+        settle(() => reject(new Error(
           'Failed to start bore. Install it from https://github.com/ekzhang/bore'
-        ))
+        )))
         return
       }
 
@@ -49,7 +59,7 @@ export class BoreTunnelProvider implements TunnelProvider {
           clearTimeout(timeout)
           this.publicUrl = `http://${match[1]}:${match[2]}`
           log.info({ url: this.publicUrl }, 'Bore tunnel ready')
-          resolve(this.publicUrl)
+          settle(() => resolve(this.publicUrl))
         }
       }
 
@@ -58,26 +68,49 @@ export class BoreTunnelProvider implements TunnelProvider {
 
       this.child.on('error', (err) => {
         clearTimeout(timeout)
-        reject(new Error(
+        settle(() => reject(new Error(
           `bore failed to start: ${err.message}. Install it from https://github.com/ekzhang/bore`
-        ))
+        )))
       })
 
       this.child.on('exit', (code) => {
         if (!this.publicUrl) {
           clearTimeout(timeout)
-          reject(new Error(`bore exited with code ${code} before establishing tunnel`))
+          settle(() => reject(new Error(`bore exited with code ${code} before establishing tunnel`)))
+        } else {
+          log.error({ code }, 'bore exited unexpectedly after establishment')
+          this.child = null
+          this.exitCallback?.(code)
         }
       })
     })
   }
 
-  async stop(): Promise<void> {
-    if (this.child) {
-      this.child.kill('SIGTERM')
-      this.child = null
-      log.info('Bore tunnel stopped')
+  async stop(force = false): Promise<void> {
+    const child = this.child
+    if (!child) return
+    this.child = null
+    this.exitCallback = null
+
+    if (force) {
+      child.kill('SIGKILL')
+      log.info('Bore tunnel force-killed')
+      return
     }
+
+    child.kill('SIGTERM')
+
+    const exited = await Promise.race([
+      new Promise<boolean>((resolve) => child.on('exit', () => resolve(true))),
+      new Promise<boolean>((resolve) => setTimeout(() => resolve(false), SIGKILL_TIMEOUT_MS)),
+    ])
+
+    if (!exited) {
+      log.warn('bore did not exit after SIGTERM, sending SIGKILL')
+      child.kill('SIGKILL')
+    }
+
+    log.info('Bore tunnel stopped')
   }
 
   getPublicUrl(): string {

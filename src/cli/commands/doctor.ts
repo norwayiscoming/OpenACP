@@ -1,7 +1,11 @@
 import { wantsHelp } from './helpers.js'
+import { isJsonMode, jsonSuccess, muteForJson } from '../output.js'
 
-export async function cmdDoctor(args: string[]): Promise<void> {
-  if (wantsHelp(args)) {
+export async function cmdDoctor(args: string[], instanceRoot?: string): Promise<void> {
+  const json = isJsonMode(args)
+  if (json) await muteForJson()
+
+  if (!json && wantsHelp(args)) {
     console.log(`
 \x1b[1mopenacp doctor\x1b[0m — Run system diagnostics
 
@@ -10,6 +14,7 @@ export async function cmdDoctor(args: string[]): Promise<void> {
 
 \x1b[1mOptions:\x1b[0m
   --dry-run       Check only, don't apply any fixes
+  --json          Output result as JSON
   -h, --help      Show this help message
 
 Checks your OpenACP installation for common issues including
@@ -19,11 +24,11 @@ Fixable issues can be auto-repaired when not using --dry-run.
     return
   }
 
-  const knownFlags = ["--dry-run"];
-  const unknownFlags = args.slice(1).filter(
+  const knownFlags = ["--dry-run", "--json"];
+  const unknownFlags = args.filter(
     (a) => a.startsWith("--") && !knownFlags.includes(a),
   );
-  if (unknownFlags.length > 0) {
+  if (!json && unknownFlags.length > 0) {
     const { suggestMatch } = await import('../suggest.js');
     for (const flag of unknownFlags) {
       const suggestion = suggestMatch(flag, knownFlags);
@@ -33,13 +38,28 @@ Fixable issues can be auto-repaired when not using --dry-run.
     process.exit(1);
   }
 
-  const dryRun = args.includes("--dry-run");
+  // --json implies --dry-run
+  const dryRun = args.includes("--dry-run") || json;
   const { DoctorEngine } = await import("../../core/doctor/index.js");
-  const engine = new DoctorEngine({ dryRun });
+  const engine = new DoctorEngine({ dryRun, dataDir: instanceRoot });
 
-  console.log("\n🩺 OpenACP Doctor\n");
+  if (!json) console.log("\n🩺 OpenACP Doctor\n");
 
   const report = await engine.runAll();
+
+  if (json) {
+    jsonSuccess({
+      categories: report.categories.map((c) => ({
+        name: c.name,
+        results: c.results.map((r) => ({ status: r.status, message: r.message })),
+      })),
+      summary: {
+        passed: report.summary.passed,
+        warnings: report.summary.warnings,
+        failed: report.summary.failed,
+      },
+    })
+  }
 
   // Render results
   const icons = { pass: "\x1b[32m✅\x1b[0m", warn: "\x1b[33m⚠️\x1b[0m", fail: "\x1b[31m❌\x1b[0m" };

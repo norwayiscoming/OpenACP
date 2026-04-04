@@ -1,5 +1,5 @@
 // src/core/adapter-primitives/__tests__/display-spec-builder.test.ts
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { DisplaySpecBuilder } from "../display-spec-builder.js";
 import type { ToolEntry } from "../stream-accumulator.js";
 
@@ -133,6 +133,194 @@ describe("DisplaySpecBuilder.buildToolSpec", () => {
       const entry = makeEntry({ diffStats: { added: 10, removed: 3 } });
       const spec = builder.buildToolSpec(entry, "low");
       expect(spec.diffStats).toBeNull();
+    });
+  });
+
+  describe("noise tools hidden on medium mode", () => {
+    it("noise tools hidden on medium mode", () => {
+      const spec = builder.buildToolSpec(makeEntry({ isNoise: true }), "medium");
+      expect(spec.isHidden).toBe(true);
+    });
+  });
+
+  describe("viewerLinks passthrough", () => {
+    const links = { file: "https://example.com/file", diff: "https://example.com/diff" };
+
+    it("viewerLinks always passed through on low mode", () => {
+      const spec = builder.buildToolSpec(makeEntry({ viewerLinks: links }), "low");
+      expect(spec.viewerLinks).toEqual(links);
+    });
+
+    it("viewerLinks always passed through on medium mode", () => {
+      const spec = builder.buildToolSpec(makeEntry({ viewerLinks: links }), "medium");
+      expect(spec.viewerLinks).toEqual(links);
+    });
+
+    it("viewerLinks always passed through on high mode", () => {
+      const spec = builder.buildToolSpec(makeEntry({ viewerLinks: links }), "high");
+      expect(spec.viewerLinks).toEqual(links);
+    });
+  });
+
+  describe("tunnel and fallback paths", () => {
+    const longContent = Array.from({ length: 20 }, (_, i) => `line ${i}`).join("\n");
+    const sessionContext = { id: "sess-1", workingDirectory: "/tmp" };
+
+    function mockTunnelService(publicUrl = "https://tunnel.example.com") {
+      return {
+        getPublicUrl: vi.fn().mockReturnValue(publicUrl),
+        start: vi.fn(),
+        stop: vi.fn(),
+        getStore: vi.fn().mockReturnValue({
+          storeFile: vi.fn(),
+          storeDiff: vi.fn(),
+          storeOutput: vi.fn().mockReturnValue("output-id-1"),
+        }),
+        fileUrl: vi.fn(),
+        diffUrl: vi.fn(),
+        outputUrl: vi.fn().mockReturnValue("https://tunnel.example.com/output/output-id-1"),
+      };
+    }
+
+    it("tunnel available + long output on medium mode sets outputViewerLink", () => {
+      const tunnel = mockTunnelService();
+      const tunnelBuilder = new DisplaySpecBuilder(tunnel as any);
+      const spec = tunnelBuilder.buildToolSpec(makeEntry({ content: longContent }), "medium", sessionContext);
+      expect(spec.outputViewerLink).toBe("https://tunnel.example.com/output/output-id-1");
+    });
+
+    it("no tunnel + high mode sets outputFallbackContent", () => {
+      const noTunnelBuilder = new DisplaySpecBuilder();
+      const spec = noTunnelBuilder.buildToolSpec(makeEntry({ content: longContent }), "high", sessionContext);
+      expect(spec.outputFallbackContent).toBe(longContent);
+    });
+
+    it("no tunnel + medium mode: no fallback, no viewer link", () => {
+      const noTunnelBuilder = new DisplaySpecBuilder();
+      const spec = noTunnelBuilder.buildToolSpec(makeEntry({ content: longContent }), "medium", sessionContext);
+      expect(spec.outputFallbackContent).toBeUndefined();
+      expect(spec.outputViewerLink).toBeUndefined();
+    });
+  });
+
+  describe("inline boundary tests", () => {
+    it("content at exactly 15 lines and 800 chars is inline on high", () => {
+      // Build content that is exactly 15 lines and exactly 800 chars total
+      // 15 lines means 14 newline characters. 800 - 14 = 786 chars of text across 15 lines.
+      // Each line: 786 / 15 = 52.4, so 14 lines of 53 chars + 1 line of 44 chars = 14*53 + 44 = 742 + 44 = 786
+      const lines = Array.from({ length: 14 }, () => "x".repeat(53));
+      lines.push("x".repeat(44));
+      const content = lines.join("\n");
+      expect(content.split("\n").length).toBe(15);
+      expect(content.length).toBe(800);
+      const spec = builder.buildToolSpec(makeEntry({ content }), "high");
+      expect(spec.outputContent).toBe(content);
+    });
+
+    it("content at 16 lines (one over) is NOT inline", () => {
+      const content = Array.from({ length: 16 }, (_, i) => `line${i}`).join("\n");
+      expect(content.split("\n").length).toBe(16);
+      const spec = builder.buildToolSpec(makeEntry({ content }), "high");
+      expect(spec.outputContent).toBeNull();
+    });
+
+    it("content at 15 lines but >800 chars is NOT inline", () => {
+      // 15 lines with enough chars per line to exceed 800 total
+      // 14 newlines + text. Need text > 786 chars across 15 lines.
+      const lines = Array.from({ length: 15 }, () => "x".repeat(53));
+      lines[14] = "x".repeat(45); // 14*53 + 45 = 742 + 45 = 787 text + 14 newlines = 801
+      const content = lines.join("\n");
+      expect(content.split("\n").length).toBe(15);
+      expect(content.length).toBe(801);
+      const spec = builder.buildToolSpec(makeEntry({ content }), "high");
+      expect(spec.outputContent).toBeNull();
+    });
+  });
+
+  describe("empty and null content edge cases", () => {
+    it("empty content produces null outputSummary", () => {
+      const spec = builder.buildToolSpec(makeEntry({ content: "" }), "medium");
+      expect(spec.outputSummary).toBeNull();
+    });
+
+    it("whitespace-only content produces null outputSummary", () => {
+      const spec = builder.buildToolSpec(makeEntry({ content: "   \n  " }), "medium");
+      expect(spec.outputSummary).toBeNull();
+    });
+
+    it("null content on medium mode produces null outputSummary", () => {
+      const spec = builder.buildToolSpec(makeEntry({ content: null as any }), "medium");
+      expect(spec.outputSummary).toBeNull();
+    });
+  });
+
+  describe("thought spec extended", () => {
+    it("buildThoughtSpec includes indicator string 'Thinking...'", () => {
+      const spec = builder.buildThoughtSpec("deep thought", "high");
+      expect(spec.indicator).toBe("Thinking...");
+    });
+
+    it("buildThoughtSpec on low mode has null content but has indicator", () => {
+      const spec = builder.buildThoughtSpec("deep thought", "low");
+      expect(spec.content).toBeNull();
+      expect(spec.indicator).toBe("Thinking...");
+    });
+  });
+
+  describe("output summary pluralization", () => {
+    it("outputSummary says '1 line of output' for single-line content", () => {
+      const spec = builder.buildToolSpec(makeEntry({ content: "single line" }), "medium");
+      expect(spec.outputSummary).toBe("1 line of output");
+    });
+
+    it("outputSummary says 'N lines of output' for multi-line", () => {
+      const content = "line1\nline2\nline3\nline4\nline5";
+      const spec = builder.buildToolSpec(makeEntry({ content }), "medium");
+      expect(spec.outputSummary).toBe("5 lines of output");
+    });
+  });
+
+  describe("title generation for different tool kinds", () => {
+    it("edit tool title from file_path", () => {
+      const entry = makeEntry({
+        name: "Edit",
+        kind: "edit",
+        rawInput: { file_path: "/foo/bar.ts" },
+      });
+      const spec = builder.buildToolSpec(entry, "medium");
+      expect(spec.title).toBe("/foo/bar.ts");
+    });
+
+    it("execute tool title from command (truncated at 60 chars)", () => {
+      const longCommand = "a".repeat(70);
+      const entry = makeEntry({
+        name: "Bash",
+        kind: "execute",
+        rawInput: { command: longCommand },
+      });
+      const spec = builder.buildToolSpec(entry, "medium");
+      expect(spec.title).toBe("a".repeat(57) + "...");
+    });
+
+    it("read tool title with start_line and end_line", () => {
+      const entry = makeEntry({
+        name: "Read",
+        kind: "read",
+        rawInput: { file_path: "foo.ts", start_line: 5, end_line: 10 },
+      });
+      const spec = builder.buildToolSpec(entry, "medium");
+      expect(spec.title).toBe("foo.ts (lines 5\u201310)");
+    });
+
+    it("search tool title with pattern and glob", () => {
+      const entry = makeEntry({
+        name: "Grep",
+        kind: "search",
+        rawInput: { pattern: "foo", glob: "*.ts" },
+      });
+      const spec = builder.buildToolSpec(entry, "medium");
+      expect(spec.title).toContain("foo");
+      expect(spec.title).toContain("*.ts");
     });
   });
 });

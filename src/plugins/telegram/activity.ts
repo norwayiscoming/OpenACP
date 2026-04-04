@@ -255,6 +255,16 @@ export class ToolCard {
           this.tracer?.log("telegram", { action: "telegram:send:overflow", sessionId: this.sessionId, msgId: result?.message_id });
         }
       }
+
+      // Clean up stale overflow messages when chunk count decreases
+      const neededOverflow = chunks.length - 1;
+      while (this.overflowMsgIds.length > neededOverflow) {
+        const staleId = this.overflowMsgIds.pop()!;
+        await this.sendQueue.enqueue(() =>
+          this.api.deleteMessage(this.chatId, staleId).catch(() => {}),
+        );
+        this.tracer?.log("telegram", { action: "telegram:delete:overflow", sessionId: this.sessionId, msgId: staleId });
+      }
     } catch (err) {
       log.warn({ err }, "[ToolCard] send/edit failed");
     }

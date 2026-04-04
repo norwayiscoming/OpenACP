@@ -1,8 +1,8 @@
-# Writing Your Own Plugin
+# Writing Your Own Plugin — Full API Reference
 
-This guide walks through building an OpenACP plugin from scratch. By the end, you'll have a working plugin that registers services, commands, and middleware.
+This is the **complete API reference** for building OpenACP plugins. It covers every API surface: services, commands, middleware, events, settings, storage, overrides, and publishing.
 
-> **Quick Start**: Want to get up and running fast? See [Getting Started: Your First Plugin](../extending/getting-started-plugin.md) for a step-by-step tutorial using the scaffold generator and dev mode. Then come back here for the full API reference.
+> **New to plugin development?** Start with [Getting Started: Your First Plugin](../extending/getting-started-plugin.md) — a hands-on tutorial that walks you through scaffolding, developing, testing, and publishing your first plugin. Come back here when you need the full API details.
 >
 > **Plugin SDK**: For type exports, base classes, and testing utilities, see the [Plugin SDK Reference](../extending/plugin-sdk-reference.md).
 >

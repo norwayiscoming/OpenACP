@@ -59,6 +59,29 @@ Pass the agent name to `/new` to use a specific agent for a session:
 
 If you have only one agent installed, it is selected automatically.
 
+## Switching agents mid-conversation
+
+Use `/switch` to change the agent handling the current session without starting a new thread or topic:
+
+```
+/switch                        # show a menu of available agents
+/switch claude                 # switch directly to the claude agent
+/switch gemini                 # switch directly to the gemini agent
+```
+
+The conversation history from the current session is automatically injected into the new agent, so it has full context of what was discussed. If you switch back to a previously used agent without having sent any new user prompts since the last switch, the old session is resumed (provided the agent supports resume). Otherwise a new session is started with the history prepended.
+
+To label messages in the history with the agent name that produced them, use:
+
+```
+/switch label on               # enable agent name labels
+/switch label off              # disable agent name labels
+```
+
+This is controlled globally by the `agentSwitch.labelHistory` config option (default: `true`).
+
+For full details see [Agent Switch](../features/agent-switch.md).
+
 ## Default agent
 
 The default agent is used when you create a session without specifying one. Configure it in `~/.openacp/config.json`:

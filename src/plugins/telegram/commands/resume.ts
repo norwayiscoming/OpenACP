@@ -1,44 +1,18 @@
-import * as fs from "node:fs";
-import * as path from "node:path";
-import * as os from "node:os";
 import type { Bot, Context } from "grammy";
-import { InlineKeyboard } from "grammy";
 import type { OpenACPCore } from "../../../core/index.js";
 import type { ContextQuery } from "../../../plugins/context/context-provider.js";
 import { DEFAULT_MAX_TOKENS } from "../../../plugins/context/context-provider.js";
 import { CheckpointReader } from "../../../plugins/context/entire/checkpoint-reader.js";
 import { escapeHtml } from "../formatting.js";
 import { createSessionTopic, buildDeepLink } from "../topics.js";
-import { buildSessionControlKeyboard } from "./admin.js";
+import { buildSessionControlKeyboard, buildSessionStatusText } from "./admin.js";
 import { createChildLogger } from "../../../core/utils/log.js";
 import type { CommandsAssistantContext } from "../types.js";
 
 const log = createChildLogger({ module: "telegram-cmd-resume" });
 
-const PENDING_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
-
 function botFromCtx(ctx: Context): Bot {
   return { api: ctx.api } as unknown as Bot;
-}
-
-// --- Pending state for interactive workspace picker ---
-
-interface PendingResume {
-  query: Omit<ContextQuery, "repoPath">;
-  step: "workspace" | "workspace_input";
-  messageId: number;
-  threadId?: number;
-  timer: ReturnType<typeof setTimeout>;
-}
-
-const pendingResumes = new Map<number, PendingResume>();
-
-function cleanupPending(userId: number): void {
-  const pending = pendingResumes.get(userId);
-  if (pending) {
-    clearTimeout(pending.timer);
-    pendingResumes.delete(userId);
-  }
 }
 
 // --- Arg parsing ---
@@ -93,70 +67,6 @@ export function parseResumeArgs(matchStr: string): { query: Omit<ContextQuery, "
   return { query: { type: "latest", value: "5" } };
 }
 
-function looksLikePath(text: string): boolean {
-  return text.startsWith("/") || text.startsWith("~") || text.startsWith(".");
-}
-
-// --- List subdirectories in workspace baseDir ---
-
-function listWorkspaceDirs(baseDir: string, maxItems = 10): string[] {
-  const resolved = baseDir.replace(/^~/, os.homedir());
-  try {
-    if (!fs.existsSync(resolved)) return [];
-    return fs.readdirSync(resolved, { withFileTypes: true })
-      .filter(d => d.isDirectory() && !d.name.startsWith("."))
-      .map(d => d.name)
-      .sort()
-      .slice(0, maxItems);
-  } catch {
-    return [];
-  }
-}
-
-// --- Workspace picker step ---
-
-async function showWorkspacePicker(
-  ctx: Context,
-  core: OpenACPCore,
-  chatId: number,
-  userId: number,
-  query: Omit<ContextQuery, "repoPath">,
-): Promise<void> {
-  const config = core.configManager.get();
-  const baseDir = config.workspace.baseDir;
-  const resolvedBase = baseDir.replace(/^~/, os.homedir());
-  const subdirs = listWorkspaceDirs(baseDir);
-
-  const keyboard = new InlineKeyboard();
-
-  // List subdirectories as buttons
-  for (const dir of subdirs) {
-    const fullPath = path.join(resolvedBase, dir);
-    keyboard.text(`📁 ${dir}`, `m:resume:ws:${dir}`).row();
-  }
-
-  // Always offer base dir and custom input
-  keyboard.text(`📁 Use ${baseDir}`, "m:resume:ws:default").row();
-  keyboard.text("✏️ Enter project path", "m:resume:ws:custom");
-
-  const queryLabel = query.type === "latest" ? "latest sessions" : `${query.type}: ${query.value}`;
-  const text =
-    `📁 <b>Select project directory for resume</b>\n\n` +
-    `Query: <code>${escapeHtml(queryLabel)}</code>\n\n` +
-    `Choose the repo that has Entire checkpoints enabled:`;
-
-  const msg = await ctx.reply(text, { parse_mode: "HTML", reply_markup: keyboard });
-
-  cleanupPending(userId);
-  pendingResumes.set(userId, {
-    query,
-    step: "workspace",
-    messageId: msg.message_id,
-    threadId: ctx.message?.message_thread_id,
-    timer: setTimeout(() => pendingResumes.delete(userId), PENDING_TIMEOUT_MS),
-  });
-}
-
 // --- Execute resume with resolved workspace ---
 
 async function executeResume(
@@ -165,6 +75,7 @@ async function executeResume(
   chatId: number,
   query: Omit<ContextQuery, "repoPath">,
   repoPath: string,
+  onControlMessage?: (sessionId: string, msgId: number) => void,
 ): Promise<void> {
   // Check provider availability
   const provider = await core.contextManager.getProvider(repoPath);
@@ -219,10 +130,8 @@ async function executeResume(
       workingDirectory: repoPath,
       contextQuery: fullQuery,
       contextOptions: { maxTokens: DEFAULT_MAX_TOKENS },
+      threadId: String(threadId),
     });
-
-    session.threadId = String(threadId);
-    await core.sessionManager.patchRecord(session.id, { platform: { topicId: threadId } });
 
     // Build summary info
     const sessionCount = contextResult?.sessionCount ?? listResult.sessions.length;
@@ -239,15 +148,14 @@ async function executeResume(
       );
     }
 
-    await ctx.api.sendMessage(
-      chatId,
+    const resumeHeading =
       `✅ <b>Session resumed with context</b>\n` +
-        `<b>Agent:</b> ${escapeHtml(session.agentName)}\n` +
-        `<b>Workspace:</b> <code>${escapeHtml(session.workingDirectory)}</code>\n` +
-        `<b>Sessions loaded:</b> ${sessionCount}\n` +
-        `<b>Mode:</b> ${escapeHtml(mode)}\n` +
-        `<b>~Tokens:</b> ${tokens.toLocaleString()}\n\n` +
-        `Context is ready — chat here to continue working with the agent.`,
+      `<b>Sessions loaded:</b> ${sessionCount}\n` +
+      `<b>Mode:</b> ${escapeHtml(mode)}\n` +
+      `<b>~Tokens:</b> ${tokens.toLocaleString()}`;
+    const controlMsg = await ctx.api.sendMessage(
+      chatId,
+      buildSessionStatusText(session, resumeHeading),
       {
         message_thread_id: threadId,
         parse_mode: "HTML",
@@ -255,7 +163,8 @@ async function executeResume(
       },
     );
 
-    session.warmup().catch((err) => log.error({ err }, "Warm-up error"));
+    onControlMessage?.(session.id, controlMsg.message_id);
+
   } catch (err) {
     log.error({ err }, "Resume session creation failed");
     if (threadId) {
@@ -275,6 +184,7 @@ export async function handleResume(
   core: OpenACPCore,
   chatId: number,
   assistant?: CommandsAssistantContext,
+  onControlMessage?: (sessionId: string, msgId: number) => void,
 ): Promise<void> {
   const rawMatch = (ctx as Context & { match: unknown }).match;
   const matchStr = typeof rawMatch === "string" ? rawMatch : "";
@@ -297,114 +207,21 @@ export async function handleResume(
   }
 
   const { query } = parsed;
-  const userId = ctx.from?.id;
-  if (!userId) return;
 
-  // Always show workspace picker — user must choose working directory
-  await showWorkspacePicker(ctx, core, chatId, userId, query);
+  // Use default workspace baseDir
+  const config = core.configManager.get();
+  const baseDir = config.workspace.baseDir;
+  const resolved = core.configManager.resolveWorkspace(baseDir);
+  await executeResume(ctx, core, chatId, query, resolved, onControlMessage);
 }
 
-// --- Text input handler for custom workspace path ---
-
-export async function handlePendingResumeInput(
-  ctx: Context,
-  core: OpenACPCore,
-  chatId: number,
-  assistantTopicId?: number,
-): Promise<boolean> {
-  const userId = ctx.from?.id;
-  if (!userId) return false;
-  const pending = pendingResumes.get(userId);
-  if (!pending || !ctx.message?.text) return false;
-  if (pending.step !== "workspace_input" && pending.step !== "workspace") return false;
-
-  // Only intercept in assistant topic or general chat
-  const threadId = ctx.message.message_thread_id;
-  if (threadId && threadId !== assistantTopicId) return false;
-
-  // At "workspace" step (picker shown), only intercept if text looks like a path
-  if (pending.step === "workspace" && !looksLikePath(ctx.message.text.trim())) return false;
-
-  let workspace = ctx.message.text.trim();
-  if (!workspace) {
-    await ctx.reply("⚠️ Please enter a valid directory path.", { parse_mode: "HTML" });
-    return true;
-  }
-
-  // Resolve relative paths against baseDir
-  if (!workspace.startsWith("/") && !workspace.startsWith("~")) {
-    const baseDir = core.configManager.get().workspace.baseDir;
-    workspace = `${baseDir.replace(/\/$/, "")}/${workspace}`;
-  }
-  const resolved = core.configManager.resolveWorkspace(workspace);
-
-  cleanupPending(userId);
-  await executeResume(ctx, core, chatId, pending.query, resolved);
-  return true;
-}
-
-// --- Callback handlers for workspace picker buttons ---
-
+// setupResumeCallbacks is retained as a no-op for backward compatibility
+// (callers may still reference it; workspace picker was removed in favor of assistant-driven flow)
 export function setupResumeCallbacks(
-  bot: Bot,
-  core: OpenACPCore,
-  chatId: number,
+  _bot: Bot,
+  _core: OpenACPCore,
+  _chatId: number,
+  _onControlMessage?: (sessionId: string, msgId: number) => void,
 ): void {
-  bot.callbackQuery(/^m:resume:/, async (ctx) => {
-    const data = ctx.callbackQuery.data;
-    const userId = ctx.from?.id;
-    if (!userId) return;
-
-    try {
-      await ctx.answerCallbackQuery();
-    } catch { /* expired or network — ignore */ }
-
-    const pending = pendingResumes.get(userId);
-    if (!pending) return;
-
-    if (data === "m:resume:ws:default") {
-      // Use baseDir directly
-      const baseDir = core.configManager.get().workspace.baseDir;
-      const resolved = core.configManager.resolveWorkspace(baseDir);
-      cleanupPending(userId);
-      try {
-        await ctx.api.editMessageText(chatId, pending.messageId, `⏳ Using <code>${escapeHtml(resolved)}</code>...`, { parse_mode: "HTML" });
-      } catch { /* ignore */ }
-      await executeResume(ctx, core, chatId, pending.query, resolved);
-      return;
-    }
-
-    if (data === "m:resume:ws:custom") {
-      // Switch to text input mode
-      try {
-        await ctx.api.editMessageText(
-          chatId,
-          pending.messageId,
-          `✏️ <b>Enter project path:</b>\n\n` +
-            `Full path like <code>~/code/my-project</code>\n` +
-            `Or just the folder name (will use workspace baseDir)`,
-          { parse_mode: "HTML" },
-        );
-      } catch {
-        await ctx.reply(`✏️ <b>Enter project path:</b>`, { parse_mode: "HTML" });
-      }
-      clearTimeout(pending.timer);
-      pending.step = "workspace_input";
-      pending.timer = setTimeout(() => pendingResumes.delete(userId), PENDING_TIMEOUT_MS);
-      return;
-    }
-
-    if (data.startsWith("m:resume:ws:")) {
-      // Subdirectory selected
-      const dirName = data.replace("m:resume:ws:", "");
-      const baseDir = core.configManager.get().workspace.baseDir;
-      const resolved = core.configManager.resolveWorkspace(path.join(baseDir.replace(/^~/, os.homedir()), dirName));
-      cleanupPending(userId);
-      try {
-        await ctx.api.editMessageText(chatId, pending.messageId, `⏳ Using <code>${escapeHtml(resolved)}</code>...`, { parse_mode: "HTML" });
-      } catch { /* ignore */ }
-      await executeResume(ctx, core, chatId, pending.query, resolved);
-      return;
-    }
-  });
+  // No-op: workspace picker callbacks removed
 }

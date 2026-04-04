@@ -25,7 +25,7 @@ describe("handleArchive", () => {
     );
   });
 
-  it("confirmation text describes topic recreation (not deletion)", async () => {
+  it("confirmation text describes permanent deletion", async () => {
     const ctx = mockCtx(456);
     const core = {
       sessionManager: {
@@ -36,10 +36,9 @@ describe("handleArchive", () => {
 
     await handleArchive(ctx, core);
     const text = ctx.reply.mock.calls[0][0] as string;
-    expect(text).toContain("recreate it");
-    expect(text).toContain("agent session will keep running");
-    expect(text).not.toContain("Stop the agent");
-    expect(text).not.toContain("Remove the session record");
+    expect(text).toContain("Stop the agent session");
+    expect(text).toContain("Delete this topic permanently");
+    expect(text).toContain("cannot be undone");
   });
 
   it("rejects initializing session", async () => {
@@ -132,11 +131,9 @@ describe("handleArchiveConfirm", () => {
     );
   });
 
-  it("calls core.archiveSession and sends confirmation in new topic", async () => {
-    const sendMessage = vi.fn(() => Promise.resolve());
+  it("calls core.archiveSession to delete topic and cancel session", async () => {
     const core = {
-      archiveSession: vi.fn(() => Promise.resolve({ ok: true, newThreadId: "789" })),
-      adapters: new Map([["telegram", { sendMessage }]]),
+      archiveSession: vi.fn(() => Promise.resolve({ ok: true })),
     } as any;
     const ctx = {
       callbackQuery: { data: "ar:yes:sess-1" },
@@ -146,13 +143,6 @@ describe("handleArchiveConfirm", () => {
 
     await handleArchiveConfirm(ctx, core, 123);
     expect(core.archiveSession).toHaveBeenCalledWith("sess-1");
-    expect(sendMessage).toHaveBeenCalledWith(
-      "sess-1",
-      expect.objectContaining({
-        type: "text",
-        text: expect.stringContaining("Chat history cleared"),
-      }),
-    );
   });
 
   it("shows error when archive fails", async () => {
@@ -173,14 +163,11 @@ describe("handleArchiveConfirm", () => {
     );
   });
 
-  it("does not kill agent or remove session record", async () => {
+  it("does not send message to new topic after archive", async () => {
     const sendMessage = vi.fn(() => Promise.resolve());
-    const cancelSession = vi.fn();
-    const removeRecord = vi.fn();
     const core = {
-      archiveSession: vi.fn(() => Promise.resolve({ ok: true, newThreadId: "789" })),
+      archiveSession: vi.fn(() => Promise.resolve({ ok: true })),
       adapters: new Map([["telegram", { sendMessage }]]),
-      sessionManager: { cancelSession, removeRecord },
     } as any;
     const ctx = {
       callbackQuery: { data: "ar:yes:sess-1" },
@@ -189,7 +176,6 @@ describe("handleArchiveConfirm", () => {
     } as any;
 
     await handleArchiveConfirm(ctx, core, 123);
-    expect(cancelSession).not.toHaveBeenCalled();
-    expect(removeRecord).not.toHaveBeenCalled();
+    expect(sendMessage).not.toHaveBeenCalled();
   });
 });

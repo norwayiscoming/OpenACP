@@ -1,5 +1,6 @@
-import * as os from "node:os";
 import * as path from "node:path";
+import * as fs from "node:fs";
+import * as os from "node:os";
 import * as clack from "@clack/prompts";
 import type { Config, ConfigManager } from "../config/config.js";
 import type { ChannelId } from "./types.js";
@@ -15,6 +16,11 @@ import { configureChannels } from "./setup-channels.js";
 import { RegistryClient } from "../plugin/registry-client.js";
 import type { SettingsManager } from "../plugin/settings-manager.js";
 import type { PluginRegistry } from "../plugin/plugin-registry.js";
+import { InstanceRegistry } from "../instance/instance-registry.js";
+import { getGlobalRoot } from "../instance/instance-context.js";
+import { randomUUID } from "node:crypto";
+import { copyInstance } from "../instance/instance-copy.js";
+import { protectLocalInstance } from "./git-protect.js";
 
 // ─── Registry discovery ───
 
@@ -35,11 +41,42 @@ async function fetchCommunityAdapters(): Promise<CommunityAdapterOption[]> {
   }
 }
 
+// ─── Desktop App detection ───
+
+function checkDesktopAppInstalled(): boolean {
+  // TODO: replace with exact app bundle / executable path once the Desktop App ships
+  const candidates: string[] = [];
+  const platform = process.platform;
+
+  if (platform === 'darwin') {
+    candidates.push('/Applications/OpenACP.app');
+    candidates.push(`${os.homedir()}/Applications/OpenACP.app`);
+  } else if (platform === 'win32') {
+    const localAppData = process.env['LOCALAPPDATA'] ?? '';
+    candidates.push(`${localAppData}\\Programs\\OpenACP\\OpenACP.exe`);
+    candidates.push(`C:\\Program Files\\OpenACP\\OpenACP.exe`);
+  } else {
+    // Linux — check common binary locations
+    candidates.push('/usr/bin/openacp-desktop');
+    candidates.push('/usr/local/bin/openacp-desktop');
+    candidates.push(`${os.homedir()}/.local/bin/openacp-desktop`);
+  }
+
+  return candidates.some(p => fs.existsSync(p));
+}
+
 // ─── First-run setup ───
 
 export async function runSetup(
   configManager: ConfigManager,
-  opts?: { skipRunMode?: boolean; settingsManager?: SettingsManager; pluginRegistry?: PluginRegistry },
+  opts?: {
+    skipRunMode?: boolean
+    settingsManager?: SettingsManager
+    pluginRegistry?: PluginRegistry
+    instanceName?: string
+    from?: string       // path to copy from (parent dir, not .openacp)
+    instanceRoot?: string  // the .openacp dir being set up
+  },
 ): Promise<boolean> {
   await printStartBanner();
   clack.intro("Let's set up OpenACP");
@@ -52,10 +89,129 @@ export async function runSetup(
       return false;
     }
 
+    // ─── Instance name prompt ───
+
+    const instanceRoot = opts?.instanceRoot ?? getGlobalRoot();
+    const isGlobal = instanceRoot === getGlobalRoot();
+
+    let instanceName = opts?.instanceName;
+    if (!instanceName) {
+      const defaultName = isGlobal ? 'Global workspace' : path.basename(path.dirname(instanceRoot));
+      const locationHint = isGlobal ? 'global (~/.openacp)' : `local (${instanceRoot.replace(/\/.openacp$/, '').replace(os.homedir(), '~')})`;
+      const nameResult = await clack.text({
+        message: `Name for this workspace (${locationHint})`,
+        initialValue: defaultName,
+        validate: (v) => (!v?.trim() ? 'Name cannot be empty' : undefined),
+      });
+      if (clack.isCancel(nameResult)) return false;
+      instanceName = nameResult.trim();
+    }
+
+    // ─── Copy-from flow ───
+
+    const globalRoot = getGlobalRoot();
+    const registryPath = path.join(globalRoot, 'instances.json');
+    const instanceRegistry = new InstanceRegistry(registryPath);
+    await instanceRegistry.load();
+
+    let didCopy = false;
+
+    // Check --from flag first
+    if (opts?.from) {
+      const fromRoot = path.join(opts.from, '.openacp');
+      if (fs.existsSync(path.join(fromRoot, 'config.json'))) {
+        const inheritableMap = buildInheritableKeysMap();
+        await copyInstance(fromRoot, instanceRoot, { inheritableKeys: inheritableMap });
+        didCopy = true;
+      } else {
+        console.error(`No OpenACP setup found at ${fromRoot}`);
+        return false;
+      }
+    }
+
+    // If no --from, check if we can offer to copy interactively
+    if (!didCopy) {
+      const existingInstances = instanceRegistry.list().filter(e =>
+        fs.existsSync(path.join(e.root, 'config.json')) && e.root !== instanceRoot
+      );
+
+      if (existingInstances.length > 0) {
+        // Build display label for the single-instance case
+        let singleLabel: string | undefined;
+        if (existingInstances.length === 1) {
+          const e = existingInstances[0]!;
+          let name = e.id;
+          try {
+            const cfg = JSON.parse(fs.readFileSync(path.join(e.root, 'config.json'), 'utf-8'));
+            if (cfg.instanceName) name = cfg.instanceName;
+          } catch {}
+          const isGlobalEntry = e.root === getGlobalRoot();
+          const displayPath = e.root.replace(os.homedir(), '~');
+          const type = isGlobalEntry ? 'global' : 'local';
+          singleLabel = `${name} workspace (${type} — ${displayPath})`;
+        }
+
+        const confirmMsg = singleLabel
+          ? `Copy config from ${singleLabel}?`
+          : 'Copy config from an existing workspace?';
+
+        const shouldCopy = await clack.confirm({
+          message: confirmMsg,
+          initialValue: true,
+        });
+
+        if (clack.isCancel(shouldCopy)) return false;
+
+        if (shouldCopy === true) {
+          let sourceRoot: string;
+          if (existingInstances.length === 1) {
+            sourceRoot = existingInstances[0]!.root;
+          } else {
+            const choice = await clack.select({
+              message: 'Which workspace to copy from?',
+              options: existingInstances.map(e => {
+                let name = e.id;
+                try {
+                  const cfg = JSON.parse(fs.readFileSync(path.join(e.root, 'config.json'), 'utf-8'));
+                  if (cfg.instanceName) name = cfg.instanceName;
+                } catch {}
+                const isGlobalEntry = e.root === getGlobalRoot();
+                const displayPath = e.root.replace(os.homedir(), '~');
+                const type = isGlobalEntry ? 'global' : 'local';
+                return { value: e.root, label: `${name} workspace (${type} — ${displayPath})` };
+              }),
+            });
+            if (clack.isCancel(choice)) return false;
+            sourceRoot = choice;
+          }
+
+          const inheritableMap = buildInheritableKeysMap();
+          await copyInstance(sourceRoot, instanceRoot, {
+            inheritableKeys: inheritableMap,
+            onProgress: (step, status) => {
+              if (status === 'done') console.log(`  ✓ ${step}`);
+            },
+          });
+          didCopy = true;
+        }
+      }
+    }
+
+    // If copied, reload config so the wizard sees existing values
+    if (didCopy && await configManager.exists()) {
+      await configManager.load();
+    }
+
     const communityAdapters = await fetchCommunityAdapters()
 
     const builtInOptions = [
+      { label: 'Desktop App', value: 'sse' },
       { label: 'Telegram', value: 'telegram' },
+    ]
+
+    const officialAdapters = [
+      { label: 'Discord', value: 'official:@openacp/discord-adapter' },
+      { label: 'Slack', value: 'official:@openacp/slack-adapter' },
     ]
 
     const communityOptions = communityAdapters.map(a => ({
@@ -69,12 +225,13 @@ export async function runSetup(
         message: 'Which channels do you want to set up?',
         options: [
           ...builtInOptions.map(o => ({ value: o.value, label: o.label, hint: 'built-in' })),
+          ...officialAdapters.map(o => ({ value: o.value, label: o.label, hint: 'official' })),
           ...(communityOptions.length > 0
             ? communityOptions.map(o => ({ value: o.value, label: o.label, hint: 'from plugin registry' }))
             : []),
         ],
         required: true,
-        initialValues: ['telegram' as const],
+        initialValues: ['sse' as const],
       }),
     ) as string[];
 
@@ -89,6 +246,30 @@ export async function runSetup(
 
     for (const channelId of channelChoices) {
       currentStep++;
+
+      if (channelId === 'sse') {
+        // TODO: check if the OpenACP Desktop App is installed; if not, offer to download it.
+        // For now, detect common install locations on the current platform.
+        const isInstalled = checkDesktopAppInstalled();
+        if (isInstalled) {
+          clack.log.success('Desktop App detected.');
+        } else {
+          clack.log.warn(
+            'Desktop App not found on this machine.\n' +
+            '  TODO: download from https://openacp.com/download (download flow not yet implemented).',
+          );
+        }
+
+        const ssePlugin = (await import('../../plugins/sse-adapter/index.js')).default;
+        pluginRegistry.register(ssePlugin.name, {
+          version: ssePlugin.version,
+          source: 'builtin',
+          enabled: true,
+          settingsPath: settingsManager.getSettingsPath(ssePlugin.name),
+          description: ssePlugin.description,
+        });
+        continue;
+      }
 
       if (channelId === 'telegram') {
         const telegramPlugin = (await import('../../plugins/telegram/index.js')).default;
@@ -108,16 +289,72 @@ export async function runSetup(
       }
 
 
+      // Handle official adapter selections (Discord, Slack, etc.)
+      if (channelId.startsWith('official:')) {
+        const npmPackage = channelId.slice('official:'.length);
+        const { execFileSync } = await import('node:child_process');
+        const pluginsDir = path.join(instanceRoot, 'plugins');
+        const nodeModulesDir = path.join(pluginsDir, 'node_modules');
+
+        // Install from npm if not already present
+        const installedPath = path.join(nodeModulesDir, npmPackage);
+        if (!fs.existsSync(installedPath)) {
+          try {
+            clack.log.step(`Installing ${npmPackage}...`);
+            execFileSync('npm', ['install', npmPackage, '--prefix', pluginsDir, '--save', '--ignore-scripts'], {
+              stdio: 'inherit',
+              timeout: 60000,
+            });
+          } catch {
+            console.log(fail(`Failed to install ${npmPackage}.`));
+            continue;
+          }
+        }
+
+        // Load and run install hook
+        try {
+          const installedPkgPath = path.join(nodeModulesDir, npmPackage, 'package.json');
+          const installedPkg = JSON.parse(fs.readFileSync(installedPkgPath, 'utf-8'));
+          const pluginModule = await import(path.join(nodeModulesDir, npmPackage, installedPkg.main ?? 'dist/index.js'));
+          const plugin = pluginModule.default;
+
+          if (plugin?.install) {
+            const installCtx = createInstallContext({
+              pluginName: plugin.name ?? npmPackage,
+              settingsManager,
+              basePath: settingsManager.getBasePath(),
+            });
+            await plugin.install(installCtx);
+          }
+
+          pluginRegistry.register(plugin?.name ?? npmPackage, {
+            version: installedPkg.version,
+            source: 'npm',
+            enabled: true,
+            settingsPath: settingsManager.getSettingsPath(plugin?.name ?? npmPackage),
+            description: plugin?.description ?? installedPkg.description,
+          });
+        } catch (err) {
+          console.log(fail(`Failed to load ${npmPackage}: ${(err as Error).message}`));
+          pluginRegistry.register(npmPackage, {
+            version: 'unknown',
+            source: 'npm',
+            enabled: false,
+            settingsPath: settingsManager.getSettingsPath(npmPackage),
+          });
+        }
+      }
+
       // Handle community plugin selections
       if (channelId.startsWith('community:')) {
         const npmPackage = channelId.slice('community:'.length);
         const { execFileSync } = await import('node:child_process');
-        const pluginsDir = path.join(os.homedir(), '.openacp', 'plugins');
+        const pluginsDir = path.join(instanceRoot, 'plugins');
         const nodeModulesDir = path.join(pluginsDir, 'node_modules');
 
         // Install from npm
         try {
-          execFileSync('npm', ['install', npmPackage, '--prefix', pluginsDir, '--save'], {
+          execFileSync('npm', ['install', npmPackage, '--prefix', pluginsDir, '--save', '--ignore-scripts'], {
             stdio: 'inherit',
             timeout: 60000,
           });
@@ -172,13 +409,13 @@ export async function runSetup(
     await setupIntegrations();
 
     currentStep++;
-    const workspace = await setupWorkspace({ stepNum: currentStep, totalSteps });
+    const workspace = await setupWorkspace({ stepNum: currentStep, totalSteps, isGlobal });
 
     let runMode: 'foreground' | 'daemon' = 'foreground';
     let autoStart = false;
     if (!opts?.skipRunMode) {
       currentStep++;
-      const result = await setupRunMode({ stepNum: currentStep, totalSteps });
+      const result = await setupRunMode({ stepNum: currentStep, totalSteps, instanceRoot });
       runMode = result.runMode;
       autoStart = result.autoStart;
     }
@@ -190,14 +427,15 @@ export async function runSetup(
     };
 
     const config: Config = {
+      instanceName,
       channels: {},
       agents: {},
       defaultAgent,
-      workspace,
+      workspace: { ...workspace, security: { allowedPaths: [], envWhitelist: [] } },
       security,
       logging: {
         level: "info",
-        logDir: "~/.openacp/logs",
+        logDir: path.join(instanceRoot, "logs"),
         maxFileSize: "10m",
         maxFiles: 7,
         sessionLogRetentionDays: 30,
@@ -229,6 +467,7 @@ export async function runSetup(
         stt: { provider: null, providers: {} },
         tts: { provider: null, providers: {} },
       },
+      agentSwitch: { labelHistory: true },
     };
 
     try {
@@ -244,6 +483,21 @@ export async function runSetup(
     if (settingsManager && pluginRegistry) {
       await registerBuiltinPlugins(settingsManager, pluginRegistry);
       await pluginRegistry.save();
+    }
+
+    // Register instance in the global registry (skip if this root is already registered)
+    const existingEntry = instanceRegistry.getByRoot(instanceRoot);
+    if (!existingEntry) {
+      const id = randomUUID();
+      instanceRegistry.register(id, instanceRoot);
+      await instanceRegistry.save();
+    }
+
+    // For local instances: protect secrets from git and document in CLAUDE.md
+    const isLocal = instanceRoot !== path.join(getGlobalRoot());
+    if (isLocal) {
+      const projectDir = path.dirname(instanceRoot) // .openacp parent = project dir
+      protectLocalInstance(projectDir)
     }
 
     clack.outro(`Config saved to ${configManager.getConfigPath()}`);
@@ -294,6 +548,19 @@ async function registerBuiltinPlugins(
   }
 }
 
+// ─── Inheritable keys for copy flow ───
+
+function buildInheritableKeysMap(): Record<string, string[]> {
+  // Hardcoded for built-in plugins — community plugins declare their own
+  return {
+    '@openacp/tunnel': ['provider', 'maxUserTunnels', 'auth'],
+    '@openacp/api-server': ['host'],
+    '@openacp/security': ['allowedUsers', 'maxSessionsPerUser', 'rateLimits'],
+    '@openacp/usage': ['budget'],
+    '@openacp/speech': ['tts'],
+  };
+}
+
 // ─── Reconfigure (section-based, for existing config) ───
 
 type ReconfigureSection = OnboardSection | "__continue";
@@ -315,7 +582,7 @@ async function selectSection(hasSelection: boolean): Promise<ReconfigureSection>
   ) as ReconfigureSection;
 }
 
-export async function runReconfigure(configManager: ConfigManager): Promise<void> {
+export async function runReconfigure(configManager: ConfigManager, settingsManager?: SettingsManager): Promise<void> {
   await printStartBanner();
   clack.intro("OpenACP — Reconfigure");
 
@@ -324,7 +591,7 @@ export async function runReconfigure(configManager: ConfigManager): Promise<void
     let config = configManager.get();
 
     // Show current config summary
-    clack.note(summarizeConfig(config), "Current configuration");
+    clack.note(await summarizeConfig(config, settingsManager), "Current configuration");
 
     let ranSection = false;
 
@@ -334,7 +601,7 @@ export async function runReconfigure(configManager: ConfigManager): Promise<void
       ranSection = true;
 
       if (choice === "channels") {
-        const result = await configureChannels(config);
+        const result = await configureChannels(config, settingsManager);
         if (result.changed) {
           // IMPORTANT: Use writeNew() instead of save() because save() uses deepMerge
           // which cannot delete keys. Channel deletion (delete next.channels.telegram)
@@ -370,7 +637,7 @@ export async function runReconfigure(configManager: ConfigManager): Promise<void
       }
 
       if (choice === "integrations") {
-        await setupIntegrations(config);
+        await setupIntegrations();
       }
     }
 

@@ -23,21 +23,21 @@ If you do not respond to a permission request within **10 minutes**, it is autom
 
 This timeout exists to prevent sessions from blocking indefinitely when you are not present.
 
-## Dangerous mode
+## Bypass permissions
 
-If you trust the agent completely for a session and do not want to approve each action individually, you can enable dangerous mode:
+If you trust the agent completely for a session and do not want to approve each action individually, you can enable bypass permissions:
 
 **Telegram:**
 ```
-/enable_dangerous   # enable auto-approval
-/disable_dangerous  # restore normal prompts
+/enable_bypass   # enable auto-approval
+/disable_bypass  # restore normal prompts
 ```
 
-**Via the session control keyboard:** Tap the "Enable Dangerous Mode" button that appears in the session setup message.
+**Via the session control keyboard:** Tap the "Enable Bypass Permissions" button that appears in the session setup message.
 
-When dangerous mode is on, all permission requests are auto-approved immediately without showing buttons. The session topic shows a warning.
+When bypass permissions is on, all permission requests are auto-approved immediately without showing buttons. The session topic shows a warning.
 
-Dangerous mode is **per-session** — it does not affect other sessions and resets when the session ends.
+Bypass permissions is **per-session** — it does not affect other sessions and resets when the session ends.
 
 Use this only when you have reviewed the agent's plan and are confident in what it will do. Common use case: running a long automated task where interruptions for permission approval would be impractical.
 
@@ -47,8 +47,8 @@ Permission approvals are logged. Use `/status` to see the current session state,
 
 For server-wide access controls (user allowlists, session limits), see [Security](../self-hosting/security.md).
 
-## Disabling dangerous mode
+## Disabling bypass permissions
 
-Run `/disable_dangerous` (Telegram) or `/dangerous` (Discord) inside the session topic, or tap the "Disable Dangerous Mode" button in the session control keyboard.
+Run `/disable_bypass` (Telegram) or `/bypass` (Discord) inside the session topic, or tap the "Disable Bypass Permissions" button in the session control keyboard.
 
 Normal permission prompts resume immediately.

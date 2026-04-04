@@ -5,10 +5,11 @@ import os from 'node:os'
 import { execSync } from 'node:child_process'
 import { createChildLogger } from './log.js'
 import { commandExists } from '../agents/agent-dependencies.js'
+import { MAX_DOWNLOAD_SIZE, validateTarContents } from '../agents/agent-installer.js'
 
 const log = createChildLogger({ module: 'binary-installer' })
 
-const BIN_DIR = path.join(os.homedir(), '.openacp', 'bin')
+const DEFAULT_BIN_DIR = path.join(os.homedir(), '.openacp', 'bin')
 const IS_WINDOWS = os.platform() === 'win32'
 
 export interface BinarySpec {
@@ -46,6 +47,20 @@ function downloadFile(url: string, dest: string): Promise<string> {
         return
       }
 
+      let totalBytes = 0
+      const request = response
+
+      response.on('data', (chunk: Buffer) => {
+        totalBytes += chunk.length
+        if (totalBytes > MAX_DOWNLOAD_SIZE) {
+          request.destroy()
+          file.close(() => {
+            cleanup()
+            reject(new Error(`Download exceeds size limit of ${MAX_DOWNLOAD_SIZE} bytes`))
+          })
+        }
+      })
+
       response.pipe(file)
       file.on('finish', () => file.close(() => resolve(dest)))
       file.on('error', (err) => {
@@ -79,9 +94,10 @@ function getDownloadUrl(spec: BinarySpec): string {
  * 2. Check ~/.openacp/bin/
  * 3. Download from GitHub releases
  */
-export async function ensureBinary(spec: BinarySpec): Promise<string> {
+export async function ensureBinary(spec: BinarySpec, binDir?: string): Promise<string> {
+  const resolvedBinDir = binDir ?? DEFAULT_BIN_DIR
   const binName = IS_WINDOWS ? `${spec.name}.exe` : spec.name
-  const binPath = path.join(BIN_DIR, binName)
+  const binPath = path.join(resolvedBinDir, binName)
 
   // 1. Check PATH first
   if (commandExists(spec.name)) {
@@ -98,17 +114,25 @@ export async function ensureBinary(spec: BinarySpec): Promise<string> {
 
   // 3. Download
   log.info({ name: spec.name }, 'Not found, downloading from GitHub...')
-  fs.mkdirSync(BIN_DIR, { recursive: true })
+  fs.mkdirSync(resolvedBinDir, { recursive: true })
 
   const url = getDownloadUrl(spec)
   const isArchive = spec.isArchive?.(url) ?? false
-  const downloadDest = isArchive ? path.join(BIN_DIR, `${spec.name}.tgz`) : binPath
+  const downloadDest = isArchive ? path.join(resolvedBinDir, `${spec.name}.tgz`) : binPath
 
   await downloadFile(url, downloadDest)
 
   if (isArchive) {
-    execSync(`tar -xzf "${downloadDest}" -C "${BIN_DIR}"`, { stdio: 'pipe' })
+    const listing = execSync(`tar -tf "${downloadDest}"`, { stdio: 'pipe' })
+      .toString().trim().split("\n").filter(Boolean);
+    validateTarContents(listing, resolvedBinDir);
+    execSync(`tar -xzf "${downloadDest}" -C "${resolvedBinDir}"`, { stdio: 'pipe' })
     try { fs.unlinkSync(downloadDest) } catch { /* ignore */ }
+  }
+
+  // Validate the binary was actually produced
+  if (!fs.existsSync(binPath)) {
+    throw new Error(`${spec.name}: binary not found at ${binPath} after download/extraction. The archive structure may have changed.`)
   }
 
   if (!IS_WINDOWS) {

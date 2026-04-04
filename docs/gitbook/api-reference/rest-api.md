@@ -4,18 +4,27 @@ The OpenACP daemon exposes a local HTTP API used by the CLI and the web dashboar
 
 **Base URL:** `http://127.0.0.1:21420` (configurable via `api.host` and `api.port`)
 
-**Auth:** Bearer token from `~/.openacp/api-secret`
+**Auth:** Two-tier authentication:
+
+1. **Secret token** — from `~/.openacp/api-secret` (full admin access)
+2. **JWT access token** — scoped, revokable tokens issued by the auth system
 
 ```bash
+# Using secret token
 TOKEN=$(cat ~/.openacp/api-secret)
 curl -H "Authorization: Bearer $TOKEN" http://localhost:21420/api/sessions
+
+# Using JWT token
+curl -H "Authorization: Bearer $JWT" http://localhost:21420/api/sessions
 ```
 
 The secret file is created automatically with mode `0600` on first start. Protect it like an SSH private key.
 
-**Exempt from auth:** `GET /api/health`, `GET /api/version`, `GET /api/events` (SSE uses query param `?token=`).
+**Exempt from auth:** `GET /api/health`, `GET /api/version`.
 
 **Body size limit:** 1 MB.
+
+**API documentation:** Swagger UI is available at `/docs` when the server is running.
 
 ---
 
@@ -121,7 +130,7 @@ Lists all sessions (active, finished, cancelled, error).
       "name": "Fix login bug",
       "workspace": "/home/user/myproject",
       "createdAt": "2026-03-25T10:00:00.000Z",
-      "dangerousMode": false,
+      "bypassPermissions": false,
       "queueDepth": 0,
       "promptRunning": true,
       "lastActiveAt": "2026-03-25T10:05:00.000Z"
@@ -152,7 +161,7 @@ Returns details for a single session.
     "name": "Fix login bug",
     "workspace": "/home/user/myproject",
     "createdAt": "2026-03-25T10:00:00.000Z",
-    "dangerousMode": false,
+    "bypassPermissions": false,
     "queueDepth": 1,
     "promptRunning": false,
     "threadId": "12345",
@@ -252,9 +261,9 @@ curl -X POST \
 
 ---
 
-### PATCH /api/sessions/:id/dangerous
+### PATCH /api/sessions/:id/bypass
 
-Enables or disables dangerous mode for a session.
+Enables or disables bypass permissions for a session.
 
 **Request body**
 ```json
@@ -263,7 +272,7 @@ Enables or disables dangerous mode for a session.
 
 **Response**
 ```json
-{ "ok": true, "dangerousMode": true }
+{ "ok": true, "bypassPermissions": true }
 ```
 
 ```bash
@@ -271,7 +280,7 @@ curl -X PATCH \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"enabled":true}' \
-  http://localhost:21420/api/sessions/sess_abc123/dangerous
+  http://localhost:21420/api/sessions/sess_abc123/bypass
 ```
 
 ---
@@ -616,6 +625,159 @@ curl -X POST \
 
 ---
 
+## Session Config
+
+### GET /api/sessions/:id/config
+
+Returns the agent-declared config options for a session (modes, models, toggles).
+
+**Response**
+```json
+{
+  "configOptions": [
+    {
+      "id": "mode",
+      "name": "Mode",
+      "type": "select",
+      "category": "general",
+      "currentValue": "code",
+      "options": [
+        { "value": "code", "label": "Code" },
+        { "value": "architect", "label": "Architect" }
+      ]
+    }
+  ]
+}
+```
+
+---
+
+### PUT /api/sessions/:id/config/:configId
+
+Updates a config option value for a session.
+
+**Request body**
+```json
+{ "value": "architect" }
+```
+
+**Response**
+```json
+{ "ok": true, "configId": "mode", "value": "architect" }
+```
+
+---
+
+## Authentication
+
+### POST /api/v1/auth/tokens
+
+Creates a new JWT access token. Requires secret token authentication.
+
+**Request body**
+```json
+{ "name": "my-app", "role": "operator" }
+```
+
+**Response**
+```json
+{
+  "token": "eyJhbG...",
+  "id": "tok_abc123",
+  "name": "my-app",
+  "role": "operator",
+  "expiresAt": "2026-04-08T10:00:00.000Z"
+}
+```
+
+---
+
+### GET /api/v1/auth/tokens
+
+Lists all active tokens (secret token auth required).
+
+**Response**
+```json
+{
+  "tokens": [
+    {
+      "id": "tok_abc123",
+      "name": "my-app",
+      "role": "operator",
+      "createdAt": "2026-04-01T10:00:00.000Z",
+      "lastUsedAt": "2026-04-01T12:00:00.000Z"
+    }
+  ]
+}
+```
+
+---
+
+### DELETE /api/v1/auth/tokens/:id
+
+Revokes a token by ID. Requires secret token authentication.
+
+**Response**
+```json
+{ "ok": true }
+```
+
+---
+
+### GET /api/v1/auth/me
+
+Returns information about the current token (works with both secret and JWT).
+
+**Response**
+```json
+{
+  "type": "jwt",
+  "role": "operator",
+  "scopes": ["sessions:read", "sessions:write", "agents:read"],
+  "tokenId": "tok_abc123"
+}
+```
+
+---
+
+### POST /api/v1/auth/codes
+
+Generates a one-time access code (for app connectivity). Requires secret token auth.
+
+**Response**
+```json
+{
+  "code": "abc123def456",
+  "expiresAt": "2026-04-01T10:30:00.000Z"
+}
+```
+
+The code is valid for 30 minutes and can be used exactly once.
+
+---
+
+### POST /api/v1/auth/exchange
+
+Exchanges a one-time code for a JWT token. No prior authentication required.
+
+**Request body**
+```json
+{ "code": "abc123def456" }
+```
+
+**Response**
+```json
+{
+  "token": "eyJhbG...",
+  "role": "operator",
+  "expiresAt": "2026-04-08T10:00:00.000Z"
+}
+```
+
+Returns `401` if the code is expired or already used.
+
+---
+
 ## Server-Sent Events
 
 ### GET /api/events
@@ -626,4 +788,16 @@ SSE stream of real-time daemon events. Auth via query parameter (EventSource can
 GET /api/events?token=<api-secret>
 ```
 
-Returns a persistent SSE connection. Events include session lifecycle changes, agent output, and health pings.
+Returns a persistent SSE connection. Events include session lifecycle changes, agent output, and health pings (every 30 seconds).
+
+### GET /api/v1/sse/sessions/:id/stream
+
+Per-session SSE stream. Requires JWT authentication via query parameter.
+
+```
+GET /api/v1/sse/sessions/:id/stream?token=<jwt>
+```
+
+Streams only events for the specified session. Supports reconnect replay — if fewer than 100 events were missed, they are replayed on reconnection. Multiple clients can connect to the same session stream simultaneously.
+
+**Event types**: `agent:event`, `session:updated`, `permission:request`, `health`.

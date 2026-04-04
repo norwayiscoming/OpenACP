@@ -52,6 +52,15 @@ async setup(ctx: PluginContext) {
       return { type: 'text', text: \\\`Hello, \\\${name}!\\\` }
     },
   })
+
+  // Add a menu item to the /menu command
+  ctx.registerMenuItem({ id: 'my-item', label: 'My Feature', priority: 150, action: { type: 'command', command: '/greet' } })
+  // Remove it later if needed
+  ctx.unregisterMenuItem('my-item')
+
+  // Add context sections for the assistant command
+  ctx.registerAssistantSection({ id: 'my-section', title: 'My Section', priority: 200, buildContext: () => 'context text' })
+  ctx.unregisterAssistantSection('my-section')
 }
 \`\`\`
 

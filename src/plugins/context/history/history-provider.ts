@@ -86,18 +86,19 @@ export class HistoryProvider implements ContextProvider {
     }
 
     const totalTurns = loaded.reduce((sum, s) => sum + s.history.turns.length, 0);
+    const labelAgent = options?.labelAgent ?? false;
 
     // Auto-select mode based on total turn count
     let mode: ContextMode = selectLevel(totalTurns);
 
     // Build markdown with selected mode
-    let markdown = this.buildMergedMarkdown(loaded, mode, query);
+    let markdown = this.buildMergedMarkdown(loaded, mode, query, labelAgent);
     let tokenEstimate = estimateTokens(markdown);
 
     // Downgrade to compact if over budget
     if (tokenEstimate > maxTokens && mode !== "compact") {
       mode = "compact";
-      markdown = this.buildMergedMarkdown(loaded, mode, query);
+      markdown = this.buildMergedMarkdown(loaded, mode, query, labelAgent);
       tokenEstimate = estimateTokens(markdown);
     }
 
@@ -107,7 +108,7 @@ export class HistoryProvider implements ContextProvider {
     while (tokenEstimate > maxTokens && activeSessions.length > 1) {
       // Remove the oldest session (last in list, sorted newest-first)
       activeSessions = activeSessions.slice(0, activeSessions.length - 1);
-      markdown = this.buildMergedMarkdown(activeSessions, mode, query);
+      markdown = this.buildMergedMarkdown(activeSessions, mode, query, labelAgent);
       tokenEstimate = estimateTokens(markdown);
       truncated = true;
     }
@@ -165,7 +166,8 @@ export class HistoryProvider implements ContextProvider {
   private buildMergedMarkdown(
     sessions: Array<{ record: SessionRecord; history: import("./types.js").SessionHistory }>,
     mode: ContextMode,
-    query: ContextQuery
+    query: ContextQuery,
+    labelAgent = false
   ): string {
     if (sessions.length === 0) return "";
 
@@ -179,18 +181,128 @@ export class HistoryProvider implements ContextProvider {
 
     for (let i = 0; i < sessions.length; i++) {
       const { record, history } = sessions[i];
-      const sessionMd = buildHistoryMarkdown(history.turns, mode);
 
       parts.push(`## Session ${i + 1} — ${record.agentName} · ${record.sessionId} (${history.turns.length} turns)`);
       parts.push("");
-      if (sessionMd) {
-        parts.push(sessionMd);
+
+      if (labelAgent && history.turns.length > 0) {
+        const agentTimeline = this.buildAgentTimeline(record);
+        const labeledMd = this.buildLabeledHistoryMarkdown(history.turns, mode, agentTimeline);
+        if (labeledMd) {
+          parts.push(labeledMd);
+        }
+      } else {
+        const sessionMd = buildHistoryMarkdown(history.turns, mode);
+        if (sessionMd) {
+          parts.push(sessionMd);
+        }
       }
     }
 
     parts.push(
       "> **Note:** This conversation history may contain outdated information. Verify current state before acting on past context."
     );
+
+    return parts.join("\n");
+  }
+
+  /**
+   * Build a timeline of agent boundaries from the session record.
+   * Returns sorted entries: [{ agentName, startedAt }] where startedAt is the
+   * ISO timestamp when that agent started handling the session.
+   *
+   * The first agent runs from session creation until the first switch.
+   * Each agentSwitchHistory entry records when the *previous* agent was switched away,
+   * so the next agent starts at that switchedAt timestamp.
+   */
+  private buildAgentTimeline(record: SessionRecord): Array<{ agentName: string; switchedAt: number }> {
+    const timeline: Array<{ agentName: string; switchedAt: number }> = [];
+
+    // The first agent starts at the beginning of time (0)
+    const firstAgentName = record.firstAgent ?? record.agentName;
+    timeline.push({ agentName: firstAgentName, switchedAt: 0 });
+
+    if (record.agentSwitchHistory && record.agentSwitchHistory.length > 0) {
+      // Each entry in agentSwitchHistory records a *completed* agent stint:
+      // { agentName: "claude", switchedAt: "...", ... } means claude was active
+      // and was switched away at switchedAt. The next agent in sequence starts at that time.
+      //
+      // To reconstruct: after the last switchHistory entry, the current record.agentName is active.
+      // But we need to map turns to agents, so we build boundaries.
+
+      for (let i = 0; i < record.agentSwitchHistory.length; i++) {
+        const entry = record.agentSwitchHistory[i];
+        const switchTime = new Date(entry.switchedAt).getTime();
+
+        // Determine which agent comes after this switch
+        const nextAgent = i < record.agentSwitchHistory.length - 1
+          ? record.agentSwitchHistory[i + 1].agentName
+          : record.agentName; // current agent is the last one
+
+        timeline.push({ agentName: nextAgent, switchedAt: switchTime });
+      }
+    }
+
+    return timeline;
+  }
+
+  /**
+   * Determine which agent produced a turn based on its timestamp and the agent timeline.
+   */
+  private resolveAgentForTurn(
+    turnTimestamp: string,
+    timeline: Array<{ agentName: string; switchedAt: number }>
+  ): string {
+    const turnTime = new Date(turnTimestamp).getTime();
+
+    // Walk backward through the timeline to find the last boundary before this turn
+    for (let i = timeline.length - 1; i >= 0; i--) {
+      if (turnTime >= timeline[i].switchedAt) {
+        return timeline[i].agentName;
+      }
+    }
+
+    // Fallback to first agent
+    return timeline[0].agentName;
+  }
+
+  /**
+   * Build history markdown with agent labels inserted at agent boundaries.
+   */
+  private buildLabeledHistoryMarkdown(
+    turns: import("./types.js").Turn[],
+    mode: ContextMode,
+    agentTimeline: Array<{ agentName: string; switchedAt: number }>
+  ): string {
+    // If there's only one agent (no switches), just add a single label
+    if (agentTimeline.length <= 1) {
+      const label = `### [${agentTimeline[0]?.agentName ?? "unknown"}]\n`;
+      const md = buildHistoryMarkdown(turns, mode);
+      return md ? label + "\n" + md : label;
+    }
+
+    // Group turns by agent segments, then render each segment with a label
+    const segments: Array<{ agentName: string; turns: import("./types.js").Turn[] }> = [];
+    let currentAgent = "";
+
+    for (const turn of turns) {
+      const agent = this.resolveAgentForTurn(turn.timestamp, agentTimeline);
+      if (agent !== currentAgent) {
+        segments.push({ agentName: agent, turns: [] });
+        currentAgent = agent;
+      }
+      segments[segments.length - 1].turns.push(turn);
+    }
+
+    const parts: string[] = [];
+    for (const segment of segments) {
+      parts.push(`### [${segment.agentName}]`);
+      parts.push("");
+      const md = buildHistoryMarkdown(segment.turns, mode);
+      if (md) {
+        parts.push(md);
+      }
+    }
 
     return parts.join("\n");
   }

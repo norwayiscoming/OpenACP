@@ -10,6 +10,7 @@ import speechPlugin from './speech/index.js'
 import notificationsPlugin from './notifications/index.js'
 import tunnelPlugin from './tunnel/index.js'
 import apiServerPlugin from './api-server/index.js'
+import sseAdapterPlugin from './sse-adapter/index.js'
 import telegramPlugin from './telegram/index.js'
 
 export const corePlugins = [
@@ -23,5 +24,6 @@ export const corePlugins = [
   tunnelPlugin,
   apiServerPlugin,
   // Adapter plugins (depend on security, notifications, etc.)
+  sseAdapterPlugin,
   telegramPlugin,
 ]

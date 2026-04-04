@@ -1,14 +1,18 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import * as os from "node:os";
 import { createChildLogger } from "../utils/log.js";
+import { getGlobalRoot } from "../instance/instance-context.js";
 const log = createChildLogger({ module: "config-migrations" });
 
 type RawConfig = Record<string, unknown>;
 
+export interface MigrationContext {
+  configDir: string;
+}
+
 export interface Migration {
   name: string;
-  apply: (raw: RawConfig) => boolean; // returns true if config was modified
+  apply: (raw: RawConfig, ctx?: MigrationContext) => boolean; // returns true if config was modified
 }
 
 export const migrations: Migration[] = [
@@ -59,8 +63,8 @@ export const migrations: Migration[] = [
   },
   {
     name: "migrate-agents-to-store",
-    apply(raw) {
-      const agentsJsonPath = path.join(os.homedir(), ".openacp", "agents.json");
+    apply(raw, ctx?) {
+      const agentsJsonPath = path.join(ctx?.configDir ?? getGlobalRoot(), "agents.json");
       if (fs.existsSync(agentsJsonPath)) return false;
 
       const agents = raw.agents as Record<string, unknown> | undefined;
@@ -98,6 +102,15 @@ export const migrations: Migration[] = [
     },
   },
   {
+    name: "add-instance-name",
+    apply(raw) {
+      if (raw.instanceName) return false;
+      raw.instanceName = "Main";
+      log.info("Added instanceName to config");
+      return true;
+    },
+  },
+  {
     name: "migrate-display-verbosity-to-output-mode",
     apply(raw) {
       const channels = raw.channels as Record<string, unknown> | undefined;
@@ -114,6 +127,17 @@ export const migrations: Migration[] = [
       return changed;
     },
   },
+  {
+    name: "migrate-tunnel-provider-to-openacp",
+    apply(raw) {
+      const tunnel = raw.tunnel as Record<string, unknown> | undefined;
+      if (!tunnel) return false;
+      if (tunnel.provider !== "cloudflare") return false;
+      tunnel.provider = "openacp";
+      log.info("Migrated tunnel provider: cloudflare → openacp (OpenACP managed tunnel)");
+      return true;
+    },
+  },
 ];
 
 /**
@@ -123,10 +147,11 @@ export const migrations: Migration[] = [
 export function applyMigrations(
   raw: RawConfig,
   migrationList: Migration[] = migrations,
+  ctx?: MigrationContext,
 ): { changed: boolean } {
   let changed = false;
   for (const migration of migrationList) {
-    if (migration.apply(raw)) {
+    if (migration.apply(raw, ctx)) {
       changed = true;
     }
   }

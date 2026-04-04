@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 
 import path from 'node:path'
-import { ConfigManager, OPENACP_DIR, PLUGINS_DATA_DIR, REGISTRY_PATH } from './core/config/config.js'
+import { ConfigManager } from './core/config/config.js'
+import type { InstanceContext } from './core/instance/instance-context.js'
+import { createInstanceContext, getGlobalRoot } from './core/instance/instance-context.js'
 import { OpenACPCore } from './core/core.js'
 import { initLogger, shutdownLogger, cleanupOldSessionLogs, log, muteLogger, unmuteLogger } from './core/utils/log.js'
 import { corePlugins } from './plugins/core-plugins.js'
@@ -11,6 +13,8 @@ import { CommandRegistry } from './core/command-registry.js'
 import { registerSystemCommands } from './core/commands/index.js'
 import type { IChannelAdapter } from './core/channel.js'
 import type { TunnelService } from './plugins/tunnel/tunnel-service.js'
+import { InstanceRegistry } from './core/instance/instance-registry.js'
+import { randomUUID } from 'node:crypto'
 import fs from 'node:fs'
 
 export const RESTART_EXIT_CODE = 75
@@ -20,39 +24,53 @@ let shuttingDown = false
 export interface StartServerOptions {
   devPluginPath?: string
   noWatch?: boolean
+  instanceContext?: InstanceContext
 }
 
 export async function startServer(opts?: StartServerOptions) {
+  const globalRoot = getGlobalRoot()
+  if (!opts?.instanceContext) {
+    const reg = new InstanceRegistry(path.join(globalRoot, 'instances.json'))
+    reg.load()
+    const entry = reg.getByRoot(globalRoot)
+    opts = { ...opts, instanceContext: createInstanceContext({ id: entry?.id ?? randomUUID(), root: globalRoot, isGlobal: true }) }
+  }
+  const ctx = opts.instanceContext!
+
   // 0. If running as daemon child, check state and write PID file
   if (process.argv.includes('--daemon-child')) {
-    const { writePidFile, readPidFile, getPidPath, shouldAutoStart } = await import('./cli/daemon.js')
+    const { writePidFile, readPidFile, shouldAutoStart } = await import('./cli/daemon.js')
+
+    console.error(`[startup] Daemon child starting (pid=${process.pid}, root=${ctx.root}, env.OPENACP_INSTANCE_ROOT=${process.env.OPENACP_INSTANCE_ROOT ?? 'unset'})`)
 
     // Only auto-start if the daemon was previously running (user started it)
-    if (!shouldAutoStart()) {
+    if (!shouldAutoStart(ctx.root)) {
+      console.error(`[startup] shouldAutoStart=false, exiting`)
       process.exit(0)
     }
 
-    const pidPath = getPidPath()
+    const pidPath = ctx.paths.pid
     const existingPid = readPidFile(pidPath)
     if (existingPid !== null && existingPid !== process.pid) {
       try {
         process.kill(existingPid, 0)
-        console.error(`Another OpenACP instance is already running (PID ${existingPid}). Exiting.`)
+        console.error(`[startup] Another instance running (PID ${existingPid}), exiting`)
         process.exit(1)
       } catch {
-        // Stale PID file — safe to overwrite
+        console.error(`[startup] Stale PID file (PID ${existingPid} not running), overwriting`)
       }
     }
     writePidFile(pidPath, process.pid)
+    console.error(`[startup] PID file written: ${pidPath}`)
   }
 
   // Create SettingsManager and PluginRegistry early (needed by wizard + boot)
-  const settingsManager = new SettingsManager(PLUGINS_DATA_DIR)
-  const pluginRegistry = new PluginRegistry(REGISTRY_PATH)
+  const settingsManager = new SettingsManager(ctx.paths.pluginsData)
+  const pluginRegistry = new PluginRegistry(ctx.paths.pluginRegistry)
   await pluginRegistry.load()
 
   // 1. Check config exists, run setup if not
-  const configManager = new ConfigManager()
+  const configManager = new ConfigManager(ctx.paths.config)
   const configExists = await configManager.exists()
 
   if (!configExists) {
@@ -66,6 +84,9 @@ export async function startServer(opts?: StartServerOptions) {
   const config = configManager.get()
   initLogger(config.logging)
   log.debug({ configPath: configManager.getConfigPath() }, 'Config loaded')
+
+  // 2b. Apply env var overrides to plugin settings
+  await configManager.applyEnvToPluginSettings(settingsManager)
 
   // First boot: auto-register built-in plugins if registry is empty
   if (pluginRegistry.list().size === 0) {
@@ -101,7 +122,7 @@ export async function startServer(opts?: StartServerOptions) {
   )
 
   // 3. Create core
-  const core = new OpenACPCore(configManager)
+  const core = new OpenACPCore(configManager, ctx)
 
   // 3b. Create CommandRegistry and register as service
   const commandRegistry = new CommandRegistry()
@@ -144,7 +165,7 @@ export async function startServer(opts?: StartServerOptions) {
             modulePath = path.join(resolved, pkg.main || 'dist/index.js')
           } else {
             // npm package: try direct name first, then scan node_modules for matching plugin name
-            const nodeModulesDir = path.join(OPENACP_DIR, 'plugins', 'node_modules')
+            const nodeModulesDir = path.join(ctx.paths.plugins, 'node_modules')
             let pkgDir = path.join(nodeModulesDir, name)
 
             if (!fs.existsSync(path.join(pkgDir, 'package.json'))) {
@@ -315,12 +336,22 @@ export async function startServer(opts?: StartServerOptions) {
 
     // Clean up PID file if running as daemon
     if (isDaemon) {
-      const { removePidFile, getPidPath } = await import('./cli/daemon.js')
-      removePidFile(getPidPath())
+      const { removePidFile } = await import('./cli/daemon.js')
+      removePidFile(ctx.paths.pid)
     }
 
     // Self-respawn on restart
     if (exitCode === RESTART_EXIT_CODE) {
+      // Dev loop: persist instance root so the shell script can pass it to the next run
+      if (process.env.OPENACP_DEV_LOOP) {
+        const fsMod = await import('node:fs')
+        const osMod = await import('node:os')
+        const pathMod = await import('node:path')
+        fsMod.writeFileSync(pathMod.join(osMod.tmpdir(), 'openacp-dev-loop-root'), ctx.root, 'utf-8')
+      }
+
+      log.info({ isDaemon, isDevLoop: !!process.env.OPENACP_DEV_LOOP, instanceRoot: ctx.root }, 'Restart: preparing respawn')
+
       if (isDaemon) {
         // Daemon mode: spawn detached child writing to log file
         const { spawn: spawnChild } = await import('node:child_process')
@@ -335,10 +366,11 @@ export async function startServer(opts?: StartServerOptions) {
         const out = fs.openSync(logFile, 'a')
         const err = fs.openSync(logFile, 'a')
 
+        log.info({ cliPath, nodePath: process.execPath, instanceRoot: ctx.root }, 'Restart: spawning daemon child')
         const child = spawnChild(process.execPath, [cliPath, '--daemon-child'], {
           detached: true,
           stdio: ['ignore', out, err],
-          env: { ...process.env, OPENACP_SKIP_UPDATE_CHECK: '1' },
+          env: { ...process.env, OPENACP_SKIP_UPDATE_CHECK: '1', OPENACP_INSTANCE_ROOT: ctx.root },
         })
         fs.closeSync(out)
         fs.closeSync(err)
@@ -347,13 +379,16 @@ export async function startServer(opts?: StartServerOptions) {
       } else if (!process.env.OPENACP_DEV_LOOP) {
         // Foreground production mode: spawn replacement process with inherited stdio
         const { spawn: spawnChild } = await import('node:child_process')
+        log.info({ args: process.argv.slice(1), instanceRoot: ctx.root }, 'Restart: spawning foreground child')
         const child = spawnChild(process.execPath, process.argv.slice(1), {
           stdio: 'inherit',
-          env: { ...process.env, OPENACP_SKIP_UPDATE_CHECK: '1' },
+          env: { ...process.env, OPENACP_SKIP_UPDATE_CHECK: '1', OPENACP_INSTANCE_ROOT: ctx.root },
         })
         await shutdownLogger()
         child.on('exit', (code) => process.exit(code ?? 0))
         return
+      } else {
+        log.info('Restart: dev-loop mode, exiting for shell script to respawn')
       }
     }
 
@@ -377,25 +412,65 @@ export async function startServer(opts?: StartServerOptions) {
 
   await core.start()
 
+  // Auto-register this instance in the global instance registry (backward compat for existing installs)
+  try {
+    const globalRoot = getGlobalRoot()
+    const registryPath = path.join(globalRoot, 'instances.json')
+    const instanceReg = new InstanceRegistry(registryPath)
+    await instanceReg.load()
+    if (!instanceReg.getByRoot(ctx.root)) {
+      instanceReg.register(ctx.id, ctx.root)
+      await instanceReg.save()
+    }
+  } catch {
+    // Non-critical — don't fail startup if registry write fails
+  }
+
   // 6. Log ready
   if (isForegroundTTY) {
     if (spinner) spinner.stop()
     const ok = (msg: string) => console.log(`\x1b[32m✓\x1b[0m ${msg}`)
+    const warn = (msg: string) => console.log(`\x1b[33m⚠\x1b[0m  ${msg}`)
+    const spin = (msg: string) => console.log(`\x1b[36m⟳\x1b[0m ${msg}`)
+
     ok('Config loaded')
     ok('Dependencies checked')
+
     const tunnelSvc = core.lifecycleManager.serviceRegistry.get<TunnelService>('tunnel')
+    let tunnelUrl: string | null = null
     if (tunnelSvc) {
-      const tunnelUrl = tunnelSvc.getPublicUrl()
       const tunnelErr = tunnelSvc.getStartError()
-      if (tunnelErr) {
-        console.log(`\x1b[33m⚠\x1b[0m  Tunnel failed (${tunnelErr}) — viewer links unavailable`)
+      const url = tunnelSvc.getPublicUrl()
+      const isPublic = url && !url.startsWith('http://localhost') && !url.startsWith('http://127.0.0.1')
+      if (tunnelErr && isPublic) {
+        // Fallback tunnel is active (e.g. OpenACP unavailable → Cloudflare)
+        warn(`Primary tunnel failed — using fallback: ${tunnelErr}`)
+        tunnelUrl = url
+      } else if (tunnelErr) {
+        warn(`Tunnel failed (${tunnelErr}) — retrying in background`)
+      } else if (isPublic) {
+        ok('Tunnel ready')
+        tunnelUrl = url
       } else {
-        ok(`Tunnel ready → ${tunnelUrl}`)
+        spin('Tunnel connecting...')
       }
     }
-    for (const [name] of core.adapters) ok(`${name.charAt(0).toUpperCase() + name.slice(1)} connected`)
-    const apiPort = config.api?.port ?? 21420
-    if (core.lifecycleManager.serviceRegistry.get('api-server')) ok(`API server on port ${apiPort}`)
+
+    for (const [name] of core.adapters) {
+      ok(`${name.charAt(0).toUpperCase() + name.slice(1)} connected`)
+    }
+
+    const apiSvc = core.lifecycleManager.serviceRegistry.get<import('./plugins/api-server/service.js').ApiServerService>('api-server')
+    const apiPort = apiSvc ? apiSvc.getPort() : (config.api?.port ?? 21420)
+    if (apiSvc) ok(`API server on port ${apiPort}`)
+
+    // Links as plain text — easily copyable
+    console.log('')
+    console.log(`Local:  http://localhost:${apiPort}`)
+    if (tunnelUrl) {
+      console.log(`Tunnel: ${tunnelUrl}`)
+    }
+
     console.log(`\nOpenACP is running. Press Ctrl+C to stop.\n`)
     unmuteLogger()
   }
@@ -419,6 +494,7 @@ async function autoRegisterBuiltinPlugins(
     { name: '@openacp/notifications', version: '1.0.0', description: 'Cross-session notification routing' },
     { name: '@openacp/tunnel', version: '1.0.0', description: 'Expose local services via tunnel' },
     { name: '@openacp/api-server', version: '1.0.0', description: 'REST API + SSE streaming server' },
+    { name: '@openacp/sse-adapter', version: '1.0.0', description: 'SSE-based messaging adapter for app clients' },
     { name: '@openacp/telegram', version: '1.0.0', description: 'Telegram adapter with forum topics' },
   ]
 
@@ -443,6 +519,7 @@ async function autoRegisterBuiltinPlugins(
       import('./plugins/notifications/index.js'),
       import('./plugins/tunnel/index.js'),
       import('./plugins/api-server/index.js'),
+      import('./plugins/sse-adapter/index.js'),
       import('./plugins/telegram/index.js'),
     ])
 
@@ -460,7 +537,7 @@ async function autoRegisterBuiltinPlugins(
           const ctx = createInstallContext({
             pluginName: plugin.name,
             settingsManager,
-            basePath: PLUGINS_DATA_DIR,
+            basePath: settingsManager.getBasePath(),
             legacyConfig,
           })
           // Override terminal to be silent

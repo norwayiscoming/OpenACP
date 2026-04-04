@@ -34,7 +34,7 @@ describe("AgentStore", () => {
             version: "0.22.2",
             distribution: "npx",
             command: "npx",
-            args: ["@zed-industries/claude-agent-acp@0.22.2"],
+            args: ["@agentclientprotocol/claude-agent-acp@0.22.2"],
             env: {},
             installedAt: "2026-03-22T00:00:00.000Z",
             binaryPath: null,

@@ -6,12 +6,12 @@
 openacp --version
 ```
 
-This prints the version from the installed package (e.g., `0.6.9`). The version is read from `package.json` bundled with the binary.
+This prints the version from the installed package (e.g., `2026.401.1`). The version is read from `package.json` bundled with the binary.
 
 OpenACP also checks for updates automatically at startup. If a newer version is available on npm, you are prompted:
 
 ```
-Update available: v0.6.7 → v0.6.9
+Update available: 2026.327.1 → 2026.401.1
 ? Update now before starting?
 ```
 
@@ -26,7 +26,7 @@ npm update -g @openacp/cli
 Or to pin to a specific version:
 
 ```bash
-npm install -g @openacp/cli@0.6.9
+npm install -g @openacp/cli@2026.401.1
 ```
 
 If you are running from source, pull and rebuild:

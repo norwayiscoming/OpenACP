@@ -50,6 +50,7 @@ function createMockDeps() {
     sessionManager: {
       patchRecord: vi.fn().mockResolvedValue(undefined),
       updateSessionStatus: vi.fn().mockResolvedValue(undefined),
+      getSessionRecord: vi.fn().mockReturnValue(undefined),
     } as unknown as SessionManager,
   };
 }
@@ -203,28 +204,32 @@ describe("SessionBridge", () => {
       );
     });
 
-    it("renames thread on named event", () => {
+    it("renames thread on named event", async () => {
       bridge.connect();
       session.activate();
 
       session.emit("named", "My Topic");
 
-      expect(adapter.renameSessionThread).toHaveBeenCalledWith(
-        session.id,
-        "My Topic",
-      );
+      await vi.waitFor(() => {
+        expect(adapter.renameSessionThread).toHaveBeenCalledWith(
+          session.id,
+          "My Topic",
+        );
+      });
     });
 
-    it("persists name on named event", () => {
+    it("persists name on named event", async () => {
       bridge.connect();
       session.activate();
 
       session.emit("named", "My Topic");
 
-      expect(deps.sessionManager.patchRecord).toHaveBeenCalledWith(
-        session.id,
-        expect.objectContaining({ name: "My Topic" }),
-      );
+      await vi.waitFor(() => {
+        expect(deps.sessionManager.patchRecord).toHaveBeenCalledWith(
+          session.id,
+          expect.objectContaining({ name: "My Topic" }),
+        );
+      });
     });
   });
 

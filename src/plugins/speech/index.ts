@@ -1,3 +1,4 @@
+import path from 'node:path'
 import type { OpenACPPlugin, InstallContext, PluginContext } from '../../core/plugin/types.js'
 import type { OpenACPCore } from '../../core/core.js'
 import type { Session } from '../../core/sessions/session.js'
@@ -14,9 +15,11 @@ const speechPlugin: OpenACPPlugin = {
   essential: false,
   optionalPluginDependencies: { '@openacp/file-service': '^1.0.0' },
   permissions: ['services:register', 'commands:register', 'kernel:access'],
+  inheritableKeys: ['ttsProvider', 'ttsVoice'],
 
   async install(ctx: InstallContext) {
     const { terminal, settings, legacyConfig } = ctx
+    const pluginsDir = ctx.instanceRoot ? path.join(ctx.instanceRoot, 'plugins') : undefined
 
     // Migrate from legacy config if present
     if (legacyConfig) {
@@ -73,7 +76,7 @@ const speechPlugin: OpenACPPlugin = {
     if (ttsProvider === 'edge-tts') {
       terminal.log.info('Installing Edge TTS plugin...')
       try {
-        await installNpmPlugin(EDGE_TTS_PLUGIN)
+        await installNpmPlugin(EDGE_TTS_PLUGIN, pluginsDir)
         terminal.log.success('Edge TTS plugin installed')
       } catch (err) {
         terminal.log.warning(`Failed to install Edge TTS plugin: ${err}. You can install it later with: openacp plugin install ${EDGE_TTS_PLUGIN}`)
@@ -135,6 +138,7 @@ const speechPlugin: OpenACPPlugin = {
   },
 
   async setup(ctx) {
+    const pluginsDir = ctx.instanceRoot ? path.join(ctx.instanceRoot, 'plugins') : undefined
     const config = ctx.pluginConfig as Record<string, unknown>
     const groqApiKey = config.groqApiKey as string | undefined
 
@@ -207,7 +211,7 @@ const speechPlugin: OpenACPPlugin = {
 
         if (mode === 'install') {
           try {
-            const mod = await installNpmPlugin(EDGE_TTS_PLUGIN)
+            const mod = await installNpmPlugin(EDGE_TTS_PLUGIN, pluginsDir)
             const plugin = mod.default
             if (plugin && ctx.core) {
               const lm = (ctx.core as OpenACPCore).lifecycleManager

@@ -18,6 +18,7 @@ openacp stop        # Send SIGTERM to the daemon, wait up to 5 s, then SIGKILL
 openacp status      # Print running/stopped and PID if running
 openacp logs        # Tail the daemon log file
 openacp restart     # stop + start
+openacp attach      # Connect to running daemon: show status + tail logs
 ```
 
 ### `openacp start`
@@ -32,6 +33,10 @@ Reads the PID file and sends `SIGTERM`. Polls every 100 ms for up to 5 seconds w
 
 Calling `stop` also removes the running marker file (`~/.openacp/running`), which suppresses autostart on the next boot.
 
+### `openacp restart`
+
+Equivalent to `stop` followed by `start`. If no daemon is running, it skips the stop step and starts a new one. Useful after updating OpenACP to pick up the new version without manually stopping first.
+
 ### `openacp status`
 
 Checks whether the PID in the PID file is alive (using `kill -0`). Cleans up stale PID files automatically.
@@ -39,6 +44,33 @@ Checks whether the PID in the PID file is alive (using `kill -0`). Cleans up sta
 ### `openacp logs`
 
 Tails `~/.openacp/logs/openacp.log`. In daemon mode this is where all server output goes.
+
+### `openacp attach`
+
+Connects to a running daemon and shows a rich status display (uptime, active sessions, adapters, tunnel status) followed by live log tailing. Press Ctrl+C to detach without affecting the daemon.
+
+Useful when you want to monitor a daemon that was started earlier or by autostart, without managing it as a foreground process.
+
+## Smart startup
+
+When you run `openacp` (no arguments) and a daemon is already running, instead of printing an error, OpenACP shows a rich status display with an interactive menu:
+
+| Key | Action |
+|-----|--------|
+| `r` | Restart the daemon |
+| `f` | Restart in foreground mode |
+| `s` | Show full status details |
+| `l` | Tail the log file |
+| `q` | Quit |
+
+The display also shows which instance is active (global vs. local) and suggests the local instance when one is available but the global is being used.
+
+You can force a specific mode on startup:
+
+```bash
+openacp start --foreground    # force foreground regardless of config
+openacp start --daemon        # force daemon regardless of config
+```
 
 ## File Locations
 

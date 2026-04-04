@@ -1,4 +1,7 @@
 import type { OutputMode } from "./adapter-primitives/format-types.js";
+import type { TurnRouting } from "./sessions/turn-context.js";
+
+export type { TurnRouting };
 
 export interface Attachment {
   type: 'image' | 'audio' | 'file';
@@ -15,6 +18,7 @@ export interface IncomingMessage {
   userId: string;
   text: string;
   attachments?: Attachment[];
+  routing?: TurnRouting;
 }
 
 export interface OutgoingMessage {
@@ -109,9 +113,7 @@ export type AgentEvent =
   | { type: "system_message"; message: string }
   // ACP Phase 2 additions
   | { type: "session_info_update"; title?: string; updatedAt?: string; _meta?: Record<string, unknown> }
-  | { type: "current_mode_update"; modeId: string }
   | { type: "config_option_update"; options: ConfigOption[] }
-  | { type: "model_update"; modelId: string }
   | { type: "user_message_chunk"; content: string }
   | { type: "resource_content"; uri: string; name: string; text?: string; blob?: string; mimeType?: string }
   | { type: "resource_link"; uri: string; name: string; mimeType?: string; title?: string; description?: string; size?: number }
@@ -215,6 +217,13 @@ export type SessionStatus =
   | "finished"
   | "error";
 
+export interface AgentSwitchEntry {
+  agentName: string;
+  agentSessionId: string;
+  switchedAt: string;
+  promptCount: number;
+}
+
 export interface SessionRecord<P = Record<string, unknown>> {
   sessionId: string;
   agentSessionId: string;
@@ -227,13 +236,33 @@ export interface SessionRecord<P = Record<string, unknown>> {
   lastActiveAt: string;
   name?: string;
   dangerousMode?: boolean;
+  clientOverrides?: { bypassPermissions?: boolean };
   outputMode?: OutputMode;
   platform: P;
+  /** Per-adapter platform data. Key = adapterId, value = adapter-specific data. */
+  platforms?: Record<string, Record<string, unknown>>;
+  /** Adapters currently attached to this session. Defaults to [channelId] for old records. */
+  attachedAdapters?: string[];
+  firstAgent?: string;
+  currentPromptCount?: number;
+  agentSwitchHistory?: AgentSwitchEntry[];
+  // ACP state (cached — overridden by agent response on resume)
+  acpState?: {
+    // Primary fields (used on load)
+    configOptions?: ConfigOption[];
+    agentCapabilities?: AgentCapabilities;
+    // Legacy fields (kept for backward compat, ignored on load)
+    currentMode?: string;
+    availableModes?: SessionMode[];
+    currentModel?: string;
+    availableModels?: ModelInfo[];
+  };
 }
 
 export interface TelegramPlatformData {
   topicId: number;
   skillMsgId?: number;
+  controlMsgId?: number;
 }
 
 export interface UsageRecord {
@@ -273,7 +302,7 @@ export interface SessionModeState {
 // Config Options (matches ACP SDK SessionConfigOption)
 export interface ConfigSelectChoice {
   value: string;
-  label: string;
+  name: string;
   description?: string;
 }
 
@@ -364,7 +393,9 @@ export type StopReason =
   | "max_tokens"
   | "max_turn_requests"
   | "refusal"
-  | "cancelled";
+  | "cancelled"
+  | "error"
+  | "interrupted";
 
 export interface PromptResponse {
   stopReason: StopReason;

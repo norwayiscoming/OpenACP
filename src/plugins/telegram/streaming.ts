@@ -12,6 +12,7 @@ export class MessageDraft {
   private flushTimer?: ReturnType<typeof setTimeout>
   private flushPromise: Promise<void> = Promise.resolve()
   private lastSentBuffer: string = ''
+  private lastSentHtml: string = ''
   private displayTruncated = false
   private tracer: DebugTracer | null
 
@@ -94,6 +95,10 @@ export class MessageDraft {
         this.firstFlushPending = false
       }
     } else {
+      // Skip if the rendered HTML is identical to what was last sent/enqueued
+      if (html === this.lastSentHtml) return
+      this.lastSentHtml = html
+
       try {
         const result = await this.sendQueue.enqueue(
           () => this.bot.api.editMessageText(this.chatId, this.messageId!, html, {

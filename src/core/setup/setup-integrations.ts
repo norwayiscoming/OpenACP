@@ -1,10 +1,10 @@
 import * as clack from "@clack/prompts";
-import type { Config } from "../config/config.js";
+import { getIntegration } from "../../cli/integrate.js";
 import { guardCancel } from "./helpers.js";
 
-export async function setupIntegrations(config?: Config): Promise<void> {
-  const claudeIntegration = (config?.integrations as Record<string, unknown> | undefined)?.claude as { installed?: boolean } | undefined;
-  const isInstalled = claudeIntegration?.installed === true;
+export async function setupIntegrations(): Promise<void> {
+  const integration = getIntegration("claude");
+  const isInstalled = integration?.items[0]?.isInstalled() ?? false;
 
   const installClaude = guardCancel(
     await clack.confirm({
@@ -17,8 +17,6 @@ export async function setupIntegrations(config?: Config): Promise<void> {
 
   if (installClaude) {
     try {
-      const { getIntegration } = await import("../../cli/integrate.js");
-      const integration = getIntegration("claude");
       if (integration) {
         for (const item of integration.items) {
           const result = await item.install();

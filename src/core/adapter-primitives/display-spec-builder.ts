@@ -124,6 +124,14 @@ function buildTitle(entry: ToolEntry, kind: string): string {
     return capitalize(entry.name);
   }
 
+  if (kind === "fetch" || kind === "web") {
+    const url = typeof input.url === "string" ? input.url : null;
+    if (url && url !== "undefined") return url.length > 60 ? url.slice(0, 57) + "..." : url;
+    const query = typeof input.query === "string" ? input.query : null;
+    if (query && query !== "undefined") return query.length > 60 ? query.slice(0, 57) + "..." : query;
+    return capitalize(entry.name);
+  }
+
   // Show skill name for Skill tool calls (e.g. Claude Code's Skill tool)
   if (entry.name.toLowerCase() === "skill" && typeof input.skill === "string" && input.skill) {
     return input.skill;
@@ -196,8 +204,7 @@ export class DisplaySpecBuilder {
     if (content && content.trim().length > 0 && includeMeta) {
       outputSummary = buildOutputSummary(content);
 
-      const isLong =
-        content.split("\n").length > INLINE_MAX_LINES || content.length > INLINE_MAX_CHARS;
+      const isLong = !isShortOutput(content);
 
       if (isLong) {
         const publicUrl = this.tunnelService?.getPublicUrl();

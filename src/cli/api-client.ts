@@ -2,12 +2,20 @@ import * as fs from 'node:fs'
 import * as path from 'node:path'
 import * as os from 'node:os'
 
-const DEFAULT_PORT_FILE = path.join(os.homedir(), '.openacp', 'api.port')
-const DEFAULT_SECRET_FILE = path.join(os.homedir(), '.openacp', 'api-secret')
+const DEFAULT_ROOT = path.join(os.homedir(), '.openacp')
 
-export function readApiPort(portFilePath: string = DEFAULT_PORT_FILE): number | null {
+function defaultPortFile(root?: string): string {
+  return path.join(root ?? DEFAULT_ROOT, 'api.port')
+}
+
+function defaultSecretFile(root?: string): string {
+  return path.join(root ?? DEFAULT_ROOT, 'api-secret')
+}
+
+export function readApiPort(portFilePath?: string, instanceRoot?: string): number | null {
+  const filePath = portFilePath ?? defaultPortFile(instanceRoot)
   try {
-    const content = fs.readFileSync(portFilePath, 'utf-8').trim()
+    const content = fs.readFileSync(filePath, 'utf-8').trim()
     const port = parseInt(content, 10)
     return isNaN(port) ? null : port
   } catch {
@@ -15,18 +23,20 @@ export function readApiPort(portFilePath: string = DEFAULT_PORT_FILE): number | 
   }
 }
 
-export function readApiSecret(secretFilePath: string = DEFAULT_SECRET_FILE): string | null {
+export function readApiSecret(secretFilePath?: string, instanceRoot?: string): string | null {
+  const filePath = secretFilePath ?? defaultSecretFile(instanceRoot)
   try {
-    const content = fs.readFileSync(secretFilePath, 'utf-8').trim()
+    const content = fs.readFileSync(filePath, 'utf-8').trim()
     return content || null
   } catch {
     return null
   }
 }
 
-export function removeStalePortFile(portFilePath: string = DEFAULT_PORT_FILE): void {
+export function removeStalePortFile(portFilePath?: string, instanceRoot?: string): void {
+  const filePath = portFilePath ?? defaultPortFile(instanceRoot)
   try {
-    fs.unlinkSync(portFilePath)
+    fs.unlinkSync(filePath)
   } catch {
     // ignore
   }
@@ -36,8 +46,9 @@ export async function apiCall(
   port: number,
   urlPath: string,
   options?: RequestInit,
+  instanceRoot?: string,
 ): Promise<Response> {
-  const secret = readApiSecret()
+  const secret = readApiSecret(undefined, instanceRoot)
   const headers = new Headers(options?.headers)
   if (secret) {
     headers.set('Authorization', `Bearer ${secret}`)

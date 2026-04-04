@@ -92,7 +92,7 @@ interface SecurityService {
 }
 ```
 
-**Commands**: `/dangerous on|off` -- toggle auto-approve mode for all permissions.
+**Commands**: `/bypass on|off` -- toggle auto-approve mode for all permissions.
 
 **Config**: Uses core `config.json` security section (`allowedUserIds`, `maxConcurrentSessions`).
 
@@ -268,13 +268,13 @@ interface ContextService {
 
 ### @openacp/api-server
 
-REST API and Server-Sent Events for external integrations.
+REST API, Server-Sent Events, and authentication for external integrations.
 
-- **Service**: `api-server`
+- **Service**: `api-server` (implements `ApiServerService`)
 - **Dependencies**: `@openacp/security`
 - **Permissions**: `services:register`, `kernel:access`, `events:read`
 
-**What it does**: Exposes a REST API for managing sessions, sending prompts, and streaming agent events via SSE. Enables future Web UI integration. Also exposes plugin management endpoints.
+**What it does**: Exposes a Fastify-based REST API with schema validation (Zod), Swagger/OpenAPI documentation, CORS, and rate limiting. Provides session management, prompt delivery, agent events via SSE, JWT authentication, and file viewer routes. Plugins can register additional routes via `ApiServerService.registerPlugin()`.
 
 **Settings**:
 
@@ -282,17 +282,39 @@ REST API and Server-Sent Events for external integrations.
 |-----|------|-------------|
 | `port` | number | HTTP port (default: `21420`) |
 
-**API endpoints**:
+**Key capabilities**:
 
-| Endpoint | Description |
-|----------|-------------|
-| `GET /api/plugins` | List all plugins |
-| `GET /api/plugins/:name` | Plugin details + settings |
-| `PUT /api/plugins/:name/settings` | Update plugin settings |
-| `POST /api/plugins/:name/enable` | Enable a plugin |
-| `POST /api/plugins/:name/disable` | Disable a plugin |
-| `GET /api/config` | Core config |
-| `PUT /api/config` | Update core config |
+- **Structured routes** — `/api/v1/*` endpoints for sessions, agents, config, system, commands, and auth
+- **JWT authentication** — two-tier auth with secret token (master key) and scoped JWT access tokens
+- **SSE streaming** — real-time session events, agent output, and health pings via `GET /api/v1/sse/sessions/:id/stream`
+- **File viewer** — serves file, diff, and output viewer routes (merged from the former standalone viewer server)
+- **Plugin extensibility** — plugins register additional Fastify routes via the `ApiServerService`
+- **Swagger UI** — auto-generated API documentation at `/docs`
+
+See the [REST API reference](../api-reference/rest-api.md) for the full endpoint list.
+
+---
+
+### SSE Manager (part of @openacp/api-server)
+
+The SSE (Server-Sent Events) manager is integrated into the API server plugin rather than being a separate plugin. It provides real-time event streaming for app clients.
+
+**What it does**: Broadcasts session lifecycle events, agent output, and health pings over SSE connections. Supports per-session filtering and automatic cleanup on disconnect.
+
+**Event types**:
+
+| Event | Description |
+|-------|-------------|
+| `session:created` | A new session was created |
+| `session:updated` | Session state changed (status, name, etc.) |
+| `session:deleted` | A session was destroyed |
+| `agent:event` | Agent output (text, tool calls, errors) |
+| `permission:request` | A permission request is pending |
+| `health` | Periodic health ping (every 30s) with memory and uptime stats |
+
+**Connection**: `GET /api/v1/sse/sessions/:id/stream?token=<jwt>` for per-session streams, or `GET /api/events?token=<api-secret>` for all events.
+
+**Reconnect support**: A 100-event circular buffer per session enables replay on reconnect — if the client missed fewer than 100 events, they are replayed on reconnection.
 
 ---
 

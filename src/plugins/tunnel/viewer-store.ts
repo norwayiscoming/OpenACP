@@ -43,7 +43,7 @@ export class ViewerStore {
 
   storeFile(sessionId: string, filePath: string, content: string, workingDirectory: string): string | null {
     if (!this.isPathAllowed(filePath, workingDirectory)) {
-      log.warn({ filePath, workingDirectory }, 'Path outside workspace, rejecting')
+      log.debug({ filePath, workingDirectory }, 'Path outside workspace, skipping viewer link')
       return null
     }
     if (content.length > MAX_CONTENT_SIZE) {
@@ -70,7 +70,7 @@ export class ViewerStore {
 
   storeDiff(sessionId: string, filePath: string, oldContent: string, newContent: string, workingDirectory: string): string | null {
     if (!this.isPathAllowed(filePath, workingDirectory)) {
-      log.warn({ filePath, workingDirectory }, 'Path outside workspace, rejecting')
+      log.debug({ filePath, workingDirectory }, 'Path outside workspace, skipping viewer link')
       return null
     }
     const combined = oldContent.length + newContent.length

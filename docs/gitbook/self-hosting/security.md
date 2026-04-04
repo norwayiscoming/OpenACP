@@ -40,15 +40,22 @@ The default of 20 is generous for personal use. Reduce it if you are on a machin
 
 Sessions that have been idle (no new prompt sent) for longer than this value are eligible for automatic cleanup. The default is 60 minutes.
 
-## API Bearer Token
+## API Authentication
 
-The local REST API (default port `21420`) is protected by a bearer token. The token is stored in:
+The REST API uses a two-tier authentication system:
 
+### Secret token (master key)
+
+The API secret is stored in `<instance-root>/api-secret` (default: `~/.openacp/api-secret`). This file is created automatically on first start with `0600` permissions. The token is a 64-character hex string generated with `crypto.randomBytes(32)`.
+
+The secret token provides full administrative access. Use it for:
+
+- CLI-to-daemon communication (handled automatically).
+- Issuing JWT access tokens for apps and integrations.
+
+```http
+Authorization: Bearer <contents of api-secret>
 ```
-~/.openacp/api-secret
-```
-
-This file is created automatically on first start with `0600` permissions (owner read/write only). The token is a 64-character hex string generated with `crypto.randomBytes(32)`.
 
 At startup, if the file permissions are more permissive than `0600`, a warning is logged:
 
@@ -56,17 +63,52 @@ At startup, if the file permissions are more permissive than `0600`, a warning i
 API secret file has insecure permissions (should be 0600). Run: chmod 600 ~/.openacp/api-secret
 ```
 
-To authenticate API requests, include the token in the `Authorization` header:
+### JWT access tokens
 
-```http
-Authorization: Bearer <contents of ~/.openacp/api-secret>
+For app clients and remote access, OpenACP issues scoped JWT tokens. Unlike the secret token, JWTs are:
+
+- **Scoped** — assigned a role (`admin`, `operator`, or `viewer`) with predefined permissions.
+- **Revokable** — can be revoked individually via the API.
+- **Time-limited** — expire after a configurable period, with a 7-day refresh window.
+- **Stateful** — tracked in `<instance-root>/tokens.json` with last-used timestamps.
+
+#### Roles
+
+| Role | Capabilities |
+|------|-------------|
+| `admin` | Full access: manage sessions, config, agents, tokens |
+| `operator` | Create/manage sessions, send prompts, view config |
+| `viewer` | Read-only: view sessions, status, and events |
+
+#### Issuing tokens
+
+Tokens are issued by authenticating with the secret token:
+
+```bash
+curl -X POST \
+  -H "Authorization: Bearer $SECRET" \
+  -H "Content-Type: application/json" \
+  -d '{"name": "my-app", "role": "operator"}' \
+  http://localhost:21420/api/v1/auth/tokens
 ```
 
-The CLI reads this file automatically when talking to a running daemon, so you do not need to manage it manually for normal use.
+Or use `openacp remote` to generate a one-time access code that can be exchanged for a JWT (see [App Connectivity](../features/app-connectivity.md)).
+
+#### Revoking tokens
+
+```bash
+curl -X DELETE \
+  -H "Authorization: Bearer $SECRET" \
+  http://localhost:21420/api/v1/auth/tokens/<token-id>
+```
+
+### Network security
 
 Do not expose the API port externally. The default `host: "127.0.0.1"` binding ensures the API is only reachable from localhost. If you change `api.host` to `0.0.0.0`, the server logs a warning — ensure your firewall blocks external access to port `21420`.
 
-## Dangerous Mode
+For remote access, use a tunnel instead of exposing the port directly. The tunnel provides HTTPS encryption and access control via one-time codes.
+
+## Bypass Permissions
 
 Some agent operations (file writes, command execution) require explicit user approval via permission request buttons in the chat. This is the default behavior. For details on how permissions work from a user's perspective, see [Permissions](../using-openacp/permissions.md).
 
@@ -78,10 +120,12 @@ If an agent is configured to run without permission prompts (agent-side configur
 
 2. **Keep `api-secret` at `0600`**. The CLI warns you if it is not. Run `chmod 600 ~/.openacp/api-secret` if needed.
 
-3. **Do not change `api.host` to `0.0.0.0`** unless you have a specific need and have locked down port `21420` with firewall rules.
+3. **Do not change `api.host` to `0.0.0.0`** unless you have a specific need and have locked down port `21420` with firewall rules. Use tunnels for remote access instead.
 
 4. **Review `maxConcurrentSessions`** if you share the bot with multiple users. A session per user is reasonable; 20 concurrent ACP agent subprocesses can be resource-intensive.
 
-5. **Rotate the API secret** by deleting `~/.openacp/api-secret` and restarting the daemon. A new token is generated automatically.
+5. **Rotate the API secret** by deleting `~/.openacp/api-secret` and restarting the daemon. A new token is generated automatically. All existing JWT tokens issued from the old secret become invalid.
 
 6. **Use daemon mode with autostart** for persistent deployments so the server does not silently go offline after a reboot.
+
+7. **Revoke unused JWT tokens** periodically. Use `GET /api/v1/auth/tokens` to list active tokens and their last-used timestamps. Revoke any you no longer need.

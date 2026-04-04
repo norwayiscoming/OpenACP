@@ -65,20 +65,28 @@ Wraps an `AgentInstance` with:
 - **Prompt queue** -- messages are processed serially, never in parallel
 - **Auto-naming** -- after the first prompt, asks the agent to summarize the conversation into a short title
 - **Lifecycle management** -- tracks state (idle, processing, waiting_permission, ended)
+- **Config options** -- stores agent-declared config options (`ConfigOption[]`) for modes, models, and toggles
+- **Agent switch tracking** -- maintains `agentSwitchHistory` with timestamps and prompt counts per agent
 
 ```typescript
 class Session {
   readonly id: string
   readonly agentName: string
   state: SessionState  // 'idle' | 'processing' | 'waiting_permission' | 'ended'
+  configOptions: ConfigOption[]  // agent-declared config (modes, models, etc.)
 
   enqueuePrompt(text: string, attachments?: Attachment[]): Promise<void>
+  switchAgent(agentName: string): Promise<void>
   cancel(reason?: string): Promise<void>
   destroy(): Promise<void>
 }
 ```
 
 Sessions emit events through the EventBus that plugins can subscribe to (e.g., `session:afterDestroy` for cleanup).
+
+### Lazy session resume
+
+When a command or message targets a session that has been evicted from memory (e.g., after a server restart), `core.getOrResumeSession()` transparently loads the session record from the store and resumes it. This means commands dispatched to dormant sessions work without the user manually restarting the session.
 
 ---
 
@@ -273,6 +281,25 @@ The transformer produces `OutgoingMessage` with types: `text`, `thought`, `tool_
 
 ---
 
+## InstanceContext
+
+Encapsulates all resolved paths for a single OpenACP instance. Every core module (ConfigManager, SessionStore, AgentStore) receives an `InstanceContext` instead of hardcoding `~/.openacp/`.
+
+```typescript
+interface InstanceContext {
+  id: string
+  root: string            // e.g. ~/.openacp/ or ./my-instance/.openacp/
+  configPath: string      // <root>/config.json
+  logDir: string          // <root>/logs/
+  pluginDir: string       // <root>/plugins/
+  // ... other resolved paths
+}
+```
+
+The `InstanceRegistry` at `~/.openacp/instances.json` tracks all instances by ID, enabling `openacp status --all` to show every instance's state. See [Multi-Instance](../features/multi-instance.md) for the user-facing guide.
+
+---
+
 ## Adapter Primitives
 
 Shared framework in `src/core/adapter-primitives/` that adapter plugins build on:
@@ -283,7 +310,12 @@ Shared framework in `src/core/adapter-primitives/` that adapter plugins build on
 - **DraftManager** -- buffers text chunks and sends periodic batch updates
 - **SendQueue** -- rate-limited message queue with per-category intervals
 - **ToolCallTracker** -- tracks tool calls to enable message editing on status updates
-- **ActivityTracker** -- manages thinking indicators
+- **ActivityTracker** -- manages thinking indicators and tool state aggregation
+- **OutputModeResolver** -- resolves the 3-level cascade (session → adapter → global → default)
+- **ToolStateMap** -- accumulates tool events into a unified state for rendering
+- **DisplaySpecBuilder** -- builds display specifications per output mode level
+- **ThoughtBuffer** -- buffers thinking content for deferred rendering
+- **ToolCardState** -- manages debounced tool card updates (batches rapid events)
 
 ```
 IChannelAdapter (thin interface)

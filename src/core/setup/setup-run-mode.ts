@@ -6,6 +6,7 @@ export async function setupRunMode(opts?: {
   existing?: { runMode: string; autoStart: boolean };
   stepNum?: number;
   totalSteps?: number;
+  instanceRoot?: string;
 }): Promise<{ runMode: 'foreground' | 'daemon'; autoStart: boolean }> {
   const { existing, stepNum, totalSteps } = opts ?? {};
   if (stepNum != null && totalSteps != null) {
@@ -47,7 +48,8 @@ export async function setupRunMode(opts?: {
     const autoStart = isAutoStartSupported();
     if (autoStart) {
       muteLogger();
-      const result = installAutoStart(expandHome('~/.openacp/logs'));
+      const logDir = opts?.instanceRoot ? `${opts.instanceRoot}/logs` : expandHome('~/.openacp/logs');
+      const result = installAutoStart(logDir);
       unmuteLogger();
       if (result.success) {
         console.log(ok('Auto-start on boot enabled'));

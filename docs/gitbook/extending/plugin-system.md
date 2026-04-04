@@ -1,6 +1,6 @@
-# Plugin System
+# Plugin System Overview
 
-> **Note:** OpenACP has been refactored to a microkernel plugin architecture. This page provides a quick overview. For the full guide, see [Architecture > Plugin System](../architecture/plugin-system.md).
+> **Note:** This page provides a quick overview of plugin management from a user's perspective. For the full technical deep dive into the plugin infrastructure, see [Architecture > Plugin System](../architecture/plugin-system.md).
 
 ---
 
@@ -21,7 +21,7 @@ Plugins can:
 ## Installing a Plugin
 
 ```bash
-openacp plugins install @community/my-plugin
+openacp plugin install @community/my-plugin
 ```
 
 If the plugin has `essential: true`, its interactive `install()` hook runs immediately. Otherwise, it's registered and available on next restart.
@@ -37,7 +37,7 @@ Shows all installed plugins with their version, source (builtin/npm), and enable
 ## Configuring a Plugin
 
 ```bash
-openacp plugins configure @community/my-plugin
+openacp plugin configure @community/my-plugin
 ```
 
 Runs the plugin's interactive `configure()` hook.
@@ -45,8 +45,8 @@ Runs the plugin's interactive `configure()` hook.
 ## Disabling / Enabling
 
 ```bash
-openacp plugins disable @openacp/speech
-openacp plugins enable @openacp/speech
+openacp plugin disable @openacp/speech
+openacp plugin enable @openacp/speech
 ```
 
 Built-in plugins cannot be uninstalled, but they can be disabled.
@@ -54,8 +54,8 @@ Built-in plugins cannot be uninstalled, but they can be disabled.
 ## Uninstalling
 
 ```bash
-openacp plugins uninstall @community/my-plugin
-openacp plugins uninstall @community/my-plugin --purge  # also delete settings
+openacp plugin uninstall @community/my-plugin
+openacp plugin uninstall @community/my-plugin --purge  # also delete settings
 ```
 
 ---

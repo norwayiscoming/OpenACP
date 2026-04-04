@@ -1,7 +1,19 @@
 import { wantsHelp } from './helpers.js'
+import { isJsonMode, jsonSuccess, jsonError, ErrorCodes, muteForJson } from '../output.js'
 
-export async function cmdAgents(args: string[]): Promise<void> {
-  const subcommand = args[1];
+async function createCatalog(instanceRoot?: string) {
+  const { AgentCatalog } = await import("../../core/agents/agent-catalog.js");
+  if (instanceRoot) {
+    const { AgentStore } = await import("../../core/agents/agent-store.js");
+    const pathMod = await import('node:path');
+    const store = new AgentStore(pathMod.join(instanceRoot, 'agents.json'));
+    return new AgentCatalog(store, pathMod.join(instanceRoot, 'registry-cache.json'), pathMod.join(instanceRoot, 'agents'));
+  }
+  return new AgentCatalog();
+}
+
+export async function cmdAgents(args: string[], instanceRoot?: string): Promise<void> {
+  const subcommand = args[0];
 
   if (wantsHelp(args) && (!subcommand || subcommand === '--help' || subcommand === '-h')) {
     console.log(`
@@ -16,6 +28,7 @@ export async function cmdAgents(args: string[]): Promise<void> {
   openacp agents refresh               Force-refresh agent list from registry
 
 \x1b[1mOptions:\x1b[0m
+  --json                                 Output result as JSON
   -h, --help                           Show this help message
 
 \x1b[1mExamples:\x1b[0m
@@ -28,11 +41,14 @@ export async function cmdAgents(args: string[]): Promise<void> {
     return;
   }
 
+  // Extract positional argument (first non-flag after subcommand)
+  const positional = args.slice(1).find(a => !a.startsWith('-'));
+
   switch (subcommand) {
     case "install":
-      return agentsInstall(args[2], args.includes("--force"), wantsHelp(args));
+      return agentsInstall(positional, args.includes("--force"), wantsHelp(args), instanceRoot, isJsonMode(args));
     case "uninstall":
-      return agentsUninstall(args[2], wantsHelp(args));
+      return agentsUninstall(positional, wantsHelp(args), instanceRoot, isJsonMode(args));
     case "refresh":
       if (wantsHelp(args)) {
         console.log(`
@@ -46,14 +62,14 @@ bypassing the normal staleness check.
 `)
         return;
       }
-      return agentsRefresh();
+      return agentsRefresh(instanceRoot);
     case "info":
-      return agentsInfo(args[2], wantsHelp(args));
+      return agentsInfo(positional, wantsHelp(args), instanceRoot, isJsonMode(args));
     case "run":
-      return agentsRun(args[2], args.slice(3), wantsHelp(args));
+      return agentsRun(args[1], args.slice(2), wantsHelp(args), instanceRoot);
     case "list":
     case undefined:
-      return agentsList();
+      return agentsList(instanceRoot, args.includes("--json"));
     default: {
       const { suggestMatch } = await import('../suggest.js');
       const agentSubcommands = ["install", "uninstall", "refresh", "info", "run", "list"];
@@ -66,13 +82,29 @@ bypassing the normal staleness check.
   }
 }
 
-async function agentsList(): Promise<void> {
-  const { AgentCatalog } = await import("../../core/agents/agent-catalog.js");
-  const catalog = new AgentCatalog();
+async function agentsList(instanceRoot?: string, json = false): Promise<void> {
+  if (json) await muteForJson()
+  const catalog = await createCatalog(instanceRoot);
   catalog.load();
   await catalog.refreshRegistryIfStale();
 
   const items = catalog.getAvailable();
+
+  if (json) {
+    jsonSuccess({
+      agents: items.map((item) => ({
+        key: item.key,
+        name: item.name,
+        version: item.version,
+        distribution: item.distribution,
+        description: item.description ?? "",
+        installed: item.installed,
+        available: item.available ?? true,
+        missingDeps: item.missingDeps ?? [],
+      })),
+    });
+  }
+
   const installed = items.filter((i) => i.installed);
   const available = items.filter((i) => !i.installed);
 
@@ -116,8 +148,10 @@ async function agentsList(): Promise<void> {
   console.log("");
 }
 
-async function agentsInstall(nameOrId: string | undefined, force: boolean, help = false): Promise<void> {
-  if (help || !nameOrId) {
+async function agentsInstall(nameOrId: string | undefined, force: boolean, help = false, instanceRoot?: string, json = false): Promise<void> {
+  if (json) await muteForJson()
+
+  if (!json && (help || !nameOrId)) {
     console.log(`
 \x1b[1mopenacp agents install\x1b[0m — Install an agent from the ACP Registry
 
@@ -129,6 +163,7 @@ async function agentsInstall(nameOrId: string | undefined, force: boolean, help 
 
 \x1b[1mOptions:\x1b[0m
   --force         Reinstall even if already installed
+  --json          Output result as JSON
   -h, --help      Show this help message
 
 \x1b[1mExamples:\x1b[0m
@@ -140,12 +175,22 @@ Run 'openacp agents' to see available agents.
     return;
   }
 
-  const { AgentCatalog } = await import("../../core/agents/agent-catalog.js");
-  const catalog = new AgentCatalog();
+  if (!nameOrId) {
+    if (json) jsonError(ErrorCodes.MISSING_ARGUMENT, 'Agent name is required')
+    return
+  }
+
+  const catalog = await createCatalog(instanceRoot);
   catalog.load();
   await catalog.refreshRegistryIfStale();
 
-  const progress: import("../../core/types.js").InstallProgress = {
+  const progress: import("../../core/types.js").InstallProgress = json ? {
+    onStart() {},
+    onStep() {},
+    onDownloadProgress() {},
+    onSuccess() {},
+    onError() {},
+  } : {
     onStart(_id, name) {
       process.stdout.write(`\n  ⏳ Installing ${name}...\n`);
     },
@@ -169,6 +214,7 @@ Run 'openacp agents' to see available agents.
 
   const result = await catalog.install(nameOrId, progress, force);
   if (!result.ok) {
+    if (json) jsonError(ErrorCodes.INSTALL_FAILED, result.error ?? 'Installation failed')
     if (result.error?.includes('not found')) {
       const { suggestMatch } = await import('../suggest.js');
       const allKeys = catalog.getAvailable().map((a) => a.key);
@@ -176,6 +222,11 @@ Run 'openacp agents' to see available agents.
       if (suggestion) console.log(`  Did you mean: ${suggestion}?`);
     }
     process.exit(1);
+  }
+
+  if (json) {
+    const installed = catalog.getInstalledAgent(result.agentKey)
+    jsonSuccess({ key: result.agentKey, version: installed?.version ?? 'unknown', installed: true })
   }
 
   // Auto-integrate handoff if agent supports it
@@ -201,8 +252,10 @@ Run 'openacp agents' to see available agents.
   }
 }
 
-async function agentsUninstall(name: string | undefined, help = false): Promise<void> {
-  if (help || !name) {
+async function agentsUninstall(name: string | undefined, help = false, instanceRoot?: string, json = false): Promise<void> {
+  if (json) await muteForJson()
+
+  if (!json && (help || !name)) {
     console.log(`
 \x1b[1mopenacp agents uninstall\x1b[0m — Remove an installed agent
 
@@ -212,14 +265,22 @@ async function agentsUninstall(name: string | undefined, help = false): Promise<
 \x1b[1mArguments:\x1b[0m
   <name>          Agent name to remove
 
+\x1b[1mOptions:\x1b[0m
+  --json          Output result as JSON
+  -h, --help      Show this help message
+
 \x1b[1mExamples:\x1b[0m
   openacp agents uninstall gemini
 `)
     return;
   }
 
-  const { AgentCatalog } = await import("../../core/agents/agent-catalog.js");
-  const catalog = new AgentCatalog();
+  if (!name) {
+    if (json) jsonError(ErrorCodes.MISSING_ARGUMENT, 'Agent name is required')
+    return
+  }
+
+  const catalog = await createCatalog(instanceRoot);
   catalog.load();
 
   const result = await catalog.uninstall(name);
@@ -232,8 +293,10 @@ async function agentsUninstall(name: string | undefined, help = false): Promise<
       await uninstallIntegration(name, caps.integration);
       console.log(`  \x1b[32m✓\x1b[0m Handoff integration removed for ${name}`);
     }
+    if (json) jsonSuccess({ key: name, uninstalled: true })
     console.log(`\n  \x1b[32m✓ ${name} removed.\x1b[0m\n`);
   } else {
+    if (json) jsonError(ErrorCodes.UNINSTALL_FAILED, result.error ?? 'Uninstall failed')
     console.log(`\n  \x1b[31m✗ ${result.error}\x1b[0m`);
     if (result.error?.includes('not installed')) {
       const { suggestMatch } = await import('../suggest.js');
@@ -245,17 +308,18 @@ async function agentsUninstall(name: string | undefined, help = false): Promise<
   }
 }
 
-async function agentsRefresh(): Promise<void> {
-  const { AgentCatalog } = await import("../../core/agents/agent-catalog.js");
-  const catalog = new AgentCatalog();
+async function agentsRefresh(instanceRoot?: string): Promise<void> {
+  const catalog = await createCatalog(instanceRoot);
   catalog.load();
   console.log("\n  Updating agent list...");
   await catalog.fetchRegistry();
   console.log("  \x1b[32m✓ Agent list updated.\x1b[0m\n");
 }
 
-async function agentsInfo(nameOrId: string | undefined, help = false): Promise<void> {
-  if (help || !nameOrId) {
+async function agentsInfo(nameOrId: string | undefined, help = false, instanceRoot?: string, json = false): Promise<void> {
+  if (json) await muteForJson()
+
+  if (!json && (help || !nameOrId)) {
     console.log(`
 \x1b[1mopenacp agents info\x1b[0m — Show agent details, dependencies & setup guide
 
@@ -268,6 +332,10 @@ async function agentsInfo(nameOrId: string | undefined, help = false): Promise<v
 Shows version, distribution type, command, setup steps, and
 whether the agent is installed or available from the registry.
 
+\x1b[1mOptions:\x1b[0m
+  --json          Output result as JSON
+  -h, --help      Show this help message
+
 \x1b[1mExamples:\x1b[0m
   openacp agents info claude
   openacp agents info cursor
@@ -275,14 +343,30 @@ whether the agent is installed or available from the registry.
     return;
   }
 
-  const { AgentCatalog } = await import("../../core/agents/agent-catalog.js");
-  const catalog = new AgentCatalog();
+  if (!nameOrId) {
+    if (json) jsonError(ErrorCodes.MISSING_ARGUMENT, 'Agent name is required')
+    return
+  }
+
+  const catalog = await createCatalog(instanceRoot);
   catalog.load();
 
   const { getAgentSetup } = await import("../../core/agents/agent-dependencies.js");
 
   const installed = catalog.getInstalledAgent(nameOrId);
   if (installed) {
+    if (json) {
+      jsonSuccess({
+        key: installed.registryId ?? nameOrId,
+        name: installed.name,
+        version: installed.version,
+        distribution: installed.distribution,
+        installed: true,
+        command: installed.command,
+        binaryPath: installed.binaryPath ?? null,
+        registryId: installed.registryId ?? null,
+      })
+    }
     console.log(`\n  \x1b[1m${installed.name}\x1b[0m`);
     console.log(`  Version:      ${installed.version}`);
     console.log(`  Type:         ${installed.distribution}`);
@@ -305,6 +389,15 @@ whether the agent is installed or available from the registry.
 
   const regAgent = catalog.findRegistryAgent(nameOrId);
   if (regAgent) {
+    if (json) {
+      jsonSuccess({
+        key: regAgent.id,
+        name: regAgent.name,
+        version: regAgent.version,
+        description: regAgent.description ?? '',
+        installed: false,
+      })
+    }
     const availability = catalog.checkAvailability(nameOrId);
     console.log(`\n  \x1b[1m${regAgent.name}\x1b[0m \x1b[2m(not installed)\x1b[0m`);
     console.log(`  ${regAgent.description}`);
@@ -326,6 +419,7 @@ whether the agent is installed or available from the registry.
     return;
   }
 
+  if (json) jsonError(ErrorCodes.AGENT_NOT_FOUND, `"${nameOrId}" not found.`)
   const { suggestMatch } = await import('../suggest.js');
   const allKeys = catalog.getAvailable().map((a) => a.key);
   const suggestion = suggestMatch(nameOrId, allKeys);
@@ -334,7 +428,7 @@ whether the agent is installed or available from the registry.
   console.log(`  Run 'openacp agents' to see available agents.\n`);
 }
 
-async function agentsRun(nameOrId: string | undefined, extraArgs: string[], help = false): Promise<void> {
+async function agentsRun(nameOrId: string | undefined, extraArgs: string[], help = false, instanceRoot?: string): Promise<void> {
   if (help || !nameOrId) {
     console.log(`
 \x1b[1mopenacp agents run\x1b[0m — Run agent CLI directly
@@ -357,8 +451,7 @@ ACP-specific flags are automatically stripped.
     return;
   }
 
-  const { AgentCatalog } = await import("../../core/agents/agent-catalog.js");
-  const catalog = new AgentCatalog();
+  const catalog = await createCatalog(instanceRoot);
   catalog.load();
 
   const installed = catalog.getInstalledAgent(nameOrId);

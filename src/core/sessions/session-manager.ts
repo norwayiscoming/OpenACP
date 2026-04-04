@@ -3,6 +3,24 @@ import { Session } from "./session.js";
 import type { SessionStore } from "./session-store.js";
 import type { EventBus } from "../event-bus.js";
 import type { MiddlewareChain } from "../plugin/middleware-chain.js";
+import type { SessionStatus, ConfigOption, AgentCapabilities } from "../types.js";
+
+export interface SessionSummary {
+  id: string;
+  agent: string;
+  status: SessionStatus;
+  name: string | null;
+  workspace: string;
+  channelId: string;
+  createdAt: string;
+  lastActiveAt: string | null;
+  dangerousMode: boolean;
+  queueDepth: number;
+  promptRunning: boolean;
+  configOptions?: ConfigOption[];
+  capabilities: AgentCapabilities | null;
+  isLive: boolean;
+}
 
 export class SessionManager {
   private sessions: Map<string, Session> = new Map();
@@ -45,7 +63,7 @@ export class SessionManager {
         createdAt: session.createdAt.toISOString(),
         lastActiveAt: new Date().toISOString(),
         name: session.name,
-        dangerousMode: false,
+        clientOverrides: {},
         platform: {},
       });
     }
@@ -59,6 +77,10 @@ export class SessionManager {
 
   getSessionByThread(channelId: string, threadId: string): Session | undefined {
     for (const session of this.sessions.values()) {
+      // New: check per-adapter threadIds map
+      const adapterThread = session.threadIds.get(channelId);
+      if (adapterThread === threadId) return session;
+      // Backward compat: check legacy channelId + threadId
       if (session.channelId === channelId && session.threadId === threadId) {
         return session;
       }
@@ -98,6 +120,7 @@ export class SessionManager {
   async patchRecord(
     sessionId: string,
     patch: Partial<import("../types.js").SessionRecord>,
+    options?: { immediate?: boolean },
   ): Promise<void> {
     if (!this.store) return;
     const record = this.store.get(sessionId);
@@ -106,6 +129,9 @@ export class SessionManager {
     } else if (patch.sessionId) {
       // Initial save — treat patch as full record
       await this.store.save(patch as import("../types.js").SessionRecord);
+    }
+    if (options?.immediate) {
+      this.store.flush();
     }
   }
 
@@ -144,6 +170,70 @@ export class SessionManager {
     return all;
   }
 
+  listAllSessions(channelId?: string): SessionSummary[] {
+    if (this.store) {
+      let records = this.store.list();
+      if (channelId) records = records.filter((r) => r.channelId === channelId);
+      return records.map((record) => {
+        const live = this.sessions.get(record.sessionId);
+        if (live) {
+          return {
+            id: live.id,
+            agent: live.agentName,
+            status: live.status,
+            name: live.name ?? null,
+            workspace: live.workingDirectory,
+            channelId: live.channelId,
+            createdAt: live.createdAt.toISOString(),
+            lastActiveAt: record.lastActiveAt ?? null,
+            dangerousMode: live.clientOverrides.bypassPermissions ?? false,
+            queueDepth: live.queueDepth,
+            promptRunning: live.promptRunning,
+            configOptions: live.configOptions?.length ? live.configOptions : undefined,
+            capabilities: live.agentCapabilities ?? null,
+            isLive: true,
+          };
+        }
+        return {
+          id: record.sessionId,
+          agent: record.agentName,
+          status: record.status,
+          name: record.name ?? null,
+          workspace: record.workingDir,
+          channelId: record.channelId,
+          createdAt: record.createdAt,
+          lastActiveAt: record.lastActiveAt ?? null,
+          dangerousMode: record.clientOverrides?.bypassPermissions ?? false,
+          queueDepth: 0,
+          promptRunning: false,
+          configOptions: record.acpState?.configOptions,
+          capabilities: record.acpState?.agentCapabilities ?? null,
+          isLive: false,
+        };
+      });
+    }
+
+    // Fallback: no store — return live sessions only
+    let live = Array.from(this.sessions.values());
+    if (channelId) live = live.filter((s) => s.channelId === channelId);
+    return live.map((s) => ({
+      id: s.id,
+      agent: s.agentName,
+      status: s.status,
+      name: s.name ?? null,
+      workspace: s.workingDirectory,
+      channelId: s.channelId,
+      createdAt: s.createdAt.toISOString(),
+      lastActiveAt: null,
+      dangerousMode: s.clientOverrides.bypassPermissions ?? false,
+      queueDepth: s.queueDepth,
+      promptRunning: s.promptRunning,
+      configOptions: s.configOptions?.length ? s.configOptions : undefined,
+      capabilities: s.agentCapabilities ?? null,
+      isLive: true,
+    }));
+  }
+
   listRecords(filter?: {
     statuses?: string[];
   }): import("../types.js").SessionRecord[] {
@@ -170,9 +260,17 @@ export class SessionManager {
       for (const session of this.sessions.values()) {
         const record = this.store.get(session.id);
         if (record) {
-          await this.store.save({ ...record, status: "finished" });
+          await this.store.save({
+            ...record,
+            status: "finished",
+            acpState: session.toAcpStateSnapshot(),
+            clientOverrides: session.clientOverrides,
+            currentPromptCount: session.promptCount,
+            agentSwitchHistory: session.agentSwitchHistory,
+          });
         }
       }
+      this.store.flush();
     }
     this.sessions.clear();
   }
@@ -180,6 +278,8 @@ export class SessionManager {
   /**
    * Forcefully destroy all sessions (kill agent subprocesses).
    * Use only when sessions must be fully torn down (e.g. archive).
+   * Unlike shutdownAll(), this does NOT snapshot live session state (acpState, etc.)
+   * because destroyed sessions are terminal and will not be resumed.
    */
   async destroyAll(): Promise<void> {
     if (this.store) {
@@ -189,6 +289,7 @@ export class SessionManager {
           await this.store.save({ ...record, status: "finished" });
         }
       }
+      this.store.flush();
     }
     const sessionIds = [...this.sessions.keys()];
     for (const session of this.sessions.values()) {

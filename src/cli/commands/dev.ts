@@ -23,7 +23,7 @@ export async function cmdDev(args: string[] = []): Promise<void> {
   }
 
   // Parse args: first non-flag arg after 'dev' is plugin path
-  const pluginPathArg = args.slice(1).find(a => !a.startsWith('--'))
+  const pluginPathArg = args.find(a => !a.startsWith('--'))
   const noWatch = args.includes('--no-watch')
   const verbose = args.includes('--verbose')
 

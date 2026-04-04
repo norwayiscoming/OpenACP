@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import type { AgentEvent, ConfigOption } from "../../types.js";
 
 /**
@@ -137,21 +137,88 @@ describe("AgentInstance tool event rawOutput field", () => {
   });
 });
 
-describe("AgentInstance new ACP methods exist", () => {
-  // We import the class to verify method existence on the prototype
-  it("has setMode method", async () => {
+describe("AgentInstance setConfigOption legacy fallback", () => {
+  it("falls back to setSessionMode when setSessionConfigOption returns -32601 for mode", async () => {
     const { AgentInstance } = await import("../agent-instance.js");
-    expect(typeof AgentInstance.prototype.setMode).toBe("function");
+    const instance = Object.create(AgentInstance.prototype) as InstanceType<typeof AgentInstance>;
+
+    const setSessionMode = vi.fn().mockResolvedValue({});
+    const setSessionConfigOption = vi.fn().mockRejectedValue(
+      Object.assign(new Error('"Method not found": session/set_config_option'), { code: -32601 })
+    );
+    (instance as any).sessionId = "sess-1";
+    (instance as any).connection = { setSessionConfigOption, setSessionMode, unstable_setSessionModel: vi.fn() };
+
+    const result = await instance.setConfigOption("mode", { type: "select", value: "architect" });
+
+    expect(setSessionMode).toHaveBeenCalledWith({ sessionId: "sess-1", modeId: "architect" });
+    expect(result).toEqual({ configOptions: [] });
   });
 
+  it("falls back to unstable_setSessionModel when setSessionConfigOption returns -32601 for model", async () => {
+    const { AgentInstance } = await import("../agent-instance.js");
+    const instance = Object.create(AgentInstance.prototype) as InstanceType<typeof AgentInstance>;
+
+    const unstable_setSessionModel = vi.fn().mockResolvedValue({});
+    const setSessionConfigOption = vi.fn().mockRejectedValue(
+      Object.assign(new Error('"Method not found": session/set_config_option'), { code: -32601 })
+    );
+    (instance as any).sessionId = "sess-1";
+    (instance as any).connection = { setSessionConfigOption, setSessionMode: vi.fn(), unstable_setSessionModel };
+
+    const result = await instance.setConfigOption("model", { type: "select", value: "gemini-2.5-pro" });
+
+    expect(unstable_setSessionModel).toHaveBeenCalledWith({ sessionId: "sess-1", modelId: "gemini-2.5-pro" });
+    expect(result).toEqual({ configOptions: [] });
+  });
+
+  it("rethrows -32601 when configId is not mode or model", async () => {
+    const { AgentInstance } = await import("../agent-instance.js");
+    const instance = Object.create(AgentInstance.prototype) as InstanceType<typeof AgentInstance>;
+
+    const err = Object.assign(new Error('"Method not found": session/set_config_option'), { code: -32601 });
+    (instance as any).sessionId = "sess-1";
+    (instance as any).connection = { setSessionConfigOption: vi.fn().mockRejectedValue(err) };
+
+    await expect(
+      instance.setConfigOption("thought_level", { type: "select", value: "high" })
+    ).rejects.toThrow(err);
+  });
+
+  it("rethrows non-32601 errors without fallback", async () => {
+    const { AgentInstance } = await import("../agent-instance.js");
+    const instance = Object.create(AgentInstance.prototype) as InstanceType<typeof AgentInstance>;
+
+    const err = Object.assign(new Error("Internal error"), { code: -32603 });
+    (instance as any).sessionId = "sess-1";
+    (instance as any).connection = { setSessionConfigOption: vi.fn().mockRejectedValue(err) };
+
+    await expect(
+      instance.setConfigOption("mode", { type: "select", value: "architect" })
+    ).rejects.toThrow(err);
+  });
+
+  it("returns full configOptions when setSessionConfigOption succeeds", async () => {
+    const { AgentInstance } = await import("../agent-instance.js");
+    const instance = Object.create(AgentInstance.prototype) as InstanceType<typeof AgentInstance>;
+
+    const configOptions = [{ id: "mode", name: "Mode", type: "select" as const, currentValue: "architect", options: [] }];
+    (instance as any).sessionId = "sess-1";
+    (instance as any).connection = {
+      setSessionConfigOption: vi.fn().mockResolvedValue({ configOptions }),
+    };
+
+    const result = await instance.setConfigOption("mode", { type: "select", value: "architect" });
+
+    expect(result.configOptions).toEqual(configOptions);
+  });
+});
+
+describe("AgentInstance new ACP methods exist", () => {
+  // We import the class to verify method existence on the prototype
   it("has setConfigOption method", async () => {
     const { AgentInstance } = await import("../agent-instance.js");
     expect(typeof AgentInstance.prototype.setConfigOption).toBe("function");
-  });
-
-  it("has setModel method", async () => {
-    const { AgentInstance } = await import("../agent-instance.js");
-    expect(typeof AgentInstance.prototype.setModel).toBe("function");
   });
 
   it("has listSessions method", async () => {

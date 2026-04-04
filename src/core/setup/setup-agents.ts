@@ -56,20 +56,17 @@ export async function setupAgents(): Promise<{
   // Claude is always pre-installed (bundled dependency)
   if (!catalog.getInstalledAgent("claude")) {
     const claudeRegistry = catalog.findRegistryAgent("claude-acp");
-    if (claudeRegistry) {
-      await catalog.install("claude-acp");
-    } else {
-      // Fallback: register bundled claude-agent-acp directly
-      const { AgentStore } = await import("../agents/agent-store.js");
-      const store = new AgentStore();
-      store.load();
-      store.addAgent("claude", {
+    const installed = claudeRegistry ? await catalog.install("claude-acp") : null;
+    if (!installed?.ok) {
+      // Fallback: register bundled claude-agent-acp directly into the catalog's
+      // own store so it shows up in getAvailable() even when Claude CLI is absent.
+      catalog.registerFallbackAgent("claude", {
         registryId: "claude-acp",
         name: "Claude Agent",
         version: "bundled",
         distribution: "npx",
         command: "npx",
-        args: ["@zed-industries/claude-agent-acp"],
+        args: ["@agentclientprotocol/claude-agent-acp"],
         env: {},
         installedAt: new Date().toISOString(),
         binaryPath: null,

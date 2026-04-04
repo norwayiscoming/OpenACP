@@ -13,13 +13,14 @@ function createFileServicePlugin(): OpenACPPlugin {
 
     async install(ctx: InstallContext) {
       const { settings, legacyConfig, terminal } = ctx
+      const defaultFilesDir = path.join(ctx.instanceRoot ?? path.join(os.homedir(), '.openacp'), 'files')
 
       // Migrate from legacy config if present
       if (legacyConfig) {
         const filesCfg = legacyConfig.files as Record<string, unknown> | undefined
         if (filesCfg) {
           await settings.setAll({
-            baseDir: filesCfg.baseDir ?? path.join(os.homedir(), '.openacp', 'files'),
+            baseDir: filesCfg.baseDir ?? defaultFilesDir,
           })
           terminal.log.success('File service settings migrated from legacy config')
           return
@@ -28,7 +29,7 @@ function createFileServicePlugin(): OpenACPPlugin {
 
       // Save defaults
       await settings.setAll({
-        baseDir: path.join(os.homedir(), '.openacp', 'files'),
+        baseDir: defaultFilesDir,
       })
       terminal.log.success('File service defaults saved')
     },
@@ -36,10 +37,11 @@ function createFileServicePlugin(): OpenACPPlugin {
     async configure(ctx: InstallContext) {
       const { terminal, settings } = ctx
       const current = await settings.getAll()
+      const defaultFilesDir = path.join(ctx.instanceRoot ?? path.join(os.homedir(), '.openacp'), 'files')
 
       const val = await terminal.text({
         message: 'File storage directory:',
-        defaultValue: (current.baseDir as string) ?? path.join(os.homedir(), '.openacp', 'files'),
+        defaultValue: (current.baseDir as string) ?? defaultFilesDir,
       })
       await settings.set('baseDir', val.trim())
       terminal.log.success('File storage directory updated')
@@ -54,7 +56,7 @@ function createFileServicePlugin(): OpenACPPlugin {
 
     async setup(ctx) {
       const config = ctx.pluginConfig as Record<string, unknown>
-      const baseDir = (config.baseDir as string) ?? path.join(os.homedir(), '.openacp', 'files')
+      const baseDir = (config.baseDir as string) ?? path.join(ctx.instanceRoot, 'files')
       const retentionDays = (config.retentionDays as number) ?? 30
       const service = new FileService(baseDir)
       ctx.registerService('file-service', service)

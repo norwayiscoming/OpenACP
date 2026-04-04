@@ -12,6 +12,32 @@ describe('ViewerStore', () => {
     store.destroy()
   })
 
+  describe('storeFile() — path outside workspace (issue #195)', () => {
+    it('returns null for openacp files dir outside workspace without throwing', () => {
+      // Regression: voice attachments saved to ~/.openacp/files/<sessionId>/ are
+      // always outside the agent workspace. storeFile must return null silently
+      // (not throw, not WARN) — callers tolerate null by skipping viewer links.
+      const id = store.storeFile(
+        'sess-1',
+        '/home/codex/.openacp/files/wAmobthop7go/voice.wav',
+        'binary data',
+        '/home/codex/flutter_web_test',
+      )
+      expect(id).toBeNull()
+    })
+
+    it('returns null for storeDiff with openacp files dir outside workspace', () => {
+      const id = store.storeDiff(
+        'sess-1',
+        '/home/codex/.openacp/files/wAmobthop7go/voice.wav',
+        'old',
+        'new',
+        '/home/codex/flutter_web_test',
+      )
+      expect(id).toBeNull()
+    })
+  })
+
   describe('storeFile()', () => {
     it('stores a file and returns an id', () => {
       const id = store.storeFile('sess-1', '/workspace/test.ts', 'const x = 1', '/workspace')

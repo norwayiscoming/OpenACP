@@ -137,10 +137,22 @@ describe('AgentStore - extended', () => {
       expect(store2.getAgent('claude')?.command).toBe('claude-agent-acp')
     })
 
-    it('creates parent directory if missing', () => {
+    it('load does not create parent directory (lazy creation on save)', () => {
       const nestedPath = path.join(tmpDir, 'nested', 'dir', 'agents.json')
       const store = new AgentStore(nestedPath)
-      store.load() // should create directory
+      store.load()
+      expect(fs.existsSync(path.dirname(nestedPath))).toBe(false)
+    })
+
+    it('creates parent directory on first save', () => {
+      const nestedPath = path.join(tmpDir, 'nested2', 'dir', 'agents.json')
+      const store = new AgentStore(nestedPath)
+      store.load()
+      store.addAgent('test', {
+        registryId: 'test', name: 'Test', version: '1.0.0',
+        distribution: 'custom', command: 'echo', args: [], env: {},
+        installedAt: new Date().toISOString(), binaryPath: null,
+      })
       expect(fs.existsSync(path.dirname(nestedPath))).toBe(true)
     })
   })

@@ -45,7 +45,7 @@ function classifyMime(mimeType: string): Attachment["type"] {
 }
 
 export class FileService {
-  constructor(private baseDir: string) {}
+  constructor(readonly baseDir: string) {}
 
   /**
    * Remove session file directories older than maxAgeDays.

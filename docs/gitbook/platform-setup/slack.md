@@ -101,14 +101,28 @@ After configuring scopes, subscribe to the message events OpenACP needs to recei
 
 ---
 
-## Step 6: Enable Interactivity
+## Step 6: Enable Interactivity and Slash Commands
 
-Permission buttons (Allow / Deny) require interactivity to be enabled.
+Permission buttons (Allow / Deny) and the `/outputmode` command both require interactivity to be enabled.
+
+### Enable Interactivity
 
 1. In the left sidebar, go to **Interactivity & Shortcuts**.
 2. Toggle **Interactivity** to On.
 3. In Socket Mode, interactive payloads are delivered over the same WebSocket connection. Leave the **Request URL** field blank or set a placeholder value — it is not used in Socket Mode.
 4. Click **Save Changes**.
+
+### Register the `/outputmode` Slash Command
+
+1. In the left sidebar, go to **Slash Commands**.
+2. Click **Create New Command**.
+3. Fill in the fields:
+   - **Command**: `/outputmode`
+   - **Request URL**: leave blank (Socket Mode delivers the payload via WebSocket)
+   - **Short Description**: `Change output verbosity for this session`
+   - **Usage Hint**: `[low|medium|high]`
+4. Click **Save**.
+5. You will be prompted to **Reinstall App** — do this now, or after Step 8 once all config is ready.
 
 ---
 
@@ -129,7 +143,6 @@ Edit `~/.openacp/config.json` and add the Slack section (see the [full configura
   "channels": {
     "slack": {
       "enabled": true,
-      "adapter": "slack",
       "botToken": "xoxb-...",
       "appToken": "xapp-1-...",
       "signingSecret": "abcd1234efgh5678ijkl9012",
@@ -144,13 +157,13 @@ Edit `~/.openacp/config.json` and add the Slack section (see the [full configura
 | Field | Description |
 |-------|-------------|
 | `enabled` | Set to `true` to activate the Slack adapter |
-| `adapter` | Must be `"slack"` |
 | `botToken` | Bot User OAuth Token from Step 4 (starts with `xoxb-`) |
 | `appToken` | App-Level Token from Step 2 (starts with `xapp-1-`) |
 | `signingSecret` | Signing Secret from Step 7 |
 | `notificationChannelId` | Optional. Slack channel ID for system notifications. Right-click a channel → View Details → copy the ID from the URL (e.g., `C1234567890`) |
 | `allowedUserIds` | Optional. Array of Slack user IDs allowed to create sessions. If empty, all workspace members can create sessions. Get a user's ID by opening their profile → click the `•••` menu → **Copy user ID** |
 | `channelPrefix` | Prefix for auto-created session channels. Default: `openacp`. Session channels are named `{prefix}-{slug}-{sessionId}` |
+| `outputMode` | Optional. Default output verbosity: `"low"`, `"medium"`, or `"high"`. Defaults to `"medium"`. Can be overridden per session with `/outputmode`. See [Output Mode](#output-mode) below |
 
 ---
 
@@ -202,6 +215,7 @@ Each OpenACP session in Slack gets its own dedicated channel:
 | `/status` | Show current session status or system status |
 | `/agents` | List available agents |
 | `/help` | Show help |
+| `/outputmode [low\|medium\|high]` | Change output verbosity. Omit the argument to open an interactive modal |
 
 ### Command Examples
 
@@ -212,6 +226,52 @@ Each OpenACP session in Slack gets its own dedicated channel:
 /new                        → Default agent and default workspace
 /newchat                    → New session using current agent and workspace
 /cancel                     → Cancel the running session
+/outputmode high            → Switch to High verbosity for this session
+/outputmode                 → Open a modal to choose verbosity and scope
+```
+
+---
+
+## Output Mode
+
+The Slack adapter renders agent activity in real time using Slack threads. When the agent starts using tools, a **Processing...** message appears in the channel. Tool details are posted as thread replies. When the response is complete, the message updates to **✅ Done** and the agent's reply appears in the channel.
+
+You can control how much detail is shown with the output mode setting.
+
+### Verbosity Levels
+
+| Mode | What you see |
+|------|-------------|
+| **Low** 🔇 | A single `🔧 Processing...` → `✅ Done` indicator. No tool details. |
+| **Medium** 📊 | Progress indicator with tool names and a running count (`2/5 tools`). Thread shows tool cards with summaries. |
+| **High** 🔍 | Full detail: tool input/output, file diffs, viewer links, and the agent's thinking in the thread. |
+
+The default is **Medium**.
+
+### Changing Output Mode
+
+**Inline shortcut** — type directly in a session channel:
+
+```
+/outputmode low
+/outputmode medium
+/outputmode high
+```
+
+**Interactive modal** — type `/outputmode` with no arguments to open a modal where you can select the verbosity level and choose whether to apply it to the current session only or to all sessions.
+
+### Setting the Default
+
+To set a default for all sessions, add `outputMode` to your config:
+
+```json
+{
+  "channels": {
+    "slack": {
+      "outputMode": "medium"
+    }
+  }
+}
 ```
 
 ---

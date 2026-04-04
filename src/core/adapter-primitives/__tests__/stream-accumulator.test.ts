@@ -67,6 +67,91 @@ describe("ToolStateMap", () => {
     expect(entry.status).toBe("running");
     expect(entry.content).toBeNull();
   });
+
+  it("merge returns undefined when entry does not exist yet", () => {
+    const result = map.merge("unknown-id", "completed", { x: 1 }, "out", undefined);
+    expect(result).toBeUndefined();
+  });
+
+  it("merge returns the updated entry for known ID", () => {
+    map.upsert(makeMeta({ id: "t1" }), "read", {});
+    const result = map.merge("t1", "completed", undefined, "done", undefined);
+    expect(result).toBeDefined();
+    expect(result!.id).toBe("t1");
+    expect(result!.status).toBe("completed");
+  });
+
+  it("multiple merges before upsert: last pending update wins", () => {
+    map.merge("t1", "running", { first: true }, "content-1", undefined);
+    map.merge("t1", "completed", { second: true }, "content-2", undefined);
+    const entry = map.upsert(makeMeta({ id: "t1" }), "read", {});
+    expect(entry.status).toBe("completed");
+    expect(entry.rawInput).toEqual({ second: true });
+    expect(entry.content).toBe("content-2");
+  });
+
+  it("upsert on existing ID replaces entry completely", () => {
+    map.upsert(makeMeta({ id: "t1", name: "Read" }), "read", { file: "a.ts" });
+    const entry = map.upsert(makeMeta({ id: "t1", name: "Bash" }), "execute", { command: "ls" });
+    expect(entry.name).toBe("Bash");
+    expect(entry.kind).toBe("execute");
+    expect(entry.rawInput).toEqual({ command: "ls" });
+  });
+
+  it("merge with undefined rawInput preserves original rawInput", () => {
+    map.upsert(makeMeta({ id: "t1" }), "read", { file_path: "original.ts" });
+    map.merge("t1", "completed", undefined, "output", undefined);
+    const entry = map.get("t1")!;
+    expect(entry.rawInput).toEqual({ file_path: "original.ts" });
+  });
+
+  it("merge with explicit null content sets content to null", () => {
+    map.upsert(makeMeta({ id: "t1" }), "read", {});
+    map.merge("t1", "running", undefined, "some content", undefined);
+    expect(map.get("t1")!.content).toBe("some content");
+    map.merge("t1", "completed", undefined, null, undefined);
+    expect(map.get("t1")!.content).toBeNull();
+  });
+
+  it("merge applies viewerLinks and diffStats when provided", () => {
+    map.upsert(makeMeta({ id: "t1" }), "edit", {});
+    const links = { file: "/tmp/a.ts", diff: "/tmp/a.diff" };
+    const stats = { added: 10, removed: 3 };
+    map.merge("t1", "completed", undefined, "done", links, stats);
+    const entry = map.get("t1")!;
+    expect(entry.viewerLinks).toEqual(links);
+    expect(entry.diffStats).toEqual(stats);
+  });
+
+  it("out-of-order merge carries viewerLinks and diffStats through pending", () => {
+    const links = { file: "/tmp/b.ts", diff: "/tmp/b.diff" };
+    const stats = { added: 5, removed: 1 };
+    map.merge("t1", "completed", undefined, "output", links, stats);
+    const entry = map.upsert(makeMeta({ id: "t1" }), "edit", {});
+    expect(entry.viewerLinks).toEqual(links);
+    expect(entry.diffStats).toEqual(stats);
+  });
+
+  it("upsert defaults status to 'running' when meta.status is undefined", () => {
+    const entry = map.upsert(makeMeta({ id: "t1", status: undefined }), "read", {});
+    expect(entry.status).toBe("running");
+  });
+
+  it("upsert copies displaySummary, displayTitle, displayKind from meta", () => {
+    const entry = map.upsert(
+      makeMeta({
+        id: "t1",
+        displaySummary: "Reading file",
+        displayTitle: "Read src/foo.ts",
+        displayKind: "file-read",
+      }),
+      "read",
+      {},
+    );
+    expect(entry.displaySummary).toBe("Reading file");
+    expect(entry.displayTitle).toBe("Read src/foo.ts");
+    expect(entry.displayKind).toBe("file-read");
+  });
 });
 
 describe("ThoughtBuffer", () => {
@@ -110,5 +195,39 @@ describe("ThoughtBuffer", () => {
     buf.reset();
     buf.append("Turn 2 thought");
     expect(buf.seal()).toBe("Turn 2 thought");
+  });
+
+  it("seal on empty buffer returns empty string", () => {
+    expect(buf.seal()).toBe("");
+  });
+
+  it("append after seal does not change getText output", () => {
+    buf.append("before");
+    buf.seal();
+    buf.append("after");
+    expect(buf.getText()).toBe("before");
+  });
+
+  it("getText returns current text without sealing the buffer", () => {
+    buf.append("chunk1");
+    buf.append("chunk2");
+    expect(buf.getText()).toBe("chunk1chunk2");
+    expect(buf.isSealed()).toBe(false);
+  });
+
+  it("append with empty string is accepted", () => {
+    buf.append("a");
+    buf.append("");
+    buf.append("b");
+    expect(buf.getText()).toBe("ab");
+  });
+
+  it("double seal returns same text and remains sealed", () => {
+    buf.append("content");
+    const first = buf.seal();
+    const second = buf.seal();
+    expect(first).toBe("content");
+    expect(second).toBe("content");
+    expect(buf.isSealed()).toBe(true);
   });
 });

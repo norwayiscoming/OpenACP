@@ -1,9 +1,19 @@
+import * as path from "node:path";
 import type { AgentEvent, OutgoingMessage } from "./types.js";
 import type { TunnelServiceInterface } from "./plugin/types.js";
 import { extractFileInfo } from "./utils/extract-file-info.js";
 import { createChildLogger } from "./utils/log.js";
 
 const log = createChildLogger({ module: "message-transformer" });
+
+// Binary file extensions that cannot be displayed in the code viewer
+const BINARY_VIEWER_EXTENSIONS = new Set([
+  '.wav', '.ogg', '.mp3', '.m4a', '.aac', '.flac', '.opus', '.weba',
+  '.mp4', '.avi', '.mov', '.webm', '.mkv',
+  '.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.ico', '.svg',
+  '.pdf', '.zip', '.gz', '.tar', '.7z', '.rar',
+  '.bin', '.exe', '.dll', '.so', '.dylib', '.wasm',
+]);
 
 /**
  * Compute actual line-level diff by stripping common prefix/suffix lines.
@@ -154,23 +164,11 @@ export class MessageTransformer {
           text: `Session updated: ${event.title ?? ""}`.trim(),
           metadata: { title: event.title, updatedAt: event.updatedAt },
         };
-      case "current_mode_update":
-        return {
-          type: "mode_change",
-          text: `Mode: ${event.modeId}`,
-          metadata: { modeId: event.modeId },
-        };
       case "config_option_update":
         return {
           type: "config_update",
           text: "Config updated",
           metadata: { options: event.options },
-        };
-      case "model_update":
-        return {
-          type: "model_update",
-          text: `Model: ${event.modelId}`,
-          metadata: { modelId: event.modelId },
         };
       case "user_message_chunk":
         return {
@@ -251,6 +249,13 @@ export class MessageTransformer {
         { name, kind, hasContent: !!event.content, hasRawInput: !!event.rawInput, hasMeta: !!event.meta },
         "enrichWithViewerLinks: extractFileInfo returned null",
       );
+      return;
+    }
+
+    // Skip binary/non-text files — they cannot be displayed in the code viewer
+    const fileExt = path.extname(fileInfo.filePath).toLowerCase();
+    if (BINARY_VIEWER_EXTENSIONS.has(fileExt)) {
+      log.debug({ kind, filePath: fileInfo.filePath }, "enrichWithViewerLinks: skipping binary file");
       return;
     }
 

@@ -1,8 +1,8 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import * as os from "node:os";
 import type { DoctorCheck, DoctorContext, DoctorReport, CategoryResult, PendingFix, CheckResult } from "./types.js";
 import { ConfigManager, expandHome } from "../config/config.js";
+import { getGlobalRoot } from "../instance/instance-context.js";
 
 import { configCheck } from "./checks/config.js";
 import { agentsCheck } from "./checks/agents.js";
@@ -28,9 +28,11 @@ const CHECK_TIMEOUT_MS = 10_000;
 
 export class DoctorEngine {
   private dryRun: boolean;
+  private dataDir: string;
 
-  constructor(options?: { dryRun?: boolean }) {
+  constructor(options?: { dryRun?: boolean; dataDir?: string }) {
     this.dryRun = options?.dryRun ?? false;
+    this.dataDir = options?.dataDir ?? getGlobalRoot();
   }
 
   async runAll(): Promise<DoctorReport> {
@@ -89,7 +91,7 @@ export class DoctorEngine {
   }
 
   private async buildContext(): Promise<DoctorContext> {
-    const dataDir = path.join(os.homedir(), ".openacp");
+    const dataDir = this.dataDir;
     const configPath = process.env.OPENACP_CONFIG_PATH || path.join(dataDir, "config.json");
 
     let config = null;
@@ -98,7 +100,7 @@ export class DoctorEngine {
     try {
       const content = fs.readFileSync(configPath, "utf-8");
       rawConfig = JSON.parse(content);
-      const cm = new ConfigManager();
+      const cm = new ConfigManager(configPath);
       await cm.load();
       config = cm.get();
     } catch {

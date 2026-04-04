@@ -4,6 +4,28 @@ All commands are invoked as `openacp <command> [subcommand] [options]`. Every co
 
 ---
 
+## JSON Output
+
+Many commands accept a `--json` flag for machine-readable output. When `--json` is passed:
+
+- Output is a single line of valid JSON on stdout
+- Exit code `0` for success, non-zero for errors
+- All progress indicators and ANSI codes are suppressed
+
+**Success envelope (exit 0):**
+```json
+{ "success": true, "data": { ... } }
+```
+
+**Error envelope (exit non-zero):**
+```json
+{ "success": false, "error": { "code": "ERROR_CODE", "message": "Human-readable description" } }
+```
+
+Commands that support `--json` are noted in their options tables below.
+
+---
+
 ## adopt
 
 Transfers an existing external agent session into OpenACP so it appears as a messaging thread. Requires a running daemon.
@@ -19,13 +41,33 @@ openacp adopt <agent> <session_id> [--cwd <path>] [--channel <name>]
 |---|---|
 | `--cwd <path>` | Working directory for the session (default: current directory) |
 | `--channel <name>` | Target channel adapter, e.g. `telegram`, `discord` (default: first registered) |
+| `--json` | Output result as JSON |
 
 **Examples**
 ```bash
 openacp adopt claude abc123-def456
 openacp adopt claude abc123 --cwd /path/to/project
 openacp adopt claude abc123 --channel discord
+openacp adopt claude abc123 --json
 ```
+
+**JSON output** (`data` shape):
+```json
+{ "sessionId": "...", "threadId": "...", "agent": "claude", "status": "active" }
+```
+
+---
+
+## attach
+
+Connects to a running daemon and displays live status with log tailing. Useful for monitoring a daemon instance without opening a separate terminal.
+
+**Usage**
+```
+openacp attach
+```
+
+Shows the daemon's current status (uptime, sessions, adapters, tunnel) and tails the log file. Press Ctrl+C to detach.
 
 ---
 
@@ -45,6 +87,12 @@ Lists all installed agents and agents available to install from the registry.
 **Example**
 ```bash
 openacp agents
+openacp agents --json
+```
+
+**JSON output** (`data` shape):
+```json
+{ "agents": [{ "key": "claude", "name": "Claude Code", "version": "1.0.0", "distribution": "npm", "description": "...", "installed": true, "available": true, "missingDeps": [] }] }
 ```
 
 ### agents install
@@ -52,16 +100,23 @@ openacp agents
 Installs an agent from the ACP Registry. Automatically installs the handoff integration if the agent supports it.
 
 ```
-openacp agents install <name> [--force]
+openacp agents install <name> [--force] [--json]
 ```
 
 | Flag | Description |
 |---|---|
 | `--force` | Reinstall even if already installed |
+| `--json` | Output result as JSON |
 
 ```bash
 openacp agents install claude
 openacp agents install gemini --force
+openacp agents install claude --json
+```
+
+**JSON output** (`data` shape):
+```json
+{ "key": "claude", "version": "1.0.0", "installed": true }
 ```
 
 ### agents uninstall
@@ -69,11 +124,21 @@ openacp agents install gemini --force
 Removes an installed agent and its handoff integration (if any).
 
 ```
-openacp agents uninstall <name>
+openacp agents uninstall <name> [--json]
 ```
+
+| Flag | Description |
+|---|---|
+| `--json` | Output result as JSON |
 
 ```bash
 openacp agents uninstall gemini
+openacp agents uninstall gemini --json
+```
+
+**JSON output** (`data` shape):
+```json
+{ "key": "gemini", "uninstalled": true }
 ```
 
 ### agents info
@@ -81,12 +146,22 @@ openacp agents uninstall gemini
 Shows version, distribution type, command, setup steps, and installation status for an agent.
 
 ```
-openacp agents info <name>
+openacp agents info <name> [--json]
 ```
+
+| Flag | Description |
+|---|---|
+| `--json` | Output result as JSON |
 
 ```bash
 openacp agents info cursor
 openacp agents info claude
+openacp agents info claude --json
+```
+
+**JSON output** (`data` shape):
+```json
+{ "key": "claude", "name": "Claude Code", "version": "1.0.0", "distribution": "npm", "description": "...", "installed": true, "binaryPath": "/usr/local/bin/claude", "command": "claude", "registryId": "claude" }
 ```
 
 ### agents run
@@ -119,9 +194,11 @@ openacp agents refresh
 
 Interacts with a running OpenACP daemon over the local REST API. Requires a running daemon (`openacp start`).
 
+All `api` subcommands support `--json` for machine-readable output.
+
 **Usage**
 ```
-openacp api <subcommand> [args]
+openacp api <subcommand> [args] [--json]
 ```
 
 ### api cancel
@@ -151,12 +228,12 @@ openacp api config
 openacp api config set <key> <value>
 ```
 
-### api dangerous
+### api bypass
 
-Enables or disables dangerous mode for a session. When enabled, the agent runs destructive commands without confirmation prompts.
+Enables or disables bypass permissions for a session. When enabled, the agent runs destructive commands without confirmation prompts.
 
 ```
-openacp api dangerous <session-id> on|off
+openacp api bypass <session-id> on|off
 ```
 
 ### api delete-topic
@@ -314,12 +391,18 @@ openacp config set <key> <value>
 
 `openacp config` (no args) opens an interactive terminal editor. When the daemon is running, changes are applied live via the API; otherwise the config file is edited directly.
 
-`openacp config set` applies a single value by dot-notation path. Values are JSON-parsed if possible, otherwise treated as strings.
+`openacp config set` applies a single value by dot-notation path. Values are JSON-parsed if possible, otherwise treated as strings. Supports `--json` for scripted use.
 
 ```bash
 openacp config set defaultAgent claude
 openacp config set security.maxConcurrentSessions 5
 openacp config set channels.telegram.botToken "123:ABC"
+openacp config set defaultAgent gemini --json
+```
+
+**JSON output for `config set`** (`data` shape):
+```json
+{ "path": "defaultAgent", "value": "gemini", "needsRestart": false }
 ```
 
 ---
@@ -330,12 +413,21 @@ Runs system diagnostics. Checks config validity, agent availability, dependencie
 
 **Usage**
 ```
-openacp doctor [--dry-run]
+openacp doctor [--dry-run] [--json]
 ```
 
 | Flag | Description |
 |---|---|
 | `--dry-run` | Report issues only; do not apply any fixes |
+| `--json` | Output result as JSON (implies `--dry-run`; always exits 0 — check `summary.failed` for health) |
+
+**JSON output** (`data` shape):
+```json
+{
+  "categories": [{ "name": "Config", "results": [{ "status": "pass", "message": "Config is valid" }] }],
+  "summary": { "passed": 5, "warnings": 1, "failed": 0 }
+}
+```
 
 ---
 
@@ -345,12 +437,22 @@ Installs a plugin from npm into `~/.openacp/plugins/`. Supports built-in plugins
 
 **Usage**
 ```
-openacp install <package>[@version]
+openacp install <package>[@version] [--json]
 ```
+
+| Flag | Description |
+|---|---|
+| `--json` | Output result as JSON |
 
 ```bash
 openacp install @openacp/adapter-discord
 openacp install @myorg/translator@1.2.0
+openacp install @openacp/adapter-discord --json
+```
+
+**JSON output** (`data` shape):
+```json
+{ "plugin": "@openacp/adapter-discord", "version": "1.0.0", "installed": true }
 ```
 
 This is an alias for `openacp plugin add`. See [plugin install](#plugin-install) for details.
@@ -435,15 +537,25 @@ Installs a plugin package. Works with both built-in plugins and community plugin
 
 **Usage**
 ```
-openacp plugin add <package>[@version]
-openacp plugin install <package>[@version]
+openacp plugin add <package>[@version] [--json]
+openacp plugin install <package>[@version] [--json]
 ```
+
+| Flag | Description |
+|---|---|
+| `--json` | Output result as JSON |
 
 **Examples**
 ```bash
 openacp plugin add @openacp/adapter-discord
 openacp plugin add @myorg/translator@1.2.0
 openacp plugin install my-plugin
+openacp plugin add @openacp/adapter-discord --json
+```
+
+**JSON output** (`data` shape):
+```json
+{ "plugin": "@openacp/adapter-discord", "version": "1.0.0", "installed": true }
 ```
 
 Community plugins are installed via `npm install` into `~/.openacp/plugins/node_modules/`. The plugin's `install()` hook is called if defined.
@@ -472,15 +584,58 @@ Enables or disables an installed plugin without removing it. Disabled plugins ar
 
 **Usage**
 ```
-openacp plugin enable <name>
-openacp plugin disable <name>
+openacp plugin enable <name> [--json]
+openacp plugin disable <name> [--json]
 ```
+
+| Flag | Description |
+|---|---|
+| `--json` | Output result as JSON |
 
 **Examples**
 ```bash
 openacp plugin disable @myorg/translator
 openacp plugin enable @myorg/translator
+openacp plugin enable @myorg/translator --json
 ```
+
+**JSON output** (`data` shape):
+```json
+{ "plugin": "@myorg/translator", "enabled": true }
+```
+
+---
+
+## remote
+
+Generates access links for connecting app clients to a running OpenACP instance. Displays local URL, tunnel URL (if enabled), app deep link, and a QR code.
+
+**Usage**
+```
+openacp remote [--json]
+```
+
+| Flag | Description |
+|---|---|
+| `--json` | Output result as JSON (no QR code printed) |
+
+The generated link includes a single-use access code valid for 30 minutes. The app exchanges this code for a JWT token on first use.
+
+**Example output**
+```
+Local:   http://127.0.0.1:21420
+Tunnel:  https://abc.trycloudflare.com
+App:     openacp://connect?host=abc.trycloudflare.com&code=xyz123
+
+[QR code]
+```
+
+**JSON output** (`data` shape):
+```json
+{ "code": "xyz123", "name": "my-instance", "role": "owner", "expiresAt": "2026-04-02T13:00:00Z", "urls": { "local": "http://127.0.0.1:21420", "tunnel": "https://abc.trycloudflare.com", "app": "openacp://connect?host=abc.trycloudflare.com&code=xyz123" } }
+```
+
+See [App Connectivity](../features/app-connectivity.md) for the full guide.
 
 ---
 
@@ -490,7 +645,16 @@ Lists all plugins installed in `~/.openacp/plugins/`.
 
 **Usage**
 ```
-openacp plugins
+openacp plugins [--json]
+```
+
+| Flag | Description |
+|---|---|
+| `--json` | Output result as JSON |
+
+**JSON output** (`data` shape):
+```json
+{ "plugins": [{ "name": "@openacp/adapter-discord", "version": "1.0.0", "enabled": true, "source": "npm", "description": "Discord adapter" }] }
 ```
 
 ---
@@ -510,21 +674,56 @@ Prompts for confirmation before proceeding.
 
 ## restart
 
-There is no standalone `restart` command. Use `openacp api restart` to restart a running daemon, or stop and start it manually:
+Restarts the daemon. By default uses the same run mode as configured; use `--foreground` or `--daemon` to override.
+
+**Usage**
+```
+openacp restart [--foreground | --daemon] [--json]
+```
+
+| Flag | Description |
+|---|---|
+| `--foreground` | Restart in foreground mode (not compatible with `--json`) |
+| `--daemon` | Restart as background daemon |
+| `--json` | Output result as JSON (always uses daemon mode) |
 
 ```bash
-openacp stop && openacp start
+openacp restart
+openacp restart --daemon --json
+```
+
+**JSON output** (`data` shape):
+```json
+{ "pid": 12345, "instanceId": "global", "dir": "/Users/alice/.openacp" }
 ```
 
 ---
 
 ## start
 
-Starts OpenACP as a background daemon. Requires an existing config (run `openacp` first to set up).
+Starts OpenACP. Requires an existing config (run `openacp` first to set up).
 
 **Usage**
 ```
-openacp start
+openacp start [options]
+```
+
+**Options**
+
+| Flag | Description |
+|---|---|
+| `--foreground` | Force foreground mode regardless of config |
+| `--daemon` | Force daemon mode regardless of config |
+| `--local` | Use local `.openacp/` instance in the current directory |
+| `--global` | Use the global `~/.openacp/` instance |
+| `--dir <path>` | Use a specific instance directory |
+| `--name <id>` | Give the instance a name |
+| `--from <source>` | Clone settings from an existing instance |
+| `--json` | Output result as JSON |
+
+**JSON output** (`data` shape):
+```json
+{ "pid": 12345, "instanceId": "global", "dir": "/Users/alice/.openacp" }
 ```
 
 ---
@@ -535,7 +734,23 @@ Shows whether the OpenACP daemon is running and its PID.
 
 **Usage**
 ```
-openacp status
+openacp status [--all] [--id <id>] [--json]
+```
+
+| Flag | Description |
+|---|---|
+| `--all` | Show status of all registered instances, not just the current one |
+| `--id <id>` | Show status of a specific instance |
+| `--json` | Output result as JSON |
+
+**JSON output** (`data` shape — all instances):
+```json
+{ "instances": [{ "id": "global", "name": "my-instance", "status": "running", "pid": 12345, "dir": "/Users/alice/.openacp", "mode": "daemon", "channels": ["telegram"], "apiPort": 21420, "tunnelPort": null }] }
+```
+
+**JSON output** (`data` shape — single instance with `--id`):
+```json
+{ "id": "global", "name": "my-instance", "status": "running", "pid": 12345, "dir": "/Users/alice/.openacp", "mode": "daemon", "channels": ["telegram"], "apiPort": 21420, "tunnelPort": null }
 ```
 
 ---
@@ -546,7 +761,16 @@ Sends a stop signal to the running daemon.
 
 **Usage**
 ```
-openacp stop
+openacp stop [--json]
+```
+
+| Flag | Description |
+|---|---|
+| `--json` | Output result as JSON |
+
+**JSON output** (`data` shape):
+```json
+{ "stopped": true, "pid": 12345 }
 ```
 
 ---
@@ -565,12 +789,22 @@ openacp tunnel <subcommand> [args]
 Creates a tunnel to a local port.
 
 ```
-openacp tunnel add <port> [--label <name>] [--session <id>]
+openacp tunnel add <port> [--label <name>] [--session <id>] [--json]
 ```
+
+| Flag | Description |
+|---|---|
+| `--json` | Output result as JSON |
 
 ```bash
 openacp tunnel add 3000
 openacp tunnel add 8080 --label "dev server"
+openacp tunnel add 3000 --json
+```
+
+**JSON output** (`data` shape):
+```json
+{ "port": 3000, "publicUrl": "https://abc.trycloudflare.com" }
 ```
 
 ### tunnel list
@@ -578,7 +812,16 @@ openacp tunnel add 8080 --label "dev server"
 Lists all active tunnels with their ports, labels, and public URLs.
 
 ```
-openacp tunnel list
+openacp tunnel list [--json]
+```
+
+| Flag | Description |
+|---|---|
+| `--json` | Output result as JSON |
+
+**JSON output** (`data` shape):
+```json
+{ "tunnels": [{ "port": 3000, "label": "dev server", "publicUrl": "https://abc.trycloudflare.com", "status": "active" }] }
 ```
 
 ### tunnel stop
@@ -586,7 +829,16 @@ openacp tunnel list
 Stops the tunnel for a specific local port.
 
 ```
-openacp tunnel stop <port>
+openacp tunnel stop <port> [--json]
+```
+
+| Flag | Description |
+|---|---|
+| `--json` | Output result as JSON |
+
+**JSON output** (`data` shape):
+```json
+{ "port": 3000, "stopped": true }
 ```
 
 ### tunnel stop-all
@@ -594,7 +846,16 @@ openacp tunnel stop <port>
 Stops all user tunnels.
 
 ```
-openacp tunnel stop-all
+openacp tunnel stop-all [--json]
+```
+
+| Flag | Description |
+|---|---|
+| `--json` | Output result as JSON |
+
+**JSON output** (`data` shape):
+```json
+{ "stopped": true }
 ```
 
 ---
@@ -605,11 +866,21 @@ Removes an adapter plugin.
 
 **Usage**
 ```
-openacp uninstall <package>
+openacp uninstall <package> [--json]
 ```
+
+| Flag | Description |
+|---|---|
+| `--json` | Output result as JSON |
 
 ```bash
 openacp uninstall @openacp/adapter-discord
+openacp uninstall @openacp/adapter-discord --json
+```
+
+**JSON output** (`data` shape):
+```json
+{ "plugin": "@openacp/adapter-discord", "uninstalled": true }
 ```
 
 ---
@@ -632,16 +903,42 @@ Running `openacp` with no arguments starts the server. On first run, the setup w
 - `foreground` — runs in the current terminal.
 - `daemon` — spawns a background process and exits.
 
+If a daemon is already running, `openacp` shows a rich status display with an interactive menu instead of an error:
+
+- **r** — restart the daemon
+- **f** — restart in foreground mode
+- **s** — show full status
+- **l** — tail logs
+- **q** — quit
+
+The startup display also shows which instance is active (global vs. local) and prints hints when a local instance is available but the global is being used.
+
 `openacp --foreground` forces foreground mode regardless of config.
 
 ---
 
-## --version / -v
+## version
 
-Prints the installed version.
+Prints the installed version. Also available as `--version` / `-v`.
+
+**Usage**
+```
+openacp version [--json]
+openacp --version
+```
+
+| Flag | Description |
+|---|---|
+| `--json` | Output result as JSON |
 
 ```bash
 openacp --version
+openacp version --json
+```
+
+**JSON output** (`data` shape):
+```json
+{ "version": "2026.401.1" }
 ```
 
 ---

@@ -100,11 +100,13 @@ export function formatToolSummary(
     return desc ? `🧠 Agent: ${desc}` : `🔧 ${name}`;
   }
   if (lowerName === "webfetch" || lowerName === "web_fetch") {
-    const url = String(args.url ?? "").slice(0, 60);
+    const raw = args.url ?? "";
+    const url = (raw !== "undefined" ? String(raw) : "").slice(0, 60);
     return url ? `🌐 Fetch ${url}` : `🔧 ${name}`;
   }
   if (lowerName === "websearch" || lowerName === "web_search") {
-    const query = String(args.query ?? "").slice(0, 60);
+    const raw = args.query ?? "";
+    const query = (raw !== "undefined" ? String(raw) : "").slice(0, 60);
     return query ? `🌐 Search "${query}"` : `🔧 ${name}`;
   }
 
@@ -143,10 +145,12 @@ export function formatToolTitle(
     return String(args.description ?? name).slice(0, 60);
   }
   if (["webfetch", "web_fetch"].includes(lowerName)) {
-    return String(args.url ?? name).slice(0, 60);
+    const url = typeof args.url === "string" && args.url !== "undefined" ? args.url : null;
+    return (url ?? name).slice(0, 60);
   }
   if (["websearch", "web_search"].includes(lowerName)) {
-    return String(args.query ?? name).slice(0, 60);
+    const query = typeof args.query === "string" && args.query !== "undefined" ? args.query : null;
+    return (query ?? name).slice(0, 60);
   }
 
   return name;

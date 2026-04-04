@@ -123,8 +123,15 @@ export class SendQueue {
       const result = await item.fn()
       item.resolve(result)
     } catch (err) {
-      this.config.onError?.(err instanceof Error ? err : new Error(String(err)))
-      item.reject(err)
+      // Suppress "message is not modified" errors — harmless duplicate edits
+      if (err instanceof Error && 'description' in err &&
+          typeof (err as Record<string, unknown>).description === 'string' &&
+          ((err as Record<string, unknown>).description as string).includes('message is not modified')) {
+        item.resolve(undefined)
+      } else {
+        this.config.onError?.(err instanceof Error ? err : new Error(String(err)))
+        item.reject(err)
+      }
     } finally {
       const now = Date.now()
       this.lastExec = now

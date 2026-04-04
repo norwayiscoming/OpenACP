@@ -92,7 +92,7 @@ If you haven't finished initial setup, see the [Telegram Setup guide](../platfor
 **Solution:**
 1. Ensure the bot is running — buttons expire after the bot restarts if not answered.
 2. If buttons appear but clicking does nothing, check logs for `Telegram bot error` entries that may indicate the bot token has been revoked.
-3. Re-run setup (`openacp setup`) to regenerate configuration if the token is suspect.
+3. Re-run setup (`openacp onboard`) to regenerate configuration if the token is suspect.
 
 ---
 

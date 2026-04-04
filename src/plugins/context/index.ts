@@ -1,4 +1,3 @@
-import * as os from 'node:os'
 import * as path from 'node:path'
 import type { OpenACPPlugin, InstallContext } from '../../core/plugin/types.js'
 import type { SessionRecord } from '../../core/types.js'
@@ -47,7 +46,7 @@ const contextPlugin: OpenACPPlugin = {
 
   async setup(ctx) {
     // History recording and context
-    const historyDir = path.join(os.homedir(), '.openacp', 'history')
+    const historyDir = path.join(ctx.instanceRoot, 'history')
     const store = new HistoryStore(historyDir)
     const recorder = new HistoryRecorder(store)
 
@@ -56,9 +55,11 @@ const contextPlugin: OpenACPPlugin = {
     const getRecords = () => sessionManager.listRecords()
 
     // Register providers — local first (priority), entire as fallback
-    const manager = new ContextManager()
+    const cachePath = path.join(ctx.instanceRoot, 'cache', 'entire')
+    const manager = new ContextManager(cachePath)
     manager.register(new HistoryProvider(store, getRecords))
     manager.register(new EntireProvider())
+    manager.setHistoryStore(store)
     ctx.registerService('context', manager)
 
     // Middleware: capture user prompts
@@ -97,11 +98,11 @@ const contextPlugin: OpenACPPlugin = {
       },
     })
 
-    // Middleware: clean up recorder memory on session destroy
+    // Middleware: flush in-progress turn and clean up on session destroy
     ctx.registerMiddleware('session:afterDestroy', {
       priority: 200,
       handler: async (payload, next) => {
-        recorder.finalize(payload.sessionId)
+        await recorder.onSessionDestroy(payload.sessionId)
         return next()
       },
     })

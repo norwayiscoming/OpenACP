@@ -1,7 +1,7 @@
-import * as os from 'node:os'
 import * as path from 'node:path'
 import * as clack from '@clack/prompts'
 import type { Config, ConfigManager } from './config.js'
+import type { SettingsManager } from '../plugin/settings-manager.js'
 
 // Compatibility wrappers — convert @inquirer/prompts API to @clack/prompts
 async function select<T extends string>(opts: { message: string; choices: Array<{ name: string; value: T; description?: string }>; default?: T }): Promise<T> {
@@ -50,11 +50,20 @@ type ConfigUpdates = Record<string, unknown>
 
 // --- Edit: Telegram ---
 
-async function editTelegram(config: Config, updates: ConfigUpdates): Promise<void> {
+async function editTelegram(config: Config, updates: ConfigUpdates, settingsManager?: SettingsManager): Promise<void> {
   const tg = (config.channels?.telegram ?? {}) as Record<string, unknown>
-  const currentToken = (tg.botToken as string) ?? ''
-  const currentChatId = (tg.chatId as number) ?? 0
-  const currentEnabled = (tg.enabled as boolean) ?? false
+  let currentToken = (tg.botToken as string) ?? ''
+  let currentChatId = (tg.chatId as number) ?? 0
+  let currentEnabled = (tg.enabled as boolean) ?? false
+
+  if (settingsManager) {
+    const ps = await settingsManager.loadSettings('@openacp/telegram')
+    if (Object.keys(ps).length > 0) {
+      currentToken = (ps.botToken as string) ?? currentToken
+      currentChatId = (ps.chatId as number) ?? currentChatId
+      currentEnabled = (ps.enabled as boolean) ?? currentEnabled
+    }
+  }
 
   console.log(header('Telegram'))
   console.log(`  Enabled   : ${currentEnabled ? ok('yes') : dim('no')}`)
@@ -74,7 +83,11 @@ async function editTelegram(config: Config, updates: ConfigUpdates): Promise<voi
   }
 
   while (true) {
-    const isEnabled = (() => {
+    const isEnabled = await (async () => {
+      if (settingsManager) {
+        const ps = await settingsManager.loadSettings('@openacp/telegram')
+        if ('enabled' in ps) return ps.enabled as boolean
+      }
       const ch = updates.channels as Record<string, unknown> | undefined
       const tgUp = ch?.telegram as Record<string, unknown> | undefined
       if (tgUp && 'enabled' in tgUp) return tgUp.enabled as boolean
@@ -94,8 +107,12 @@ async function editTelegram(config: Config, updates: ConfigUpdates): Promise<voi
     if (choice === 'back') break
 
     if (choice === 'toggle') {
-      const tgUp = ensureTelegramUpdates()
-      tgUp.enabled = !isEnabled
+      if (settingsManager) {
+        await settingsManager.updatePluginSettings('@openacp/telegram', { enabled: !isEnabled })
+      } else {
+        const tgUp = ensureTelegramUpdates()
+        tgUp.enabled = !isEnabled
+      }
       console.log(!isEnabled ? ok('Telegram enabled') : ok('Telegram disabled'))
     }
 
@@ -118,9 +135,13 @@ async function editTelegram(config: Config, updates: ConfigUpdates): Promise<voi
         console.log(warn('Telegram validator not available — skipping validation'))
       }
 
-      const tgUp = ensureTelegramUpdates()
-      tgUp.botToken = token.trim()
-      tgUp.enabled = true
+      if (settingsManager) {
+        await settingsManager.updatePluginSettings('@openacp/telegram', { botToken: token.trim(), enabled: true })
+      } else {
+        const tgUp = ensureTelegramUpdates()
+        tgUp.botToken = token.trim()
+        tgUp.enabled = true
+      }
     }
 
     if (choice === 'chatid') {
@@ -156,8 +177,12 @@ async function editTelegram(config: Config, updates: ConfigUpdates): Promise<voi
         console.log(warn('Telegram validator not available — skipping validation'))
       }
 
-      const tgUp = ensureTelegramUpdates()
-      tgUp.chatId = chatId
+      if (settingsManager) {
+        await settingsManager.updatePluginSettings('@openacp/telegram', { chatId })
+      } else {
+        const tgUp = ensureTelegramUpdates()
+        tgUp.chatId = chatId
+      }
     }
   }
 }
@@ -202,12 +227,15 @@ async function editDiscord(_config: Config, _updates: ConfigUpdates): Promise<vo
   if (plugin?.configure) {
     const { SettingsManager } = await import('../plugin/settings-manager.js')
     const { createInstallContext } = await import('../plugin/install-context.js')
-    const basePath = path.join(os.homedir(), '.openacp', 'plugins')
+    const { getGlobalRoot } = await import('../instance/instance-context.js')
+    const root = getGlobalRoot()
+    const basePath = path.join(root, 'plugins', 'data')
     const settingsManager = new SettingsManager(basePath)
     const ctx = createInstallContext({
       pluginName: plugin.name,
       settingsManager,
       basePath,
+      instanceRoot: root,
     })
     await plugin.configure(ctx)
   } else {
@@ -217,13 +245,21 @@ async function editDiscord(_config: Config, _updates: ConfigUpdates): Promise<vo
 
 // --- Edit: Channels (parent menu) ---
 
-async function editChannels(config: Config, updates: ConfigUpdates): Promise<void> {
-  const tgEnabled = (config.channels?.telegram as Record<string, unknown>)?.enabled !== false && config.channels?.telegram
-  const dcEnabled = (config.channels?.discord as Record<string, unknown>)?.enabled !== false && config.channels?.discord
+async function editChannels(config: Config, updates: ConfigUpdates, settingsManager?: SettingsManager): Promise<void> {
+  let tgConfigured = !!(config.channels?.telegram as Record<string, unknown> | undefined)
+  let dcConfigured = !!(config.channels?.discord as Record<string, unknown> | undefined)
+
+  if (settingsManager) {
+    const tgPs = await settingsManager.loadSettings('@openacp/telegram')
+    if (tgPs.botToken && tgPs.chatId) tgConfigured = true
+
+    const dcPs = await settingsManager.loadSettings('@openacp/adapter-discord')
+    if (dcPs.guildId || dcPs.token) dcConfigured = true
+  }
 
   console.log(header('Channels'))
-  console.log(`  Telegram : ${tgEnabled ? ok('configured') : dim('not configured')}`)
-  console.log(`  Discord  : ${dcEnabled ? ok('configured') : dim('not configured')}`)
+  console.log(`  Telegram : ${tgConfigured ? ok('configured') : dim('not configured')}`)
+  console.log(`  Discord  : ${dcConfigured ? ok('configured') : dim('not configured')}`)
   console.log('')
 
   while (true) {
@@ -238,7 +274,7 @@ async function editChannels(config: Config, updates: ConfigUpdates): Promise<voi
 
     if (choice === 'back') break
 
-    if (choice === 'telegram') await editTelegram(config, updates)
+    if (choice === 'telegram') await editTelegram(config, updates, settingsManager)
     if (choice === 'discord') await editDiscord(config, updates)
   }
 }
@@ -303,8 +339,19 @@ async function editWorkspace(config: Config, updates: ConfigUpdates): Promise<vo
 
 // --- Edit: Security ---
 
-async function editSecurity(config: Config, updates: ConfigUpdates): Promise<void> {
-  const sec = config.security ?? { allowedUserIds: [], maxConcurrentSessions: 20, sessionTimeoutMinutes: 60 }
+async function editSecurity(config: Config, updates: ConfigUpdates, settingsManager?: SettingsManager): Promise<void> {
+  let sec = config.security ?? { allowedUserIds: [], maxConcurrentSessions: 20, sessionTimeoutMinutes: 60 }
+
+  if (settingsManager) {
+    const ps = await settingsManager.loadSettings('@openacp/security')
+    if (Object.keys(ps).length > 0) {
+      sec = {
+        allowedUserIds: (ps.allowedUserIds as string[]) ?? sec.allowedUserIds,
+        maxConcurrentSessions: (ps.maxConcurrentSessions as number) ?? sec.maxConcurrentSessions,
+        sessionTimeoutMinutes: (ps.sessionTimeoutMinutes as number) ?? sec.sessionTimeoutMinutes,
+      }
+    }
+  }
 
   console.log(header('Security'))
   console.log(`  Allowed user IDs        : ${sec.allowedUserIds?.length ? sec.allowedUserIds.join(', ') : dim('(all users allowed)')}`)
@@ -335,8 +382,12 @@ async function editSecurity(config: Config, updates: ConfigUpdates): Promise<voi
         },
       })
 
-      if (!updates.security) updates.security = {}
-      ;(updates.security as Record<string, unknown>).maxConcurrentSessions = Number(val.trim())
+      if (settingsManager) {
+        await settingsManager.updatePluginSettings('@openacp/security', { maxConcurrentSessions: Number(val.trim()) })
+      } else {
+        if (!updates.security) updates.security = {}
+        ;(updates.security as Record<string, unknown>).maxConcurrentSessions = Number(val.trim())
+      }
       console.log(ok(`Max concurrent sessions set to ${val.trim()}`))
     }
 
@@ -351,8 +402,12 @@ async function editSecurity(config: Config, updates: ConfigUpdates): Promise<voi
         },
       })
 
-      if (!updates.security) updates.security = {}
-      ;(updates.security as Record<string, unknown>).sessionTimeoutMinutes = Number(val.trim())
+      if (settingsManager) {
+        await settingsManager.updatePluginSettings('@openacp/security', { sessionTimeoutMinutes: Number(val.trim()) })
+      } else {
+        if (!updates.security) updates.security = {}
+        ;(updates.security as Record<string, unknown>).sessionTimeoutMinutes = Number(val.trim())
+      }
       console.log(ok(`Session timeout set to ${val.trim()} minutes`))
     }
   }
@@ -506,8 +561,15 @@ async function editRunMode(config: Config, updates: ConfigUpdates): Promise<void
 
 // --- Edit: API ---
 
-async function editApi(config: Config, updates: ConfigUpdates): Promise<void> {
-  const api = config.api ?? { port: 21420, host: '127.0.0.1' }
+async function editApi(config: Config, updates: ConfigUpdates, settingsManager?: SettingsManager): Promise<void> {
+  let api = config.api ?? { port: 21420, host: '127.0.0.1' }
+
+  if (settingsManager) {
+    const ps = await settingsManager.loadSettings('@openacp/api-server')
+    if (Object.keys(ps).length > 0) {
+      api = { port: (ps.port as number) ?? api.port, host: (ps.host as string) ?? api.host }
+    }
+  }
 
   console.log(header('API'))
   console.log(`  Port : ${api.port}`)
@@ -524,14 +586,26 @@ async function editApi(config: Config, updates: ConfigUpdates): Promise<void> {
     },
   })
 
-  updates.api = { port: Number(newPort.trim()) }
+  if (settingsManager) {
+    await settingsManager.updatePluginSettings('@openacp/api-server', { port: Number(newPort.trim()) })
+  } else {
+    updates.api = { port: Number(newPort.trim()) }
+  }
   console.log(ok(`API port set to ${newPort.trim()}`))
 }
 
 // --- Edit: Tunnel ---
 
-async function editTunnel(config: Config, updates: ConfigUpdates): Promise<void> {
-  const tunnel = config.tunnel ?? { enabled: false, port: 3100, provider: 'cloudflare', options: {}, storeTtlMinutes: 60, auth: { enabled: false } }
+async function editTunnel(config: Config, updates: ConfigUpdates, settingsManager?: SettingsManager): Promise<void> {
+  let tunnel = config.tunnel ?? { enabled: false, port: 3100, provider: 'cloudflare', options: {}, storeTtlMinutes: 60, auth: { enabled: false } }
+
+  if (settingsManager) {
+    const ps = await settingsManager.loadSettings('@openacp/tunnel')
+    if (Object.keys(ps).length > 0) {
+      tunnel = { ...tunnel, ...ps } as typeof tunnel
+    }
+  }
+
   const currentUpdates = (updates.tunnel ?? {}) as Record<string, unknown>
 
   const getVal = <T>(key: string, fallback: T): T =>
@@ -565,6 +639,9 @@ async function editTunnel(config: Config, updates: ConfigUpdates): Promise<void>
 
     if (choice === 'toggle') {
       const current = getVal('enabled', false)
+      if (settingsManager) {
+        await settingsManager.updatePluginSettings('@openacp/tunnel', { enabled: !current })
+      }
       tun.enabled = !current
       console.log(!current ? ok('Tunnel enabled') : ok('Tunnel disabled'))
     }
@@ -579,6 +656,9 @@ async function editTunnel(config: Config, updates: ConfigUpdates): Promise<void>
           { name: 'Tailscale Funnel', value: 'tailscale' },
         ],
       })
+      if (settingsManager) {
+        await settingsManager.updatePluginSettings('@openacp/tunnel', { provider, options: {} })
+      }
       tun.provider = provider
       tun.options = {} // reset options when switching provider
       console.log(ok(`Provider set to ${provider}`))
@@ -594,6 +674,9 @@ async function editTunnel(config: Config, updates: ConfigUpdates): Promise<void>
           return true
         },
       })
+      if (settingsManager) {
+        await settingsManager.updatePluginSettings('@openacp/tunnel', { port: Number(val.trim()) })
+      }
       tun.port = Number(val.trim())
       console.log(ok(`Tunnel port set to ${val.trim()}`))
     }
@@ -602,12 +685,18 @@ async function editTunnel(config: Config, updates: ConfigUpdates): Promise<void>
       const provider = getVal('provider', 'cloudflare')
       const currentOptions = getVal('options', {}) as Record<string, unknown>
       await editProviderOptions(provider, currentOptions, tun)
+      if (settingsManager) {
+        await settingsManager.updatePluginSettings('@openacp/tunnel', { options: tun.options })
+      }
     }
 
     if (choice === 'auth') {
       const currentAuth = getVal('auth', { enabled: false }) as { enabled: boolean; token?: string }
       if (currentAuth.enabled) {
         tun.auth = { enabled: false }
+        if (settingsManager) {
+          await settingsManager.updatePluginSettings('@openacp/tunnel', { auth: { enabled: false } })
+        }
         console.log(ok('Tunnel auth disabled'))
       } else {
         const token = await input({
@@ -617,6 +706,9 @@ async function editTunnel(config: Config, updates: ConfigUpdates): Promise<void>
         tun.auth = token.trim()
           ? { enabled: true, token: token.trim() }
           : { enabled: true }
+        if (settingsManager) {
+          await settingsManager.updatePluginSettings('@openacp/tunnel', { auth: tun.auth })
+        }
         console.log(ok('Tunnel auth enabled'))
       }
     }
@@ -694,6 +786,7 @@ export async function runConfigEditor(
   configManager: ConfigManager,
   mode: 'file' | 'api' = 'file',
   apiPort?: number,
+  settingsManager?: SettingsManager,
 ): Promise<void> {
   await configManager.load()
   const config = configManager.get()
@@ -733,14 +826,14 @@ export async function runConfigEditor(
 
       const sectionUpdates: ConfigUpdates = {}
 
-      if (choice === 'channels') await editChannels(config, sectionUpdates)
+      if (choice === 'channels') await editChannels(config, sectionUpdates, settingsManager)
       else if (choice === 'agent') await editAgent(config, sectionUpdates)
       else if (choice === 'workspace') await editWorkspace(config, sectionUpdates)
-      else if (choice === 'security') await editSecurity(config, sectionUpdates)
+      else if (choice === 'security') await editSecurity(config, sectionUpdates, settingsManager)
       else if (choice === 'logging') await editLogging(config, sectionUpdates)
       else if (choice === 'runMode') await editRunMode(config, sectionUpdates)
-      else if (choice === 'api') await editApi(config, sectionUpdates)
-      else if (choice === 'tunnel') await editTunnel(config, sectionUpdates)
+      else if (choice === 'api') await editApi(config, sectionUpdates, settingsManager)
+      else if (choice === 'tunnel') await editTunnel(config, sectionUpdates, settingsManager)
 
       if (mode === 'api' && Object.keys(sectionUpdates).length > 0) {
         await sendConfigViaApi(apiPort!, sectionUpdates)

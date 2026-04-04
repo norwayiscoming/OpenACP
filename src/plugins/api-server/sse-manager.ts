@@ -1,4 +1,5 @@
 import * as http from "node:http";
+import type { FastifyRequest, FastifyReply } from 'fastify';
 import type { EventBus, EventBusEvents } from "../../core/event-bus.js";
 
 interface SSEResponse extends http.ServerResponse {
@@ -9,6 +10,11 @@ interface SessionStats {
   active: number;
   total: number;
 }
+
+// Maximum concurrent SSE connections. Beyond this the server returns 503 to
+// prevent resource exhaustion (file-descriptor / memory DoS) from a single
+// attacker opening many persistent connections via the public tunnel.
+const MAX_SSE_CONNECTIONS = 50;
 
 export class SSEManager {
   private sseConnections = new Set<http.ServerResponse>();
@@ -34,6 +40,8 @@ export class SSEManager {
       "session:deleted",
       "agent:event",
       "permission:request",
+      "message:queued",
+      "message:processing",
     ] as const;
 
     for (const eventName of events) {
@@ -44,7 +52,7 @@ export class SSEManager {
       this.boundHandlers.push({ event: eventName, handler });
     }
 
-    // Health heartbeat every 30s
+    // Health heartbeat every 15s
     this.healthInterval = setInterval(() => {
       const mem = process.memoryUsage();
       const stats = this.getSessionStats();
@@ -57,19 +65,40 @@ export class SSEManager {
         },
         sessions: stats,
       });
-    }, 30_000);
+    }, 15_000);
   }
 
   handleRequest(req: http.IncomingMessage, res: http.ServerResponse): void {
+    if (this.sseConnections.size >= MAX_SSE_CONNECTIONS) {
+      res.writeHead(503, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "Too many SSE connections" }));
+      return;
+    }
+
     const parsedUrl = new URL(req.url || "", "http://localhost");
     const sessionFilter = parsedUrl.searchParams.get("sessionId");
+    console.log(`[sse] +connection total=${this.sseConnections.size + 1}`);
 
-    res.writeHead(200, {
+    const origin = req.headers.origin;
+    const corsHeaders: Record<string, string> = {
       "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache",
+      "Cache-Control": "no-cache, no-transform",
       Connection: "keep-alive",
-    });
+      // Disable buffering in Nginx/Cloudflare/other reverse proxies
+      "X-Accel-Buffering": "no",
+    };
+    // SSE is authenticated via Bearer/query token — no credentials (cookies) involved,
+    // so Access-Control-Allow-Credentials is not needed and must not be set alongside
+    // a reflected origin (that combination is a known CORS misconfiguration).
+    if (origin) {
+      corsHeaders["Access-Control-Allow-Origin"] = origin;
+    }
+    // Disable Nagle's algorithm so small SSE chunks are sent immediately
+    res.socket?.setNoDelay(true);
+    res.writeHead(200, corsHeaders);
     res.flushHeaders();
+    // Send initial comment immediately so proxies (Cloudflare, nginx) flush headers to client
+    res.write(': connected\n\n');
 
     // Store filter metadata on the response for broadcast
     (res as SSEResponse).sessionFilter = sessionFilter ?? undefined;
@@ -79,6 +108,7 @@ export class SSEManager {
     const cleanup = () => {
       this.sseConnections.delete(res);
       this.sseCleanupHandlers.delete(res);
+      console.log(`[sse] -connection remaining=${this.sseConnections.size}`);
     };
     this.sseCleanupHandlers.set(res, cleanup);
     req.on("close", cleanup);
@@ -91,6 +121,8 @@ export class SSEManager {
       "agent:event",
       "permission:request",
       "session:updated",
+      "message:queued",
+      "message:processing",
     ];
     for (const res of this.sseConnections) {
       const filter = (res as SSEResponse).sessionFilter;
@@ -104,6 +136,17 @@ export class SSEManager {
         /* connection closed */
       }
     }
+  }
+
+  /**
+   * Returns a Fastify route handler that hijacks the response
+   * and delegates to the raw http SSE handler.
+   */
+  createFastifyHandler() {
+    return async (request: FastifyRequest, reply: FastifyReply) => {
+      reply.hijack();
+      this.handleRequest(request.raw, reply.raw);
+    };
   }
 
   stop(): void {

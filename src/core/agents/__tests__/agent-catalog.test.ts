@@ -24,7 +24,7 @@ describe("AgentCatalog", () => {
           claude: {
             registryId: "claude-acp", name: "Claude Agent", version: "0.22.2",
             distribution: "npx", command: "npx",
-            args: ["@zed-industries/claude-agent-acp@0.22.2"],
+            args: ["@agentclientprotocol/claude-agent-acp@0.22.2"],
             env: {}, installedAt: "2026-03-22T00:00:00.000Z", binaryPath: null,
           },
         },
@@ -37,7 +37,7 @@ describe("AgentCatalog", () => {
       expect(def).toBeDefined();
       expect(def!.name).toBe("claude");
       expect(def!.command).toBe("npx");
-      expect(def!.args).toContain("@zed-industries/claude-agent-acp@0.22.2");
+      expect(def!.args).toContain("@agentclientprotocol/claude-agent-acp@0.22.2");
     });
 
     it("returns undefined for unknown agent", () => {

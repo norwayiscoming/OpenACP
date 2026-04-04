@@ -117,10 +117,11 @@ describe("Session — State Machine Exhaustive Transitions", () => {
       expect(() => session.markCancelled()).toThrow("Invalid session transition: finished → cancelled");
     });
 
-    it("error → error throws (double error)", () => {
+    it("error → error is idempotent (no-op)", () => {
       const session = createTestSession();
       session.fail("first");
-      expect(() => session.fail("second")).toThrow("Invalid session transition: error → error");
+      session.fail("second"); // should not throw
+      expect(session.status).toBe("error");
     });
 
     it("error → finished throws", () => {
@@ -263,39 +264,6 @@ describe("Session — Prompt Processing Flows", () => {
     expect(agent.prompt).toHaveBeenCalledWith("look at this", [att]);
   });
 
-  it("warmup sentinel is not forwarded to agent as a regular prompt", async () => {
-    const agent = mockAgentInstance();
-    const session = createTestSession(agent);
-
-    await session.warmup();
-
-    // Warmup sends 'Reply with only "ready".' not the sentinel
-    expect(agent.prompt).toHaveBeenCalledWith(
-      expect.stringContaining("ready"),
-    );
-    expect(agent.prompt).not.toHaveBeenCalledWith("\x00__warmup__");
-  });
-
-  it("warmup then user prompt processes in correct order", async () => {
-    const agent = mockAgentInstance();
-    const order: string[] = [];
-    agent.prompt.mockImplementation(async (text: string) => {
-      if (text.includes("ready")) order.push("warmup");
-      else order.push(`user:${text}`);
-    });
-
-    const session = createTestSession(agent);
-    session.name = "skip";
-
-    // Fire warmup and immediately enqueue a user prompt
-    const w = session.warmup();
-    const p = session.enqueuePrompt("hello");
-
-    await Promise.all([w, p]);
-
-    expect(order[0]).toBe("warmup");
-    expect(order[1]).toBe("user:hello");
-  });
 
   it("queueDepth reflects pending items", async () => {
     let resolveFirst!: () => void;

@@ -171,8 +171,8 @@ describe('CommandRegistry', () => {
     expect((result as { type: 'error'; message: string }).message).toContain('boom')
   })
 
-  // 13. execute: treats void return as silent
-  it('execute treats void return as silent', async () => {
+  // 13. execute: treats void return as delegated
+  it('execute treats void return as delegated', async () => {
     const handler = vi.fn(async () => {
       // returns void
     })
@@ -180,7 +180,7 @@ describe('CommandRegistry', () => {
 
     const result = await registry.execute('/quiet', makeArgs())
 
-    expect(result).toEqual({ type: 'silent' })
+    expect(result).toEqual({ type: 'delegated' })
   })
 
   // 13b. unregister by qualified name removes both qualified and short name

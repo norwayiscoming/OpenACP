@@ -18,9 +18,9 @@ Choose the path that fits you:
 
 | I want to... | Start here |
 |---|---|
-| **Chat with AI agents** via Telegram/Discord | [Quick Start for Users](getting-started/for-users.md) |
-| **Self-host OpenACP** on my machine | [Quick Start for Developers](getting-started/for-developers.md) |
-| **Build plugins & adapters** for OpenACP | [Quick Start for Contributors](getting-started/for-contributors.md) |
+| **Understand what OpenACP does** | [What is OpenACP?](getting-started/what-is-openacp.md) |
+| **Install and start chatting** with an AI agent | [Quick Start](getting-started/quick-start.md) |
+| **Build plugins & adapters** for OpenACP | [For Contributors](getting-started/for-contributors.md) |
 
 Or start with [What is OpenACP?](getting-started/what-is-openacp.md) to understand the big picture.
 

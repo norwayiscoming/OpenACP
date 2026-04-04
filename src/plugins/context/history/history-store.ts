@@ -50,6 +50,11 @@ export class HistoryStore {
   }
 
   private filePath(sessionId: string): string {
-    return path.join(this.dir, `${sessionId}.json`);
+    const basename = path.basename(sessionId);
+    const resolved = path.join(this.dir, `${basename}.json`);
+    if (!resolved.startsWith(this.dir)) {
+      throw new Error(`Invalid session ID: ${sessionId}`);
+    }
+    return resolved;
   }
 }

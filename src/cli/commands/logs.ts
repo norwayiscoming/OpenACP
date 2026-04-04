@@ -1,6 +1,6 @@
 import { wantsHelp } from './helpers.js'
 
-export async function cmdLogs(args: string[] = []): Promise<void> {
+export async function cmdLogs(args: string[] = [], instanceRoot?: string): Promise<void> {
   if (wantsHelp(args)) {
     console.log(`
 \x1b[1mopenacp logs\x1b[0m — Tail daemon log file
@@ -18,8 +18,9 @@ Log file location is configured in config (default: ~/.openacp/logs/).
   const { spawn } = await import('node:child_process')
   const { ConfigManager, expandHome } = await import('../../core/config/config.js')
   const pathMod = await import('node:path')
-  const cm = new ConfigManager()
-  let logDir = '~/.openacp/logs'
+  const configPath = instanceRoot ? pathMod.join(instanceRoot, 'config.json') : undefined
+  const cm = new ConfigManager(configPath)
+  let logDir = instanceRoot ? pathMod.join(instanceRoot, 'logs') : '~/.openacp/logs'
   if (await cm.exists()) {
     await cm.load()
     logDir = cm.get().logging.logDir

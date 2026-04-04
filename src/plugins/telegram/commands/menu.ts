@@ -2,29 +2,46 @@ import type { Context } from "grammy";
 import { InlineKeyboard } from "grammy";
 import type { AgentCommand } from "../../../core/index.js";
 import type { CommandsAssistantContext } from "../types.js";
+import type { MenuRegistry } from "../../../core/menu-registry.js";
 
-export function buildMenuKeyboard(): InlineKeyboard {
-  return new InlineKeyboard()
-    .text("🆕 New Session", "m:new")
-    .text("📋 Sessions", "m:topics")
-    .row()
-    .text("📊 Status", "m:status")
-    .text("🤖 Agents", "m:agents")
-    .row()
-    .text("⚙️ Settings", "m:settings")
-    .text("🔗 Integrate", "m:integrate")
-    .row()
-    .text("🔄 Restart", "m:restart")
-    .text("⬆️ Update", "m:update")
-    .row()
-    .text("❓ Help", "m:help")
-    .text("🩺 Doctor", "m:doctor");
+export function buildMenuKeyboard(menuRegistry?: MenuRegistry): InlineKeyboard {
+  if (!menuRegistry) {
+    return new InlineKeyboard()
+      .text('🆕 New Session', 'm:core:new')
+      .text('📋 Sessions', 'm:core:sessions')
+      .row()
+      .text('📊 Status', 'm:core:status')
+      .text('🤖 Agents', 'm:core:agents')
+      .row()
+      .text('❓ Help', 'm:core:help')
+  }
+
+  const items = menuRegistry.getItems()
+  const kb = new InlineKeyboard()
+  let currentGroup: string | undefined
+  let rowCount = 0
+
+  for (const item of items) {
+    if (item.group !== currentGroup && rowCount > 0) {
+      kb.row()
+      rowCount = 0
+    }
+    currentGroup = item.group
+    if (rowCount >= 2) {
+      kb.row()
+      rowCount = 0
+    }
+    kb.text(item.label, `m:${item.id}`)
+    rowCount++
+  }
+
+  return kb
 }
 
-export async function handleMenu(ctx: Context): Promise<void> {
+export async function handleMenu(ctx: Context, menuRegistry?: MenuRegistry): Promise<void> {
   await ctx.reply(`<b>OpenACP Menu</b>\nChoose an action:`, {
     parse_mode: "HTML",
-    reply_markup: buildMenuKeyboard(),
+    reply_markup: buildMenuKeyboard(menuRegistry),
   });
 }
 
@@ -40,15 +57,14 @@ export async function handleHelp(ctx: Context): Promise<void> {
       `/status — Show session or system status\n` +
       `/sessions — List all sessions\n` +
       `/agents — Browse & install agents\n` +
-      `/install <name> — Install an agent\n\n` +
+      `/install &lt;name&gt; — Install an agent\n\n` +
       `⚙️ <b>System</b>\n` +
       `/restart — Restart OpenACP\n` +
       `/update — Update to latest version\n` +
       `/integrate — Manage agent integrations\n` +
       `/menu — Show action menu\n\n` +
       `🔒 <b>Session Options</b>\n` +
-      `/enable_dangerous — Auto-approve permissions\n` +
-      `/disable_dangerous — Restore permission prompts\n` +
+      `/bypass_permissions — Toggle bypass permissions\n` +
       `/handoff — Continue session in terminal\n` +
       `/archive — Archive session topic\n` +
       `/clear — Clear assistant history\n\n` +

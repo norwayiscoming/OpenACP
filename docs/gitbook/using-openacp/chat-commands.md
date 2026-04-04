@@ -19,9 +19,9 @@ OpenACP responds to commands sent in your chat platform. This page covers every 
 | `/doctor` | Yes | Yes | Run system diagnostics |
 | `/tunnel` | Yes | No | Create a public URL for a local port |
 | `/tunnels` | Yes | No | List active tunnels |
-| `/enable_dangerous` | Yes | No | Auto-approve all permissions |
-| `/disable_dangerous` | Yes | No | Restore normal permission prompts |
-| `/dangerous` | No | Yes | Toggle dangerous mode (Discord) |
+| `/enable_bypass` | Yes | No | Auto-approve all permissions |
+| `/disable_bypass` | Yes | No | Restore normal permission prompts |
+| `/bypass` | No | Yes | Toggle bypass permissions (Discord) |
 | `/text_to_speech` | Yes | No | Toggle TTS for a session |
 | `/tts` | No | Yes | Toggle TTS (Discord) |
 | `/outputmode` | Yes | Yes | Set output detail level (replaces `/verbosity`) |
@@ -29,6 +29,11 @@ OpenACP responds to commands sent in your chat platform. This page covers every 
 | `/usage` | Yes | No | View token usage and cost |
 | `/archive` | Yes | No | Archive a session topic |
 | `/summary` | Yes | No | Generate an AI summary of a session |
+| `/mode` | Yes | Yes | Switch agent mode (code, architect, etc.) |
+| `/model` | Yes | Yes | Switch agent model |
+| `/thought` | Yes | Yes | Toggle thinking/reasoning mode |
+| `/dangerous` | Yes | Yes | Toggle dangerous/bypass permissions mode |
+| `/switch` | Yes | Yes | Switch to a different agent mid-conversation |
 | `/handoff` | Yes | Yes | Continue session in your terminal |
 | `/integrate` | Yes | Yes | Manage agent integrations |
 | `/restart` | Yes | Yes | Restart OpenACP |
@@ -127,9 +132,9 @@ Create a public HTTPS URL for a local port. Useful when an agent starts a dev se
 
 List all active tunnels with their public URLs and stop buttons.
 
-### `/enable_dangerous` / `/disable_dangerous` (Telegram) · `/dangerous` (Discord)
+### `/enable_bypass` / `/disable_bypass` (Telegram) · `/bypass` (Discord)
 
-Toggle dangerous mode for the current session. When enabled, all permission requests are auto-approved without showing buttons. Run inside a session topic. See [Permissions](permissions.md) for details.
+Toggle bypass permissions for the current session. When enabled, all permission requests are auto-approved without showing buttons. Run inside a session topic. See [Permissions](permissions.md) for details.
 
 ### `/text_to_speech [on|off]` (Telegram) · `/tts [on|off]` (Discord)
 
@@ -137,18 +142,21 @@ Toggle text-to-speech for the current session. Without an argument, enables TTS 
 
 ### `/outputmode low|medium|high`
 
-Set how much detail OpenACP shows for agent activity. You can also set a per-session override:
+Set how much detail OpenACP shows for agent activity. Supports a 3-level cascade: session override → adapter default → global default.
 
 ```
-/outputmode low             # set globally for this channel
-/outputmode high            # show full detail including inline output
-/outputmode session high    # override for the current session only
-/outputmode session reset   # clear the session override
+/outputmode low              # set adapter default to low
+/outputmode high             # set adapter default to high
+/outputmode reset            # reset adapter default to global default
+/outputmode session high     # override for the current session only
+/outputmode session reset    # clear the session override
 ```
 
-- `low` — minimal output, title only
-- `medium` — balanced (default)
-- `high` — full detail including inline output for short results, viewer links for long output
+- `low` — compact icon grid (minimal noise)
+- `medium` — tool titles, descriptions, output summaries (default)
+- `high` — full inline output, plan list, viewer links for long results, thinking viewer link
+
+On Discord, an action row with `[🔇 Low] [📊 Medium] [🔍 High] [❌ Cancel]` buttons appears below the tool card while the agent is working, so you can switch mode without typing a command.
 
 ### `/verbosity low|medium|high` (deprecated)
 
@@ -160,11 +168,70 @@ Show a token usage and cost report. Without arguments, shows today, this week, a
 
 ### `/archive` (Telegram only)
 
-Archive the current session: stops the agent, removes the session record, and deletes the Telegram topic. This cannot be undone.
+Archive the current session: stops the agent, marks the session as cancelled, and permanently deletes the Telegram topic. This cannot be undone.
 
 ### `/summary` (Telegram only)
 
 Ask the agent to summarize what it has accomplished in the current session. Works inside a session topic.
+
+### `/mode [mode-name]`
+
+Switch the agent's operating mode. Without an argument, shows a menu of available modes declared by the agent (e.g., `code`, `architect`, `ask`).
+
+```
+/mode                          # show available modes
+/mode code                     # switch to code mode
+/mode architect                # switch to architect mode
+```
+
+Available modes depend on the agent — they are declared via the ACP config options protocol.
+
+### `/model [model-name]`
+
+Switch the agent's model. Without an argument, shows available models.
+
+```
+/model                         # show available models
+/model claude-sonnet           # switch to a specific model
+```
+
+### `/thought [on|off]`
+
+Toggle the agent's thinking/reasoning mode. When enabled, the agent shows its reasoning process.
+
+```
+/thought                       # toggle thinking mode
+/thought on                    # enable thinking
+/thought off                   # disable thinking
+```
+
+### `/dangerous [on|off]`
+
+Toggle dangerous/bypass permissions mode for the current session. When enabled, the agent can perform destructive operations without confirmation prompts. This is equivalent to `/bypass` but routed through the agent's config options when available.
+
+```
+/dangerous                     # toggle dangerous mode
+/dangerous on                  # enable (auto-approve all permissions)
+/dangerous off                 # disable (restore normal prompts)
+```
+
+### `/switch [agent-name | label on|off]`
+
+Switch to a different agent mid-conversation. The current conversation history is injected into the new agent so context is preserved.
+
+```
+/switch                        # show a menu of available agents
+/switch claude                 # switch directly to the claude agent
+/switch gemini                 # switch directly to the gemini agent
+/switch label on               # enable agent name labels in history during switches
+/switch label off              # disable agent name labels
+```
+
+If you switch back to a previously used agent without having sent any user prompts in the current session, the old session is resumed (if the agent supports resume). Otherwise a new session is created with the conversation history injected.
+
+The session thread or topic remains the same across all switches — only the agent handling the conversation changes.
+
+See [Agent Switch](../features/agent-switch.md) for the full feature guide.
 
 ### `/handoff`
 

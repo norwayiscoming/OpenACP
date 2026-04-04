@@ -9,10 +9,12 @@ describe("buildWelcomeMessage", () => {
       totalCount: 0,
       agents: ["claude"],
       defaultAgent: "claude",
+      workspace: "/home/user/workspace",
     };
     const msg = buildWelcomeMessage(ctx);
     expect(msg).toContain("OpenACP is ready");
     expect(msg).toContain("No sessions yet");
+    expect(msg).toContain("/home/user/workspace");
     expect(msg).not.toContain("Agents:");
   });
 
@@ -23,6 +25,7 @@ describe("buildWelcomeMessage", () => {
       totalCount: 5,
       agents: ["claude", "codex"],
       defaultAgent: "claude",
+      workspace: "/home/user/workspace",
     };
     const msg = buildWelcomeMessage(ctx);
     expect(msg).toContain("2 active / 5 total");
@@ -38,6 +41,7 @@ describe("buildWelcomeMessage", () => {
       totalCount: 5,
       agents: ["claude"],
       defaultAgent: "claude",
+      workspace: "/home/user/workspace",
     };
     const msg = buildWelcomeMessage(ctx);
     expect(msg).toContain("1 active");
@@ -53,6 +57,7 @@ describe("buildWelcomeMessage", () => {
       totalCount: 3,
       agents: ["claude"],
       defaultAgent: "claude",
+      workspace: "/home/user/workspace",
     };
     const msg = buildWelcomeMessage(ctx);
     expect(msg).toContain("0 active / 3 total");
@@ -66,6 +71,7 @@ describe("buildWelcomeMessage", () => {
       totalCount: 10,
       agents: ["claude"],
       defaultAgent: "claude",
+      workspace: "/home/user/workspace",
     };
     const msg = buildWelcomeMessage(ctx);
     expect(msg).toContain("errors");

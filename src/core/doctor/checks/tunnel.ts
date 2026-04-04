@@ -4,10 +4,6 @@ import * as os from "node:os";
 import { execFileSync } from "node:child_process";
 import type { DoctorCheck, CheckResult } from "../types.js";
 
-const BIN_DIR = path.join(os.homedir(), ".openacp", "bin");
-const BIN_NAME = os.platform() === "win32" ? "cloudflared.exe" : "cloudflared";
-const BIN_PATH = path.join(BIN_DIR, BIN_NAME);
-
 export const tunnelCheck: DoctorCheck = {
   name: "Tunnel",
   order: 8,
@@ -28,8 +24,10 @@ export const tunnelCheck: DoctorCheck = {
     results.push({ status: "pass", message: `Tunnel provider: ${provider}` });
 
     if (provider === "cloudflare") {
+      const binName = os.platform() === "win32" ? "cloudflared.exe" : "cloudflared";
+      const binPath = path.join(ctx.dataDir, "bin", binName);
       let found = false;
-      if (fs.existsSync(BIN_PATH)) {
+      if (fs.existsSync(binPath)) {
         found = true;
       } else {
         try {

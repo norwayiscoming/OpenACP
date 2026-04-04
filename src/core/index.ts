@@ -24,7 +24,6 @@ export {
   type Config,
   type LoggingConfig,
   type UsageConfig,
-  PLUGINS_DIR,
 } from "./config/config.js";
 export { AgentInstance } from "./agents/agent-instance.js";
 export { AgentManager } from "./agents/agent-manager.js";
@@ -34,8 +33,10 @@ export { PromptQueue } from "./sessions/prompt-queue.js";
 export { PermissionGate } from "./sessions/permission-gate.js";
 export { MessageTransformer } from "./message-transformer.js";
 export type { FileServiceInterface } from "./plugin/types.js";
-export { SessionManager } from "./sessions/session-manager.js";
+export { SessionManager, type SessionSummary } from "./sessions/session-manager.js";
 export { SessionBridge, type BridgeDeps } from "./sessions/session-bridge.js";
+export type { TurnContext, TurnRouting } from "./sessions/turn-context.js";
+export { createTurnContext, getEffectiveTarget, isSystemEvent } from "./sessions/turn-context.js";
 export {
   SessionFactory,
   type SessionCreateParams,
@@ -43,6 +44,8 @@ export {
 } from "./sessions/session-factory.js";
 export { OpenACPCore } from "./core.js";
 export { EventBus, type EventBusEvents } from "./event-bus.js";
+export { MenuRegistry, type MenuItem } from './menu-registry.js';
+export { AssistantRegistry, AssistantManager, type AssistantSection, type AssistantCommand } from './assistant/index.js';
 export { CommandRegistry } from "./command-registry.js";
 export { DoctorEngine, type DoctorReport, type PendingFix } from "./doctor/index.js";
 export {
@@ -69,7 +72,9 @@ export {
 export { NotificationManager } from "../plugins/notifications/notification.js";
 export { FileService } from "../plugins/file-service/file-service.js";
 export { SecurityGuard } from "../plugins/security/security-guard.js";
-export { ApiServer, type ApiConfig } from "../plugins/api-server/api-server.js";
+export { type ApiConfig } from "../plugins/api-server/index.js";
+export { createApiServer, type ApiServerInstance, type ApiServerOptions } from "../plugins/api-server/server.js";
+export { createApiServerService, type ApiServerService } from "../plugins/api-server/service.js";
 export { SSEManager } from "../plugins/api-server/sse-manager.js";
 export { StaticServer } from "../plugins/api-server/static-server.js";
 export {
@@ -110,6 +115,14 @@ export type { DisplayVerbosity, ToolCallMeta, ToolUpdateMeta, ViewerLinks } from
 export { STATUS_ICONS, KIND_ICONS } from './adapter-primitives/index.js'
 export { progressBar, formatTokens, truncateContent, stripCodeFences, splitMessage } from './adapter-primitives/index.js'
 export { extractContentText, formatToolSummary, formatToolTitle, resolveToolIcon } from './adapter-primitives/index.js'
+export { ToolStateMap, ThoughtBuffer } from './adapter-primitives/index.js'
+export type { ToolEntry } from './adapter-primitives/index.js'
+export { DisplaySpecBuilder } from './adapter-primitives/index.js'
+export type { ToolDisplaySpec, ThoughtDisplaySpec } from './adapter-primitives/index.js'
+export { OutputModeResolver } from './adapter-primitives/index.js'
+export type { OutputMode } from './adapter-primitives/index.js'
+export { ToolCardState } from './adapter-primitives/index.js'
+export type { ToolCardSnapshot, ToolCardStateConfig } from './adapter-primitives/index.js'
 
 // ─── Plugin types (for SDK re-exports) ──────────────────────────────────────
 export type {

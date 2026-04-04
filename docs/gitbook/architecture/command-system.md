@@ -143,7 +143,7 @@ Registered by plugins in their `setup()` via `ctx.registerCommand()`:
 | `/tunnel` | `@openacp/tunnel` | Manage tunnels |
 | `/tunnels` | `@openacp/tunnel` | List active tunnels |
 | `/usage` | `@openacp/usage` | View usage and cost |
-| `/dangerous` | `@openacp/security` | Toggle auto-approve mode |
+| `/bypass` | `@openacp/security` | Toggle auto-approve mode |
 
 ---
 

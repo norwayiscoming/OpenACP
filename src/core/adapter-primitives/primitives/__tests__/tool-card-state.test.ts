@@ -151,4 +151,127 @@ describe("ToolCardState", () => {
     expect(snapshot.totalVisible).toBe(2);
     card.destroy();
   });
+
+  // --- DONE_STATUSES coverage ---
+
+  it("completedVisible counts 'done' status as complete", () => {
+    const onFlush = vi.fn();
+    const card = new ToolCardState({ onFlush });
+    card.updateFromSpec(makeSpec("t1", "Read", { status: "done" }));
+    const snapshot = onFlush.mock.calls[0][0];
+    expect(snapshot.completedVisible).toBe(1);
+    card.destroy();
+  });
+
+  it("completedVisible counts 'failed' status as complete", () => {
+    const onFlush = vi.fn();
+    const card = new ToolCardState({ onFlush });
+    card.updateFromSpec(makeSpec("t1", "Read", { status: "failed" }));
+    const snapshot = onFlush.mock.calls[0][0];
+    expect(snapshot.completedVisible).toBe(1);
+    card.destroy();
+  });
+
+  it("completedVisible counts 'error' status as complete", () => {
+    const onFlush = vi.fn();
+    const card = new ToolCardState({ onFlush });
+    card.updateFromSpec(makeSpec("t1", "Read", { status: "error" }));
+    const snapshot = onFlush.mock.calls[0][0];
+    expect(snapshot.completedVisible).toBe(1);
+    card.destroy();
+  });
+
+  it("completedVisible does not count 'running' or 'pending'", () => {
+    const onFlush = vi.fn();
+    const card = new ToolCardState({ onFlush });
+    card.updateFromSpec(makeSpec("t1", "Read", { status: "running" }));
+    card.updateFromSpec(makeSpec("t2", "Edit", { status: "pending" }));
+    vi.advanceTimersByTime(500);
+    const snapshot = onFlush.mock.lastCall![0];
+    expect(snapshot.completedVisible).toBe(0);
+    card.destroy();
+  });
+
+  // --- allComplete edge cases ---
+
+  it("allComplete is false when some visible specs still running", () => {
+    const onFlush = vi.fn();
+    const card = new ToolCardState({ onFlush });
+    card.updateFromSpec(makeSpec("t1", "Read", { status: "completed" }));
+    card.updateFromSpec(makeSpec("t2", "Edit", { status: "running" }));
+    vi.advanceTimersByTime(500);
+    const snapshot = onFlush.mock.lastCall![0];
+    expect(snapshot.allComplete).toBe(false);
+    card.destroy();
+  });
+
+  it("allComplete is false when no visible specs exist (all hidden)", () => {
+    const onFlush = vi.fn();
+    const card = new ToolCardState({ onFlush });
+    card.updateFromSpec(makeSpec("t1", "Read", { isHidden: true, status: "completed" }));
+    card.updateFromSpec(makeSpec("t2", "Edit", { isHidden: true, status: "completed" }));
+    vi.advanceTimersByTime(500);
+    const snapshot = onFlush.mock.lastCall![0];
+    expect(snapshot.allComplete).toBe(false);
+    card.destroy();
+  });
+
+  it("allComplete is false when zero specs total", () => {
+    const onFlush = vi.fn();
+    const card = new ToolCardState({ onFlush });
+    // Force a flush via updatePlan so we can inspect the snapshot
+    card.updatePlan([{ content: "Step 1", status: "in_progress", priority: "high" }]);
+    const snapshot = onFlush.mock.calls[0][0];
+    expect(snapshot.allComplete).toBe(false);
+    card.destroy();
+  });
+
+  it("allComplete transitions false->true as last visible spec completes", () => {
+    const onFlush = vi.fn();
+    const card = new ToolCardState({ onFlush });
+    card.updateFromSpec(makeSpec("t1", "Read", { status: "completed" }));
+    card.updateFromSpec(makeSpec("t2", "Edit", { status: "running" }));
+    vi.advanceTimersByTime(500);
+    const snap1 = onFlush.mock.lastCall![0];
+    expect(snap1.allComplete).toBe(false);
+
+    card.updateFromSpec(makeSpec("t2", "Edit", { status: "completed" }));
+    vi.advanceTimersByTime(500);
+    const snap2 = onFlush.mock.lastCall![0];
+    expect(snap2.allComplete).toBe(true);
+    card.destroy();
+  });
+
+  it("allComplete ignores hidden specs: hidden running does not block", () => {
+    const onFlush = vi.fn();
+    const card = new ToolCardState({ onFlush });
+    card.updateFromSpec(makeSpec("t1", "Read", { status: "completed", isHidden: false }));
+    card.updateFromSpec(makeSpec("t2", "Grep", { status: "running", isHidden: true }));
+    vi.advanceTimersByTime(500);
+    const snapshot = onFlush.mock.lastCall![0];
+    expect(snapshot.allComplete).toBe(true);
+    card.destroy();
+  });
+
+  it("allComplete with mixed done statuses (completed + failed)", () => {
+    const onFlush = vi.fn();
+    const card = new ToolCardState({ onFlush });
+    card.updateFromSpec(makeSpec("t1", "Read", { status: "completed" }));
+    card.updateFromSpec(makeSpec("t2", "Edit", { status: "failed" }));
+    vi.advanceTimersByTime(500);
+    const snapshot = onFlush.mock.lastCall![0];
+    expect(snapshot.allComplete).toBe(true);
+    card.destroy();
+  });
+
+  // --- hasContent ---
+
+  it("hasContent returns true when only planEntries set (no specs)", () => {
+    const onFlush = vi.fn();
+    const card = new ToolCardState({ onFlush });
+    expect(card.hasContent()).toBe(false);
+    card.updatePlan([{ content: "Step 1", status: "in_progress", priority: "high" }]);
+    expect(card.hasContent()).toBe(true);
+    card.destroy();
+  });
 });

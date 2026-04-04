@@ -15,3 +15,6 @@ built-in-plugins/
 plugin-registry/
 .worktrees/
 .log
+
+# OpenACP local workspace (contains secrets)
+.openacp

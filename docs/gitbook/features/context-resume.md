@@ -10,38 +10,32 @@ This lets you continue work naturally. The agent knows the history without you h
 
 ## How it works
 
-The `ContextManager` maintains a list of registered context providers. When a session resumes, OpenACP queries the appropriate provider for the relevant history, receives a formatted markdown document, and prepends it to the first prompt.
+When you resume a session, OpenACP collects conversation history from your previous sessions — what you asked, what the agent did, and which files were changed. This history is formatted as a summary and injected into the new session so the agent has full context.
 
-Providers are pluggable. The current built-in provider is `EntireProvider`, which reads conversation history stored by the [Entire.io](https://entire.io) git checkpoint system.
+OpenACP automatically records conversation history for every session. It captures your prompts, the agent's responses, tool calls, file edits, and permission decisions. History is stored locally in `~/.openacp/history/`, one file per session.
 
-Results are cached on disk at `~/.openacp/cache/entire/` so that repeated requests for the same query (same branch, same commit range) do not re-read and re-parse transcript files.
+When multiple past sessions are relevant, history is merged chronologically. OpenACP automatically adjusts the level of detail based on how many sessions are included — recent sessions get full detail, older ones get shorter summaries. If the combined history is too large, the oldest sessions are trimmed first.
+
+### Entire.io support
+
+OpenACP can also read conversation history from [Entire.io](https://entire.io) git checkpoints. This is used as a fallback when local history is not available.
 
 ---
 
-## Entire.io provider
+## Technical details
 
-Entire.io saves git checkpoints during agent sessions. Each checkpoint stores:
+Under the hood, the `ContextManager` maintains a list of registered context providers. Two are built in:
 
-- The agent name and git branch
-- A JSONL transcript of the conversation (user messages and assistant responses, including file edits and writes)
-- The list of files touched
+- **HistoryProvider** — records conversation history directly within OpenACP via middleware hooks (`agent:beforePrompt`, `agent:afterEvent`, `permission:afterResolve`).
+- **EntireProvider** — reads conversation history from Entire.io git checkpoints.
 
-The `EntireProvider` is available when the repository contains an `entire` git branch. It supports several query types for resolving which sessions to include:
-
-| Query type | Example | Description |
-|------------|---------|-------------|
-| `branch` | `main` | All sessions on a specific branch |
-| `commit` | `abc12345` | Sessions associated with a specific commit |
-| `pr` | `https://github.com/.../pull/42` | Sessions for a pull request |
-| `checkpoint` | `chk_abc123` | A single specific checkpoint |
-| `session` | `sess_abc123` | A single session by ID |
-| `latest` | `5` | The N most recent sessions (default 5) |
+Results are cached on disk at `~/.openacp/cache/entire/` so that repeated requests for the same query do not re-read and re-parse transcript files. Providers are pluggable — plugins can register custom context providers.
 
 ---
 
 ## Adaptive rendering modes
 
-Conversation history can be long. To avoid consuming the entire context window, the provider automatically selects a rendering mode based on total turn count:
+Conversation history can be long. To avoid consuming the entire context window, OpenACP automatically selects a rendering mode based on how many conversation turns are included:
 
 | Mode | Turns | What is included |
 |------|-------|-----------------|
@@ -49,9 +43,9 @@ Conversation history can be long. To avoid consuming the entire context window, 
 | `balanced` | 11 to 25 | User messages in full; diffs truncated to 12 lines; file writes truncated to 15 lines |
 | `compact` | more than 25 | User messages in full; edits shown as a one-line summary with line counts; writes shown as filename and line count only |
 
-If the resulting markdown still exceeds the configured `maxTokens` limit, the provider automatically downgrades to `compact` mode. If it is still too large, the oldest sessions are dropped until it fits.
+If the history is still too large after switching to `compact` mode, the oldest sessions are dropped until it fits.
 
-A disclaimer is always appended to the context document reminding the agent that the history may be outdated and should not be taken as ground truth for current file contents.
+A note is always appended reminding the agent that the history may be outdated and should not be taken as ground truth for current file contents.
 
 ---
 

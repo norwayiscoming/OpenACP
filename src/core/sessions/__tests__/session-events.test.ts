@@ -2,16 +2,18 @@ import { describe, it, expect, vi } from 'vitest'
 import { Session } from '../session.js'
 import type { AgentEvent, PermissionRequest } from '../../types.js'
 import type { AgentInstance } from '../../agents/agent-instance.js'
+import { TypedEmitter } from '../../utils/typed-emitter.js'
 
 /** Minimal mock AgentInstance for testing Session event wiring */
 function createMockAgentInstance(): AgentInstance {
-  return {
+  const emitter = new TypedEmitter<{ agent_event: (event: AgentEvent) => void }>()
+  return Object.assign(emitter, {
     sessionId: 'agent-session-1',
     agentName: 'test-agent',
     prompt: vi.fn().mockResolvedValue({}),
     cancel: vi.fn().mockResolvedValue(undefined),
     destroy: vi.fn().mockResolvedValue(undefined),
-  } as unknown as AgentInstance
+  }) as unknown as AgentInstance
 }
 
 function createSession(overrides?: Partial<ConstructorParameters<typeof Session>[0]>): Session {

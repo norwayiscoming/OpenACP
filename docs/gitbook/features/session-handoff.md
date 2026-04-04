@@ -20,61 +20,55 @@ A typical flow:
 
 ---
 
-## How it works
+## How to set up handoff
 
-Handoff relies on two components installed by `openacp integrate`:
+### Step 1: Install the integration
 
-### 1. Inject hook (`openacp-inject-session.sh`)
-
-This shell script runs as an agent hook (e.g. on every new conversation turn for Claude Code). It reads the agent's session ID and working directory from the hook payload and injects them as context variables so the agent is always aware of its own ACP session ID.
-
-### 2. Handoff script (`openacp-handoff.sh`)
-
-This script calls `openacp adopt <agent> <session_id>` to register the terminal session with the running OpenACP daemon, making it visible in the messaging platform.
-
-```bash
-# Manually trigger a handoff
-openacp-handoff.sh <session_id> [working_directory] [channel]
-```
-
-### 3. Slash command / skill
-
-`openacp integrate` also installs a slash command (for Claude Code: `/openacp:handoff`) that instructs the agent to run the handoff script automatically:
-
-```
-/openacp:handoff              # hand off to the default adapter
-/openacp:handoff telegram     # hand off specifically to Telegram
-/openacp:handoff discord      # hand off to Discord
-```
-
----
-
-## Installation
-
-Run the integrate command to install hooks for a supported agent:
+Run the integrate command and follow the prompts:
 
 ```bash
 openacp integrate
 ```
 
-This is interactive and asks which agent to integrate (Claude Code, Cursor, Gemini CLI, GitHub Copilot, Cline, Codex, etc.). It installs scripts to the agent's hooks directory and adds an entry to the agent's settings file.
+You will be asked which agent to integrate (Claude Code, Cursor, Gemini CLI, GitHub Copilot, Cline, Codex, etc.). The command installs the necessary hooks so your agent can hand off sessions to OpenACP.
 
-To uninstall:
+To uninstall later:
 
 ```bash
 openacp integrate --uninstall
 ```
 
+### Step 2: Use the handoff command
+
+Once integrated, you can hand off any session from your terminal to your messaging app:
+
+```
+/openacp:handoff              # hand off to the default platform
+/openacp:handoff telegram     # hand off specifically to Telegram
+/openacp:handoff discord      # hand off to Discord
+```
+
+The session appears as a new topic in your Telegram group or Discord server. You can continue sending prompts and approving permission requests from your phone.
+
 ---
 
 ## Requirements
 
-- The OpenACP daemon must be running in daemon mode (`openacp start --daemon`) on the same machine as the terminal agent.
-- The daemon must have at least one messaging adapter (Telegram or Discord) configured and connected.
-- `jq` must be installed on the machine (`brew install jq` on macOS, `apt install jq` on Linux). The inject hook uses `jq` to parse the agent's hook payload.
+- The OpenACP daemon must be running (`openacp start`) on the same machine as the terminal agent.
+- At least one messaging adapter (Telegram, Discord, or Slack) must be configured and connected.
+- `jq` must be installed on the machine (`brew install jq` on macOS, `apt install jq` on Linux).
 
 ---
 
 ## Supported agents
 
-`openacp integrate` supports agents that expose a hook system for injecting context into every session. Currently supported agents include Claude Code, Cursor, Gemini CLI, GitHub Copilot CLI, Cline, OpenAI Codex, and others. Run `openacp integrate --list` to see the full list.
+Currently supported agents include Claude Code, Cursor, Gemini CLI, GitHub Copilot CLI, Cline, OpenAI Codex, and others. Run `openacp integrate --list` to see the full list.
+
+---
+
+## Technical details
+
+Handoff relies on two shell scripts installed by `openacp integrate`:
+
+- **Inject hook** (`openacp-inject-session.sh`) — runs as an agent hook on every conversation turn, reads the agent's session ID from the hook payload, and injects it as a context variable.
+- **Handoff script** (`openacp-handoff.sh`) — calls `openacp adopt <agent> <session_id>` to register the terminal session with the running OpenACP daemon, making it visible in the messaging platform.

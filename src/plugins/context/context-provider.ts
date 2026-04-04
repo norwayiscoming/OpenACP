@@ -19,6 +19,8 @@ export interface ContextQuery {
 export interface ContextOptions {
   maxTokens?: number;
   limit?: number;
+  /** When true, insert `## [agentName]` headers at agent boundaries in merged history */
+  labelAgent?: boolean;
 }
 
 export interface SessionInfo {

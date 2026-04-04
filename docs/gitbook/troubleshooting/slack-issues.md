@@ -26,7 +26,7 @@ If you haven't finished initial setup, see the [Slack Setup guide](../platform-s
 **Cause:** The Slack event router only processes messages in channels that have an active OpenACP session. Messages in other channels, DMs, or the notification channel are not routed to an agent.
 
 **Solution:**
-1. Use `/openacp-new` to create a new session — this creates a dedicated channel for the conversation.
+1. Use `/new` to create a new session — this creates a dedicated channel for the conversation.
 2. Ensure Socket Mode is enabled for your app: Settings → **Socket Mode → Enable Socket Mode**.
 3. Check that the `message.channels` event subscription is present under **Event Subscriptions → Subscribe to bot events**.
 4. Verify `security.allowedUserIds` — if non-empty, your Slack user ID must be listed.
@@ -55,7 +55,7 @@ If you haven't finished initial setup, see the [Slack Setup guide](../platform-s
 **Solution:**
 - OpenACP's `SlackSendQueue` serialises outbound API calls automatically to respect rate limits.
 - If you hit limits consistently, reduce `security.maxConcurrentSessions` in config.
-- Avoid bursting many messages at once; consider using `outputMode: "low"` (or the deprecated `displayVerbosity: "low"`) to reduce intermediate streaming updates.
+- Avoid bursting many messages at once; consider using `outputMode: "low"` in your config, or type `/outputmode low` in a session channel to reduce intermediate streaming updates.
 
 ---
 
@@ -85,6 +85,26 @@ If the download returns an HTML login page instead of binary audio, the `files:r
 1. Add `files:read` to your bot's OAuth scopes: **OAuth & Permissions → Bot Token Scopes → Add `files:read`**.
 2. Reinstall the app to the workspace (Slack requires reinstallation after scope changes): **Settings → Install App → Reinstall**.
 3. Confirm your agent supports audio input — agents that do not expose audio capability receive the file path as text instead.
+
+---
+
+### `/outputmode` command does nothing or returns "command not found"
+
+**Symptoms:** Typing `/outputmode` shows no autocomplete, or Slack says the command is not found.
+
+**Cause:** The `/outputmode` slash command must be registered in the Slack app's configuration before Slack delivers its payloads to OpenACP.
+
+**Solution:**
+1. In the [Slack API dashboard](https://api.slack.com/apps), open your app.
+2. Go to **Slash Commands** in the left sidebar.
+3. Click **Create New Command** and fill in:
+   - **Command**: `/outputmode`
+   - **Request URL**: leave blank (Socket Mode delivers the payload via WebSocket)
+   - **Short Description**: `Change output verbosity`
+   - **Usage Hint**: `[low|medium|high]`
+4. Click **Save**.
+5. Reinstall the app: **Settings → Install App → Reinstall to Workspace**.
+6. Restart OpenACP.
 
 ---
 

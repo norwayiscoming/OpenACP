@@ -1,5 +1,9 @@
+import path from 'node:path'
 import type { OpenACPPlugin, InstallContext } from '../../core/plugin/types.js'
 import type { TunnelConfig } from '../../core/config/config.js'
+import type { ApiServerService } from '../api-server/service.js'
+import { MAX_RETRIES } from './tunnel-registry.js'
+import { createViewerRoutes } from './viewer-routes.js'
 
 function createTunnelPlugin(): OpenACPPlugin {
   let service: { stop(): Promise<void> } | null = null
@@ -9,7 +13,8 @@ function createTunnelPlugin(): OpenACPPlugin {
     version: '1.0.0',
     description: 'Expose local services to internet via tunnel providers',
     essential: false,
-    permissions: ['services:register', 'kernel:access', 'commands:register'],
+    pluginDependencies: { '@openacp/api-server': '*' },
+    permissions: ['services:register', 'services:use', 'kernel:access', 'commands:register', 'events:read', 'storage:read', 'storage:write'],
 
     async install(ctx: InstallContext) {
       const { terminal, settings, legacyConfig } = ctx
@@ -20,7 +25,7 @@ function createTunnelPlugin(): OpenACPPlugin {
         if (tunnelCfg) {
           await settings.setAll({
             enabled: tunnelCfg.enabled ?? true,
-            provider: tunnelCfg.provider ?? 'cloudflare',
+            provider: tunnelCfg.provider ?? 'openacp',
             port: tunnelCfg.port ?? 3100,
             options: tunnelCfg.options ?? {},
             maxUserTunnels: tunnelCfg.maxUserTunnels ?? 5,
@@ -36,7 +41,8 @@ function createTunnelPlugin(): OpenACPPlugin {
       const provider = await terminal.select({
         message: 'Tunnel provider:',
         options: [
-          { value: 'cloudflare', label: 'Cloudflare (cloudflared)', hint: 'Free, no account needed' },
+          { value: 'openacp', label: 'OpenACP Managed', hint: 'Recommended — stable URL, no account needed' },
+          { value: 'cloudflare', label: 'Cloudflare quick tunnel', hint: 'Rate-limited, random URL' },
           { value: 'ngrok', label: 'ngrok', hint: 'Requires auth token' },
           { value: 'bore', label: 'bore', hint: 'Self-hostable' },
           { value: 'tailscale', label: 'Tailscale Funnel' },
@@ -92,7 +98,8 @@ function createTunnelPlugin(): OpenACPPlugin {
         const provider = await terminal.select({
           message: 'Tunnel provider:',
           options: [
-            { value: 'cloudflare', label: 'Cloudflare' },
+            { value: 'openacp', label: 'OpenACP Managed', hint: 'Recommended' },
+            { value: 'cloudflare', label: 'Cloudflare quick tunnel' },
             { value: 'ngrok', label: 'ngrok' },
             { value: 'bore', label: 'bore' },
             { value: 'tailscale', label: 'Tailscale' },
@@ -127,8 +134,39 @@ function createTunnelPlugin(): OpenACPPlugin {
     },
 
     async setup(ctx) {
+      const { default: fs } = await import('node:fs')
+      const settingsPath = path.join(ctx.instanceRoot, 'plugins', 'data', ctx.pluginName, 'settings.json')
+
+      // If no settings.json exists yet, bootstrap defaults. This replaces the old
+      // inheritableKeys mechanism — plugin is now fully self-contained and does not
+      // read from config.json. New installs that went through install() already have
+      // settings.json; this handles any edge case where they don't.
+      if (!fs.existsSync(settingsPath)) {
+        const defaults = { enabled: true, provider: 'openacp', maxUserTunnels: 5, auth: { enabled: false } }
+        fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
+        fs.writeFileSync(settingsPath, JSON.stringify(defaults, null, 2))
+        Object.assign(ctx.pluginConfig, defaults)
+        ctx.log.info('Initialized tunnel settings with defaults (openacp provider)')
+      }
+
       const config = ctx.pluginConfig as Record<string, unknown>
-      if (!config.enabled) {
+
+      // Migrate existing cloudflare quick-tunnel users to openacp managed tunnel.
+      if (config.provider === 'cloudflare') {
+        try {
+          const current = JSON.parse(fs.readFileSync(settingsPath, 'utf-8')) as Record<string, unknown>
+          current.provider = 'openacp'
+          fs.writeFileSync(settingsPath, JSON.stringify(current, null, 2))
+        } catch (err) {
+          ctx.log.warn(`Failed to migrate tunnel settings.json: ${(err as Error).message}`)
+        }
+        config.provider = 'openacp'
+        ctx.log.info('Auto-migrated tunnel provider: cloudflare → openacp (OpenACP managed tunnel)')
+      }
+
+      // Default enabled to true — settings created via copyInstance may omit this key
+      const enabled = 'enabled' in config ? config.enabled : true
+      if (!enabled) {
         ctx.log.info('Tunnel disabled')
         return
       }
@@ -137,9 +175,39 @@ function createTunnelPlugin(): OpenACPPlugin {
         return
       }
 
+      if (config.port) {
+        ctx.log.warn('tunnel.port is deprecated and ignored — tunnel now uses API server port')
+      }
+      if ((config.auth as Record<string, unknown> | undefined)?.enabled) {
+        ctx.log.warn('tunnel.auth is deprecated and ignored — viewer routes are now public')
+      }
+
       const { TunnelService } = await import('./tunnel-service.js')
-      const tunnelSvc = new TunnelService(config as unknown as TunnelConfig)
-      const publicUrl = await tunnelSvc.start()
+      const instanceRoot = ctx.instanceRoot
+      const tunnelSvc = new TunnelService(
+        config as unknown as TunnelConfig,
+        path.join(instanceRoot, 'tunnels.json'),
+        path.join(instanceRoot, 'bin'),
+        ctx.storage,
+      )
+
+      // Get API server service (new dependency)
+      const apiServer = ctx.getService<ApiServerService>('api-server')
+
+      // Register viewer routes in API server (replaces Hono viewer server)
+      if (apiServer) {
+        const viewerRoutes = createViewerRoutes(tunnelSvc.getStore())
+        apiServer.registerPlugin('/', viewerRoutes, { auth: false })
+      } else {
+        ctx.log.warn('API server not available — viewer links will be unavailable')
+      }
+
+      // Start tunnel only after API server is actually listening
+      ctx.on('api-server:started', async (data: unknown) => {
+        const apiPort = (data as { port: number }).port
+        const publicUrl = await tunnelSvc.start(apiPort)
+        ctx.log.info(`Tunnel ready: ${publicUrl}`)
+      })
       service = tunnelSvc
 
       ctx.registerService('tunnel', tunnelSvc)
@@ -176,9 +244,12 @@ function createTunnelPlugin(): OpenACPPlugin {
             }
           }
 
-          // /tunnel (no args) — show current tunnel URL
+          // /tunnel (no args) — show current tunnel URL + health
           const url = tunnelSvc.getPublicUrl()
-          return { type: 'text', text: url ? `Tunnel: ${url}` : 'No tunnel active.' }
+          const err = tunnelSvc.getStartError()
+          let text = url ? `Tunnel: ${url}` : 'No tunnel active.'
+          if (err) text += `\n⚠️ System tunnel error: ${err}`
+          return { type: 'text', text }
         },
       })
 
@@ -189,18 +260,24 @@ function createTunnelPlugin(): OpenACPPlugin {
         handler: async () => {
           const userTunnels = tunnelSvc.listTunnels()
           const systemUrl = tunnelSvc.getPublicUrl()
+          const sysError = tunnelSvc.getStartError()
+          const systemDetail = sysError ? `${systemUrl} ⚠️ ${sysError}` : systemUrl
           const items = [
-            { label: 'System', detail: systemUrl },
-            ...userTunnels.map(t => ({
-              label: t.label ?? `Port ${t.port}`,
-              detail: `${t.publicUrl ?? t.status} (${t.provider})`,
-            })),
+            { label: 'System', detail: systemDetail },
+            ...userTunnels.map(t => {
+              const statusInfo = t.status === 'failed' && t.retryCount > 0
+                ? `${t.status} (retry ${t.retryCount}/${MAX_RETRIES})`
+                : t.status
+              return {
+                label: t.label ?? `Port ${t.port}`,
+                detail: `${t.publicUrl ?? statusInfo} (${t.provider})`,
+              }
+            }),
           ]
           return { type: 'list', title: 'Active Tunnels', items }
         },
       })
 
-      ctx.log.info(`Tunnel ready: ${publicUrl}`)
     },
 
     async teardown() {

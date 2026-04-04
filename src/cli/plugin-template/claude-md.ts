@@ -120,6 +120,14 @@ interface PluginContext {
   // Commands (requires 'commands:register')
   registerCommand(def: CommandDef): void
 
+  // Menu items (requires 'commands:register')
+  registerMenuItem(item: MenuItem): void
+  unregisterMenuItem(id: string): void
+
+  // Assistant context sections (requires 'commands:register')
+  registerAssistantSection(section: AssistantSection): void
+  unregisterAssistantSection(id: string): void
+
   // Storage (requires 'storage:read' / 'storage:write')
   storage: PluginStorage  // get, set, delete, list, getDataDir
 
@@ -162,6 +170,7 @@ type CommandResponse =
   | { type: 'confirm'; question: string; onYes: string; onNo: string }
   | { type: 'error'; message: string }
   | { type: 'silent' }
+  | { type: 'delegated' }
 \`\`\`
 
 ### Settings System
@@ -215,7 +224,7 @@ Declare in \`permissions\` array. Only request what you need.
 
 Calling a method without the required permission throws \`PluginPermissionError\`.
 
-## Middleware Hooks (18 total)
+## Middleware Hooks (20 total)
 
 Register with \`ctx.registerMiddleware(hook, { priority?, handler })\`. Return \`null\` to block the flow, call \`next()\` to continue.
 
@@ -249,10 +258,10 @@ Register with \`ctx.registerMiddleware(hook, { priority?, handler })\`. Return \
 - \`session:afterDestroy\` — after session destroyed (sessionId, reason, durationMs, promptCount)
 
 ### Control
-- \`mode:beforeChange\` — before mode change (sessionId, fromMode, toMode)
 - \`config:beforeChange\` — before config change (sessionId, configId, oldValue, newValue)
-- \`model:beforeChange\` — before model change (sessionId, fromModel, toModel)
 - \`agent:beforeCancel\` — before agent cancellation (sessionId, reason)
+- \`agent:beforeSwitch\` — **blocking** before agent switch (sessionId, fromAgent, toAgent). Return null/false to block.
+- \`agent:afterSwitch\` — **fire-and-forget** after agent switch (sessionId, fromAgent, toAgent, resumed). Observational only.
 
 ## Plugin Events (subscribe with ctx.on)
 

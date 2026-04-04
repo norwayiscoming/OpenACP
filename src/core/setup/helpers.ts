@@ -1,5 +1,6 @@
 import * as clack from "@clack/prompts";
 import type { Config } from "../config/config.js";
+import type { SettingsManager } from "../plugin/settings-manager.js";
 
 // --- ANSI colors ---
 
@@ -66,23 +67,30 @@ export async function printStartBanner(): Promise<void> {
 
 // --- Config summary ---
 
-export function summarizeConfig(config: Config): string {
+export async function summarizeConfig(config: Config, settingsManager?: SettingsManager): Promise<string> {
   const lines: string[] = [];
 
-  // Channels
+  // Channels — check plugin settings (new-style) before falling back to config.channels (legacy)
+  const channelDefs: Array<{ id: string; label: string; pluginName: string; keys: string[] }> = [
+    { id: "telegram", label: "Telegram", pluginName: "@openacp/telegram", keys: ["botToken", "chatId"] },
+    { id: "discord", label: "Discord", pluginName: "@openacp/adapter-discord", keys: ["guildId", "token"] },
+  ];
+
   const channelStatuses: string[] = [];
-  for (const [id, meta] of Object.entries({
-    telegram: "Telegram",
-    discord: "Discord",
-  })) {
-    const ch = config.channels[id] as { enabled?: boolean } | undefined;
-    if (ch?.enabled) {
-      channelStatuses.push(`${meta} (enabled)`);
-    } else if (ch && Object.keys(ch).length > 1) {
-      channelStatuses.push(`${meta} (disabled)`);
-    } else {
-      channelStatuses.push(`${meta} (not configured)`);
+  for (const def of channelDefs) {
+    const legacyCh = config.channels[def.id] as Record<string, unknown> | undefined;
+    let configured = !!legacyCh && Object.keys(legacyCh).length > 1;
+    let enabled = (legacyCh?.enabled as boolean) === true;
+
+    if (settingsManager) {
+      const ps = await settingsManager.loadSettings(def.pluginName);
+      if (def.keys.some((k) => ps[k])) {
+        configured = true;
+        enabled = ps.enabled !== false;
+      }
     }
+
+    channelStatuses.push(`${def.label} (${enabled ? "enabled" : configured ? "disabled" : "not configured"})`);
   }
   lines.push(`Channels: ${channelStatuses.join(", ")}`);
 

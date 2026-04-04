@@ -31,6 +31,11 @@ while true; do
   if [ "$EXIT_CODE" -eq "$RESTART_CODE" ]; then
     echo ""
     echo "▸ Restart requested (exit code $RESTART_CODE). Rebuilding..."
+    # Inherit instance root from previous run so we don't re-prompt
+    ROOT_FILE="${TMPDIR:-/tmp}/openacp-dev-loop-root"
+    if [ -f "$ROOT_FILE" ]; then
+      export OPENACP_INSTANCE_ROOT="$(cat "$ROOT_FILE")"
+    fi
     build
     echo "▸ Restarting..."
     echo ""

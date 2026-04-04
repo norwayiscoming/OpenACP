@@ -1,8 +1,13 @@
 import { RegistryClient } from '../../core/plugin/registry-client.js'
+import { isJsonMode, jsonSuccess, jsonError, muteForJson, ErrorCodes } from '../output.js'
 
 export async function cmdPluginSearch(args: string[]): Promise<void> {
-  const query = args.join(' ').trim()
+  const json = isJsonMode(args)
+  if (json) await muteForJson()
+
+  const query = args.filter(a => a !== '--json').join(' ').trim()
   if (!query) {
+    if (json) jsonError(ErrorCodes.MISSING_ARGUMENT, 'Search query is required')
     console.error('Usage: openacp plugin search <query>')
     process.exit(1)
   }
@@ -11,6 +16,21 @@ export async function cmdPluginSearch(args: string[]): Promise<void> {
 
   try {
     const results = await client.search(query)
+
+    if (json) {
+      jsonSuccess({
+        results: results.map(p => ({
+          name: p.name,
+          displayName: p.displayName ?? p.name,
+          version: p.version,
+          description: p.description,
+          npm: p.npm,
+          category: p.category,
+          verified: p.verified ?? false,
+          featured: p.featured ?? false,
+        })),
+      })
+    }
 
     if (results.length === 0) {
       console.log(`No plugins found matching "${query}"`)
@@ -28,6 +48,7 @@ export async function cmdPluginSearch(args: string[]): Promise<void> {
       console.log()
     }
   } catch (err) {
+    if (json) jsonError(ErrorCodes.API_ERROR, `Failed to search registry: ${err}`)
     console.error(`Failed to search registry: ${err}`)
     process.exit(1)
   }

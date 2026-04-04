@@ -21,6 +21,7 @@ export interface ToolDisplaySpec {
   viewerLinks?: ViewerLinks;
   outputViewerLink?: string;
   outputFallbackContent?: string;
+  workingDirectory?: string;
   status: string;
   isNoise: boolean;
   isHidden: boolean;
@@ -52,15 +53,39 @@ function capitalize(s: string): string {
   return s.length === 0 ? s : s[0].toUpperCase() + s.slice(1);
 }
 
+function getStringField(input: Record<string, unknown>, keys: string[]): string | null {
+  for (const key of keys) {
+    const value = input[key];
+    if (typeof value === "string" && value.trim().length > 0) return value;
+  }
+  return null;
+}
+
+function parseApplyPatchTargets(patchText: string): string[] {
+  const lines = patchText.split("\n");
+  const targets: string[] = [];
+  const seen = new Set<string>();
+  for (const line of lines) {
+    const match = line.match(/^\*\*\*\s+(?:Update|Add|Delete)\s+File:\s+(.+)$/);
+    if (!match) continue;
+    const path = match[1].trim();
+    if (!path || seen.has(path)) continue;
+    seen.add(path);
+    targets.push(path);
+  }
+  return targets;
+}
+
 function buildTitle(entry: ToolEntry, kind: string): string {
   // Explicit overrides take highest priority
   if (entry.displayTitle) return entry.displayTitle;
   if (entry.displaySummary) return entry.displaySummary;
 
   const input = asRecord(entry.rawInput);
+  const nameLower = entry.name.toLowerCase();
 
   if (kind === "read") {
-    const filePath = typeof input.file_path === "string" ? input.file_path : null;
+    const filePath = getStringField(input, ["file_path", "filePath", "path"]);
     if (filePath) {
       // start_line/end_line style
       const startLine = typeof input.start_line === "number" ? input.start_line : null;
@@ -78,12 +103,7 @@ function buildTitle(entry: ToolEntry, kind: string): string {
   }
 
   if (kind === "edit" || kind === "write" || kind === "delete") {
-    const filePath =
-      typeof input.file_path === "string"
-        ? input.file_path
-        : typeof input.path === "string"
-          ? input.path
-          : null;
+    const filePath = getStringField(input, ["file_path", "filePath", "path"]);
     if (filePath) return filePath;
     return capitalize(entry.name);
   }
@@ -122,6 +142,39 @@ function buildTitle(entry: ToolEntry, kind: string): string {
       return title;
     }
     return capitalize(entry.name);
+  }
+
+  // Fallbacks for tools that often come through with kind="other"
+  if (nameLower === "apply_patch") {
+    const patchText = getStringField(input, ["patchText", "patch_text"]);
+    if (patchText) {
+      const targets = parseApplyPatchTargets(patchText);
+      if (targets.length === 1) return targets[0];
+      if (targets.length > 1) {
+        const shown = targets.slice(0, 2).join(", ");
+        const remaining = targets.length - 2;
+        return remaining > 0 ? `${shown} (+${remaining} more)` : shown;
+      }
+    }
+    return "apply_patch";
+  }
+
+  if (nameLower === "todowrite") {
+    const todos = Array.isArray(input.todos) ? input.todos : [];
+    if (todos.length > 0) {
+      const inProgress = todos.filter((t) => {
+        if (!t || typeof t !== "object") return false;
+        const status = (t as Record<string, unknown>).status;
+        return status === "in_progress";
+      }).length;
+      const completed = todos.filter((t) => {
+        if (!t || typeof t !== "object") return false;
+        const status = (t as Record<string, unknown>).status;
+        return status === "completed";
+      }).length;
+      return `Todo list (${completed}/${todos.length} done${inProgress > 0 ? `, ${inProgress} active` : ""})`;
+    }
+    return "Todo list";
   }
 
   if (kind === "fetch" || kind === "web") {
@@ -240,6 +293,7 @@ export class DisplaySpecBuilder {
       viewerLinks: entry.viewerLinks,
       outputViewerLink,
       outputFallbackContent,
+      workingDirectory: sessionContext?.workingDirectory,
       status: entry.status,
       isNoise: entry.isNoise,
       isHidden,

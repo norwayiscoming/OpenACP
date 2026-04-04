@@ -226,15 +226,39 @@ export function renderToolCard(snap: ToolCardSnapshot): string {
 
 const FILE_KINDS = new Set(["read", "edit", "write", "delete"]);
 
-/** Shorten absolute file paths to just filename (+ line range if present) */
-function shortenTitle(title: string, kind: string): string {
-  if (!FILE_KINDS.has(kind) || !title.includes("/")) return title;
-  // Separate optional parenthesized suffix (e.g. " (lines 10–50)" or " (from line 10)")
+function normalizePathLike(pathLike: string): string {
+  return pathLike.replace(/\\/g, "/");
+}
+
+/**
+ * Prefer working-directory relative paths for file-looking titles.
+ * Fallback to basename for core file kinds when no relativization is possible.
+ */
+function shortenTitle(title: string, kind: string, workingDirectory?: string): string {
+  if (!title.includes("/")) return title;
+
   const parenIdx = title.indexOf(" (");
   const pathPart = parenIdx > 0 ? title.slice(0, parenIdx) : title;
   const rangePart = parenIdx > 0 ? title.slice(parenIdx) : "";
-  const fileName = pathPart.split("/").pop() || pathPart;
-  return fileName + rangePart;
+
+  if (workingDirectory) {
+    const normalizedPathPart = normalizePathLike(pathPart);
+    const normalizedCwd = normalizePathLike(workingDirectory).replace(/\/+$/, "");
+    const prefix = `${normalizedCwd}/`;
+    const relativized = normalizedPathPart
+      .split(", ")
+      .map((segment) => (segment.startsWith(prefix) ? segment.slice(prefix.length) : segment))
+      .join(", ");
+    if (relativized !== normalizedPathPart) return relativized + rangePart;
+  }
+
+  if (FILE_KINDS.has(kind)) return basename(pathPart) + rangePart;
+  return title;
+}
+
+function basename(pathLike: string): string {
+  const normalized = pathLike.replace(/\\/g, "/");
+  return normalized.split("/").pop() || pathLike;
 }
 
 function renderSpecSection(spec: ToolDisplaySpec): string {
@@ -251,7 +275,7 @@ function renderSpecSection(spec: ToolDisplaySpec): string {
 
   // Build title line: "✅ 📖 Read · filename.ts"
   const kindLabel = KIND_LABELS[spec.kind];
-  const displayTitle = shortenTitle(spec.title, spec.kind);
+  const displayTitle = shortenTitle(spec.title, spec.kind, spec.workingDirectory);
   // Suppress title when it duplicates the kind label (e.g. "Edit · Edit")
   const hasUniqueTitle = displayTitle && displayTitle.toLowerCase() !== kindLabel?.toLowerCase()
     && displayTitle.toLowerCase() !== spec.kind;
@@ -289,7 +313,7 @@ function renderSpecSection(spec: ToolDisplaySpec): string {
 
   if (spec.viewerLinks?.file || spec.viewerLinks?.diff || spec.outputViewerLink) {
     const linkParts: string[] = [];
-    const shortName = displayTitle || kindLabel || spec.kind;
+    const shortName = basename(displayTitle || kindLabel || spec.kind);
     if (spec.viewerLinks?.file)
       linkParts.push(`<a href="${escapeHtml(spec.viewerLinks.file)}">View ${escapeHtml(shortName)}</a>`);
     if (spec.viewerLinks?.diff)

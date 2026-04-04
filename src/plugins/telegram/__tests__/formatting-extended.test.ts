@@ -23,6 +23,7 @@ function makeSpec(
     title: "Read src/main.ts",
     description: null,
     command: null,
+    inputContent: null,
     outputSummary: null,
     outputContent: null,
     diffStats: null,
@@ -622,6 +623,58 @@ describe("renderToolCard", () => {
     ]);
     const result = renderToolCard(snap);
     expect(result).toContain('<a href="http://diff.url">');
+  });
+
+  it("shows relative title with cwd and keeps viewer link filename-only", () => {
+    const snap = makeSnapshot([
+      makeSpec("t1", {
+        kind: "read",
+        title: "/repo/packages/app/src/index.ts",
+        workingDirectory: "/repo",
+        viewerLinks: { file: "http://file.url" },
+      }),
+    ]);
+    const result = renderToolCard(snap);
+    expect(result).toContain("packages/app/src/index.ts");
+    expect(result).toContain("View index.ts");
+  });
+
+  it("renders working-directory relative title for absolute read path", () => {
+    const snap = makeSnapshot([
+      makeSpec("t1", {
+        kind: "read",
+        title: "/repo/packages/app/src/index.ts (lines 1–10)",
+        workingDirectory: "/repo",
+      }),
+    ]);
+    const result = renderToolCard(snap);
+    expect(result).toContain("packages/app/src/index.ts (lines 1–10)");
+    expect(result).not.toContain("/repo/packages/app/src/index.ts");
+  });
+
+  it("falls back to basename for file kinds outside working directory", () => {
+    const snap = makeSnapshot([
+      makeSpec("t1", {
+        kind: "write",
+        title: "/elsewhere/logs/output.txt",
+        workingDirectory: "/repo",
+      }),
+    ]);
+    const result = renderToolCard(snap);
+    expect(result).toContain("output.txt");
+    expect(result).not.toContain("/elsewhere/logs/output.txt");
+  });
+
+  it("renders apply_patch multi-file title as relative when cwd is known", () => {
+    const snap = makeSnapshot([
+      makeSpec("t1", {
+        kind: "other",
+        title: "/repo/a/one.ts, /repo/b/two.ts (+1 more)",
+        workingDirectory: "/repo",
+      }),
+    ]);
+    const result = renderToolCard(snap);
+    expect(result).toContain("a/one.ts, b/two.ts (+1 more)");
   });
 
   it("renders plan section with HTML escaping", () => {

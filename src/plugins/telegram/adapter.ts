@@ -130,6 +130,8 @@ export class TelegramAdapter extends MessagingAdapter {
   private controlMsgIds = new Map<string, number>();
   private _threadReadyHandler?: (data: { sessionId: string; channelId: string; threadId: string }) => void;
   private _configChangedHandler?: (data: { sessionId: string }) => void;
+  /** Mutable ref passed to callbacks before topics are ready; updated in-place by initTopicDependentFeatures */
+  private _systemTopicIds = { notificationTopicId: 0, assistantTopicId: 0 };
   /** True once topics are initialized and Phase 2 is complete */
   private _topicsInitialized = false;
   /** Background watcher timer — cancelled on stop() or when topics succeed */
@@ -475,6 +477,31 @@ export class TelegramAdapter extends MessagingAdapter {
     setupIntegrateCallbacks(this.bot, this.core as OpenACPCore);
     this.permissionHandler.setupCallbackHandler();
 
+    // Register topic-dependent callbacks using a mutable ref (_systemTopicIds).
+    // The ref is updated in-place by initTopicDependentFeatures() once topics are ready.
+    setupMenuCallbacks(
+      this.bot,
+      this.core as OpenACPCore,
+      this.telegramConfig.chatId,
+      this._systemTopicIds,
+      () => {
+        const assistant = this.core.assistantManager?.get('telegram');
+        if (!assistant) return undefined;
+        return {
+          topicId: this.assistantTopicId,
+          enqueuePrompt: (p: string) => {
+            const pending = this.core.assistantManager?.consumePendingSystemPrompt('telegram');
+            const text = pending ? `${pending}\n\n---\n\nUser message:\n${p}` : p;
+            return assistant.enqueuePrompt(text);
+          },
+        };
+      },
+      (sessionId: string, msgId: number) => {
+        this.storeControlMsgId(sessionId, msgId);
+      },
+    );
+    this.setupRoutes();
+
     // Start bot polling
     this.bot.start({
       allowed_updates: ["message", "callback_query"],
@@ -482,6 +509,14 @@ export class TelegramAdapter extends MessagingAdapter {
     });
 
     // Phase 2: check prerequisites and either initialize topics now or start watcher
+    log.info(
+      {
+        chatId: this.telegramConfig.chatId,
+        notificationTopicId: this.telegramConfig.notificationTopicId,
+        assistantTopicId: this.telegramConfig.assistantTopicId,
+      },
+      'Telegram adapter: starting prerequisite check (existing topic IDs shown)',
+    );
     const { checkTopicsPrerequisites } = await import('./validators.js');
     const prereqResult = await checkTopicsPrerequisites(
       this.telegramConfig.botToken,
@@ -489,8 +524,10 @@ export class TelegramAdapter extends MessagingAdapter {
     );
 
     if (prereqResult.ok) {
+      log.info('Telegram adapter: prerequisites OK, initializing topic-dependent features');
       await this.initTopicDependentFeatures();
     } else {
+      log.warn({ issues: prereqResult.issues }, 'Telegram adapter: prerequisites NOT met, starting watcher');
       for (const issue of prereqResult.issues) {
         log.warn({ issue }, 'Telegram prerequisite not met');
       }
@@ -541,6 +578,10 @@ export class TelegramAdapter extends MessagingAdapter {
 
   private async initTopicDependentFeatures(): Promise<void> {
     if (this._topicsInitialized) return; // idempotent guard
+    log.info(
+      { notificationTopicId: this.telegramConfig.notificationTopicId, assistantTopicId: this.telegramConfig.assistantTopicId },
+      'initTopicDependentFeatures: starting (existing IDs in config)',
+    );
     // Ensure system topics exist (retry on transient network failures)
     const topics = await this.retryWithBackoff(
       () => ensureTopics(
@@ -562,30 +603,12 @@ export class TelegramAdapter extends MessagingAdapter {
     );
     this.notificationTopicId = topics.notificationTopicId;
     this.assistantTopicId = topics.assistantTopicId;
-
-    setupMenuCallbacks(
-      this.bot,
-      this.core as OpenACPCore,
-      this.telegramConfig.chatId,
-      {
-        notificationTopicId: this.notificationTopicId,
-        assistantTopicId: this.assistantTopicId,
-      },
-      () => {
-        const assistant = this.core.assistantManager?.get('telegram');
-        if (!assistant) return undefined;
-        return {
-          topicId: this.assistantTopicId,
-          enqueuePrompt: (p: string) => {
-            const pending = this.core.assistantManager?.consumePendingSystemPrompt('telegram');
-            const text = pending ? `${pending}\n\n---\n\nUser message:\n${p}` : p;
-            return assistant.enqueuePrompt(text);
-          },
-        };
-      },
-      (sessionId: string, msgId: number) => {
-        this.storeControlMsgId(sessionId, msgId);
-      },
+    // Update the mutable ref so callbacks registered before bot.start() see the correct IDs
+    this._systemTopicIds.notificationTopicId = topics.notificationTopicId;
+    this._systemTopicIds.assistantTopicId = topics.assistantTopicId;
+    log.info(
+      { notificationTopicId: this.notificationTopicId, assistantTopicId: this.assistantTopicId },
+      'initTopicDependentFeatures: topics ready',
     );
 
     // Send initial messages when a new session thread is created via API/CLI
@@ -630,10 +653,8 @@ export class TelegramAdapter extends MessagingAdapter {
     };
     this.core.eventBus.on("session:configChanged", this._configChangedHandler);
 
-    // Setup message routing
-    this.setupRoutes();
-
     // Send welcome message
+    log.info({ assistantTopicId: this.assistantTopicId }, 'initTopicDependentFeatures: sending welcome message');
     try {
       const config = this.core.configManager.get();
       const agents = this.core.agentManager.getAvailableAgents();
@@ -657,6 +678,7 @@ export class TelegramAdapter extends MessagingAdapter {
           this.core.lifecycleManager?.serviceRegistry?.get('menu-registry') as import('../../core/menu-registry.js').MenuRegistry | undefined,
         ),
       });
+      log.info('initTopicDependentFeatures: welcome message sent');
     } catch (err) {
       log.warn({ err }, "Failed to send welcome message");
     }
@@ -841,6 +863,14 @@ export class TelegramAdapter extends MessagingAdapter {
 
   private setupRoutes(): void {
     this.bot.on("message:text", async (ctx) => {
+      // Guard: topics not yet initialized — non-command messages would use stale/zero topic IDs
+      if (!this._topicsInitialized) {
+        await ctx.reply(
+          "⏳ OpenACP is still setting up. Check the General topic for instructions.",
+        ).catch(() => {});
+        return;
+      }
+
       const threadId = ctx.message.message_thread_id;
       const text = ctx.message.text;
 

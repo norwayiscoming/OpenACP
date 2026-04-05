@@ -226,35 +226,40 @@ export function renderToolCard(snap: ToolCardSnapshot): string {
 
 const FILE_KINDS = new Set(["read", "edit", "write", "delete"]);
 
+function normalizePathLike(pathLike: string): string {
+  return pathLike.replace(/\\/g, "/");
+}
+
 /**
  * Shorten a file-path title for display in Telegram tool cards.
  *
  * Strategy (in priority order):
  * 1. If `workingDirectory` is provided and the path starts with it,
  *    return the relative path  →  "src/foo.ts (lines 1–10)"
- * 2. Otherwise fall back to basename only  →  "foo.ts (lines 1–10)"
+ *    Also handles comma-separated multi-file titles (e.g. apply_patch).
+ * 2. For file-kind titles, fall back to basename  →  "foo.ts (lines 1–10)"
  * 3. Non-file-kind titles are returned unchanged.
  */
 function shortenTitle(title: string, kind: string, workingDirectory?: string): string {
-  if (!FILE_KINDS.has(kind) || !title.includes("/")) return title;
+  if (!title.includes("/")) return title;
 
-  // Separate optional parenthesized suffix (e.g. " (lines 10–50)")
   const parenIdx = title.indexOf(" (");
   const pathPart = parenIdx > 0 ? title.slice(0, parenIdx) : title;
   const rangePart = parenIdx > 0 ? title.slice(parenIdx) : "";
 
-  // 1. Relativize against workingDirectory when available
   if (workingDirectory) {
-    const normalizedCwd = workingDirectory.replace(/\/+$/, "");
-    if (pathPart.startsWith(normalizedCwd + "/")) {
-      return pathPart.slice(normalizedCwd.length + 1) + rangePart;
-    }
+    const normalizedPathPart = normalizePathLike(pathPart);
+    const normalizedCwd = normalizePathLike(workingDirectory).replace(/\/+$/, "");
+    const prefix = `${normalizedCwd}/`;
+    const relativized = normalizedPathPart
+      .split(", ")
+      .map((segment) => (segment.startsWith(prefix) ? segment.slice(prefix.length) : segment))
+      .join(", ");
+    if (relativized !== normalizedPathPart) return relativized + rangePart;
   }
 
-  // 2. Fallback: basename only (preserves old behaviour for absolute paths
-  //    that don't match the working directory)
-  const fileName = pathPart.split("/").pop() || pathPart;
-  return fileName + rangePart;
+  if (FILE_KINDS.has(kind)) return basename(pathPart) + rangePart;
+  return title;
 }
 
 /** Extract the last path segment for use in link labels. */

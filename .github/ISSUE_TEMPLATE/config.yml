@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: ❓ Ask a Question
+    url: https://github.com/Open-ACP/OpenACP/discussions/categories/q-a
+    about: Use GitHub Discussions for questions. The community and maintainers can help you there.
+  - name: 💡 Share an Idea
+    url: https://github.com/Open-ACP/OpenACP/discussions/categories/ideas
+    about: Have a general idea or suggestion? Start a discussion first before opening a feature request.
+  - name: 📖 Documentation
+    url: https://openacp.gitbook.io/docs
+    about: Check the docs first — your answer might already be there.

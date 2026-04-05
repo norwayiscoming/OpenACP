@@ -21,12 +21,12 @@ export interface ToolDisplaySpec {
   viewerLinks?: ViewerLinks;
   outputViewerLink?: string;
   outputFallbackContent?: string;
-  status: string;
-  isNoise: boolean;
-  isHidden: boolean;
   /** Working directory of the session that produced this tool call.
    *  Adapters can use this to display relative paths instead of absolute ones. */
   workingDirectory?: string;
+  status: string;
+  isNoise: boolean;
+  isHidden: boolean;
 }
 
 export interface ThoughtDisplaySpec {
@@ -153,6 +153,39 @@ function buildTitle(entry: ToolEntry, kind: string): string {
       return title;
     }
     return capitalize(entry.name);
+  }
+
+  // Fallbacks for tools that often come through with kind="other"
+  if (nameLower === "apply_patch") {
+    const patchText = getStringField(input, ["patchText", "patch_text"]);
+    if (patchText) {
+      const targets = parseApplyPatchTargets(patchText);
+      if (targets.length === 1) return targets[0];
+      if (targets.length > 1) {
+        const shown = targets.slice(0, 2).join(", ");
+        const remaining = targets.length - 2;
+        return remaining > 0 ? `${shown} (+${remaining} more)` : shown;
+      }
+    }
+    return "apply_patch";
+  }
+
+  if (nameLower === "todowrite") {
+    const todos = Array.isArray(input.todos) ? input.todos : [];
+    if (todos.length > 0) {
+      const inProgress = todos.filter((t) => {
+        if (!t || typeof t !== "object") return false;
+        const status = (t as Record<string, unknown>).status;
+        return status === "in_progress";
+      }).length;
+      const completed = todos.filter((t) => {
+        if (!t || typeof t !== "object") return false;
+        const status = (t as Record<string, unknown>).status;
+        return status === "completed";
+      }).length;
+      return `Todo list (${completed}/${todos.length} done${inProgress > 0 ? `, ${inProgress} active` : ""})`;
+    }
+    return "Todo list";
   }
 
   if (kind === "fetch" || kind === "web") {
@@ -304,10 +337,10 @@ export class DisplaySpecBuilder {
       viewerLinks: entry.viewerLinks,
       outputViewerLink,
       outputFallbackContent,
+      workingDirectory: sessionContext?.workingDirectory,
       status: entry.status,
       isNoise: entry.isNoise,
       isHidden,
-      workingDirectory: sessionContext?.workingDirectory,
     };
   }
 

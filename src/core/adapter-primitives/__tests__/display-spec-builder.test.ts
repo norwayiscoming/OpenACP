@@ -281,6 +281,16 @@ describe("DisplaySpecBuilder.buildToolSpec", () => {
   });
 
   describe("title generation for different tool kinds", () => {
+    it("read tool title supports camelCase filePath", () => {
+      const entry = makeEntry({
+        name: "read",
+        kind: "read",
+        rawInput: { filePath: "/foo/bar.ts", offset: 1, limit: 10 },
+      });
+      const spec = builder.buildToolSpec(entry, "medium");
+      expect(spec.title).toBe("/foo/bar.ts (lines 1–10)");
+    });
+
     it("edit tool title from file_path", () => {
       const entry = makeEntry({
         name: "Edit",
@@ -321,6 +331,92 @@ describe("DisplaySpecBuilder.buildToolSpec", () => {
       const spec = builder.buildToolSpec(entry, "medium");
       expect(spec.title).toContain("foo");
       expect(spec.title).toContain("*.ts");
+    });
+
+    it("apply_patch title extracts updated file path when kind is other", () => {
+      const entry = makeEntry({
+        name: "apply_patch",
+        kind: "other",
+        rawInput: {
+          patchText:
+            "*** Begin Patch\n*** Update File: /repo/src/app.ts\n@@\n-foo\n+bar\n*** End Patch",
+        },
+      });
+      const spec = builder.buildToolSpec(entry, "medium");
+      expect(spec.title).toBe("/repo/src/app.ts");
+    });
+
+    it("todowrite title summarizes progress when kind is other", () => {
+      const entry = makeEntry({
+        name: "todowrite",
+        kind: "other",
+        rawInput: {
+          todos: [
+            { content: "A", status: "completed", priority: "high" },
+            { content: "B", status: "in_progress", priority: "medium" },
+            { content: "C", status: "pending", priority: "low" },
+          ],
+        },
+      });
+      const spec = builder.buildToolSpec(entry, "medium");
+      expect(spec.title).toBe("Todo list (1/3 done, 1 active)");
+    });
+
+    it("keeps raw paths in title and exposes workingDirectory", () => {
+      const ctx = { id: "sess-1", workingDirectory: "/repo" };
+
+      const readSpec = builder.buildToolSpec(
+        makeEntry({
+          name: "read",
+          kind: "read",
+          rawInput: { filePath: "/repo/src/a.ts", offset: 10, limit: 5 },
+        }),
+        "medium",
+        ctx,
+      );
+      expect(readSpec.title).toBe("/repo/src/a.ts (lines 10–14)");
+      expect(readSpec.workingDirectory).toBe("/repo");
+
+      const writeSpec = builder.buildToolSpec(
+        makeEntry({
+          name: "write",
+          kind: "write",
+          rawInput: { filePath: "/repo/lib/output.json" },
+        }),
+        "medium",
+        ctx,
+      );
+      expect(writeSpec.title).toBe("/repo/lib/output.json");
+
+      const patchSpec = builder.buildToolSpec(
+        makeEntry({
+          name: "apply_patch",
+          kind: "other",
+          rawInput: {
+            patchText:
+              "*** Begin Patch\n*** Update File: /repo/packages/a/src/index.ts\n*** End Patch",
+          },
+        }),
+        "medium",
+        ctx,
+      );
+      expect(patchSpec.title).toBe("/repo/packages/a/src/index.ts");
+    });
+
+    it("apply_patch multi-file title shows first two raw paths", () => {
+      const spec = builder.buildToolSpec(
+        makeEntry({
+          name: "apply_patch",
+          kind: "other",
+          rawInput: {
+            patchText:
+              "*** Begin Patch\n*** Update File: /repo/a/one.ts\n*** Update File: /repo/b/two.ts\n*** Update File: /repo/c/three.ts\n*** End Patch",
+          },
+        }),
+        "medium",
+        { id: "sess-1", workingDirectory: "/repo" },
+      );
+      expect(spec.title).toBe("/repo/a/one.ts, /repo/b/two.ts (+1 more)");
     });
   });
 });

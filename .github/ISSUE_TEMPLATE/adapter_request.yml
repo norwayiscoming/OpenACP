@@ -1,0 +1,79 @@
+name: 🔌 Adapter / Plugin Request
+description: Request a new platform adapter or plugin for OpenACP
+title: "[Adapter]: "
+labels: ["adapter", "enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Want OpenACP to support a new messaging platform or integration? Let us know!
+
+  - type: dropdown
+    id: type
+    attributes:
+      label: Request Type
+      options:
+        - New messaging platform adapter
+        - New AI agent support
+        - New tunnel provider
+        - Plugin / Integration
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: platform-name
+    attributes:
+      label: Platform / Service Name
+      placeholder: "e.g. WhatsApp, Matrix, Microsoft Teams, Line"
+    validations:
+      required: true
+
+  - type: textarea
+    id: use-case
+    attributes:
+      label: Use Case
+      description: Why do you want this adapter? How would you use it?
+      placeholder: "My team uses [platform] daily and we want to control AI agents from there..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: api-info
+    attributes:
+      label: API / SDK Information
+      description: Links to the platform's API docs, SDKs, or bot frameworks
+      placeholder: |
+        - API docs: https://...
+        - SDK: https://...
+        - Bot framework: https://...
+
+  - type: textarea
+    id: features
+    attributes:
+      label: Key Features Needed
+      description: Which OpenACP features are most important for this adapter?
+      placeholder: |
+        - [ ] Real-time streaming
+        - [ ] Permission buttons (approve/deny)
+        - [ ] Session management (threads/topics)
+        - [ ] Voice messages
+        - [ ] File sharing
+        - [ ] Code rendering with syntax highlighting
+
+  - type: dropdown
+    id: willing
+    attributes:
+      label: Would you be willing to contribute this?
+      options:
+        - "Yes, I'd like to build this adapter"
+        - "Yes, with guidance on the ChannelAdapter interface"
+        - "No, but I'd love to see it supported"
+    validations:
+      required: true
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional Context
+      description: Any technical constraints, rate limits, or special considerations

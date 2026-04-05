@@ -1,3 +1,5 @@
+OpenACP — self-hosted bridge that connects 28+ AI coding agents (Claude Code, Codex, Gemini, Cursor) to Telegram, Discord & Slack. Your machine, your keys, your data.
+
 <div align="center">
 
 # OpenACP
@@ -12,7 +14,9 @@ Send a message. The agent writes code. You see everything — in real time.
 [![npm](https://img.shields.io/npm/v/@openacp/cli.svg)](https://www.npmjs.com/package/@openacp/cli)
 [![Twitter Follow](https://img.shields.io/twitter/follow/openacp_ai?style=social)](https://x.com/openacp_ai)
 
-[Documentation](https://openacp.gitbook.io/docs) · [Quick Start](#quick-start) · [Features](#features) · [Agents](#supported-agents) · [Contributing](https://openacp.gitbook.io/docs/extending/contributing)
+[Documentation](https://openacp.gitbook.io/docs) · [Quick Start](#quick-start) · [Features](#features) · [Agents](#supported-agents) · [Contributing](CONTRIBUTING.md) · [Discussions](https://github.com/Open-ACP/OpenACP/discussions)
+
+<img src="docs/images/banner.jpg" alt="OpenACP — Control AI coding agents from Telegram, Discord and Slack" width="100%" />
 
 </div>
 
@@ -34,15 +38,34 @@ AI Agent (Claude Code, Codex, Gemini, Cursor, ...)
 Your Codebase
 ```
 
+## Why OpenACP?
+
+| Without OpenACP | With OpenACP |
+|----------------|-------------|
+| *"Its usage is currently focused on its dedicated terminal REPL and specific IDE integrations"* | Control from Telegram, Discord, or Slack — any device, anywhere |
+| *"Codex Desktop App only works with local projects. It does not support development on remote hosts"* | Full remote development support — run agents on your server, manage from your phone |
+| *"There's no way to trigger Claude Code sessions from external issue trackers"* | REST API for CI/CD integration and external triggers |
+| *"Being able to use a proper mobile app UI would be much better than having to access sessions through ssh + tmux"* | Native Telegram/Discord UI — no SSH, no terminal on mobile |
+| *"Cline is really burning up OpenRouter tokens and my wallet"* | Built-in usage tracking and monthly budget limits per session |
+
+## Use Cases
+
+- **Remote coding** — Tired of being chained to your desk to run Claude Code? Review PRs, fix bugs, and deploy from your phone via Telegram while away from your desk.
+- **Team visibility** — Share a Discord channel where everyone sees what the AI agent is doing in real time — no more black-box coding sessions.
+- **Multi-agent workflows** — Start with Claude Code for planning, switch to Codex for implementation, use Gemini for review — all in one chat thread, no reconfiguration.
+- **CI/CD integration** — Trigger agent sessions from GitHub Actions or any issue tracker via the REST API.
+- **Self-hosted AI gateway** — Keep API keys and code on your own infrastructure. No third-party cloud, no vendor lock-in.
+- **Local LLM support** — Run agents against self-hosted models (Ollama, LM Studio) via ACP-compatible adapters. Your models, your data.
+
 <div align="center">
 <table>
 <tr>
-<td align="center"><img src="docs/images/menu.png" width="250" /><br /><b>Control Panel</b><br />Manage sessions, agents, and settings</td>
-<td align="center"><img src="docs/images/agent-working.png" width="250" /><br /><b>Agent at Work</b><br />Plans, reads files, writes code</td>
+<td align="center"><img src="docs/images/menu.png" width="250" alt="OpenACP control panel showing session management, agent selection, and settings menu in Telegram" /><br /><b>Control Panel</b><br />Manage sessions, agents, and settings</td>
+<td align="center"><img src="docs/images/agent-working.png" width="250" alt="AI coding agent reading files, planning changes, and writing code through OpenACP Telegram interface" /><br /><b>Agent at Work</b><br />Plans, reads files, writes code</td>
 </tr>
 <tr>
-<td align="center"><img src="docs/images/tool-calls.png" width="250" /><br /><b>Real-time Tool Calls</b><br />See every action the agent takes</td>
-<td align="center"><img src="docs/images/skills.png" width="250" /><br /><b>Agent Skills</b><br />Brainstorming, TDD, debugging & more</td>
+<td align="center"><img src="docs/images/tool-calls.png" width="250" alt="Real-time tool call streaming showing agent actions like file reads, edits, and command execution" /><br /><b>Real-time Tool Calls</b><br />See every action the agent takes</td>
+<td align="center"><img src="docs/images/skills.png" width="250" alt="OpenACP agent skills menu with options for brainstorming, TDD, debugging, and code review" /><br /><b>Agent Skills</b><br />Brainstorming, TDD, debugging & more</td>
 </tr>
 </table>
 </div>
@@ -82,6 +105,13 @@ If you already have Node.js 20+ installed:
 ```bash
 npm install -g @openacp/cli
 openacp
+# → Interactive setup wizard starts:
+# → ? Choose your platform: Telegram / Discord / Slack
+# → ? Enter your bot token: ********
+# → ? Select workspace directory: ~/projects
+# → ? Choose default AI agent: Claude Code
+# → ✓ Configuration saved. Starting OpenACP...
+# → 🚀 OpenACP is running. Send a message to your bot!
 ```
 
 ---
@@ -150,7 +180,7 @@ OpenACP uses the [ACP Registry](https://agentclientprotocol.com/get-started/regi
 | [Cursor](https://www.cursor.com/) | binary | Cursor's coding agent |
 | [Cline](https://github.com/cline/cline) | npx | Autonomous coding agent |
 | [goose](https://github.com/block/goose) | binary | Open source AI agent by Block |
-| [Amp](https://github.com/tao12345666333/amp-acp) | binary | The frontier coding agent |
+| Amp | binary | The frontier coding agent |
 | [Auggie CLI](https://www.augmentcode.com/) | npx | Augment Code's context engine |
 | [Junie](https://www.jetbrains.com/) | binary | AI coding agent by JetBrains |
 | [Kilo](https://github.com/kilocode/kilo) | npx | Open source coding agent |
@@ -201,6 +231,59 @@ openacp tunnel list
 | [API Reference](https://openacp.gitbook.io/docs/api-reference) | CLI commands, REST API, config schema, env vars |
 | [Troubleshooting](https://openacp.gitbook.io/docs/troubleshooting) | Common issues and FAQ |
 
+## Known Limitations
+
+- **Early stage** — OpenACP is under active development; expect breaking changes between minor versions
+- **Single user** — Currently designed for individual use; multi-user/team support is planned
+- **Remote host** — Agents run on the same machine as OpenACP; to use on a remote server, install OpenACP on that server
+- **Agent availability** — Some agents require their own API keys and local installation
+- **Platform features** — Not all messaging platform features are supported equally (e.g., Slack threads vs Telegram forum topics)
+- **No Windows daemon** — Daemon mode (auto-start on boot) currently supports macOS and Linux only
+
+## FAQ
+
+### Why use Telegram or Discord instead of just the terminal?
+Most AI coding agents are locked to a terminal REPL or IDE. OpenACP lets you send messages, review code diffs, approve or deny actions, and monitor progress from any device — phone, tablet, or browser — without opening a laptop.
+
+### How is OpenACP different from MCP?
+MCP (Model Context Protocol) is a standard for giving AI models access to tools and data sources. OpenACP uses the **Agent Client Protocol (ACP)** to manage full coding agent *sessions* — starting agents, streaming output, handling permissions, and routing results to your messaging platform. The two protocols are complementary: your agents can use MCP tools while OpenACP manages the session layer.
+
+### Can I auto-approve agent actions?
+Yes. By default, OpenACP shows a permission button for destructive actions. You can configure [auto-approve rules](https://openacp.gitbook.io/docs/using-openacp) to skip confirmation for specific action types (e.g., read-only operations) while still requiring approval for file writes or shell commands.
+
+### How do I control API spending?
+Set a monthly budget limit in your config. OpenACP tracks token usage and cost in real time and will pause the agent when the limit is reached. Run `openacp config` to set limits per session.
+
+### Can I use a local or self-hosted LLM?
+Yes, if the model has a compatible agent CLI. Any agent that implements the ACP protocol can be registered. Community adapters exist for Ollama and LM Studio — run `openacp agents` to browse available options.
+
+### What happens if the agent gets stuck or the chat hangs?
+Use `/cancel` in your chat to stop the current session. Run `openacp doctor` to check for connectivity or configuration issues. OpenACP's session persistence means you can resume with full context intact after a restart.
+
+### Does OpenACP send my code to the cloud?
+No. OpenACP runs entirely on your machine. AI agents connect directly to your chosen provider using your own API keys. Nothing is routed through OpenACP servers.
+
+### Can I use multiple AI agents at the same time?
+Each session uses one agent, but you can run multiple sessions simultaneously — one per thread/topic in your chat. Switch agents between sessions or start a new session with a different agent at any time.
+
+### Is OpenACP free?
+Yes. OpenACP is MIT-licensed and free to self-host. You only pay for the AI provider API keys you choose to use.
+
+### How do I update OpenACP?
+```bash
+npm update -g @openacp/cli
+```
+
+## Security
+
+OpenACP grants AI agents access to your filesystem and shell. Before using in production:
+
+- Run in a sandboxed environment or container when possible
+- Review agent permissions — use the built-in permission gate to approve/deny actions
+- Never expose your OpenACP instance to the public internet without authentication
+- Keep your bot tokens secret — rotate them if compromised
+- See the [Security guide](https://openacp.gitbook.io/docs/self-hosting/security) for hardening recommendations
+
 ## Star History
 
 <a href="https://star-history.com/#Open-ACP/OpenACP&Date">
@@ -213,11 +296,7 @@ openacp tunnel list
 
 ## Contributing
 
-We welcome contributions! See the [contributing guide](https://openacp.gitbook.io/docs/extending/contributing) for development setup, testing conventions, and PR process.
-
-## Follow Us
-
-[![Twitter Follow](https://img.shields.io/twitter/follow/openacp_ai?style=social)](https://x.com/openacp_ai)
+We welcome contributions! See the [contributing guide](CONTRIBUTING.md) for development setup, testing conventions, and PR process. Have questions? Start a thread on [GitHub Discussions](https://github.com/Open-ACP/OpenACP/discussions).
 
 ## License
 

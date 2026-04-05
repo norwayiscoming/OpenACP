@@ -1,0 +1,75 @@
+name: 📝 Documentation Improvement
+description: Suggest improvements to OpenACP documentation
+title: "[Docs]: "
+labels: ["documentation"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Help us improve OpenACP docs! Whether it's a typo, missing info, or a new guide — we appreciate the feedback.
+
+  - type: dropdown
+    id: type
+    attributes:
+      label: Documentation Type
+      options:
+        - Fix typo / inaccuracy
+        - Missing documentation
+        - Improve existing docs (clarity, examples)
+        - New tutorial / guide
+        - API reference update
+        - Translation
+    validations:
+      required: true
+
+  - type: dropdown
+    id: location
+    attributes:
+      label: Documentation Location
+      description: Where is the documentation that needs updating?
+      options:
+        - README.md
+        - GitBook docs (openacp.gitbook.io)
+        - Contributing guide (GitBook)
+        - CLI help text
+        - Code comments / JSDoc
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: page-url
+    attributes:
+      label: Page URL or File Path
+      description: Link to the specific page or file (if applicable)
+      placeholder: "e.g. https://openacp.gitbook.io/docs/getting-started"
+
+  - type: textarea
+    id: description
+    attributes:
+      label: What needs to change?
+      description: Describe the issue or improvement
+      placeholder: |
+        Current: "Run openacp start to begin"
+        Problem: Missing info about required env vars
+        Suggested: Add a section about setting TELEGRAM_BOT_TOKEN before first run
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposed
+    attributes:
+      label: Proposed Content (optional)
+      description: If you have a draft of the improved text, paste it here
+      render: markdown
+
+  - type: dropdown
+    id: willing
+    attributes:
+      label: Would you be willing to submit a PR?
+      options:
+        - "Yes, I can write this"
+        - "Yes, with some guidance"
+        - "No, just reporting the issue"
+    validations:
+      required: true

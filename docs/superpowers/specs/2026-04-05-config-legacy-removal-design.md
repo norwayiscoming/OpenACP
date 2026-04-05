@@ -40,12 +40,15 @@ Remove these sections from `ConfigSchema` in `config.ts`:
 
 | Section | Moves to plugin |
 |---------|----------------|
-| `channels` (telegram, discord, slack, etc.) | `@openacp/telegram`, `@openacp/discord`, `@openacp/slack` |
+| `channels` (telegram only — discord/slack plugins do not exist yet) | `@openacp/telegram` |
 | `security` | `@openacp/security` |
 | `speech` | `@openacp/speech` |
 | `tunnel` | `@openacp/tunnel` |
-| `usage` | `@openacp/usage` |
 | `api` | `@openacp/api-server` |
+
+Note: `usage` section exists in ConfigSchema but no `@openacp/usage` plugin exists — remove it from schema, no plugin migration needed.
+
+Also remove `BaseChannelSchema` (only used by `channels.catchall`) — becomes dead code once `channels` is removed.
 
 **ConfigSchema after cleanup** retains only core fields:
 ```
@@ -105,9 +108,23 @@ Remove from `applyEnvOverrides()`: all channel tokens, `OPENACP_TUNNEL_*`, `OPEN
 | `OPENACP_SPEECH_STT_PROVIDER` | `@openacp/speech` | `sttProvider` |
 | `OPENACP_SPEECH_GROQ_API_KEY` | `@openacp/speech` | `groqApiKey` |
 
+Note: Discord/Slack env vars are kept in `applyEnvToPluginSettings()` for future plugin compatibility, even though those plugins don't exist yet. They are harmless (no-ops if plugin settings don't exist).
+
 Each env var now handled in exactly one place.
 
-#### 1.5 Test Updates (Phase 1)
+#### 1.5 config-editor.ts Cleanup
+
+`config-editor.ts` currently reads from BOTH `config.json` sections AND plugin settings (dual-source). After removing legacy sections from ConfigSchema, all plugin-specific editor functions must read/write exclusively from plugin settings via `SettingsManager`.
+
+Affected functions:
+- `editTelegram()` — drop `config.channels.telegram` fallback, use `@openacp/telegram` settings only
+- `editSecurity()` — drop `config.security` fallback, use `@openacp/security` settings only
+- `editApi()` — drop `config.api` fallback, use `@openacp/api-server` settings only
+- `editTunnel()` — drop `config.tunnel` fallback, use `@openacp/tunnel` settings only
+
+The interactive setup logic (prompts, menus) is unchanged — only the read/write source changes.
+
+#### 1.6 Test Updates (Phase 1)
 
 - Remove test cases for deleted migrations
 - Remove assertions for plugin-specific env vars that moved out of `applyEnvOverrides()`
@@ -163,18 +180,18 @@ Remove the `plugin?: { name, key }` mapping from `ConfigFieldDef` if no core fie
 
 #### 2.3 Plugin `install()` Cleanup
 
-Remove `legacyConfig` from `InstallContext`. Update these plugins:
+Remove `legacyConfig` from `InstallContext` (defined in `src/core/plugin/types.ts`). Update these plugins that actually use it:
 
 | Plugin | Change |
 |--------|--------|
 | `@openacp/telegram` | Remove `legacyConfig.channels.telegram` migration branch |
-| `@openacp/discord` | Remove `legacyConfig.channels.discord` migration branch |
-| `@openacp/slack` | Remove `legacyConfig.channels.slack` migration branch |
 | `@openacp/security` | Remove `legacyConfig.security` migration branch |
 | `@openacp/speech` | Remove `legacyConfig.speech` migration branch |
 | `@openacp/tunnel` | Remove `legacyConfig.tunnel` migration branch |
-| `@openacp/usage` | Remove `legacyConfig.usage` migration branch |
 | `@openacp/api-server` | Remove `legacyConfig.api` migration branch |
+| `@openacp/file-service` | Remove `legacyConfig.files` migration branch |
+
+Note: `@openacp/discord`, `@openacp/slack`, `@openacp/usage` do not exist in the codebase — no changes needed for them.
 
 Each plugin's `install()` retains only the interactive setup path.
 
@@ -191,22 +208,22 @@ Add `registerEditableFields()` calls to each plugin's `setup()` based on their `
 ## File Impact Summary
 
 ### Phase 1
-- `src/core/config/config.ts` — remove schema sections, slim down `applyEnvOverrides()`
+- `src/core/config/config.ts` — remove schema sections (channels, agents, security, speech, tunnel, usage, api, BaseChannelSchema), slim down `applyEnvOverrides()`
 - `src/core/config/config-migrations.ts` — remove 5 migrations, keep `add-instance-name`
+- `src/core/config/config-editor.ts` — drop config.json fallback in editTelegram, editSecurity, editApi, editTunnel
 - `src/core/config/plugin-config-migration.ts` — **delete**
 - `src/core/config/__tests__/` — trim tests matching removed code
 
 ### Phase 2
 - `src/core/plugin/plugin-context.ts` — add `registerEditableFields()`
 - `src/core/plugin/plugin-context-types.ts` — add `FieldDef` interface, update `PluginContextAPI`
+- `src/core/plugin/types.ts` — remove `legacyConfig` from `InstallContext`
 - `src/core/config/config-registry.ts` — remove plugin-mapped fields, keep core only
-- `src/packages/plugin-sdk/` — export `FieldDef` type
+- `packages/plugin-sdk/` — export `FieldDef` type
 - `src/plugins/telegram/index.ts` — cleanup install, add registerEditableFields
-- `src/plugins/discord/index.ts` — cleanup install, add registerEditableFields
-- `src/plugins/slack/index.ts` — cleanup install, add registerEditableFields
 - `src/plugins/security/index.ts` — cleanup install, add registerEditableFields
 - `src/plugins/speech/index.ts` — cleanup install, add registerEditableFields
 - `src/plugins/tunnel/index.ts` — cleanup install, add registerEditableFields
-- `src/plugins/usage/index.ts` — cleanup install, add registerEditableFields
 - `src/plugins/api-server/index.ts` — cleanup install, add registerEditableFields
+- `src/plugins/file-service/index.ts` — cleanup install, add registerEditableFields
 - `src/plugins/*/` — test cleanup for legacy branches

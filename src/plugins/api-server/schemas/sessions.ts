@@ -62,6 +62,8 @@ export const PromptBodySchema = z.object({
 export const PermissionResponseBodySchema = z.object({
   permissionId: z.string().min(1).max(200),
   optionId: z.string().min(1).max(200),
+  /** Optional feedback text — when provided with a deny option, queued as next prompt */
+  feedback: z.string().max(100_000).optional(),
 });
 
 export const DangerousModeBodySchema = z.object({

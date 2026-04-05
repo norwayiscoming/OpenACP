@@ -151,6 +151,16 @@ export async function sseRoutes(app: FastifyInstance, deps: SSERouteDeps): Promi
       }
 
       session.permissionGate.resolve(body.optionId);
+
+      if (body.feedback) {
+        // Abort current turn so the agent doesn't respond about the refusal,
+        // then queue feedback as next prompt.
+        await session.abortPrompt().catch((err: unknown) => {
+          request.log.warn({ err }, 'Failed to abort prompt before feedback enqueue');
+        });
+        await session.enqueuePrompt(body.feedback, undefined, { sourceAdapterId: 'sse' });
+      }
+
       return { ok: true };
     },
   );

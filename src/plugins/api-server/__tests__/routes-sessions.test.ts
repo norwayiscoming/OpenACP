@@ -29,6 +29,7 @@ function createMockSession(overrides: Record<string, unknown> = {}) {
       resolve: vi.fn(),
     },
     enqueuePrompt: vi.fn().mockResolvedValue(undefined),
+    abortPrompt: vi.fn().mockResolvedValue(undefined),
     ...overrides,
   };
 }
@@ -370,6 +371,60 @@ describe('session routes', () => {
       });
 
       expect(response.statusCode).toBe(400);
+    });
+
+    it('aborts current turn and enqueues feedback when feedback provided', async () => {
+      const mockAbortPrompt = vi.fn().mockResolvedValue(undefined);
+      const mockEnqueuePrompt = vi.fn().mockResolvedValue('turn-1');
+      const mockResolve = vi.fn();
+      (deps.core.sessionManager.getSession as any).mockReturnValue(
+        createMockSession({
+          permissionGate: { isPending: true, requestId: 'perm-1', resolve: mockResolve },
+          abortPrompt: mockAbortPrompt,
+          enqueuePrompt: mockEnqueuePrompt,
+        }),
+      );
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/v1/sessions/sess-1/permission',
+        payload: { permissionId: 'perm-1', optionId: 'deny', feedback: 'Please use a different approach' },
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(mockResolve).toHaveBeenCalledWith('deny');
+      expect(mockAbortPrompt).toHaveBeenCalled();
+      expect(mockEnqueuePrompt).toHaveBeenCalledWith(
+        'Please use a different approach',
+        undefined,
+        { sourceAdapterId: 'api' },
+      );
+      // abort must complete before enqueue (sequential, not concurrent)
+      const abortOrder = mockAbortPrompt.mock.invocationCallOrder[0];
+      const enqueueOrder = mockEnqueuePrompt.mock.invocationCallOrder[0];
+      expect(abortOrder).toBeLessThan(enqueueOrder);
+    });
+
+    it('does not abort or enqueue when no feedback provided', async () => {
+      const mockAbortPrompt = vi.fn().mockResolvedValue(undefined);
+      const mockEnqueuePrompt = vi.fn().mockResolvedValue('turn-1');
+      (deps.core.sessionManager.getSession as any).mockReturnValue(
+        createMockSession({
+          permissionGate: { isPending: true, requestId: 'perm-1', resolve: vi.fn() },
+          abortPrompt: mockAbortPrompt,
+          enqueuePrompt: mockEnqueuePrompt,
+        }),
+      );
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/v1/sessions/sess-1/permission',
+        payload: { permissionId: 'perm-1', optionId: 'allow' },
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(mockAbortPrompt).not.toHaveBeenCalled();
+      expect(mockEnqueuePrompt).not.toHaveBeenCalled();
     });
   });
 

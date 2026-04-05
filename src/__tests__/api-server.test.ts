@@ -37,6 +37,7 @@ describe("ApiServer", () => {
       getAvailableAgents: vi.fn(() => []),
     },
     agentCatalog: {
+      load: vi.fn(),
       resolve: vi.fn((name: string) => ({ name, workingDirectory: "/tmp/ws" })),
     },
     configManager: {

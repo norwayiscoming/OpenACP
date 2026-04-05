@@ -22,6 +22,15 @@ export const migrations: Migration[] = [
       return true;
     },
   },
+  {
+    name: "delete-display-verbosity",
+    apply(raw) {
+      if (!("displayVerbosity" in raw)) return false;
+      delete raw.displayVerbosity;
+      log.info("Removed legacy displayVerbosity key from config");
+      return true;
+    },
+  },
 ];
 
 /**

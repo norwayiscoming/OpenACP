@@ -96,11 +96,11 @@ describe('applyEnvToPluginSettings', () => {
     await cm.applyEnvToPluginSettings(sm as any);
 
     expect(sm.updatePluginSettings).toHaveBeenCalledWith(
-      '@openacp/discord-adapter',
+      '@openacp/discord',
       { botToken: 'discord-bot-token' },
     );
     expect(sm.updatePluginSettings).toHaveBeenCalledWith(
-      '@openacp/discord-adapter',
+      '@openacp/discord',
       { guildId: 'my-guild-id' },
     );
   });
@@ -115,15 +115,15 @@ describe('applyEnvToPluginSettings', () => {
     await cm.applyEnvToPluginSettings(sm as any);
 
     expect(sm.updatePluginSettings).toHaveBeenCalledWith(
-      '@openacp/slack-adapter',
+      '@openacp/slack',
       { botToken: 'xoxb-slack-bot-token' },
     );
     expect(sm.updatePluginSettings).toHaveBeenCalledWith(
-      '@openacp/slack-adapter',
+      '@openacp/slack',
       { appToken: 'xapp-slack-app-token' },
     );
     expect(sm.updatePluginSettings).toHaveBeenCalledWith(
-      '@openacp/slack-adapter',
+      '@openacp/slack',
       { signingSecret: 'slack-signing-secret' },
     );
   });

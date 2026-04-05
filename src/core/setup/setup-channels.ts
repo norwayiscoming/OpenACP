@@ -179,7 +179,7 @@ export async function configureChannels(config: Config, settingsManager?: Settin
         if (confirmed) {
           // Clear plugin settings (channels migrated out of config.json)
           if (settingsManager) {
-            await settingsManager.createAPI(pluginName).clear();
+            await settingsManager.updatePluginSettings(pluginName, {});
           }
           changed = true;
           console.log(ok(`${meta.label} config deleted`));

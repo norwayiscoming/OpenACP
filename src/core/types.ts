@@ -235,6 +235,7 @@ export interface SessionRecord<P = Record<string, unknown>> {
   createdAt: string;
   lastActiveAt: string;
   name?: string;
+  isAssistant?: boolean;
   dangerousMode?: boolean;
   clientOverrides?: { bypassPermissions?: boolean };
   outputMode?: OutputMode;

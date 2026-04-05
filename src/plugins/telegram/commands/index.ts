@@ -5,7 +5,7 @@ import type { OpenACPCore } from "../../../core/index.js";
 import { handleNew, handleNewChat, createSessionDirect, showAgentPicker, setupNewSessionCallbacks } from './new-session.js'
 import { handleCancel, handleStatus, handleTopics, handleArchive, handleArchiveConfirm, setupSessionCallbacks } from './session.js'
 import { handleUpdate, handleRestart, handleTTS, handleVerbosity, handleOutputMode } from './admin.js'
-import { handleMenu, handleHelp, handleClear, buildMenuKeyboard } from './menu.js'
+import { handleMenu, handleHelp, buildMenuKeyboard } from './menu.js'
 import { handleAgents, handleInstall, handleAgentCallback } from "./agents.js";
 import { handleIntegrate } from "./integrate.js";
 import {
@@ -207,7 +207,6 @@ export const STATIC_COMMANDS = [
   { command: "menu", description: "Show menu" },
   { command: "integrate", description: "Manage agent integrations" },
   { command: "handoff", description: "Continue this session in your terminal" },
-  { command: "clear", description: "Clear assistant history" },
   { command: "restart", description: "Restart OpenACP" },
   { command: "update", description: "Update to latest version and restart" },
   { command: "doctor", description: "Run system diagnostics" },

@@ -11,6 +11,5 @@ export interface TelegramChannelConfig extends ChannelConfig {
 export interface CommandsAssistantContext {
   topicId: number;
   getSession: () => Session | null;
-  respawn: () => Promise<void>;
   setControlMessage: (sessionId: string, msgId: number) => void;
 }

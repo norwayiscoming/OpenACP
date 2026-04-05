@@ -1,7 +1,6 @@
 import type { Context } from "grammy";
 import { InlineKeyboard } from "grammy";
 import type { AgentCommand } from "../../../core/index.js";
-import type { CommandsAssistantContext } from "../types.js";
 import type { MenuRegistry } from "../../../core/menu-registry.js";
 
 export function buildMenuKeyboard(menuRegistry?: MenuRegistry): InlineKeyboard {
@@ -66,35 +65,12 @@ export async function handleHelp(ctx: Context): Promise<void> {
       `🔒 <b>Session Options</b>\n` +
       `/bypass_permissions — Toggle bypass permissions\n` +
       `/handoff — Continue session in terminal\n` +
-      `/archive — Archive session topic\n` +
-      `/clear — Clear assistant history\n\n` +
+      `/archive — Archive session topic\n\n` +
       `💬 Need help? Just ask me in this topic!`,
     { parse_mode: "HTML" },
   );
 }
 
-export async function handleClear(ctx: Context, assistant?: CommandsAssistantContext): Promise<void> {
-  if (!assistant) {
-    await ctx.reply("⚠️ Assistant is not available.", { parse_mode: "HTML" });
-    return;
-  }
-
-  const threadId = ctx.message?.message_thread_id;
-  if (threadId !== assistant.topicId) {
-    await ctx.reply("ℹ️ /clear only works in the Assistant topic.", { parse_mode: "HTML" });
-    return;
-  }
-
-  await ctx.reply("🔄 Clearing assistant history...", { parse_mode: "HTML" });
-
-  try {
-    await assistant.respawn();
-    await ctx.reply("✅ Assistant history cleared.", { parse_mode: "HTML" });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    await ctx.reply(`❌ Failed to clear: <code>${message}</code>`, { parse_mode: "HTML" });
-  }
-}
 
 const TELEGRAM_MSG_LIMIT = 4096;
 

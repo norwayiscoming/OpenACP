@@ -685,7 +685,7 @@ export class TelegramAdapter extends MessagingAdapter {
 
     // Spawn assistant via AssistantManager
     try {
-      await this.core.assistantManager.spawn("telegram", String(this.assistantTopicId));
+      await this.core.assistantManager.getOrSpawn("telegram", String(this.assistantTopicId));
     } catch (err) {
       log.error({ err }, "Failed to spawn assistant");
     }

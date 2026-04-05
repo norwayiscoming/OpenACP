@@ -79,19 +79,6 @@ export function registerSessionCommands(registry: CommandRegistry, _core: unknow
   })
 
   registry.register({
-    name: 'clear',
-    description: 'Clear session history',
-    category: 'system',
-    handler: async (args) => {
-      if (!core.assistantManager) return { type: 'error', message: 'Assistant not available' }
-      const assistant = core.assistantManager.get(args.channelId)
-      if (!assistant) return { type: 'error', message: 'No assistant session for this channel.' }
-      await core.assistantManager.respawn(args.channelId, assistant.threadId)
-      return { type: 'text', text: '✅ Assistant history cleared.' }
-    },
-  })
-
-  registry.register({
     name: 'newchat',
     description: 'New chat, same agent & workspace',
     category: 'system',

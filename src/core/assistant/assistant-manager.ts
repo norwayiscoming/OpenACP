@@ -1,5 +1,6 @@
 import type { Session } from '../sessions/session.js'
 import type { AssistantRegistry } from './assistant-registry.js'
+import type { SessionStore } from '../sessions/session-store.js'
 import { createChildLogger } from '../utils/log.js'
 
 const log = createChildLogger({ module: 'assistant-manager' })
@@ -12,17 +13,18 @@ interface AssistantManagerCore {
     initialName?: string
     isAssistant?: boolean
     threadId?: string
+    existingSessionId?: string
   }): Promise<Session>
   connectSessionBridge(session: Session): void
   configManager: {
     get(): { defaultAgent: string }
     resolveWorkspace(): string
   }
+  sessionStore: SessionStore | null
 }
 
 export class AssistantManager {
   private sessions = new Map<string, Session>()
-  private respawning = new Set<string>()
   private pendingSystemPrompts = new Map<string, string>()
 
   constructor(
@@ -30,7 +32,8 @@ export class AssistantManager {
     private registry: AssistantRegistry,
   ) {}
 
-  async spawn(channelId: string, threadId: string): Promise<Session> {
+  async getOrSpawn(channelId: string, threadId: string): Promise<Session> {
+    const existing = this.core.sessionStore?.findAssistant(channelId)
     const session = await this.core.createSession({
       channelId,
       agentName: this.core.configManager.get().defaultAgent,
@@ -38,14 +41,16 @@ export class AssistantManager {
       initialName: 'Assistant',
       isAssistant: true,
       threadId,
+      existingSessionId: existing?.sessionId,
     })
     this.sessions.set(channelId, session)
 
-    // Store system prompt for lazy initialization — it will be prepended
-    // to the first real user message so no unsolicited AI response is sent on startup.
     const systemPrompt = this.registry.buildSystemPrompt(channelId)
     this.pendingSystemPrompts.set(channelId, systemPrompt)
-    log.info({ sessionId: session.id, channelId }, 'Assistant spawned (system prompt deferred)')
+    log.info(
+      { sessionId: session.id, channelId, reused: !!existing },
+      existing ? 'Assistant session reused (system prompt deferred)' : 'Assistant spawned (system prompt deferred)',
+    )
 
     return session
   }
@@ -70,19 +75,4 @@ export class AssistantManager {
     }
     return false
   }
-
-  async respawn(channelId: string, threadId: string): Promise<Session> {
-    if (this.respawning.has(channelId)) {
-      return this.sessions.get(channelId)!
-    }
-    this.respawning.add(channelId)
-    try {
-      const old = this.sessions.get(channelId)
-      if (old) await old.destroy()
-      return await this.spawn(channelId, threadId)
-    } finally {
-      this.respawning.delete(channelId)
-    }
-  }
-
 }

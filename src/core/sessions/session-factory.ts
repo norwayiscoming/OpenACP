@@ -24,6 +24,7 @@ export interface SessionCreateParams {
   resumeAgentSessionId?: string;
   existingSessionId?: string;
   initialName?: string;
+  isAssistant?: boolean;
 }
 
 export interface SideEffectDeps {
@@ -219,6 +220,7 @@ export class SessionFactory {
     if (!this.sessionStore || !this.createFullSession) return null;
     const record = this.sessionStore.get(sessionId);
     if (!record) return null;
+    if (record.isAssistant) return null;
     if (record.status === "error" || record.status === "cancelled") return null;
 
     // Deduplicate concurrent resumes for the same session
@@ -297,6 +299,7 @@ export class SessionFactory {
       log.debug({ threadId, channelId }, "No session record found for thread");
       return null;
     }
+    if (record.isAssistant) return null;
 
     // Don't resume errored or cancelled sessions
     if (record.status === "error" || record.status === "cancelled") {

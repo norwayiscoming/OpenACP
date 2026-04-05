@@ -1,7 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import path from 'path'
+import os from 'os'
+import fs from 'fs'
 import { SessionManager } from '../session-manager.js'
 import { Session } from '../session.js'
 import type { SessionStore } from '../session-store.js'
+import { JsonFileSessionStore } from '../session-store.js'
 import type { SessionRecord } from '../../types.js'
 import { TypedEmitter } from '../../utils/typed-emitter.js'
 
@@ -54,6 +58,7 @@ function mockStore(): SessionStore {
     }),
     remove: vi.fn(async (id: string) => { records.delete(id) }),
     flush: vi.fn(),
+    findAssistant: vi.fn().mockReturnValue(undefined),
   } as unknown as SessionStore
 }
 
@@ -417,6 +422,105 @@ describe('SessionManager', () => {
       expect(noStoreManager.getSessionRecord('any')).toBeUndefined()
     })
   })
+
+  describe('assistant session filtering', () => {
+    it('listSessions excludes assistant sessions', () => {
+      const manager = new SessionManager(null);
+      const regularSession = new Session({
+        channelId: 'telegram',
+        agentName: 'claude-code',
+        workingDirectory: '/tmp',
+        agentInstance: mockAgentInstance(),
+      });
+      const assistantSession = new Session({
+        channelId: 'telegram',
+        agentName: 'claude-code',
+        workingDirectory: '/tmp',
+        agentInstance: mockAgentInstance(),
+        isAssistant: true,
+      });
+      manager.registerSession(regularSession);
+      manager.registerSession(assistantSession);
+
+      const result = manager.listSessions();
+      expect(result).toContain(regularSession);
+      expect(result).not.toContain(assistantSession);
+    });
+
+    it('listAllSessions excludes assistant records', async () => {
+      const tmpPath = path.join(os.tmpdir(), `test-store-${Date.now()}.json`);
+      const store = new JsonFileSessionStore(tmpPath, 30);
+      const manager = new SessionManager(store);
+
+      await store.save({
+        sessionId: 'regular-1',
+        agentSessionId: 'a1',
+        agentName: 'claude-code',
+        workingDir: '/tmp',
+        channelId: 'telegram',
+        status: 'finished',
+        createdAt: new Date().toISOString(),
+        lastActiveAt: new Date().toISOString(),
+        platform: {},
+      });
+      await store.save({
+        sessionId: 'assistant-1',
+        agentSessionId: 'a2',
+        agentName: 'claude-code',
+        workingDir: '/tmp',
+        channelId: 'telegram',
+        status: 'finished',
+        createdAt: new Date().toISOString(),
+        lastActiveAt: new Date().toISOString(),
+        isAssistant: true,
+        platform: {},
+      });
+
+      const summaries = manager.listAllSessions();
+      expect(summaries.some(s => s.id === 'regular-1')).toBe(true);
+      expect(summaries.some(s => s.id === 'assistant-1')).toBe(false);
+      store.flush();
+      store.destroy();
+      fs.unlinkSync(tmpPath);
+    });
+
+    it('listRecords excludes assistant records', async () => {
+      const tmpPath = path.join(os.tmpdir(), `test-store-${Date.now()}.json`);
+      const store = new JsonFileSessionStore(tmpPath, 30);
+      const manager = new SessionManager(store);
+
+      await store.save({
+        sessionId: 'regular-1',
+        agentSessionId: 'a1',
+        agentName: 'claude-code',
+        workingDir: '/tmp',
+        channelId: 'telegram',
+        status: 'finished',
+        createdAt: new Date().toISOString(),
+        lastActiveAt: new Date().toISOString(),
+        platform: {},
+      });
+      await store.save({
+        sessionId: 'assistant-1',
+        agentSessionId: 'a2',
+        agentName: 'claude-code',
+        workingDir: '/tmp',
+        channelId: 'telegram',
+        status: 'finished',
+        createdAt: new Date().toISOString(),
+        lastActiveAt: new Date().toISOString(),
+        isAssistant: true,
+        platform: {},
+      });
+
+      const records = manager.listRecords();
+      expect(records.some(r => r.sessionId === 'regular-1')).toBe(true);
+      expect(records.some(r => r.sessionId === 'assistant-1')).toBe(false);
+      store.flush();
+      store.destroy();
+      fs.unlinkSync(tmpPath);
+    });
+  });
 
   describe('listAllSessions', () => {
   it('returns live session with isLive=true and runtime fields', () => {

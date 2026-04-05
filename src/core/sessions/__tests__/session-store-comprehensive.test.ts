@@ -399,4 +399,86 @@ describe("JsonFileSessionStore — Comprehensive Tests", () => {
       store.destroy();
     });
   });
+
+  describe("findAssistant", () => {
+    it("returns the assistant record for a channel", async () => {
+      const store = new JsonFileSessionStore(filePath, 30);
+      await store.save({
+        sessionId: "sess-1",
+        agentSessionId: "agent-1",
+        agentName: "claude-code",
+        workingDir: "/tmp",
+        channelId: "telegram",
+        status: "finished",
+        createdAt: new Date().toISOString(),
+        lastActiveAt: new Date().toISOString(),
+        isAssistant: true,
+        platform: {},
+      });
+      const result = store.findAssistant("telegram");
+      expect(result?.sessionId).toBe("sess-1");
+      store.destroy();
+    });
+
+    it("returns undefined when no assistant record for channel", async () => {
+      const store = new JsonFileSessionStore(filePath, 30);
+      await store.save({
+        sessionId: "sess-1",
+        agentSessionId: "agent-1",
+        agentName: "claude-code",
+        workingDir: "/tmp",
+        channelId: "telegram",
+        status: "finished",
+        createdAt: new Date().toISOString(),
+        lastActiveAt: new Date().toISOString(),
+        isAssistant: false,
+        platform: {},
+      });
+      expect(store.findAssistant("telegram")).toBeUndefined();
+      store.destroy();
+    });
+
+    it("ignores assistant records for other channels", async () => {
+      const store = new JsonFileSessionStore(filePath, 30);
+      await store.save({
+        sessionId: "sess-1",
+        agentSessionId: "agent-1",
+        agentName: "claude-code",
+        workingDir: "/tmp",
+        channelId: "slack",
+        status: "finished",
+        createdAt: new Date().toISOString(),
+        lastActiveAt: new Date().toISOString(),
+        isAssistant: true,
+        platform: {},
+      });
+      expect(store.findAssistant("telegram")).toBeUndefined();
+      store.destroy();
+    });
+  });
+
+  describe("TTL cleanup exempts assistant sessions", () => {
+    it("does not delete assistant records past TTL", async () => {
+      const store = new JsonFileSessionStore(filePath, 1); // 1 day TTL
+      const oldDate = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(); // 3 days ago
+      await store.save({
+        sessionId: "assistant-sess",
+        agentSessionId: "agent-1",
+        agentName: "claude-code",
+        workingDir: "/tmp",
+        channelId: "telegram",
+        status: "finished",
+        createdAt: oldDate,
+        lastActiveAt: oldDate,
+        isAssistant: true,
+        platform: {},
+      });
+      // Trigger cleanup by creating a new store that loads and cleans up
+      store.flushSync();
+      const store2 = new JsonFileSessionStore((store as any).filePath, 1);
+      expect(store2.get("assistant-sess")).toBeDefined();
+      store.destroy();
+      store2.destroy();
+    });
+  });
 });

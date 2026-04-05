@@ -15,6 +15,7 @@ export interface SessionStore {
     predicate: (platform: Record<string, unknown>) => boolean,
   ): SessionRecord | undefined;
   findByAgentSessionId(agentSessionId: string): SessionRecord | undefined;
+  findAssistant(channelId: string): SessionRecord | undefined;
   list(channelId?: string): SessionRecord[];
   remove(sessionId: string): Promise<void>;
 }
@@ -89,6 +90,15 @@ export class JsonFileSessionStore implements SessionStore {
       }
       // Also search switch history
       if (record.agentSwitchHistory?.some((e) => e.agentSessionId === agentSessionId)) {
+        return record;
+      }
+    }
+    return undefined;
+  }
+
+  findAssistant(channelId: string): SessionRecord | undefined {
+    for (const record of this.records.values()) {
+      if (record.isAssistant === true && record.channelId === channelId) {
         return record;
       }
     }
@@ -181,6 +191,8 @@ export class JsonFileSessionStore implements SessionStore {
     let removed = 0;
     for (const [id, record] of this.records) {
       if (record.status === "active" || record.status === "initializing")
+        continue;
+      if (record.isAssistant === true)
         continue;
       const raw = record.lastActiveAt;
       if (!raw) continue;

@@ -166,14 +166,14 @@ export class SessionManager {
   }
 
   listSessions(channelId?: string): Session[] {
-    const all = Array.from(this.sessions.values());
+    const all = Array.from(this.sessions.values()).filter(s => !s.isAssistant);
     if (channelId) return all.filter((s) => s.channelId === channelId);
     return all;
   }
 
   listAllSessions(channelId?: string): SessionSummary[] {
     if (this.store) {
-      let records = this.store.list();
+      let records = this.store.list().filter(r => !r.isAssistant);
       if (channelId) records = records.filter((r) => r.channelId === channelId);
       return records.map((record) => {
         const live = this.sessions.get(record.sessionId);
@@ -239,7 +239,7 @@ export class SessionManager {
     statuses?: string[];
   }): import("../types.js").SessionRecord[] {
     if (!this.store) return [];
-    let records = this.store.list();
+    let records = this.store.list().filter(r => !r.isAssistant);
     if (filter?.statuses?.length) {
       records = records.filter((r) => filter.statuses!.includes(r.status));
     }

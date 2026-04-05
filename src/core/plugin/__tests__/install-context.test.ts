@@ -89,4 +89,16 @@ describe('createInstallContext', () => {
 
     expect(ctx.dataDir).toBe(path.join(tmpDir, 'my-plugin', 'data'))
   })
+
+  it('does not expose legacyConfig on the context', async () => {
+    const { createInstallContext } = await import('../install-context.js')
+
+    const ctx = createInstallContext({
+      pluginName: '@openacp/test-plugin',
+      settingsManager,
+      basePath: tmpDir,
+    })
+
+    expect('legacyConfig' in ctx).toBe(false)
+  })
 })

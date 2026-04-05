@@ -46,3 +46,55 @@ describe('ConfigManager.get() immutability', () => {
     expect(config2.defaultAgent).toBe('claude')
   })
 })
+
+describe('ConfigSchema — removed legacy fields', () => {
+  it('strips channels field from parsed output', () => {
+    const result = ConfigSchema.safeParse({
+      defaultAgent: 'claude',
+      channels: { telegram: { botToken: 'tok', chatId: 0, enabled: true } },
+    })
+    expect(result.success).toBe(true)
+    expect((result.data as any).channels).toBeUndefined()
+  })
+
+  it('strips top-level security field from parsed output', () => {
+    const result = ConfigSchema.safeParse({
+      defaultAgent: 'claude',
+      security: { allowedUserIds: [], maxConcurrentSessions: 5 },
+    })
+    expect(result.success).toBe(true)
+    expect((result.data as any).security).toBeUndefined()
+  })
+
+  it('strips tunnel field from parsed output', () => {
+    const result = ConfigSchema.safeParse({
+      defaultAgent: 'claude',
+      tunnel: { enabled: true, port: 3100 },
+    })
+    expect(result.success).toBe(true)
+    expect((result.data as any).tunnel).toBeUndefined()
+  })
+})
+
+describe('ConfigSchema — core fields', () => {
+  it('parses outputMode correctly', () => {
+    const result = ConfigSchema.safeParse({ defaultAgent: 'claude', outputMode: 'high' })
+    expect(result.success).toBe(true)
+    expect(result.data!.outputMode).toBe('high')
+  })
+
+  it('parses agentSwitch.labelHistory correctly', () => {
+    const result = ConfigSchema.safeParse({
+      defaultAgent: 'claude',
+      agentSwitch: { labelHistory: false },
+    })
+    expect(result.success).toBe(true)
+    expect(result.data!.agentSwitch.labelHistory).toBe(false)
+  })
+
+  it('defaults agentSwitch.labelHistory to true', () => {
+    const result = ConfigSchema.safeParse({ defaultAgent: 'claude' })
+    expect(result.success).toBe(true)
+    expect(result.data!.agentSwitch.labelHistory).toBe(true)
+  })
+})

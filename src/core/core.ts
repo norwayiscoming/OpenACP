@@ -415,6 +415,7 @@ export class OpenACPCore {
     createThread?: boolean;
     initialName?: string;
     threadId?: string;
+    isAssistant?: boolean;
   }): Promise<Session> {
     // 1-3. Spawn/resume agent, create Session, register in SessionManager
     const session = await this.sessionFactory.create(params);
@@ -470,6 +471,7 @@ export class OpenACPCore {
       createdAt: session.createdAt.toISOString(),
       lastActiveAt: new Date().toISOString(),
       name: session.name,
+      isAssistant: params.isAssistant,
       platform,
       platforms,
       firstAgent: session.firstAgent,

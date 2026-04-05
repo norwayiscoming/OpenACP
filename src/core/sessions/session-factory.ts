@@ -24,6 +24,7 @@ export interface SessionCreateParams {
   resumeAgentSessionId?: string;
   existingSessionId?: string;
   initialName?: string;
+  isAssistant?: boolean;
 }
 
 export interface SideEffectDeps {

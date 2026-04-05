@@ -1,3 +1,6 @@
+import { createChildLogger } from '../../core/utils/log.js'
+const log = createChildLogger({ module: 'telegram-validators' })
+
 export async function validateBotToken(
   token: string,
 ): Promise<
@@ -96,6 +99,10 @@ export async function validateBotAdmin(
     }
 
     const { status } = data.result;
+    log.info(
+      { status, can_manage_topics: data.result.can_manage_topics, raw_result: data.result },
+      'validateBotAdmin: getChatMember raw result',
+    )
     if (status === "creator") {
       // Group creator has all permissions
       return { ok: true, canManageTopics: true };
@@ -118,6 +125,8 @@ export async function checkTopicsPrerequisites(
 ): Promise<{ ok: true } | { ok: false; issues: string[] }> {
   const issues: string[] = [];
 
+  log.info({ chatId }, 'checkTopicsPrerequisites: starting checks')
+
   // Check 1: Topics enabled
   try {
     const res = await fetch(`https://api.telegram.org/bot${token}/getChat`, {
@@ -127,19 +136,28 @@ export async function checkTopicsPrerequisites(
     });
     const data = (await res.json()) as {
       ok: boolean;
-      result?: { is_forum?: boolean };
+      result?: { is_forum?: boolean; type?: string; title?: string };
     };
+    log.info(
+      { chatId, apiOk: data.ok, is_forum: data.result?.is_forum, type: data.result?.type, title: data.result?.title },
+      'checkTopicsPrerequisites: getChat result',
+    )
     if (data.ok && data.result && !data.result.is_forum) {
       issues.push(
         '❌ Topics are not enabled on this group.\n→ Go to Group Settings → Edit → enable "Topics"',
       );
     }
-  } catch {
+  } catch (err) {
+    log.warn({ err, chatId }, 'checkTopicsPrerequisites: getChat failed (network error)')
     issues.push('❌ Could not check if Topics are enabled (network error).');
   }
 
   // Check 2 & 3: Bot is admin + can_manage_topics
   const adminResult = await validateBotAdmin(token, chatId);
+  log.info(
+    { chatId, adminOk: adminResult.ok, canManageTopics: adminResult.ok ? adminResult.canManageTopics : undefined, error: !adminResult.ok ? adminResult.error : undefined },
+    'checkTopicsPrerequisites: validateBotAdmin result',
+  )
   if (!adminResult.ok) {
     issues.push(
       `❌ Bot is not an admin.\n→ Go to Group Settings → Administrators → add the bot → save`,
@@ -150,6 +168,7 @@ export async function checkTopicsPrerequisites(
     );
   }
 
+  log.info({ chatId, issueCount: issues.length, ok: issues.length === 0 }, 'checkTopicsPrerequisites: result')
   if (issues.length > 0) return { ok: false, issues };
   return { ok: true };
 }

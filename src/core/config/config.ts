@@ -253,11 +253,11 @@ export class ConfigManager extends EventEmitter {
       { envVar: 'OPENACP_TELEGRAM_BOT_TOKEN', pluginName: '@openacp/telegram', key: 'botToken' },
       { envVar: 'OPENACP_TELEGRAM_CHAT_ID', pluginName: '@openacp/telegram', key: 'chatId', transform: v => Number(v) },
       // Future adapters — no-ops if plugin settings don't exist
-      { envVar: 'OPENACP_DISCORD_BOT_TOKEN', pluginName: '@openacp/discord', key: 'botToken' },
-      { envVar: 'OPENACP_DISCORD_GUILD_ID', pluginName: '@openacp/discord', key: 'guildId' },
-      { envVar: 'OPENACP_SLACK_BOT_TOKEN', pluginName: '@openacp/slack', key: 'botToken' },
-      { envVar: 'OPENACP_SLACK_APP_TOKEN', pluginName: '@openacp/slack', key: 'appToken' },
-      { envVar: 'OPENACP_SLACK_SIGNING_SECRET', pluginName: '@openacp/slack', key: 'signingSecret' },
+      { envVar: 'OPENACP_DISCORD_BOT_TOKEN', pluginName: '@openacp/discord-adapter', key: 'botToken' },
+      { envVar: 'OPENACP_DISCORD_GUILD_ID', pluginName: '@openacp/discord-adapter', key: 'guildId' },
+      { envVar: 'OPENACP_SLACK_BOT_TOKEN', pluginName: '@openacp/slack-adapter', key: 'botToken' },
+      { envVar: 'OPENACP_SLACK_APP_TOKEN', pluginName: '@openacp/slack-adapter', key: 'appToken' },
+      { envVar: 'OPENACP_SLACK_SIGNING_SECRET', pluginName: '@openacp/slack-adapter', key: 'signingSecret' },
     ];
 
     for (const { envVar, pluginName, key, transform } of pluginOverrides) {

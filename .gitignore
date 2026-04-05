@@ -1,3 +1,5 @@
+.DS_Store
+
 # References (external/third-party code)
 references/
 node_modules/

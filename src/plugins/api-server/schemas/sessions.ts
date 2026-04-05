@@ -31,12 +31,32 @@ export const AdoptSessionBodySchema = z.object({
   channel: z.string().max(200).optional(),
 });
 
+// Attachment input: base64-encoded file sent alongside a prompt.
+// fileName is restricted to safe characters — the raw value is forwarded to the agent.
+// mimeType must be structurally valid (type/subtype) to prevent misleading agent processing.
+// data is capped at ~10 MB base64 (~13.3 MB string); actual Fastify bodyLimit enforced per-route.
+const AttachmentInputSchema = z.object({
+  fileName: z
+    .string()
+    .regex(/^[a-zA-Z0-9._-]+$/, 'fileName must contain only alphanumeric, dot, dash, or underscore characters')
+    .max(255),
+  mimeType: z
+    .string()
+    .regex(/^[a-zA-Z0-9][a-zA-Z0-9!#$&\-^_]*\/[a-zA-Z0-9][a-zA-Z0-9!#$&\-^_.+]*$/, 'mimeType must be a valid MIME type')
+    .max(200),
+  data: z.string().max(15_000_000), // ~10 MB base64 ≈ 13.3 MB string
+});
+
+export type AttachmentInput = z.infer<typeof AttachmentInputSchema>;
+
 export const PromptBodySchema = z.object({
   // 100 KB limit — prevents memory exhaustion / DoS via enormous payloads
   prompt: z.string().min(1).max(100_000),
   // Multi-adapter routing fields
   sourceAdapterId: z.string().optional(),
   responseAdapterId: z.string().nullable().optional(),
+  // Optional file attachments; each decoded and stored via FileService
+  attachments: z.array(AttachmentInputSchema).max(10).optional(),
 });
 
 export const PermissionResponseBodySchema = z.object({

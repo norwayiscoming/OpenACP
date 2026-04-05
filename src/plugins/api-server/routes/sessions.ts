@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import type { RouteDeps } from './types.js';
 import { NotFoundError, ServiceUnavailableError } from '../middleware/error-handler.js';
 import { requireScopes } from '../middleware/auth.js';
+import { resolveAttachments } from './attachment-utils.js';
 import {
   SessionIdParamSchema,
   ConfigIdParamSchema,
@@ -170,10 +171,11 @@ export async function sessionRoutes(
     },
   );
 
-  // POST /sessions/:sessionId/prompt — send a prompt to a session
+  // POST /sessions/:sessionId/prompt — send a prompt (with optional file attachments) to a session.
+  // bodyLimit is raised to 110 MB to accommodate up to 10 attachments × ~10 MB base64 each plus prompt overhead.
   app.post<{ Params: { sessionId: string } }>(
     '/:sessionId/prompt',
-    { preHandler: requireScopes('sessions:prompt') },
+    { preHandler: requireScopes('sessions:prompt'), bodyLimit: 115_000_000 },
     async (request, reply) => {
       const { sessionId: rawId } = SessionIdParamSchema.parse(request.params);
       const sessionId = decodeURIComponent(rawId);
@@ -195,7 +197,22 @@ export async function sessionRoutes(
 
       const body = PromptBodySchema.parse(request.body);
 
-      await session.enqueuePrompt(body.prompt, undefined, {
+      // Decode base64 attachments and persist via FileService when provided
+      let attachments;
+      if (body.attachments?.length) {
+        let fileService;
+        try {
+          fileService = deps.core.fileService;
+        } catch {
+          throw new ServiceUnavailableError(
+            'FILE_SERVICE_UNAVAILABLE',
+            'File attachments are not supported: file-service plugin is not loaded',
+          );
+        }
+        attachments = await resolveAttachments(fileService, sessionId, body.attachments);
+      }
+
+      await session.enqueuePrompt(body.prompt, attachments, {
         sourceAdapterId: body.sourceAdapterId ?? 'api',
         responseAdapterId: body.responseAdapterId,
       });

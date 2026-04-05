@@ -292,6 +292,23 @@ export class HistoryRecorder {
     this.states.delete(sessionId);
   }
 
+  /**
+   * Flush any in-memory state for a session to disk immediately.
+   * Marks any in-progress turn as "interrupted".
+   * Called before buildContext during agent switches to ensure the last turn
+   * is persisted before the new agent reads history.
+   */
+  async flush(sessionId: string): Promise<void> {
+    const state = this.states.get(sessionId);
+    if (!state) return;
+    this.cancelDebounce(sessionId);
+    if (state.currentAssistantTurn) {
+      state.currentAssistantTurn.stopReason = "interrupted";
+      state.currentAssistantTurn = null;
+    }
+    await this.store.write(state.history);
+  }
+
   getState(sessionId: string): RecorderState | undefined {
     return this.states.get(sessionId);
   }

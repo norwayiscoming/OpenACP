@@ -47,7 +47,7 @@ export class OpenACPCore {
   /** Set by main.ts — triggers graceful shutdown with restart exit code */
   requestRestart: (() => Promise<void>) | null = null;
   private _tunnelService?: TunnelService;
-  private sessionStore: SessionStore | null = null;
+  sessionStore: SessionStore | null = null;
   eventBus: EventBus;
   sessionFactory: SessionFactory;
   readonly lifecycleManager: LifecycleManager;

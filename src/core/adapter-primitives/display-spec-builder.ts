@@ -24,6 +24,9 @@ export interface ToolDisplaySpec {
   status: string;
   isNoise: boolean;
   isHidden: boolean;
+  /** Working directory of the session that produced this tool call.
+   *  Adapters can use this to display relative paths instead of absolute ones. */
+  workingDirectory?: string;
 }
 
 export interface ThoughtDisplaySpec {
@@ -52,15 +55,47 @@ function capitalize(s: string): string {
   return s.length === 0 ? s : s[0].toUpperCase() + s.slice(1);
 }
 
+/**
+ * Try multiple field name variants (snake_case and camelCase) and return the
+ * first non-empty string value found. Needed because different agents use
+ * different naming conventions (e.g. Claude Code uses `file_path`, OpenCode
+ * uses `filePath`).
+ */
+function getStringField(input: Record<string, unknown>, keys: string[]): string | null {
+  for (const key of keys) {
+    const value = input[key];
+    if (typeof value === "string" && value.trim().length > 0) return value;
+  }
+  return null;
+}
+
+/**
+ * Extract target file paths from an apply_patch patch text.
+ * Handles "Update File", "Add File", and "Delete File" directives.
+ */
+function parseApplyPatchTargets(patchText: string): string[] {
+  const targets: string[] = [];
+  const seen = new Set<string>();
+  for (const line of patchText.split("\n")) {
+    const match = line.match(/^\*\*\*\s+(?:Update|Add|Delete)\s+File:\s+(.+)$/);
+    if (!match) continue;
+    const p = match[1].trim();
+    if (p && !seen.has(p)) { seen.add(p); targets.push(p); }
+  }
+  return targets;
+}
+
 function buildTitle(entry: ToolEntry, kind: string): string {
   // Explicit overrides take highest priority
   if (entry.displayTitle) return entry.displayTitle;
   if (entry.displaySummary) return entry.displaySummary;
 
   const input = asRecord(entry.rawInput);
+  const nameLower = entry.name.toLowerCase();
 
   if (kind === "read") {
-    const filePath = typeof input.file_path === "string" ? input.file_path : null;
+    // Support both snake_case (Claude Code) and camelCase (OpenCode) field names
+    const filePath = getStringField(input, ["file_path", "filePath", "path"]);
     if (filePath) {
       // start_line/end_line style
       const startLine = typeof input.start_line === "number" ? input.start_line : null;
@@ -78,12 +113,8 @@ function buildTitle(entry: ToolEntry, kind: string): string {
   }
 
   if (kind === "edit" || kind === "write" || kind === "delete") {
-    const filePath =
-      typeof input.file_path === "string"
-        ? input.file_path
-        : typeof input.path === "string"
-          ? input.path
-          : null;
+    // Support both snake_case and camelCase field names
+    const filePath = getStringField(input, ["file_path", "filePath", "path"]);
     if (filePath) return filePath;
     return capitalize(entry.name);
   }
@@ -133,11 +164,44 @@ function buildTitle(entry: ToolEntry, kind: string): string {
   }
 
   // Show skill name for Skill tool calls (e.g. Claude Code's Skill tool)
-  if (entry.name.toLowerCase() === "skill" && typeof input.skill === "string" && input.skill) {
+  if (nameLower === "skill" && typeof input.skill === "string" && input.skill) {
     return input.skill;
   }
 
+  // apply_patch: well-known tool used by multiple agents (OpenCode, Codex, etc.)
+  // Extract target file paths from the patch text for a meaningful title.
+  if (nameLower === "apply_patch") {
+    const patchText = getStringField(input, ["patchText", "patch_text"]);
+    if (patchText) {
+      const targets = parseApplyPatchTargets(patchText);
+      if (targets.length === 1) return targets[0];
+      if (targets.length > 1) {
+        const shown = targets.slice(0, 2).join(", ");
+        const rest = targets.length - 2;
+        return rest > 0 ? `${shown} (+${rest} more)` : shown;
+      }
+    }
+    return "apply_patch";
+  }
+
+  // todowrite / TodoWrite: well-known todo list tool (Claude Code, others)
+  // Summarise progress so the card shows "Todo list (2/5 done, 1 active)"
+  // rather than just the bare tool name.
+  if (nameLower === "todowrite") {
+    const todos = Array.isArray(input.todos) ? input.todos : [];
+    if (todos.length > 0) {
+      const completed = todos.filter((t) => isRecord(t) && t.status === "completed").length;
+      const active = todos.filter((t) => isRecord(t) && t.status === "in_progress").length;
+      return `Todo list (${completed}/${todos.length} done${active > 0 ? `, ${active} active` : ""})`;
+    }
+    return "Todo list";
+  }
+
   return entry.name;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
 function buildOutputSummary(content: string): string {
@@ -243,6 +307,7 @@ export class DisplaySpecBuilder {
       status: entry.status,
       isNoise: entry.isNoise,
       isHidden,
+      workingDirectory: sessionContext?.workingDirectory,
     };
   }
 

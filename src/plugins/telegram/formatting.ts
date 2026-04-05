@@ -226,15 +226,40 @@ export function renderToolCard(snap: ToolCardSnapshot): string {
 
 const FILE_KINDS = new Set(["read", "edit", "write", "delete"]);
 
-/** Shorten absolute file paths to just filename (+ line range if present) */
-function shortenTitle(title: string, kind: string): string {
+/**
+ * Shorten a file-path title for display in Telegram tool cards.
+ *
+ * Strategy (in priority order):
+ * 1. If `workingDirectory` is provided and the path starts with it,
+ *    return the relative path  →  "src/foo.ts (lines 1–10)"
+ * 2. Otherwise fall back to basename only  →  "foo.ts (lines 1–10)"
+ * 3. Non-file-kind titles are returned unchanged.
+ */
+function shortenTitle(title: string, kind: string, workingDirectory?: string): string {
   if (!FILE_KINDS.has(kind) || !title.includes("/")) return title;
-  // Separate optional parenthesized suffix (e.g. " (lines 10–50)" or " (from line 10)")
+
+  // Separate optional parenthesized suffix (e.g. " (lines 10–50)")
   const parenIdx = title.indexOf(" (");
   const pathPart = parenIdx > 0 ? title.slice(0, parenIdx) : title;
   const rangePart = parenIdx > 0 ? title.slice(parenIdx) : "";
+
+  // 1. Relativize against workingDirectory when available
+  if (workingDirectory) {
+    const normalizedCwd = workingDirectory.replace(/\/+$/, "");
+    if (pathPart.startsWith(normalizedCwd + "/")) {
+      return pathPart.slice(normalizedCwd.length + 1) + rangePart;
+    }
+  }
+
+  // 2. Fallback: basename only (preserves old behaviour for absolute paths
+  //    that don't match the working directory)
   const fileName = pathPart.split("/").pop() || pathPart;
   return fileName + rangePart;
+}
+
+/** Extract the last path segment for use in link labels. */
+function basename(pathLike: string): string {
+  return pathLike.replace(/\\/g, "/").split("/").pop() || pathLike;
 }
 
 function renderSpecSection(spec: ToolDisplaySpec): string {
@@ -251,7 +276,7 @@ function renderSpecSection(spec: ToolDisplaySpec): string {
 
   // Build title line: "✅ 📖 Read · filename.ts"
   const kindLabel = KIND_LABELS[spec.kind];
-  const displayTitle = shortenTitle(spec.title, spec.kind);
+  const displayTitle = shortenTitle(spec.title, spec.kind, spec.workingDirectory);
   // Suppress title when it duplicates the kind label (e.g. "Edit · Edit")
   const hasUniqueTitle = displayTitle && displayTitle.toLowerCase() !== kindLabel?.toLowerCase()
     && displayTitle.toLowerCase() !== spec.kind;
@@ -289,9 +314,10 @@ function renderSpecSection(spec: ToolDisplaySpec): string {
 
   if (spec.viewerLinks?.file || spec.viewerLinks?.diff || spec.outputViewerLink) {
     const linkParts: string[] = [];
-    const shortName = displayTitle || kindLabel || spec.kind;
+    // Use basename for link labels so they stay compact even with relative paths
+    const linkName = basename(displayTitle || kindLabel || spec.kind);
     if (spec.viewerLinks?.file)
-      linkParts.push(`<a href="${escapeHtml(spec.viewerLinks.file)}">View ${escapeHtml(shortName)}</a>`);
+      linkParts.push(`<a href="${escapeHtml(spec.viewerLinks.file)}">View ${escapeHtml(linkName)}</a>`);
     if (spec.viewerLinks?.diff)
       linkParts.push(`<a href="${escapeHtml(spec.viewerLinks.diff)}">View diff</a>`);
     if (spec.outputViewerLink)

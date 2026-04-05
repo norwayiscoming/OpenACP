@@ -16,63 +16,158 @@ import {
   generatePluginGuide,
 } from '../plugin-template/index.js'
 
-export async function cmdPluginCreate(): Promise<void> {
-  p.intro('Create a new OpenACP plugin')
+const VALID_LICENSES = ['MIT', 'Apache-2.0', 'ISC', 'UNLICENSED']
+const NAME_REGEX = /^(@[a-z0-9-]+\/)?[a-z0-9-]+$/
 
-  const result = await p.group(
-    {
-      name: () =>
-        p.text({
-          message: 'Plugin name (e.g., @myorg/adapter-matrix)',
-          placeholder: '@myorg/my-plugin',
-          validate: (value: string | undefined) => {
-            if (!value || !value.trim()) return 'Plugin name is required'
-            if (!/^(@[a-z0-9-]+\/)?[a-z0-9-]+$/.test(value.trim())) {
-              return 'Must be a valid npm package name (lowercase, hyphens, optional @scope/)'
-            }
-            return undefined
-          },
-        }),
-      description: () =>
-        p.text({
-          message: 'Description',
-          placeholder: 'A short description of your plugin',
-        }),
-      author: () =>
-        p.text({
-          message: 'Author',
-          placeholder: 'Your Name <email@example.com>',
-        }),
-      license: () =>
-        p.select({
-          message: 'License',
-          options: [
-            { value: 'MIT', label: 'MIT' },
-            { value: 'Apache-2.0', label: 'Apache 2.0' },
-            { value: 'ISC', label: 'ISC' },
-            { value: 'UNLICENSED', label: 'Unlicensed (private)' },
-          ],
-        }),
-    },
-    {
-      onCancel: () => {
-        p.cancel('Plugin creation cancelled.')
-        process.exit(0)
+function parseCreateArgs(args: string[]): { name?: string; description?: string; author?: string; license?: string; dir?: string } {
+  const parsed: Record<string, string> = {}
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i]
+    const next = args[i + 1]
+    if ((arg === '--name' || arg === '-n') && next) { parsed.name = next; i++ }
+    else if ((arg === '--description' || arg === '-d') && next) { parsed.description = next; i++ }
+    else if ((arg === '--author' || arg === '-a') && next) { parsed.author = next; i++ }
+    else if ((arg === '--license' || arg === '-l') && next) { parsed.license = next; i++ }
+    else if ((arg === '--dir') && next) { parsed.dir = next; i++ }
+    else if (!arg.startsWith('-') && !parsed.name) { parsed.name = arg } // positional: first non-flag = name
+  }
+  return parsed
+}
+
+/**
+ * Re-extract --name from process.argv for plugin create, since the top-level
+ * extractInstanceFlags() consumes --name as an instance flag.
+ */
+function recoverNameFromProcessArgs(): string | undefined {
+  const argv = process.argv
+  for (let i = 0; i < argv.length; i++) {
+    if (argv[i] === 'create') {
+      // Look for --name or -n after 'create'
+      for (let j = i + 1; j < argv.length; j++) {
+        if ((argv[j] === '--name' || argv[j] === '-n') && argv[j + 1]) return argv[j + 1]
+        if (!argv[j]!.startsWith('-') && j === i + 1) return argv[j] // positional right after create
+      }
+    }
+  }
+  return undefined
+}
+
+export async function cmdPluginCreate(args: string[] = []): Promise<void> {
+  if (args.includes('--help') || args.includes('-h')) {
+    console.log(`
+\x1b[1mopenacp plugin create\x1b[0m — Scaffold a new plugin project
+
+\x1b[1mUsage:\x1b[0m
+  openacp plugin create                              Interactive mode
+  openacp plugin create --name <name> [options]      Non-interactive mode
+
+\x1b[1mOptions:\x1b[0m
+  -n, --name <name>            Plugin name (e.g., @myorg/my-plugin) [required]
+  -d, --description <desc>     Short description
+  -a, --author <author>        Author name and email
+  -l, --license <license>      License: MIT, Apache-2.0, ISC, UNLICENSED (default: MIT)
+      --dir <path>             Target directory (default: ./<plugin-name>)
+  -h, --help                   Show this help message
+
+\x1b[1mExamples:\x1b[0m
+  openacp plugin create
+  openacp plugin create --name @myorg/my-plugin --description "My plugin" --license MIT
+  openacp plugin create -n my-plugin -d "My plugin" --dir ./plugins/my-plugin
+`)
+    return
+  }
+
+  const cliArgs = parseCreateArgs(args)
+  // --name is consumed by top-level extractInstanceFlags(), recover from process.argv
+  if (!cliArgs.name) cliArgs.name = recoverNameFromProcessArgs()
+
+  let pluginName: string
+  let description: string
+  let author: string
+  let license: string
+
+  if (cliArgs.name) {
+    // Non-interactive: validate provided args, prompt only for missing required fields
+    if (!NAME_REGEX.test(cliArgs.name)) {
+      console.error('Error: invalid plugin name. Must be a valid npm package name (lowercase, hyphens, optional @scope/)')
+      process.exit(1)
+    }
+    if (cliArgs.license && !VALID_LICENSES.includes(cliArgs.license)) {
+      console.error(`Error: invalid license. Must be one of: ${VALID_LICENSES.join(', ')}`)
+      process.exit(1)
+    }
+    pluginName = cliArgs.name
+    description = cliArgs.description ?? ''
+    author = cliArgs.author ?? ''
+    license = cliArgs.license ?? 'MIT'
+  } else {
+    // Interactive mode
+    p.intro('Create a new OpenACP plugin')
+
+    const result = await p.group(
+      {
+        name: () =>
+          p.text({
+            message: 'Plugin name (e.g., @myorg/adapter-matrix)',
+            placeholder: '@myorg/my-plugin',
+            validate: (value: string | undefined) => {
+              if (!value || !value.trim()) return 'Plugin name is required'
+              if (!NAME_REGEX.test(value.trim())) {
+                return 'Must be a valid npm package name (lowercase, hyphens, optional @scope/)'
+              }
+              return undefined
+            },
+          }),
+        description: () =>
+          p.text({
+            message: 'Description',
+            placeholder: 'A short description of your plugin',
+          }),
+        author: () =>
+          p.text({
+            message: 'Author',
+            placeholder: 'Your Name <email@example.com>',
+          }),
+        license: () =>
+          p.select({
+            message: 'License',
+            options: [
+              { value: 'MIT', label: 'MIT' },
+              { value: 'Apache-2.0', label: 'Apache 2.0' },
+              { value: 'ISC', label: 'ISC' },
+              { value: 'UNLICENSED', label: 'Unlicensed (private)' },
+            ],
+          }),
       },
-    },
-  )
+      {
+        onCancel: () => {
+          p.cancel('Plugin creation cancelled.')
+          process.exit(0)
+        },
+      },
+    )
 
-  const pluginName = result.name.trim()
+    pluginName = (result.name as string).trim()
+    description = (result.description as string) || ''
+    author = (result.author as string) || ''
+    license = result.license as string
+  }
+
+  const isInteractive = !cliArgs.name
   const dirName = pluginName.replace(/^@[^/]+\//, '') // strip scope for directory name
-  const targetDir = path.resolve(process.cwd(), dirName)
+  const targetDir = cliArgs.dir ? path.resolve(process.cwd(), cliArgs.dir) : path.resolve(process.cwd(), dirName)
 
   if (fs.existsSync(targetDir)) {
-    p.cancel(`Directory "${dirName}" already exists.`)
+    if (isInteractive) {
+      p.cancel(`Directory "${cliArgs.dir ?? dirName}" already exists.`)
+    } else {
+      console.error(`Error: directory "${cliArgs.dir ?? dirName}" already exists.`)
+    }
     process.exit(1)
   }
 
-  const spinner = p.spinner()
-  spinner.start('Scaffolding plugin...')
+  const spinner = isInteractive ? p.spinner() : null
+  if (spinner) spinner.start('Scaffolding plugin...')
 
   // Create directory structure
   fs.mkdirSync(path.join(targetDir, 'src', '__tests__'), { recursive: true })
@@ -80,9 +175,9 @@ export async function cmdPluginCreate(): Promise<void> {
   // Collect template params
   const params: TemplateParams = {
     pluginName,
-    description: (result.description as string) || '',
-    author: (result.author as string) || '',
-    license: result.license as string,
+    description,
+    author,
+    license,
     cliVersion: getCurrentVersion(),
   }
 
@@ -104,20 +199,26 @@ export async function cmdPluginCreate(): Promise<void> {
     fs.writeFileSync(path.join(targetDir, file.relativePath), file.content)
   }
 
-  spinner.stop('Plugin scaffolded!')
+  if (spinner) {
+    spinner.stop('Plugin scaffolded!')
+  }
 
-  p.note(
-    [
-      `cd ${dirName}`,
-      'npm install',
-      'npm run build',
-      'npm test',
-      '',
-      '# Start development with hot-reload:',
-      `openacp dev .`,
-    ].join('\n'),
-    'Next steps',
-  )
-
-  p.outro(`Plugin ${pluginName} created in ./${dirName}`)
+  const displayDir = cliArgs.dir ?? dirName
+  if (isInteractive) {
+    p.note(
+      [
+        `cd ${displayDir}`,
+        'npm install',
+        'npm run build',
+        'npm test',
+        '',
+        '# Start development with hot-reload:',
+        `openacp dev .`,
+      ].join('\n'),
+      'Next steps',
+    )
+    p.outro(`Plugin ${pluginName} created in ./${displayDir}`)
+  } else {
+    console.log(`✅ Plugin ${pluginName} created in ./${displayDir}`)
+  }
 }

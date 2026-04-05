@@ -71,7 +71,7 @@ Shows all plugins registered in the plugin registry.
 export async function cmdPlugin(args: string[] = [], instanceRoot?: string): Promise<void> {
   const subcommand = args[0]
 
-  if (wantsHelp(args) || !subcommand) {
+  if (!subcommand || (wantsHelp(args) && !['create', 'search'].includes(subcommand))) {
     console.log(`
 \x1b[1mopenacp plugin\x1b[0m — Plugin management
 
@@ -86,7 +86,8 @@ export async function cmdPlugin(args: string[] = [], instanceRoot?: string): Pro
   openacp plugin enable <name>           Enable a plugin
   openacp plugin disable <name>          Disable a plugin
   openacp plugin configure <name>        Run interactive configuration
-  openacp plugin create                  Scaffold a new plugin project
+  openacp plugin create                  Scaffold a new plugin project (interactive)
+  openacp plugin create --name <name>    Scaffold a new plugin project (non-interactive)
 
 \x1b[1mOptions:\x1b[0m
   --json          Output result as JSON
@@ -174,7 +175,7 @@ export async function cmdPlugin(args: string[] = [], instanceRoot?: string): Pro
 
     case 'create': {
       const { cmdPluginCreate } = await import('./plugin-create.js')
-      await cmdPluginCreate()
+      await cmdPluginCreate(args.slice(1))
       return
     }
 

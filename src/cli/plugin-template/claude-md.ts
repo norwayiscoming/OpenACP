@@ -188,7 +188,6 @@ interface InstallContext {
   pluginName: string
   terminal: TerminalIO        // text, select, confirm, password, multiselect, log, spinner, note
   settings: SettingsAPI
-  legacyConfig?: Record<string, unknown>
   dataDir: string
   log: Logger
 }

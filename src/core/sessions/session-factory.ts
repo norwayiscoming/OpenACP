@@ -92,16 +92,30 @@ export class SessionFactory {
     // 1. Spawn or resume agent
     let agentInstance;
     try {
-      agentInstance = createParams.resumeAgentSessionId
-        ? await this.agentManager.resume(
+      if (createParams.resumeAgentSessionId) {
+        try {
+          agentInstance = await this.agentManager.resume(
             createParams.agentName,
             createParams.workingDirectory,
             createParams.resumeAgentSessionId,
-          )
-        : await this.agentManager.spawn(
+          );
+        } catch (resumeErr) {
+          // Resume failed (session expired after restart) — fall back to fresh spawn
+          log.warn(
+            { agentName: createParams.agentName, resumeErr },
+            "Agent session resume failed, falling back to fresh spawn",
+          );
+          agentInstance = await this.agentManager.spawn(
             createParams.agentName,
             createParams.workingDirectory,
           );
+        }
+      } else {
+        agentInstance = await this.agentManager.spawn(
+          createParams.agentName,
+          createParams.workingDirectory,
+        );
+      }
     } catch (err) {
       const message =
         err instanceof Error ? err.message : String(err);
@@ -339,6 +353,27 @@ export class SessionFactory {
           }
           if (record.acpState.agentCapabilities && !session.agentCapabilities) {
             session.setAgentCapabilities(record.acpState.agentCapabilities);
+          }
+        }
+
+        // If resume fell back to a fresh spawn (session.agentSessionId differs from record),
+        // inject conversation history so the new agent has context from previous sessions.
+        const resumeFalledBack = record.agentSessionId && session.agentSessionId !== record.agentSessionId;
+        if (resumeFalledBack) {
+          log.info({ sessionId: session.id }, "Resume fell back to fresh spawn — injecting conversation history");
+          const contextManager = this.getContextManager?.();
+          if (contextManager) {
+            try {
+              const config = this.configManager?.get();
+              const labelAgent = config?.agentSwitch?.labelHistory ?? true;
+              const contextResult = await contextManager.buildContext(
+                { type: 'session', value: record.sessionId, repoPath: record.workingDir },
+                { labelAgent, noCache: true },
+              );
+              if (contextResult?.markdown) {
+                session.setContext(contextResult.markdown);
+              }
+            } catch { /* context injection is best-effort */ }
           }
         }
 

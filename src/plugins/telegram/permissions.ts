@@ -68,12 +68,12 @@ export class PermissionHandler {
   }
 
   setupCallbackHandler(): void {
-    this.bot.on('callback_query:data', async (ctx) => {
+    this.bot.on('callback_query:data', async (ctx, next) => {
       const data = ctx.callbackQuery.data
-      if (!data.startsWith('p:')) return
+      if (!data.startsWith('p:')) return next()
 
       const parts = data.split(':')
-      if (parts.length < 3) return
+      if (parts.length < 3) return next()
       const [, callbackKey, optionId] = parts
 
       const pending = this.pending.get(callbackKey)

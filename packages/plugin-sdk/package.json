@@ -1,6 +1,6 @@
 {
   "name": "@openacp/plugin-sdk",
-  "version": "2026.405.2",
+  "version": "2026.406.1",
   "description": "SDK for building OpenACP plugins — types, base classes, and testing utilities",
   "type": "module",
   "exports": {

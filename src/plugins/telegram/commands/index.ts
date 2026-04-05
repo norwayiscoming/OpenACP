@@ -19,6 +19,8 @@ import { handleSwitch, setupSwitchCallbacks } from "./switch.js";
 import type { CommandRegistry } from "../../../core/command-registry.js";
 import type { MenuRegistry } from "../../../core/menu-registry.js";
 import { TELEGRAM_OVERRIDES } from './telegram-overrides.js'
+import { createChildLogger } from '../../../core/utils/log.js'
+const log = createChildLogger({ module: 'telegram-menu-callbacks' })
 
 export function setupAllCallbacks(
   bot: Bot,
@@ -77,7 +79,10 @@ export function setupAllCallbacks(
     if (!menuRegistry) return
 
     const item = menuRegistry.getItem(itemId)
-    if (!item) return
+    if (!item) {
+      log.warn({ itemId }, 'Menu item not found in registry')
+      return
+    }
 
     const topicId = ctx.callbackQuery.message?.message_thread_id
     const registry = core.lifecycleManager?.serviceRegistry?.get('command-registry') as CommandRegistry | undefined

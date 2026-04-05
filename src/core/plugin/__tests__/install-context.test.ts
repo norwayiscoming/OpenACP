@@ -59,32 +59,6 @@ describe('createInstallContext', () => {
     expect(ctx.log.child).toBeTypeOf('function')
   })
 
-  it('passes legacyConfig when provided', async () => {
-    const { createInstallContext } = await import('../install-context.js')
-    const legacy = { botToken: 'abc123', chatId: '456' }
-
-    const ctx = createInstallContext({
-      pluginName: 'my-plugin',
-      settingsManager,
-      basePath: tmpDir,
-      legacyConfig: legacy,
-    })
-
-    expect(ctx.legacyConfig).toEqual(legacy)
-  })
-
-  it('legacyConfig is undefined when not provided', async () => {
-    const { createInstallContext } = await import('../install-context.js')
-
-    const ctx = createInstallContext({
-      pluginName: 'my-plugin',
-      settingsManager,
-      basePath: tmpDir,
-    })
-
-    expect(ctx.legacyConfig).toBeUndefined()
-  })
-
   it('settings API is scoped to the plugin', async () => {
     const { createInstallContext } = await import('../install-context.js')
 
@@ -114,5 +88,17 @@ describe('createInstallContext', () => {
     })
 
     expect(ctx.dataDir).toBe(path.join(tmpDir, 'my-plugin', 'data'))
+  })
+
+  it('does not expose legacyConfig on the context', async () => {
+    const { createInstallContext } = await import('../install-context.js')
+
+    const ctx = createInstallContext({
+      pluginName: '@openacp/test-plugin',
+      settingsManager,
+      basePath: tmpDir,
+    })
+
+    expect('legacyConfig' in ctx).toBe(false)
   })
 })

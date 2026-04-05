@@ -181,17 +181,20 @@ describe("SessionFactory — Comprehensive Tests", () => {
       ).rejects.toThrow("spawn failed");
     });
 
-    it("throws when resume fails", async () => {
+    it("falls back to spawn when resume fails (expired session)", async () => {
+      const freshAgent = mockAgentInstance("new-sess");
       agentManager.resume.mockRejectedValue(new Error("resume failed"));
+      agentManager.spawn.mockResolvedValue(freshAgent);
 
-      await expect(
-        factory.create({
-          channelId: "telegram",
-          agentName: "claude",
-          workingDirectory: "/workspace",
-          resumeAgentSessionId: "bad-id",
-        }),
-      ).rejects.toThrow("resume failed");
+      const session = await factory.create({
+        channelId: "telegram",
+        agentName: "claude",
+        workingDirectory: "/workspace",
+        resumeAgentSessionId: "bad-id",
+      });
+
+      expect(session.agentSessionId).toBe("new-sess");
+      expect(agentManager.spawn).toHaveBeenCalledWith("claude", "/workspace");
     });
   });
 
@@ -361,6 +364,86 @@ describe("SessionFactory — Comprehensive Tests", () => {
         // Should not throw
         session.finish("done");
       });
+    });
+  });
+
+  describe("lazy resume fallback — context injection after expired session", () => {
+    function makeRecord(overrides: Record<string, unknown> = {}) {
+      return {
+        sessionId: "sess-1",
+        agentSessionId: "old-agent-sess",
+        agentName: "claude",
+        workingDir: "/workspace",
+        channelId: "telegram",
+        status: "active",
+        platform: { topicId: 42 },
+        platforms: { telegram: { topicId: 42 } },
+        createdAt: new Date().toISOString(),
+        lastActiveAt: new Date().toISOString(),
+        ...overrides,
+      };
+    }
+
+    function setupLazyResume(record: ReturnType<typeof makeRecord>) {
+      const freshAgent = mockAgentInstance("new-agent-sess");
+      agentManager.resume = vi.fn().mockRejectedValue(new Error("Session not found"));
+      agentManager.spawn = vi.fn().mockResolvedValue(freshAgent);
+
+      const contextService = {
+        flushSession: vi.fn().mockResolvedValue(undefined),
+        buildContext: vi.fn().mockResolvedValue({ markdown: "# History\n\nSome history" }),
+      };
+      factory.getContextManager = () => contextService as any;
+      factory.configManager = { get: vi.fn().mockReturnValue({ agentSwitch: { labelHistory: true } }) } as any;
+
+      factory.sessionStore = {
+        findByPlatform: vi.fn().mockReturnValue(record),
+        get: vi.fn(),
+      } as any;
+      factory.adapters = new Map();
+      factory.createFullSession = async (params: any) => {
+        return factory.create(params);
+      };
+
+      return { freshAgent, contextService };
+    }
+
+    it("injects context when resume falls back to fresh spawn after restart", async () => {
+      const record = makeRecord();
+      const { contextService } = setupLazyResume(record);
+
+      const session = await (factory as any).lazyResume("telegram", "42");
+
+      expect(session).not.toBeNull();
+      expect(contextService.buildContext).toHaveBeenCalledWith(
+        expect.objectContaining({ type: "session", value: "sess-1" }),
+        expect.objectContaining({ noCache: true }),
+      );
+      // pendingContext is private — verify via setContext was effectively called
+      // by checking the session will inject context on next prompt
+      expect((session as any).pendingContext).toBe("# History\n\nSome history");
+    });
+
+    it("does not inject context when resume succeeds normally", async () => {
+      const resumedAgent = mockAgentInstance("old-agent-sess");
+      agentManager.resume = vi.fn().mockResolvedValue(resumedAgent);
+
+      const contextService = {
+        buildContext: vi.fn().mockResolvedValue({ markdown: "# History" }),
+      };
+      factory.getContextManager = () => contextService as any;
+
+      factory.sessionStore = {
+        findByPlatform: vi.fn().mockReturnValue(makeRecord()),
+        get: vi.fn(),
+      } as any;
+      factory.adapters = new Map();
+      factory.createFullSession = async (params: any) => factory.create(params);
+
+      const session = await (factory as any).lazyResume("telegram", "42");
+
+      expect(session).not.toBeNull();
+      expect(contextService.buildContext).not.toHaveBeenCalled();
     });
   });
 });

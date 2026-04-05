@@ -23,7 +23,6 @@ export {
   expandHome,
   type Config,
   type LoggingConfig,
-  type UsageConfig,
 } from "./config/config.js";
 export { AgentInstance } from "./agents/agent-instance.js";
 export { AgentManager } from "./agents/agent-manager.js";
@@ -131,5 +130,6 @@ export type {
   CommandDef, CommandArgs, CommandResponse, MenuOption, ListItem,
   SecurityService, NotificationService, UsageService,
   SpeechServiceInterface, TunnelServiceInterface, ContextService,
+  FieldDef,
 } from './plugin/types.js'
 export { PRODUCT_GUIDE } from '../data/product-guide.js'

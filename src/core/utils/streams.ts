@@ -4,8 +4,10 @@ export function nodeToWebWritable(nodeStream: NodeJS.WritableStream): WritableSt
       return new Promise<void>((resolve, reject) => {
         const ok = nodeStream.write(chunk);
         if (ok) { resolve(); return; }
-        (nodeStream as any).once("drain", resolve);
-        (nodeStream as any).once("error", reject);
+        const onDrain = () => { (nodeStream as any).removeListener("error", onError); resolve(); };
+        const onError = (err: Error) => { (nodeStream as any).removeListener("drain", onDrain); reject(err); };
+        (nodeStream as any).once("drain", onDrain);
+        (nodeStream as any).once("error", onError);
       });
     },
     close() {

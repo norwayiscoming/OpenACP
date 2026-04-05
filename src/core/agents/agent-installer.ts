@@ -22,7 +22,7 @@ export function verifyChecksum(buffer: Buffer, expectedHash: string): void {
   }
 }
 
-export function validateTarContents(entries: string[], destDir: string): void {
+export function validateArchiveContents(entries: string[], destDir: string): void {
   for (const entry of entries) {
     // Check for path traversal segments, not just substring — avoids false positives
     // on filenames like "setup..sh" or "..config" that are not traversal attacks.
@@ -35,6 +35,9 @@ export function validateTarContents(entries: string[], destDir: string): void {
     }
   }
 }
+
+/** @deprecated Use validateArchiveContents instead */
+export const validateTarContents = validateArchiveContents;
 
 export function validateUninstallPath(binaryPath: string, agentsDir: string): void {
   const realPath = path.resolve(binaryPath);
@@ -304,7 +307,7 @@ async function extractTarGz(buffer: Buffer, destDir: string): Promise<void> {
     // Validate contents BEFORE extraction
     const listing = execFileSync("tar", ["tf", tmpFile], { stdio: "pipe" })
       .toString().trim().split("\n").filter(Boolean);
-    validateTarContents(listing, destDir);
+    validateArchiveContents(listing, destDir);
     // Safe to extract
     execFileSync("tar", ["xzf", tmpFile, "-C", destDir], { stdio: "pipe" });
   } finally {
@@ -318,6 +321,16 @@ async function extractZip(buffer: Buffer, destDir: string): Promise<void> {
   const tmpFile = path.join(destDir, "_archive.zip");
   fs.writeFileSync(tmpFile, buffer);
   try {
+    // Validate contents BEFORE extraction
+    const listing = execFileSync("unzip", ["-l", tmpFile], { stdio: "pipe" })
+      .toString().trim().split("\n").filter(Boolean);
+    // unzip -l output has header/footer lines; file paths are in the 4th column
+    const entries = listing
+      .slice(3, -2) // skip header (3 lines) and footer (2 lines)
+      .map((line) => line.trim().split(/\s+/).slice(3).join(" "))
+      .filter(Boolean);
+    validateArchiveContents(entries, destDir);
+    // Safe to extract
     execFileSync("unzip", ["-o", tmpFile, "-d", destDir], { stdio: "pipe" });
   } finally {
     fs.unlinkSync(tmpFile);

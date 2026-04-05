@@ -7,17 +7,21 @@ import type { ConfiguredChannelAction, ChannelId, ChannelStatus } from "./types.
 import { CHANNEL_META } from "./types.js";
 import { guardCancel, ok, c } from "./helpers.js";
 
+// Maps logical channel ID → plugin name used for settings storage and dynamic import.
+// Telegram is built-in so it has no entry here (handled separately via direct import).
+const CHANNEL_PLUGIN_NAME: Record<string, string> = {
+  discord: "@openacp/discord-adapter",
+};
+
 export async function getChannelStatuses(config: Config, settingsManager?: SettingsManager): Promise<ChannelStatus[]> {
   const statuses: ChannelStatus[] = [];
 
   for (const [id, meta] of Object.entries(CHANNEL_META) as [ChannelId, typeof CHANNEL_META[ChannelId]][]) {
-    const ch = config.channels[id] as Record<string, unknown> | undefined;
-
-    let configured = !!ch && Object.keys(ch).length > 1;
-    let enabled = ch?.enabled === true;
+    let configured = false;
+    let enabled = false;
     let hint: string | undefined;
 
-    // Check plugin settings first (new-style config takes priority)
+    // Read channel status from plugin settings (channels migrated out of config.json)
     if (settingsManager && id === "telegram") {
       const ps = await settingsManager.loadSettings("@openacp/telegram");
       if (ps.botToken && ps.chatId) {
@@ -26,21 +30,11 @@ export async function getChannelStatuses(config: Config, settingsManager?: Setti
         hint = `Chat ID: ${ps.chatId}`;
       }
     } else if (settingsManager && id === "discord") {
-      const ps = await settingsManager.loadSettings("@openacp/adapter-discord");
+      const ps = await settingsManager.loadSettings("@openacp/discord-adapter");
       if (ps.guildId || ps.token) {
         configured = true;
         enabled = ps.enabled !== false;
         hint = ps.guildId ? `Guild: ${ps.guildId}` : undefined;
-      }
-    }
-
-    // Legacy hint from config.channels (only if not overridden by plugin settings)
-    if (!hint) {
-      if (id === "telegram" && ch?.botToken && typeof ch.botToken === "string" && ch.botToken !== "YOUR_BOT_TOKEN_HERE") {
-        hint = `Chat ID: ${ch.chatId}`;
-      }
-      if (id === "discord" && ch?.guildId) {
-        hint = `Guild: ${ch.guildId}`;
       }
     }
 
@@ -79,35 +73,49 @@ async function promptConfiguredAction(label: string): Promise<ConfiguredChannelA
   );
 }
 
-async function configureViaPlugin(channelId: string, settingsManager?: SettingsManager): Promise<void> {
+async function configureViaPlugin(channelId: string, isConfigured: boolean, settingsManager?: SettingsManager): Promise<void> {
+  // SSE (Desktop App) connects automatically; no user configuration needed.
+  if (channelId === 'sse') return;
+
   let plugin: any;
   if (channelId === 'telegram') {
     const pluginModule = await import('../../plugins/telegram/index.js');
     plugin = pluginModule.default;
   } else {
-    // Try dynamic import for community plugins (npm package name)
+    // Use the known plugin package name; fall back to scoped package name for unknown adapters.
+    const packageName = CHANNEL_PLUGIN_NAME[channelId] ?? `@openacp/${channelId}`;
     try {
-      const pluginModule = await import(channelId);
+      const pluginModule = await import(packageName);
       plugin = pluginModule.default;
     } catch (err) {
-      console.log(`Could not load plugin "${channelId}": ${(err as Error).message}`);
+      console.log(`Could not load plugin "${packageName}": ${(err as Error).message}`);
       return;
     }
   }
 
-  if (plugin?.configure) {
-    const { createInstallContext } = await import('../plugin/install-context.js');
-    let sm = settingsManager;
-    if (!sm) {
-      const { SettingsManager: SM } = await import('../plugin/settings-manager.js');
-      const basePath = path.join(getGlobalRoot(), 'plugins', 'data');
-      sm = new SM(basePath);
-    }
-    const ctx = createInstallContext({
-      pluginName: plugin.name,
-      settingsManager: sm,
-      basePath: sm.getBasePath(),
-    });
+  if (!plugin) {
+    console.log(`Plugin for channel "${channelId}" did not export a valid default.`);
+    return;
+  }
+
+  const { createInstallContext } = await import('../plugin/install-context.js');
+  let sm = settingsManager;
+  if (!sm) {
+    const { SettingsManager: SM } = await import('../plugin/settings-manager.js');
+    const basePath = path.join(getGlobalRoot(), 'plugins', 'data');
+    sm = new SM(basePath);
+  }
+  const ctx = createInstallContext({
+    pluginName: plugin.name,
+    settingsManager: sm,
+    basePath: sm.getBasePath(),
+  });
+
+  if (!isConfigured && plugin.install) {
+    // First-time setup: run the full guided install flow
+    await plugin.install(ctx);
+  } else if (plugin.configure) {
+    // Already configured: allow editing individual settings
     await plugin.configure(ctx);
   }
 }
@@ -150,8 +158,13 @@ export async function configureChannels(config: Config, settingsManager?: Settin
       const action = await promptConfiguredAction(meta.label);
 
       if (action === "skip") continue;
+      const pluginName = CHANNEL_PLUGIN_NAME[channelId] ?? `@openacp/${channelId}`;
+
       if (action === "disable") {
-        (next.channels[channelId] as Record<string, unknown>).enabled = false;
+        // Disable via plugin settings (channels migrated out of config.json)
+        if (settingsManager) {
+          await settingsManager.updatePluginSettings(pluginName, { enabled: false });
+        }
         changed = true;
         console.log(ok(`${meta.label} disabled`));
         continue;
@@ -164,7 +177,10 @@ export async function configureChannels(config: Config, settingsManager?: Settin
           }),
         );
         if (confirmed) {
-          delete next.channels[channelId];
+          // Clear plugin settings (channels migrated out of config.json)
+          if (settingsManager) {
+            await settingsManager.updatePluginSettings(pluginName, {});
+          }
           changed = true;
           console.log(ok(`${meta.label} config deleted`));
         }
@@ -173,8 +189,8 @@ export async function configureChannels(config: Config, settingsManager?: Settin
       // action === "modify" — fall through to plugin configure
     }
 
-    // Run channel configuration via plugin configure()
-    await configureViaPlugin(channelId, settingsManager);
+    // Run channel configuration via plugin install() or configure()
+    await configureViaPlugin(channelId, isConfigured, settingsManager);
     changed = true;
   }
 

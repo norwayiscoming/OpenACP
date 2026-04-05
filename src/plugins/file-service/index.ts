@@ -9,23 +9,11 @@ function createFileServicePlugin(): OpenACPPlugin {
     version: '1.0.0',
     description: 'File storage and management for session attachments',
     essential: false,
-    permissions: ['services:register'],
+    permissions: ['services:register', 'commands:register'],
 
     async install(ctx: InstallContext) {
-      const { settings, legacyConfig, terminal } = ctx
+      const { settings, terminal } = ctx
       const defaultFilesDir = path.join(ctx.instanceRoot ?? path.join(os.homedir(), '.openacp'), 'files')
-
-      // Migrate from legacy config if present
-      if (legacyConfig) {
-        const filesCfg = legacyConfig.files as Record<string, unknown> | undefined
-        if (filesCfg) {
-          await settings.setAll({
-            baseDir: filesCfg.baseDir ?? defaultFilesDir,
-          })
-          terminal.log.success('File service settings migrated from legacy config')
-          return
-        }
-      }
 
       // Save defaults
       await settings.setAll({
@@ -55,6 +43,10 @@ function createFileServicePlugin(): OpenACPPlugin {
     },
 
     async setup(ctx) {
+      ctx.registerEditableFields([
+        { key: 'baseDir', displayName: 'File Storage Directory', type: 'string', scope: 'safe', hotReload: false },
+      ])
+
       const config = ctx.pluginConfig as Record<string, unknown>
       const baseDir = (config.baseDir as string) ?? path.join(ctx.instanceRoot, 'files')
       const retentionDays = (config.retentionDays as number) ?? 30

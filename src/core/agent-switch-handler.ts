@@ -66,8 +66,8 @@ export class AgentSwitchHandler {
     // 2. Determine resume vs new
     const lastEntry = session.findLastSwitchEntry(toAgent);
     const caps = getAgentCapabilities(toAgent);
-    const canResume = !!(lastEntry && caps.supportsResume && lastEntry.promptCount === 0);
-    const resumed = canResume;
+    const canResume = !!(lastEntry && caps.supportsResume);
+    let resumed = false;
 
     // Emit "starting" events so UI can reflect long-running switches
     const startEvent: AgentEvent = {
@@ -109,30 +109,37 @@ export class AgentSwitchHandler {
     try {
       await session.switchAgent(toAgent, async () => {
         if (canResume) {
-          const instance = await agentManager.resume(toAgent, session.workingDirectory, lastEntry!.agentSessionId);
-          if (fileService) instance.addAllowedPath(fileService.baseDir);
-          return instance;
-        } else {
-          const instance = await agentManager.spawn(toAgent, session.workingDirectory);
-          if (fileService) instance.addAllowedPath(fileService.baseDir);
           try {
-            const contextService = this.deps.getService<ContextManager>('context');
-            if (contextService) {
-              const config = configManager.get();
-              const labelAgent = config.agentSwitch?.labelHistory ?? true;
-              const contextResult = await contextService.buildContext(
-                { type: 'session', value: sessionId, repoPath: session.workingDirectory },
-                { labelAgent },
-              );
-              if (contextResult?.markdown) {
-                session.setContext(contextResult.markdown);
-              }
-            }
+            const instance = await agentManager.resume(toAgent, session.workingDirectory, lastEntry!.agentSessionId);
+            if (fileService) instance.addAllowedPath(fileService.baseDir);
+            resumed = true;
+            return instance;
           } catch {
-            // Context injection is best-effort
+            // Resume failed (session expired or unavailable) — fall through to spawn with context
+            log.warn({ sessionId, toAgent }, "Resume failed, falling back to new agent with context injection");
           }
-          return instance;
         }
+
+        const instance = await agentManager.spawn(toAgent, session.workingDirectory);
+        if (fileService) instance.addAllowedPath(fileService.baseDir);
+        try {
+          const contextService = this.deps.getService<ContextManager>('context');
+          if (contextService) {
+            const config = configManager.get();
+            const labelAgent = config.agentSwitch?.labelHistory ?? true;
+            await contextService.flushSession(sessionId);
+            const contextResult = await contextService.buildContext(
+              { type: 'session', value: sessionId, repoPath: session.workingDirectory },
+              { labelAgent, noCache: true },
+            );
+            if (contextResult?.markdown) {
+              session.setContext(contextResult.markdown);
+            }
+          }
+        } catch {
+          // Context injection is best-effort
+        }
+        return instance;
       });
 
       const successEvent: AgentEvent = {

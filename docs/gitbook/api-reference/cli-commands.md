@@ -472,6 +472,7 @@ openacp integrate <agent> --uninstall
 ```bash
 openacp integrate claude
 openacp integrate claude --uninstall
+openacp integrate opencode
 ```
 
 ---

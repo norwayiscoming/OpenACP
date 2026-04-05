@@ -39,22 +39,21 @@ export async function configRoutes(
 ): Promise<void> {
   // GET /config/editable — list safe-to-edit config fields
   app.get('/editable', { preHandler: requireScopes('config:read') }, async () => {
-    const { getSafeFields, resolveOptions, getFieldValueAsync } = await import(
+    const { getSafeFields, resolveOptions, getConfigValue } = await import(
       '../../../core/config/config-registry.js'
     );
     const config = deps.core.configManager.get();
-    const settingsManager = deps.core.settingsManager;
     const safeFields = getSafeFields();
 
-    const fields = await Promise.all(safeFields.map(async (def) => ({
+    const fields = safeFields.map((def) => ({
       path: def.path,
       displayName: def.displayName,
       group: def.group,
       type: def.type,
       options: resolveOptions(def, config),
-      value: await getFieldValueAsync(def, deps.core.configManager, settingsManager),
+      value: getConfigValue(config as any, def.path),
       hotReload: def.hotReload,
-    })));
+    }));
 
     return { fields };
   });
@@ -95,9 +94,8 @@ export async function configRoutes(
       });
     }
 
-    const settingsManager = deps.core.settingsManager;
     const { needsRestart } = await setFieldValueAsync(
-      fieldDef, value, deps.core.configManager, settingsManager,
+      fieldDef, value, deps.core.configManager,
     );
 
     return {

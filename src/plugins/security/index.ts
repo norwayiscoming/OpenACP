@@ -21,29 +21,11 @@ function createSecurityPlugin(): OpenACPPlugin {
     inheritableKeys: ['allowedUserIds', 'maxConcurrentSessions', 'sessionTimeoutMinutes'],
 
     async install(ctx: InstallContext) {
-      const { settings, legacyConfig, terminal } = ctx
-
-      // Migrate from legacy config if present
-      if (legacyConfig) {
-        const securityCfg = legacyConfig.security as Record<string, unknown> | undefined
-        if (securityCfg) {
-          await settings.setAll({
-            allowedUserIds: securityCfg.allowedUserIds ?? [],
-            maxConcurrentSessions: securityCfg.maxConcurrentSessions ?? 20,
-            sessionTimeoutMinutes: securityCfg.sessionTimeoutMinutes ?? 60,
-          })
-          terminal.log.success('Security settings migrated from legacy config')
-          return
-        }
-      }
-
-      // Save defaults (no interactive prompts needed)
-      await settings.setAll({
+      await ctx.settings.setAll({
         allowedUserIds: [],
         maxConcurrentSessions: 20,
         sessionTimeoutMinutes: 60,
       })
-      terminal.log.success('Security defaults saved')
     },
 
     async configure(ctx: InstallContext) {
@@ -104,6 +86,11 @@ function createSecurityPlugin(): OpenACPPlugin {
     },
 
     async setup(ctx) {
+      ctx.registerEditableFields([
+        { key: 'maxConcurrentSessions', displayName: 'Max Concurrent Sessions', type: 'number', scope: 'safe', hotReload: true },
+        { key: 'sessionTimeoutMinutes', displayName: 'Session Timeout (min)', type: 'number', scope: 'safe', hotReload: true },
+      ])
+
       const core = ctx.core as SecurityCoreAccess
       const settingsManager = core.lifecycleManager?.settingsManager
       const pluginName = ctx.pluginName

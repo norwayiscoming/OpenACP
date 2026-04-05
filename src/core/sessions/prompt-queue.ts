@@ -8,6 +8,8 @@ export class PromptQueue {
   private queue: Array<{ text: string; attachments?: Attachment[]; routing?: TurnRouting; turnId?: string; resolve: () => void }> = []
   private processing = false
   private abortController: AbortController | null = null
+  /** Set when abort is triggered; drainNext waits for the current processor to settle before starting the next item. */
+  private processorSettled: Promise<void> | null = null
 
   constructor(
     private processor: (text: string, attachments?: Attachment[], routing?: TurnRouting, turnId?: string) => Promise<void>,
@@ -27,6 +29,8 @@ export class PromptQueue {
     this.processing = true
     this.abortController = new AbortController()
     const { signal } = this.abortController
+    let settledResolve: () => void
+    this.processorSettled = new Promise<void>((r) => { settledResolve = r })
     try {
       await Promise.race([
         this.processor(text, attachments, routing, turnId),
@@ -42,6 +46,8 @@ export class PromptQueue {
     } finally {
       this.abortController = null
       this.processing = false
+      settledResolve!()
+      this.processorSettled = null
       this.drainNext()
     }
   }

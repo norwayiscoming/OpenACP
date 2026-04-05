@@ -208,11 +208,16 @@ let nextWsId = 0
 function cacheWorkspace(agentKey: string, workspace: string): number {
   // Evict stale entries (>5 min) and cap size
   const now = Date.now()
+  for (const [id, entry] of workspaceCache) {
+    if (now - entry.ts > 5 * 60_000) {
+      workspaceCache.delete(id)
+    }
+  }
   if (workspaceCache.size > WS_CACHE_MAX) {
-    for (const [id, entry] of workspaceCache) {
-      if (now - entry.ts > 5 * 60_000 || workspaceCache.size > WS_CACHE_MAX) {
-        workspaceCache.delete(id)
-      }
+    const sorted = [...workspaceCache.entries()].sort((a, b) => a[1].ts - b[1].ts)
+    const toDelete = sorted.slice(0, workspaceCache.size - WS_CACHE_MAX)
+    for (const [id] of toDelete) {
+      workspaceCache.delete(id)
     }
   }
   const id = nextWsId++

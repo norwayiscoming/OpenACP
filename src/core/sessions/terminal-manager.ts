@@ -118,6 +118,13 @@ export class TerminalManager {
           durationMs: Date.now() - state.startTime,
         }, async (p) => p).catch(() => {});
       }
+      // Schedule cleanup of the terminal entry after a grace period to allow
+      // output retrieval by the agent after the process has exited.
+      setTimeout(() => {
+        if (this.terminals.has(terminalId)) {
+          this.terminals.delete(terminalId);
+        }
+      }, 30_000).unref();
     });
 
     return { terminalId };
@@ -155,6 +162,15 @@ export class TerminalManager {
       state.process.on("exit", (code, signal) => {
         resolve({ exitCode: code, signal });
       });
+      // Re-check after attaching the listener to close the TOCTOU race:
+      // the process may have exited between the null check above and the
+      // listener registration.
+      if (state.exitStatus !== null) {
+        resolve({
+          exitCode: state.exitStatus.exitCode,
+          signal: state.exitStatus.signal,
+        });
+      }
     });
   }
 

@@ -355,9 +355,12 @@ export async function handleOutputMode(
       { parse_mode: "HTML" },
     );
   } else {
-    const current =
-      (core.configManager.get().channels?.telegram as Record<string, unknown> | undefined)
-        ?.outputMode ?? "medium";
+    // Read outputMode from plugin settings (migrated out of config.json)
+    let current = "medium";
+    if (core.settingsManager) {
+      const tgSettings = await core.settingsManager.loadSettings("@openacp/telegram");
+      current = (tgSettings.outputMode as string) ?? "medium";
+    }
     await ctx.reply(
       `📊 Current output mode: <b>${current}</b>\n\n` +
         `Usage: <code>/outputmode low|medium|high</code>\n` +

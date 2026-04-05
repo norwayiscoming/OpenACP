@@ -12,7 +12,7 @@ No state is lost. The agent process keeps running; only the "owner" of the sessi
 
 A typical flow:
 
-1. You are working at your desk with Claude Code open in the terminal.
+1. You are working at your desk with Claude Code or OpenCode open in the terminal.
 2. You need to step away but want to keep supervising the agent.
 3. You run `openacp integrate` (or trigger the `/openacp:handoff` slash command from inside the agent).
 4. The session appears as a new topic in your Telegram group or Discord server.
@@ -30,7 +30,7 @@ Run the integrate command and follow the prompts:
 openacp integrate
 ```
 
-You will be asked which agent to integrate (Claude Code, Cursor, Gemini CLI, GitHub Copilot, Cline, Codex, etc.). The command installs the necessary hooks so your agent can hand off sessions to OpenACP.
+You will be asked which agent to integrate (Claude Code, OpenCode, Cursor, Gemini CLI, GitHub Copilot, Cline, Codex, etc.). The command installs the needed integration so your agent can hand off sessions to OpenACP.
 
 To uninstall later:
 
@@ -56,19 +56,26 @@ The session appears as a new topic in your Telegram group or Discord server. You
 
 - The OpenACP daemon must be running (`openacp start`) on the same machine as the terminal agent.
 - At least one messaging adapter (Telegram, Discord, or Slack) must be configured and connected.
-- `jq` must be installed on the machine (`brew install jq` on macOS, `apt install jq` on Linux).
+- `jq` is required only for hook-based integrations (Claude/Cursor/Gemini/Cline). OpenCode plugin integration does not require `jq`.
 
 ---
 
 ## Supported agents
 
-Currently supported agents include Claude Code, Cursor, Gemini CLI, GitHub Copilot CLI, Cline, OpenAI Codex, and others. Run `openacp integrate --list` to see the full list.
+Currently supported agents include Claude Code, OpenCode, Cursor, Gemini CLI, GitHub Copilot CLI, Cline, OpenAI Codex, and others. Run `openacp integrate --list` to see the full list.
 
 ---
 
 ## Technical details
 
-Handoff relies on two shell scripts installed by `openacp integrate`:
+Most handoff integrations rely on two shell scripts installed by `openacp integrate`:
 
 - **Inject hook** (`openacp-inject-session.sh`) — runs as an agent hook on every conversation turn, reads the agent's session ID from the hook payload, and injects it as a context variable.
 - **Handoff script** (`openacp-handoff.sh`) — calls `openacp adopt <agent> <session_id>` to register the terminal session with the running OpenACP daemon, making it visible in the messaging platform.
+
+For OpenCode, handoff is installed via a command + plugin pair under `~/.config/opencode/`:
+
+- **Command** (`commands/openacp-handoff.md`) — provides `/openacp:handoff`.
+- **Plugin** (`plugins/openacp-handoff.js`) — injects current OpenCode session ID so the command can call `openacp adopt opencode <session_id>`.
+
+If OpenCode is started with `--pure`, plugins are disabled and session ID injection is unavailable. In this mode, `/openacp:handoff` is not supported.

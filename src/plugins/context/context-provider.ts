@@ -21,6 +21,8 @@ export interface ContextOptions {
   limit?: number;
   /** When true, insert `## [agentName]` headers at agent boundaries in merged history */
   labelAgent?: boolean;
+  /** When true, skip the context cache (use for live switches where history just changed) */
+  noCache?: boolean;
 }
 
 export interface SessionInfo {

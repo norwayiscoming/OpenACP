@@ -83,8 +83,10 @@ export class CommandRegistry {
     if (cmd.scope) {
       // If we deleted by short name, also delete qualified name
       this.commands.delete(`${cmd.scope}:${cmd.name}`)
-      // If we deleted by qualified name, also delete short name
-      this.commands.delete(cmd.name)
+      // If we deleted by qualified name, only delete short name if it points to the same command
+      if (this.commands.get(cmd.name) === cmd) {
+        this.commands.delete(cmd.name)
+      }
     }
   }
 

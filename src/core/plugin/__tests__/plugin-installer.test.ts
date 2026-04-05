@@ -111,12 +111,10 @@ describe('installNpmPlugin — --ignore-scripts flag', () => {
       new URL("../plugin-installer.ts", import.meta.url).pathname.replace("__tests__/", ""),
       "utf-8",
     );
-    // Match npm install commands inside template literal strings (backtick-delimited)
-    const npmInstallMatches = source.match(/`npm install[^`]+`/g) ?? [];
-    expect(npmInstallMatches.length).toBeGreaterThan(0);
-    for (const match of npmInstallMatches) {
-      expect(match).toContain("--ignore-scripts");
-    }
+    // Verify --ignore-scripts is present in execFile/exec npm install calls
+    expect(source).toContain("--ignore-scripts");
+    // Verify execFile is used instead of exec (no shell injection)
+    expect(source).toContain("execFileAsync");
   });
 });
 

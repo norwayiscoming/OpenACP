@@ -130,6 +130,10 @@ export class TelegramAdapter extends MessagingAdapter {
   private controlMsgIds = new Map<string, number>();
   private _threadReadyHandler?: (data: { sessionId: string; channelId: string; threadId: string }) => void;
   private _configChangedHandler?: (data: { sessionId: string }) => void;
+  /** True once topics are initialized and Phase 2 is complete */
+  private _topicsInitialized = false;
+  /** Background watcher timer — cancelled on stop() or when topics succeed */
+  private _prerequisiteWatcher: ReturnType<typeof setTimeout> | null = null;
 
   /** Store control message ID in memory + persist to session record */
   private storeControlMsgId(sessionId: string, msgId: number): void {
@@ -290,28 +294,6 @@ export class TelegramAdapter extends MessagingAdapter {
       return next();
     });
 
-    // Ensure system topics exist (retry on transient network failures)
-    const topics = await this.retryWithBackoff(
-      () => ensureTopics(
-        this.bot,
-        this.telegramConfig.chatId,
-        this.telegramConfig,
-        async (updates) => {
-          if (this.saveTopicIds) {
-            await this.saveTopicIds(updates);
-          } else {
-            // Fallback for legacy usage without plugin settings
-            await this.core.configManager.save({
-              channels: { telegram: updates },
-            });
-          }
-        },
-      ),
-      "ensureTopics",
-    );
-    this.notificationTopicId = topics.notificationTopicId;
-    this.assistantTopicId = topics.assistantTopicId;
-
     // Setup permission handler
     this.permissionHandler = new PermissionHandler(
       this.bot,
@@ -322,9 +304,17 @@ export class TelegramAdapter extends MessagingAdapter {
 
     // Generic CommandRegistry dispatch — handles any command registered via plugin system.
     // Must be early so registry commands run before legacy bot.command() handlers.
+    // Command handler — guard when topics not yet initialized
     this.bot.on("message:text", async (ctx, next) => {
       const text = ctx.message?.text;
       if (!text?.startsWith("/")) return next();
+
+      if (!this._topicsInitialized) {
+        await ctx.reply(
+          "⏳ OpenACP is still setting up. Check the General topic for instructions.",
+        ).catch(() => {});
+        return;
+      }
 
       const registry =
         this.core.lifecycleManager?.serviceRegistry?.get<CommandRegistry>(
@@ -409,6 +399,11 @@ export class TelegramAdapter extends MessagingAdapter {
 
     // Callback query handler for command buttons (c/ prefix)
     this.bot.callbackQuery(/^c\//, async (ctx) => {
+      if (!this._topicsInitialized) {
+        await ctx.answerCallbackQuery().catch(() => {});
+        return;
+      }
+
       const data = ctx.callbackQuery.data;
       const command = this.fromCallbackData(data);
 
@@ -478,6 +473,96 @@ export class TelegramAdapter extends MessagingAdapter {
     setupTTSCallbacks(this.bot, this.core as OpenACPCore);
     setupVerbosityCallbacks(this.bot, this.core as OpenACPCore);
     setupIntegrateCallbacks(this.bot, this.core as OpenACPCore);
+    this.permissionHandler.setupCallbackHandler();
+
+    // Start bot polling
+    this.bot.start({
+      allowed_updates: ["message", "callback_query"],
+      onStart: () => log.info({ chatId: this.telegramConfig.chatId }, "Telegram bot started"),
+    });
+
+    // Phase 2: check prerequisites and either initialize topics now or start watcher
+    const { checkTopicsPrerequisites } = await import('./validators.js');
+    const prereqResult = await checkTopicsPrerequisites(
+      this.telegramConfig.botToken,
+      this.telegramConfig.chatId,
+    );
+
+    if (prereqResult.ok) {
+      await this.initTopicDependentFeatures();
+    } else {
+      for (const issue of prereqResult.issues) {
+        log.warn({ issue }, 'Telegram prerequisite not met');
+      }
+      this.startPrerequisiteWatcher(prereqResult.issues);
+    }
+  }
+
+  /**
+   * Retry an async operation with exponential backoff.
+   * Used for Telegram API calls that may fail due to transient network issues.
+   */
+  private async retryWithBackoff<T>(
+    fn: () => Promise<T>,
+    label: string,
+    maxRetries = 5,
+    baseDelayMs = 2000,
+  ): Promise<T> {
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        return await fn();
+      } catch (err) {
+        if (attempt === maxRetries) throw err;
+        const delay = baseDelayMs * Math.pow(2, attempt - 1);
+        log.warn(
+          { err, attempt, maxRetries, delayMs: delay, operation: label },
+          `${label} failed, retrying in ${delay}ms`,
+        );
+        await new Promise((r) => setTimeout(r, delay));
+      }
+    }
+    throw new Error("unreachable");
+  }
+
+  /**
+   * Register Telegram commands in the background with retries.
+   * Non-critical — bot works fine without autocomplete commands.
+   */
+  private registerCommandsWithRetry(): void {
+    this.retryWithBackoff(
+      () => this.bot.api.setMyCommands(STATIC_COMMANDS, {
+        scope: { type: "chat", chat_id: this.telegramConfig.chatId },
+      }),
+      "setMyCommands",
+    ).catch((err) => {
+      log.warn({ err }, "Failed to register Telegram commands after retries (non-critical)");
+    });
+  }
+
+  private async initTopicDependentFeatures(): Promise<void> {
+    if (this._topicsInitialized) return; // idempotent guard
+    // Ensure system topics exist (retry on transient network failures)
+    const topics = await this.retryWithBackoff(
+      () => ensureTopics(
+        this.bot,
+        this.telegramConfig.chatId,
+        this.telegramConfig,
+        async (updates) => {
+          if (this.saveTopicIds) {
+            await this.saveTopicIds(updates);
+          } else {
+            // Fallback for legacy usage without plugin settings
+            await this.core.configManager.save({
+              channels: { telegram: updates },
+            });
+          }
+        },
+      ),
+      "ensureTopics",
+    );
+    this.notificationTopicId = topics.notificationTopicId;
+    this.assistantTopicId = topics.assistantTopicId;
+
     setupMenuCallbacks(
       this.bot,
       this.core as OpenACPCore,
@@ -502,7 +587,6 @@ export class TelegramAdapter extends MessagingAdapter {
         this.storeControlMsgId(sessionId, msgId);
       },
     );
-    this.permissionHandler.setupCallbackHandler();
 
     // Send initial messages when a new session thread is created via API/CLI
     this._threadReadyHandler = ({ sessionId, channelId, threadId }) => {
@@ -549,16 +633,6 @@ export class TelegramAdapter extends MessagingAdapter {
     // Setup message routing
     this.setupRoutes();
 
-    // Start bot polling
-    this.bot.start({
-      allowed_updates: ["message", "callback_query"],
-      onStart: () =>
-        log.info(
-          { chatId: this.telegramConfig.chatId },
-          "Telegram bot started",
-        ),
-    });
-
     // Send welcome message
     try {
       const config = this.core.configManager.get();
@@ -593,50 +667,67 @@ export class TelegramAdapter extends MessagingAdapter {
     } catch (err) {
       log.error({ err }, "Failed to spawn assistant");
     }
+
+    this._topicsInitialized = true;
+    log.info("Telegram adapter fully initialized");
   }
 
-  /**
-   * Retry an async operation with exponential backoff.
-   * Used for Telegram API calls that may fail due to transient network issues.
-   */
-  private async retryWithBackoff<T>(
-    fn: () => Promise<T>,
-    label: string,
-    maxRetries = 5,
-    baseDelayMs = 2000,
-  ): Promise<T> {
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
-      try {
-        return await fn();
-      } catch (err) {
-        if (attempt === maxRetries) throw err;
-        const delay = baseDelayMs * Math.pow(2, attempt - 1);
-        log.warn(
-          { err, attempt, maxRetries, delayMs: delay, operation: label },
-          `${label} failed, retrying in ${delay}ms`,
-        );
-        await new Promise((r) => setTimeout(r, delay));
-      }
-    }
-    throw new Error("unreachable");
-  }
+  private startPrerequisiteWatcher(issues: string[]): void {
+    const setupMessage =
+      `⚠️ <b>OpenACP needs setup before it can start.</b>\n\n` +
+      issues.join('\n\n') +
+      `\n\nOpenACP will automatically retry until this is resolved.`;
 
-  /**
-   * Register Telegram commands in the background with retries.
-   * Non-critical — bot works fine without autocomplete commands.
-   */
-  private registerCommandsWithRetry(): void {
-    this.retryWithBackoff(
-      () => this.bot.api.setMyCommands(STATIC_COMMANDS, {
-        scope: { type: "chat", chat_id: this.telegramConfig.chatId },
-      }),
-      "setMyCommands",
-    ).catch((err) => {
-      log.warn({ err }, "Failed to register Telegram commands after retries (non-critical)");
+    this.bot.api.sendMessage(this.telegramConfig.chatId, setupMessage, {
+      parse_mode: 'HTML',
+    }).catch((err) => {
+      log.warn({ err }, 'Failed to send setup guidance to General topic');
     });
+
+    const schedule = [5_000, 10_000, 30_000];
+    let attempt = 1;
+
+    const retry = async () => {
+      if (this._prerequisiteWatcher === null) return; // cancelled by stop()
+
+      const { checkTopicsPrerequisites } = await import('./validators.js');
+      const result = await checkTopicsPrerequisites(
+        this.telegramConfig.botToken,
+        this.telegramConfig.chatId,
+      );
+
+      if (result.ok) {
+        this._prerequisiteWatcher = null;
+        log.info('Prerequisites met — completing Telegram adapter initialization');
+        try {
+          await this.initTopicDependentFeatures();
+          await this.bot.api.sendMessage(
+            this.telegramConfig.chatId,
+            '✅ <b>OpenACP is ready!</b>\n\nSystem topics have been created. Use the 🤖 Assistant topic to get started.',
+            { parse_mode: 'HTML' },
+          );
+        } catch (err) {
+          log.error({ err }, 'Failed to complete initialization after prerequisites met');
+        }
+        return;
+      }
+
+      log.debug({ issues: result.issues }, 'Prerequisites not yet met, retrying');
+      const delay = schedule[Math.min(attempt, schedule.length - 1)];
+      attempt++;
+      this._prerequisiteWatcher = setTimeout(retry, delay);
+    };
+
+    this._prerequisiteWatcher = setTimeout(retry, schedule[0]);
   }
 
   async stop(): Promise<void> {
+    // Cancel background prerequisite watcher if running
+    if (this._prerequisiteWatcher !== null) {
+      clearTimeout(this._prerequisiteWatcher);
+      this._prerequisiteWatcher = null;
+    }
+
     // Cleanup activity trackers (interval timers)
     for (const tracker of this.sessionTrackers.values()) {
       tracker.destroy();

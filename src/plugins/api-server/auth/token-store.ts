@@ -67,7 +67,9 @@ export class TokenStore {
       return;
     }
     this.savePromise = this.save()
-      .catch(() => {})
+      .catch((err) => {
+        console.error("[TokenStore] Failed to persist token data:", err);
+      })
       .finally(() => {
         this.savePromise = null;
         if (this.savePending) {
@@ -127,6 +129,11 @@ export class TokenStore {
 
   /** Wait for any in-flight and pending saves to complete */
   async flush(): Promise<void> {
+    if (this.lastUsedSaveTimer) {
+      clearTimeout(this.lastUsedSaveTimer);
+      this.lastUsedSaveTimer = null;
+      this.scheduleSave();
+    }
     while (this.savePromise || this.savePending) {
       if (this.savePromise) await this.savePromise;
       // After awaiting, scheduleSave may have re-fired if savePending was true.

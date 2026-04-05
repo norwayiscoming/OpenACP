@@ -76,6 +76,9 @@ export class Session extends TypedEmitter<SessionEvents> {
   threadIds: Map<string, string> = new Map();
   /** Active turn context — sealed on prompt dequeue, cleared on turn end */
   activeTurnContext: TurnContext | null = null;
+  /** The agentInstance for which the agent→session event relay is wired (prevents duplicate relays from multiple bridges).
+   *  When the agent is swapped, the relay must be re-wired to the new instance. */
+  agentRelaySource: AgentInstance | null = null;
 
   readonly permissionGate = new PermissionGate();
   private readonly queue: PromptQueue;

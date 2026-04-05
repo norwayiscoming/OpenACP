@@ -182,7 +182,10 @@ export class JsonFileSessionStore implements SessionStore {
     for (const [id, record] of this.records) {
       if (record.status === "active" || record.status === "initializing")
         continue;
-      const lastActive = new Date(record.lastActiveAt).getTime();
+      const raw = record.lastActiveAt;
+      if (!raw) continue;
+      const lastActive = new Date(raw).getTime();
+      if (isNaN(lastActive)) continue;
       if (lastActive < cutoff) {
         this.records.delete(id);
         removed++;

@@ -14,15 +14,13 @@ export const telegramCheck: DoctorCheck = {
       return results;
     }
 
-    // Check plugin settings first (new-style), then fall back to legacy config.channels
+    // Read Telegram settings from plugin settings (migrated out of config.json)
     const { SettingsManager } = await import("../../plugin/settings-manager.js");
     const sm = new SettingsManager(path.join(ctx.pluginsDir, "data"));
     const ps = await sm.loadSettings("@openacp/telegram");
 
-    const legacyCh = ctx.config.channels.telegram as Record<string, unknown> | undefined;
-
-    const botToken = (ps.botToken as string | undefined) ?? (legacyCh?.botToken as string | undefined);
-    const chatId = (ps.chatId as number | undefined) ?? (legacyCh?.chatId as number | undefined);
+    const botToken = ps.botToken as string | undefined;
+    const chatId = ps.chatId as number | undefined;
 
     if (!botToken && !chatId) {
       results.push({ status: "pass", message: "Telegram not configured (skipped)" });

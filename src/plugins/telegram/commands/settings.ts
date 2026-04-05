@@ -4,7 +4,7 @@ import type { OpenACPCore } from "../../../core/index.js";
 import {
   getSafeFields,
   resolveOptions,
-  getFieldValueAsync,
+  getConfigValue,
   setFieldValueAsync,
   isHotReloadable,
   type ConfigFieldDef,
@@ -18,7 +18,7 @@ async function buildSettingsKeyboard(core: OpenACPCore): Promise<InlineKeyboard>
   const kb = new InlineKeyboard();
 
   for (const field of fields) {
-    const value = await getFieldValueAsync(field, core.configManager, core.settingsManager);
+    const value = getConfigValue(core.configManager.get() as any, field.path);
     const label = formatFieldLabel(field, value);
 
     if (field.type === 'toggle') {
@@ -66,12 +66,11 @@ export function setupSettingsCallbacks(
     const fieldDef = getSafeFields().find(f => f.path === fieldPath);
     if (!fieldDef) return;
 
-    const settingsManager = core.settingsManager;
-    const currentValue = await getFieldValueAsync(fieldDef, core.configManager, settingsManager);
+    const currentValue = getConfigValue(core.configManager.get() as any, fieldDef.path);
     const newValue = !currentValue;
 
     try {
-      await setFieldValueAsync(fieldDef, newValue, core.configManager, settingsManager);
+      await setFieldValueAsync(fieldDef, newValue, core.configManager);
       const toast = isHotReloadable(fieldPath)
         ? `✅ ${fieldPath} = ${newValue}`
         : `✅ ${fieldPath} = ${newValue} (restart needed)`;
@@ -92,7 +91,7 @@ export function setupSettingsCallbacks(
     if (!fieldDef) return;
 
     const options = resolveOptions(fieldDef, config) ?? [];
-    const currentValue = await getFieldValueAsync(fieldDef, core.configManager, core.settingsManager);
+    const currentValue = getConfigValue(core.configManager.get() as any, fieldDef.path);
     const kb = new InlineKeyboard();
 
     for (const opt of options) {
@@ -127,9 +126,8 @@ export function setupSettingsCallbacks(
           const speechSettings = await sm.loadSettings('@openacp/speech');
           hasApiKey = !!(speechSettings.groqApiKey as string);
         } else {
-          const config = core.configManager.get();
-          const providerConfig = config.speech?.stt?.providers?.[newValue];
-          hasApiKey = !!providerConfig?.apiKey;
+          // speech config migrated to plugin settings; no API key available without settingsManager
+          hasApiKey = false;
         }
         if (!hasApiKey) {
           // No API key — delegate to assistant to collect it
@@ -146,7 +144,7 @@ export function setupSettingsCallbacks(
         }
       }
 
-      await setFieldValueAsync(fieldDef, newValue, core.configManager, core.settingsManager);
+      await setFieldValueAsync(fieldDef, newValue, core.configManager);
 
       try { await ctx.answerCallbackQuery({ text: `✅ ${fieldPath} = ${newValue}` }); } catch { /* expired */ }
       try {
@@ -166,7 +164,7 @@ export function setupSettingsCallbacks(
     const fieldDef = getSafeFields().find(f => f.path === fieldPath);
     if (!fieldDef) return;
 
-    const currentValue = await getFieldValueAsync(fieldDef, core.configManager, core.settingsManager);
+    const currentValue = getConfigValue(core.configManager.get() as any, fieldDef.path);
     const assistant = getAssistantSession();
 
     if (!assistant) {

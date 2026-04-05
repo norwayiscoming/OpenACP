@@ -125,8 +125,8 @@ Configure via \`security.sessionTimeoutMinutes\` in config.
 3. Copy and run it in your terminal — the session continues there with full conversation history
 
 ### Terminal → Chat
-1. First time: run \`openacp integrate claude\` to install the handoff skill (one-time setup)
-2. In Claude Code, use the /openacp:handoff slash command
+1. First time: run \`openacp integrate <agent>\` to install handoff integration (one-time setup)
+2. In supported agents (for example Claude Code or OpenCode), use /openacp:handoff
 3. The session appears as a new topic/thread and you can continue chatting there
 
 ### How it works

@@ -231,8 +231,14 @@ function normalizePathLike(pathLike: string): string {
 }
 
 /**
- * Prefer working-directory relative paths for file-looking titles.
- * Fallback to basename for core file kinds when no relativization is possible.
+ * Shorten a file-path title for display in Telegram tool cards.
+ *
+ * Strategy (in priority order):
+ * 1. If `workingDirectory` is provided and the path starts with it,
+ *    return the relative path  →  "src/foo.ts (lines 1–10)"
+ *    Also handles comma-separated multi-file titles (e.g. apply_patch).
+ * 2. For file-kind titles, fall back to basename  →  "foo.ts (lines 1–10)"
+ * 3. Non-file-kind titles are returned unchanged.
  */
 function shortenTitle(title: string, kind: string, workingDirectory?: string): string {
   if (!title.includes("/")) return title;
@@ -256,9 +262,9 @@ function shortenTitle(title: string, kind: string, workingDirectory?: string): s
   return title;
 }
 
+/** Extract the last path segment for use in link labels. */
 function basename(pathLike: string): string {
-  const normalized = pathLike.replace(/\\/g, "/");
-  return normalized.split("/").pop() || pathLike;
+  return pathLike.replace(/\\/g, "/").split("/").pop() || pathLike;
 }
 
 function renderSpecSection(spec: ToolDisplaySpec): string {
@@ -313,9 +319,10 @@ function renderSpecSection(spec: ToolDisplaySpec): string {
 
   if (spec.viewerLinks?.file || spec.viewerLinks?.diff || spec.outputViewerLink) {
     const linkParts: string[] = [];
-    const shortName = basename(displayTitle || kindLabel || spec.kind);
+    // Use basename for link labels so they stay compact even with relative paths
+    const linkName = basename(displayTitle || kindLabel || spec.kind);
     if (spec.viewerLinks?.file)
-      linkParts.push(`<a href="${escapeHtml(spec.viewerLinks.file)}">View ${escapeHtml(shortName)}</a>`);
+      linkParts.push(`<a href="${escapeHtml(spec.viewerLinks.file)}">View ${escapeHtml(linkName)}</a>`);
     if (spec.viewerLinks?.diff)
       linkParts.push(`<a href="${escapeHtml(spec.viewerLinks.diff)}">View diff</a>`);
     if (spec.outputViewerLink)

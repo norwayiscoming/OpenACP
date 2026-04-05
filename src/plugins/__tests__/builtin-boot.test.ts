@@ -6,7 +6,7 @@ describe('Built-in plugin boot', () => {
   it('loads non-adapter plugins with empty config', async () => {
     // Only test plugins that don't require external connections (bot tokens, etc.)
     const safePlugins = builtInPlugins.filter(p =>
-      !['@openacp/telegram', '@openacp/discord', '@openacp/slack',
+      !['@openacp/telegram', '@openacp/discord-adapter', '@openacp/slack-adapter',
         '@openacp/tunnel', '@openacp/api-server'].includes(p.name)
     )
 

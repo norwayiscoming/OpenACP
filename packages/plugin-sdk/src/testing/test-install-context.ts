@@ -2,7 +2,6 @@ import type { InstallContext, TerminalIO, SettingsAPI } from '@openacp/cli'
 
 export interface TestInstallContextOpts {
   pluginName: string
-  legacyConfig?: Record<string, unknown>
   terminalResponses?: Record<string, unknown[]>
 }
 
@@ -123,7 +122,6 @@ export function createTestInstallContext(opts: TestInstallContextOpts): InstallC
     pluginName: opts.pluginName,
     terminal,
     settings,
-    legacyConfig: opts.legacyConfig,
     dataDir: '/tmp/openacp-test-data',
     log: silentLog,
     // Test-specific

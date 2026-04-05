@@ -87,7 +87,7 @@ export async function cmdDefault(command: string | undefined, instanceRoot?: str
         const portStr = fs.readFileSync(path.join(root, 'api.port'), 'utf-8').trim()
         port = parseInt(portStr) || null
       } catch {
-        port = config.api.port ?? null
+        port = 21420
       }
       jsonSuccess({
         pid: result.pid,
@@ -124,7 +124,7 @@ export async function cmdDefault(command: string | undefined, instanceRoot?: str
       const portStr = fs.readFileSync(path.join(root, 'api.port'), 'utf-8').trim()
       port = parseInt(portStr) || null
     } catch {
-      port = config.api.port ?? null
+      port = 21420
     }
     jsonSuccess({
       pid: process.pid,

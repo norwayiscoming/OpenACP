@@ -40,6 +40,7 @@ export class SSEManager {
       "session:deleted",
       "agent:event",
       "permission:request",
+      "permission:resolved",
       "message:queued",
       "message:processing",
     ] as const;
@@ -120,6 +121,7 @@ export class SSEManager {
     const sessionEvents = [
       "agent:event",
       "permission:request",
+      "permission:resolved",
       "session:updated",
       "message:queued",
       "message:processing",

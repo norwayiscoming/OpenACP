@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import https from 'node:https'
 import os from 'node:os'
-import { execSync } from 'node:child_process'
+import { execFileSync } from 'node:child_process'
 import { createChildLogger } from './log.js'
 import { commandExists } from '../agents/agent-dependencies.js'
 import { MAX_DOWNLOAD_SIZE, validateTarContents } from '../agents/agent-installer.js'
@@ -22,7 +22,7 @@ export interface BinarySpec {
   isArchive?: (url: string) => boolean
 }
 
-function downloadFile(url: string, dest: string): Promise<string> {
+function downloadFile(url: string, dest: string, maxRedirects = 10): Promise<string> {
   return new Promise((resolve, reject) => {
     const file = fs.createWriteStream(dest)
 
@@ -32,9 +32,16 @@ function downloadFile(url: string, dest: string): Promise<string> {
 
     https.get(url, (response) => {
       if (response.statusCode === 301 || response.statusCode === 302) {
+        if (maxRedirects <= 0) {
+          file.close(() => {
+            cleanup()
+            reject(new Error('Too many redirects'))
+          })
+          return
+        }
         file.close(() => {
           cleanup()
-          downloadFile(response.headers.location!, dest).then(resolve).catch(reject)
+          downloadFile(response.headers.location!, dest, maxRedirects - 1).then(resolve).catch(reject)
         })
         return
       }
@@ -123,10 +130,10 @@ export async function ensureBinary(spec: BinarySpec, binDir?: string): Promise<s
   await downloadFile(url, downloadDest)
 
   if (isArchive) {
-    const listing = execSync(`tar -tf "${downloadDest}"`, { stdio: 'pipe' })
+    const listing = execFileSync('tar', ['-tf', downloadDest], { stdio: 'pipe' })
       .toString().trim().split("\n").filter(Boolean);
     validateTarContents(listing, resolvedBinDir);
-    execSync(`tar -xzf "${downloadDest}" -C "${resolvedBinDir}"`, { stdio: 'pipe' })
+    execFileSync('tar', ['-xzf', downloadDest, '-C', resolvedBinDir], { stdio: 'pipe' })
     try { fs.unlinkSync(downloadDest) } catch { /* ignore */ }
   }
 

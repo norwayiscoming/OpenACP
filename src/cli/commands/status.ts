@@ -167,10 +167,14 @@ export function readInstanceInfo(root: string): InstanceInfo {
   // Read enabled channels from plugins.json
   try {
     const plugins = JSON.parse(fs.readFileSync(path.join(root, 'plugins.json'), 'utf-8'))
-    const adapters = ['@openacp/telegram', '@openacp/discord', '@openacp/slack']
-    for (const name of adapters) {
-      if (plugins.installed?.[name] && plugins.installed[name].enabled !== false) {
-        result.channels.push(name.replace('@openacp/', ''))
+    const adapterMap: Array<{ pluginName: string; channelId: string }> = [
+      { pluginName: '@openacp/telegram', channelId: 'telegram' },
+      { pluginName: '@openacp/discord-adapter', channelId: 'discord' },
+      { pluginName: '@openacp/slack-adapter', channelId: 'slack' },
+    ]
+    for (const { pluginName, channelId } of adapterMap) {
+      if (plugins.installed?.[pluginName] && plugins.installed[pluginName].enabled !== false) {
+        result.channels.push(channelId)
       }
     }
   } catch {}

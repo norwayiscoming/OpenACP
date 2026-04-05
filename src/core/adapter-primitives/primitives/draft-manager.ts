@@ -76,6 +76,11 @@ export class Draft {
     } finally {
       this.firstFlushPending = false
     }
+
+    // Re-flush if buffer changed during the async operation
+    if (this.buffer !== snapshot) {
+      return this.flush()
+    }
   }
 }
 

@@ -12,6 +12,8 @@
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export class TypedEmitter<T extends Record<string & keyof T, (...args: any[]) => void>> {
+  private static readonly MAX_BUFFER_SIZE = 10000
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private listeners = new Map<keyof T, Set<(...args: any[]) => void>>()
   private paused = false
@@ -39,6 +41,10 @@ export class TypedEmitter<T extends Record<string & keyof T, (...args: any[]) =>
         this.deliver(event, args)
       } else {
         this.buffer.push({ event, args })
+        if (this.buffer.length > TypedEmitter.MAX_BUFFER_SIZE) {
+          console.warn(`[TypedEmitter] Buffer exceeded ${TypedEmitter.MAX_BUFFER_SIZE} events, dropping oldest`)
+          this.buffer.shift()
+        }
       }
       return
     }
@@ -90,7 +96,12 @@ export class TypedEmitter<T extends Record<string & keyof T, (...args: any[]) =>
     const set = this.listeners.get(event)
     if (!set) return
     for (const listener of set) {
-      (listener as (...a: unknown[]) => void)(...args)
+      try {
+        (listener as (...a: unknown[]) => void)(...args)
+      } catch (err) {
+        // Don't let one listener break others
+        console.error(`[EventBus] Listener error on "${String(event)}":`, err)
+      }
     }
   }
 }

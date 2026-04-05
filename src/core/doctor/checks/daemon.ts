@@ -79,7 +79,7 @@ export const daemonCheck: DoctorCheck = {
     }
 
     if (ctx.config) {
-      const apiPort = ctx.config.api.port;
+      const apiPort = 21420;
       const inUse = await checkPortInUse(apiPort);
       if (inUse) {
         if (fs.existsSync(ctx.pidPath)) {

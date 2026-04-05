@@ -9,8 +9,10 @@ export async function agentRoutes(
   app: FastifyInstance,
   deps: RouteDeps,
 ): Promise<void> {
-  // GET /agents — list all available agents
-  app.get('/', { preHandler: requireScopes('agents:read') }, async () => {
+  function loadAndListAgents() {
+    // Re-read agents.json so newly CLI-installed agents are visible without a server restart.
+    // The file is tiny so per-request I/O is negligible in a local environment.
+    deps.core.agentCatalog.load();
     const agents = deps.core.agentManager.getAvailableAgents();
     const defaultAgent = deps.core.configManager.get().defaultAgent;
     const agentsWithCaps = agents.map((a) => ({
@@ -18,6 +20,16 @@ export async function agentRoutes(
       capabilities: getAgentCapabilities(a.name),
     }));
     return { agents: agentsWithCaps, default: defaultAgent };
+  }
+
+  // GET /agents — list all available agents
+  app.get('/', { preHandler: requireScopes('agents:read') }, async () => {
+    return loadAndListAgents();
+  });
+
+  // POST /agents/reload — explicitly reload agent catalog from disk
+  app.post('/reload', { preHandler: requireScopes('agents:write') }, async () => {
+    return { ...loadAndListAgents(), reloaded: true };
   });
 
   // GET /agents/:name — get a single agent by name

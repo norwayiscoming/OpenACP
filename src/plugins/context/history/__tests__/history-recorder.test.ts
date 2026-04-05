@@ -601,4 +601,53 @@ describe("HistoryRecorder", () => {
       expect(steps).toHaveLength(0);
     });
   });
+
+  // ── flush ──
+
+  describe("flush", () => {
+    it("writes in-memory state to disk immediately without waiting for debounce", async () => {
+      vi.useFakeTimers();
+      recorder.onBeforePrompt("s1", "hello", undefined);
+      recorder.onAfterEvent("s1", { type: "text", content: "world" } as AgentEvent);
+      // Note: onTurnEnd NOT called yet — turn still in progress
+
+      await recorder.flush("s1");
+
+      expect(store.write).toHaveBeenCalledOnce();
+      const written = store.write.mock.calls[0][0];
+      expect(written.sessionId).toBe("s1");
+      expect(written.turns.length).toBeGreaterThan(0);
+      vi.useRealTimers();
+    });
+
+    it("marks the in-progress turn as interrupted when flushing mid-turn", async () => {
+      recorder.onBeforePrompt("s2", "test", undefined);
+      recorder.onAfterEvent("s2", { type: "text", content: "partial" } as AgentEvent);
+
+      await recorder.flush("s2");
+
+      const written = store.write.mock.calls[0][0];
+      const assistantTurn = written.turns.find((t: any) => t.role === "assistant");
+      expect(assistantTurn?.stopReason).toBe("interrupted");
+    });
+
+    it("cancels any pending debounce before flushing", async () => {
+      vi.useFakeTimers();
+      recorder.onBeforePrompt("s3", "msg", undefined);
+      recorder.onAfterEvent("s3", { type: "text", content: "..." } as AgentEvent);
+      // Debounce is scheduled but not yet fired
+
+      await recorder.flush("s3");
+
+      // Advancing timer should NOT cause a second write (debounce was cancelled)
+      await vi.advanceTimersByTimeAsync(3000);
+      expect(store.write).toHaveBeenCalledTimes(1);
+      vi.useRealTimers();
+    });
+
+    it("does nothing if session has no in-memory state", async () => {
+      await recorder.flush("nonexistent");
+      expect(store.write).not.toHaveBeenCalled();
+    });
+  });
 });

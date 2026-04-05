@@ -73,14 +73,14 @@ export async function summarizeConfig(config: Config, settingsManager?: Settings
   // Channels — check plugin settings (new-style) before falling back to config.channels (legacy)
   const channelDefs: Array<{ id: string; label: string; pluginName: string; keys: string[] }> = [
     { id: "telegram", label: "Telegram", pluginName: "@openacp/telegram", keys: ["botToken", "chatId"] },
-    { id: "discord", label: "Discord", pluginName: "@openacp/adapter-discord", keys: ["guildId", "token"] },
+    { id: "discord", label: "Discord", pluginName: "@openacp/discord-adapter", keys: ["guildId", "token"] },
   ];
 
   const channelStatuses: string[] = [];
   for (const def of channelDefs) {
-    const legacyCh = config.channels[def.id] as Record<string, unknown> | undefined;
-    let configured = !!legacyCh && Object.keys(legacyCh).length > 1;
-    let enabled = (legacyCh?.enabled as boolean) === true;
+    // Read channel status from plugin settings (channels migrated out of config.json)
+    let configured = false;
+    let enabled = false;
 
     if (settingsManager) {
       const ps = await settingsManager.loadSettings(def.pluginName);

@@ -15,12 +15,19 @@ export const tunnelCheck: DoctorCheck = {
       return results;
     }
 
-    if (!ctx.config.tunnel.enabled) {
+    // Read tunnel settings from plugin settings (tunnel migrated out of config.json)
+    const { SettingsManager } = await import("../../plugin/settings-manager.js");
+    const sm = new SettingsManager(path.join(ctx.pluginsDir, "data"));
+    const tunnelSettings = await sm.loadSettings("@openacp/tunnel");
+    const tunnelEnabled = (tunnelSettings.enabled as boolean) ?? false;
+    const provider = (tunnelSettings.provider as string) ?? "cloudflare";
+    const tunnelPort = (tunnelSettings.port as number) ?? 3100;
+
+    if (!tunnelEnabled) {
       results.push({ status: "pass", message: "Tunnel not enabled (skipped)" });
       return results;
     }
 
-    const provider = ctx.config.tunnel.provider;
     results.push({ status: "pass", message: `Tunnel provider: ${provider}` });
 
     if (provider === "cloudflare") {
@@ -59,7 +66,7 @@ export const tunnelCheck: DoctorCheck = {
       }
     }
 
-    const tunnelPort = ctx.config.tunnel.port;
+    // tunnelPort already set from plugin settings above
     if (tunnelPort < 1 || tunnelPort > 65535) {
       results.push({ status: "fail", message: `Invalid tunnel port: ${tunnelPort}` });
     } else {

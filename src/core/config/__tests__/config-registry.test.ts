@@ -1,9 +1,11 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import {
   CONFIG_REGISTRY,
   getFieldDef,
   getSafeFields,
   isHotReloadable,
+  setFieldValueAsync,
+  ConfigValidationError,
   type ConfigFieldDef,
 } from '../config-registry.js'
 import { ConfigManager } from '../config.js'
@@ -38,8 +40,6 @@ describe('config-registry', () => {
   it('isHotReloadable returns correct values', () => {
     expect(isHotReloadable('defaultAgent')).toBe(true)
     expect(isHotReloadable('logging.level')).toBe(true)
-    expect(isHotReloadable('tunnel.enabled')).toBe(false)
-    expect(isHotReloadable('channels.telegram.botToken')).toBe(false)
   })
 
   it('all safe fields have required metadata', () => {
@@ -94,5 +94,64 @@ describe('ConfigManager events', () => {
 
     await cm.save({ defaultAgent: 'codex' })
     expect(events).toHaveLength(0)
+  })
+})
+
+describe('CONFIG_REGISTRY field membership', () => {
+  it('contains exactly 5 core fields', () => {
+    expect(CONFIG_REGISTRY).toHaveLength(5)
+  })
+
+  it('contains exactly the expected core field paths', () => {
+    const paths = CONFIG_REGISTRY.map((f) => f.path)
+    expect(paths).toContain('defaultAgent')
+    expect(paths).toContain('logging.level')
+    expect(paths).toContain('workspace.baseDir')
+    expect(paths).toContain('sessionStore.ttlDays')
+    expect(paths).toContain('agentSwitch.labelHistory')
+  })
+
+  it('does not contain removed plugin fields', () => {
+    const paths = CONFIG_REGISTRY.map((f) => f.path)
+    expect(paths).not.toContain('channels.telegram.botToken')
+    expect(paths).not.toContain('security.allowedUserIds')
+    expect(paths).not.toContain('tunnel.enabled')
+    expect(paths).not.toContain('speech.stt.provider')
+  })
+})
+
+describe('setFieldValueAsync', () => {
+  it('calls configManager.setPath with the field path and value', async () => {
+    const field = getFieldDef('logging.level')!
+    const mockManager = { setPath: vi.fn().mockResolvedValue(undefined) }
+    await setFieldValueAsync(field, 'debug', mockManager)
+    expect(mockManager.setPath).toHaveBeenCalledWith('logging.level', 'debug')
+  })
+
+  it('returns needsRestart: false for hot-reloadable field', async () => {
+    const field = getFieldDef('logging.level')!
+    const mockManager = { setPath: vi.fn().mockResolvedValue(undefined) }
+    const result = await setFieldValueAsync(field, 'debug', mockManager)
+    expect(result.needsRestart).toBe(false)
+  })
+
+  it('returns needsRestart: true for non-hot-reloadable field', async () => {
+    const nonHotField: ConfigFieldDef = {
+      path: 'someField',
+      displayName: 'Test',
+      group: 'test',
+      type: 'string',
+      scope: 'safe',
+      hotReload: false,
+    }
+    const mockManager = { setPath: vi.fn().mockResolvedValue(undefined) }
+    const result = await setFieldValueAsync(nonHotField, 'value', mockManager)
+    expect(result.needsRestart).toBe(true)
+  })
+
+  it('throws ConfigValidationError for wrong type', async () => {
+    const field = getFieldDef('sessionStore.ttlDays')! // type: number
+    const mockManager = { setPath: vi.fn() }
+    await expect(setFieldValueAsync(field, 'not-a-number', mockManager)).rejects.toThrow(ConfigValidationError)
   })
 })

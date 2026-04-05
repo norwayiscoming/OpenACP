@@ -9,6 +9,7 @@ export class ContextManager {
   private providers: ContextProvider[] = [];
   private cache: ContextCache;
   private historyStore?: HistoryStore;
+  private sessionFlusher?: (sessionId: string) => Promise<void>;
 
   constructor(cachePath?: string) {
     this.cache = new ContextCache(cachePath ?? path.join(os.homedir(), ".openacp", "cache", "entire"));
@@ -16,6 +17,20 @@ export class ContextManager {
 
   setHistoryStore(store: HistoryStore): void {
     this.historyStore = store;
+  }
+
+  /** Register a callback that flushes in-memory recorder state for a session to disk. */
+  registerFlusher(fn: (sessionId: string) => Promise<void>): void {
+    this.sessionFlusher = fn;
+  }
+
+  /**
+   * Flush the recorder state for a session to disk before reading its context.
+   * Call this before buildContext() when switching agents to avoid a race
+   * where the last turn hasn't been persisted yet.
+   */
+  async flushSession(sessionId: string): Promise<void> {
+    if (this.sessionFlusher) await this.sessionFlusher(sessionId);
   }
 
   async getHistory(sessionId: string): Promise<SessionHistory | null> {
@@ -45,14 +60,19 @@ export class ContextManager {
 
   async buildContext(query: ContextQuery, options?: ContextOptions): Promise<ContextResult | null> {
     const queryKey = `${query.type}:${query.value}:${options?.limit ?? ""}:${options?.maxTokens ?? ""}:${options?.labelAgent ?? ""}`;
-    const cached = this.cache.get(query.repoPath, queryKey);
-    if (cached) return cached;
+
+    if (!options?.noCache) {
+      const cached = this.cache.get(query.repoPath, queryKey);
+      if (cached) return cached;
+    }
 
     for (const provider of this.providers) {
       if (!(await provider.isAvailable(query.repoPath))) continue;
       const result = await provider.buildContext(query, options);
       if (result && result.markdown) {
-        this.cache.set(query.repoPath, queryKey, result);
+        if (!options?.noCache) {
+          this.cache.set(query.repoPath, queryKey, result);
+        }
         return result;
       }
     }

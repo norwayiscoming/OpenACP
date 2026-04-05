@@ -27,7 +27,7 @@ export async function cmdUninstall(args: string[], instanceRoot?: string): Promi
   -h, --help      Show this help message
 
 \x1b[1mExamples:\x1b[0m
-  openacp uninstall @openacp/adapter-discord
+  openacp uninstall @openacp/discord-adapter
 `)
     return
   }

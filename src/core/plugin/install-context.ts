@@ -8,19 +8,17 @@ export interface CreateInstallContextOpts {
   pluginName: string
   settingsManager: SettingsManager
   basePath: string
-  legacyConfig?: Record<string, unknown>
   instanceRoot?: string
 }
 
 export function createInstallContext(opts: CreateInstallContextOpts): InstallContext {
-  const { pluginName, settingsManager, basePath, legacyConfig, instanceRoot } = opts
+  const { pluginName, settingsManager, basePath, instanceRoot } = opts
   const dataDir = path.join(basePath, pluginName, 'data')
 
   return {
     pluginName,
     terminal: createTerminalIO(),
     settings: settingsManager.createAPI(pluginName),
-    legacyConfig,
     dataDir,
     log: rootLog.child({ plugin: pluginName }),
     instanceRoot,

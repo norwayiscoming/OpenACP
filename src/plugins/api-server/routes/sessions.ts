@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import type { RouteDeps } from './types.js';
 import { NotFoundError, ServiceUnavailableError } from '../middleware/error-handler.js';
 import { requireScopes } from '../middleware/auth.js';
+import { resolveAttachments } from './attachment-utils.js';
 import {
   SessionIdParamSchema,
   ConfigIdParamSchema,
@@ -85,18 +86,22 @@ export async function sessionRoutes(
   app.post('/', { preHandler: requireScopes('sessions:write') }, async (request, reply) => {
     const body = CreateSessionBodySchema.parse(request.body ?? {});
 
-    // Check max concurrent sessions
-    const config = deps.core.configManager.get();
+    // Check max concurrent sessions (default 20; security plugin may override via plugin settings)
+    const settingsManager = deps.lifecycleManager?.settingsManager
+    const secSettings = settingsManager ? await settingsManager.loadSettings('@openacp/security') : {}
+    const maxConcurrentSessions = (secSettings.maxConcurrentSessions as number) ?? 20;
     const activeSessions = deps.core.sessionManager
       .listSessions()
       .filter((s) => s.status === 'active' || s.status === 'initializing');
-    if (activeSessions.length >= config.security.maxConcurrentSessions) {
+    if (activeSessions.length >= maxConcurrentSessions) {
       return reply.status(429).send({
-        error: `Max concurrent sessions (${config.security.maxConcurrentSessions}) reached. Cancel a session first.`,
+        error: `Max concurrent sessions (${maxConcurrentSessions}) reached. Cancel a session first.`,
       });
     }
 
-    // Resolve adapter: use explicit channel if provided, otherwise fall back to first registered adapter
+    // Resolve adapter: use explicit channel if provided, otherwise create a headless API session.
+    // Omitting channel is intentional — API callers interact via SSE + POST /prompt.
+    // Use POST /sessions/:id/attach to wire an adapter thread after creation.
     let adapterId: string | null = null;
     let adapter: InstanceType<any> | null = null;
 
@@ -110,16 +115,11 @@ export async function sessionRoutes(
       }
       adapterId = body.channel;
       adapter = deps.core.adapters.get(body.channel) ?? null;
-    } else {
-      const firstEntry = deps.core.adapters.entries().next().value;
-      if (firstEntry) {
-        [adapterId, adapter] = firstEntry;
-      }
     }
 
     const channelId = adapterId ?? 'api';
 
-    const resolvedAgent = body.agent || config.defaultAgent;
+    const resolvedAgent = body.agent || deps.core.configManager.get().defaultAgent;
     const agentDef = deps.core.agentCatalog.resolve(resolvedAgent);
     const resolvedWorkspace = deps.core.configManager.resolveWorkspace(
       body.workspace || agentDef?.workingDirectory,
@@ -171,10 +171,11 @@ export async function sessionRoutes(
     },
   );
 
-  // POST /sessions/:sessionId/prompt — send a prompt to a session
+  // POST /sessions/:sessionId/prompt — send a prompt (with optional file attachments) to a session.
+  // bodyLimit is raised to 110 MB to accommodate up to 10 attachments × ~10 MB base64 each plus prompt overhead.
   app.post<{ Params: { sessionId: string } }>(
     '/:sessionId/prompt',
-    { preHandler: requireScopes('sessions:prompt') },
+    { preHandler: requireScopes('sessions:prompt'), bodyLimit: 115_000_000 },
     async (request, reply) => {
       const { sessionId: rawId } = SessionIdParamSchema.parse(request.params);
       const sessionId = decodeURIComponent(rawId);
@@ -196,7 +197,22 @@ export async function sessionRoutes(
 
       const body = PromptBodySchema.parse(request.body);
 
-      await session.enqueuePrompt(body.prompt, undefined, {
+      // Decode base64 attachments and persist via FileService when provided
+      let attachments;
+      if (body.attachments?.length) {
+        let fileService;
+        try {
+          fileService = deps.core.fileService;
+        } catch {
+          throw new ServiceUnavailableError(
+            'FILE_SERVICE_UNAVAILABLE',
+            'File attachments are not supported: file-service plugin is not loaded',
+          );
+        }
+        attachments = await resolveAttachments(fileService, sessionId, body.attachments);
+      }
+
+      await session.enqueuePrompt(body.prompt, attachments, {
         sourceAdapterId: body.sourceAdapterId ?? 'api',
         responseAdapterId: body.responseAdapterId,
       });
@@ -235,6 +251,16 @@ export async function sessionRoutes(
       }
 
       session.permissionGate.resolve(body.optionId);
+
+      if (body.feedback) {
+        // Abort current turn so the agent doesn't respond about the refusal,
+        // then queue feedback as next prompt.
+        await session.abortPrompt().catch((err: unknown) => {
+          request.log.warn({ err }, 'Failed to abort prompt before feedback enqueue');
+        });
+        await session.enqueuePrompt(body.feedback, undefined, { sourceAdapterId: 'api' });
+      }
+
       return { ok: true };
     },
   );

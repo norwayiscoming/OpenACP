@@ -1,11 +1,11 @@
-import { exec } from 'node:child_process'
+import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import * as fs from 'node:fs/promises'
 import * as os from 'node:os'
 import * as path from 'node:path'
 import { pathToFileURL } from 'node:url'
 
-const execAsync = promisify(exec)
+const execFileAsync = promisify(execFile)
 
 /**
  * Import a package resolved from a specific directory (not the project root).
@@ -64,7 +64,7 @@ export async function installNpmPlugin(packageName: string, pluginsDir?: string)
     // Not installed, proceed with install
   }
 
-  await execAsync(`npm install ${packageName} --prefix "${dir}" --save --ignore-scripts`, {
+  await execFileAsync('npm', ['install', packageName, '--prefix', dir, '--save', '--ignore-scripts'], {
     timeout: 60000,
   })
 

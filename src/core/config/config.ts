@@ -2,29 +2,12 @@ import { z } from "zod";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
+import { randomBytes } from "node:crypto";
 import { EventEmitter } from "node:events";
 import { applyMigrations } from "./config-migrations.js";
 import { createChildLogger } from "../utils/log.js";
 import type { SettingsManager } from "../plugin/settings-manager.js";
 const log = createChildLogger({ module: "config" });
-
-const BaseChannelSchema = z
-  .object({
-    enabled: z.boolean().default(false),
-    adapter: z.string().optional(), // package name for plugin adapters
-    displayVerbosity: z
-      .enum(["low", "medium", "high"])
-      .optional(),
-    outputMode: z.enum(["low", "medium", "high"]).optional(),
-  })
-  .passthrough();
-
-const AgentSchema = z.object({
-  command: z.string(),
-  args: z.array(z.string()).default([]),
-  workingDirectory: z.string().optional(),
-  env: z.record(z.string(), z.string()).default({}),
-});
 
 const LoggingSchema = z
   .object({
@@ -40,74 +23,8 @@ const LoggingSchema = z
 
 export type LoggingConfig = z.infer<typeof LoggingSchema>;
 
-const TunnelAuthSchema = z
-  .object({
-    enabled: z.boolean().default(false),
-    token: z.string().optional(),
-  })
-  .default({});
-
-const TunnelSchema = z
-  .object({
-    enabled: z.boolean().default(false),
-    port: z.number().default(3100),
-    provider: z
-      .enum(["openacp", "cloudflare", "ngrok", "bore", "tailscale"])
-      .default("openacp"),
-    options: z.record(z.string(), z.unknown()).default({}),
-    maxUserTunnels: z.number().default(5),
-    storeTtlMinutes: z.number().default(60),
-    auth: TunnelAuthSchema,
-  })
-  .default({});
-
-export type TunnelConfig = z.infer<typeof TunnelSchema>;
-
-
-const UsageSchema = z
-  .object({
-    enabled: z.boolean().default(true),
-    monthlyBudget: z.number().optional(),
-    warningThreshold: z.number().default(0.8),
-    currency: z.string().default("USD"),
-    retentionDays: z.number().default(90),
-  })
-  .default({});
-
-export type UsageConfig = z.infer<typeof UsageSchema>;
-
-const SpeechProviderSchema = z
-  .object({
-    apiKey: z.string().min(1).optional(),
-    model: z.string().optional(),
-  })
-  .passthrough();
-
-const SpeechSchema = z
-  .object({
-    stt: z
-      .object({
-        provider: z.string().nullable().default(null),
-        providers: z.record(SpeechProviderSchema).default({}),
-      })
-      .default({}),
-    tts: z
-      .object({
-        provider: z.string().nullable().default(null),
-        providers: z.record(SpeechProviderSchema).default({}),
-      })
-      .default({}),
-  })
-  .optional()
-  .default({});
-
 export const ConfigSchema = z.object({
   instanceName: z.string().optional(),
-  channels: z
-    .object({})
-    .catchall(BaseChannelSchema)
-    .default({}),
-  agents: z.record(z.string(), AgentSchema).optional().default({}),
   defaultAgent: z.string(),
   workspace: z
     .object({
@@ -120,29 +37,14 @@ export const ConfigSchema = z.object({
         .default({}),
     })
     .default({}),
-  security: z
-    .object({
-      allowedUserIds: z.array(z.string()).default([]),
-      maxConcurrentSessions: z.number().default(20),
-      sessionTimeoutMinutes: z.number().default(60),
-    })
-    .default({}),
   logging: LoggingSchema,
   runMode: z.enum(["foreground", "daemon"]).default("foreground"),
   autoStart: z.boolean().default(false),
-  api: z
-    .object({
-      port: z.number().default(21420),
-      host: z.string().default("127.0.0.1"),
-    })
-    .default({}),
   sessionStore: z
     .object({
       ttlDays: z.number().default(30),
     })
     .default({}),
-  tunnel: TunnelSchema,
-  usage: UsageSchema,
   integrations: z
     .record(
       z.string(),
@@ -152,7 +54,6 @@ export const ConfigSchema = z.object({
       }),
     )
     .default({}),
-  speech: SpeechSchema,
   outputMode: z.enum(["low", "medium", "high"]).default("medium").optional(),
   agentSwitch: z.object({
     labelHistory: z.boolean().default(true),
@@ -169,44 +70,9 @@ export function expandHome(p: string): string {
 }
 
 const DEFAULT_CONFIG = {
-  channels: {
-    telegram: {
-      enabled: false,
-      botToken: "YOUR_BOT_TOKEN_HERE",
-      chatId: 0,
-      notificationTopicId: null,
-      assistantTopicId: null,
-    },
-    discord: {
-      enabled: false,
-      botToken: "YOUR_DISCORD_BOT_TOKEN_HERE",
-      guildId: "",
-      forumChannelId: null,
-      notificationChannelId: null,
-      assistantThreadId: null,
-    },
-  },
-  agents: {
-    claude: { command: "claude-agent-acp", args: [], env: {} },
-    codex: { command: "codex", args: ["--acp"], env: {} },
-  },
   defaultAgent: "claude",
   workspace: { baseDir: "~/openacp-workspace" },
-  security: {
-    allowedUserIds: [],
-    maxConcurrentSessions: 20,
-    sessionTimeoutMinutes: 60,
-  },
   sessionStore: { ttlDays: 30 },
-  tunnel: {
-    enabled: true,
-    port: 3100,
-    provider: "openacp",
-    options: {},
-    storeTtlMinutes: 60,
-    auth: { enabled: false },
-  },
-  usage: {},
 };
 
 export class ConfigManager extends EventEmitter {
@@ -232,7 +98,7 @@ export class ConfigManager extends EventEmitter {
       );
       log.info({ configPath: this.configPath }, "Config created");
       log.info(
-        "Please edit it with your channel credentials (Telegram bot token, Discord bot token, etc.), then restart.",
+        "Run 'openacp setup' to configure channels and agents, then restart.",
       );
       process.exit(1);
     }
@@ -282,7 +148,9 @@ export class ConfigManager extends EventEmitter {
       log.error({ errors: result.error.issues }, "Config validation failed, not saving");
       return;
     }
-    fs.writeFileSync(this.configPath, JSON.stringify(raw, null, 2));
+    const tmpPath = this.configPath + `.tmp.${randomBytes(4).toString('hex')}`;
+    fs.writeFileSync(tmpPath, JSON.stringify(raw, null, 2), "utf-8");
+    fs.renameSync(tmpPath, this.configPath);
     this.config = result.data;
     // Emit change event if path provided
     if (changePath) {
@@ -296,7 +164,7 @@ export class ConfigManager extends EventEmitter {
   }
 
   /**
-   * Set a single config value by dot-path (e.g. "security.maxConcurrentSessions").
+   * Set a single config value by dot-path (e.g. "logging.level").
    * Builds the nested update object, validates, and saves.
    * Throws if the path contains blocked keys or the value fails Zod validation.
    */
@@ -384,6 +252,12 @@ export class ConfigManager extends EventEmitter {
       { envVar: 'OPENACP_SPEECH_GROQ_API_KEY', pluginName: '@openacp/speech', key: 'groqApiKey' },
       { envVar: 'OPENACP_TELEGRAM_BOT_TOKEN', pluginName: '@openacp/telegram', key: 'botToken' },
       { envVar: 'OPENACP_TELEGRAM_CHAT_ID', pluginName: '@openacp/telegram', key: 'chatId', transform: v => Number(v) },
+      // Future adapters — no-ops if plugin settings don't exist
+      { envVar: 'OPENACP_DISCORD_BOT_TOKEN', pluginName: '@openacp/discord-adapter', key: 'botToken' },
+      { envVar: 'OPENACP_DISCORD_GUILD_ID', pluginName: '@openacp/discord-adapter', key: 'guildId' },
+      { envVar: 'OPENACP_SLACK_BOT_TOKEN', pluginName: '@openacp/slack-adapter', key: 'botToken' },
+      { envVar: 'OPENACP_SLACK_APP_TOKEN', pluginName: '@openacp/slack-adapter', key: 'appToken' },
+      { envVar: 'OPENACP_SLACK_SIGNING_SECRET', pluginName: '@openacp/slack-adapter', key: 'signingSecret' },
     ];
 
     for (const { envVar, pluginName, key, transform } of pluginOverrides) {
@@ -398,16 +272,8 @@ export class ConfigManager extends EventEmitter {
 
   private applyEnvOverrides(raw: Record<string, unknown>): void {
     const overrides: [string, string[]][] = [
-      ["OPENACP_TELEGRAM_BOT_TOKEN", ["channels", "telegram", "botToken"]],
-      ["OPENACP_TELEGRAM_CHAT_ID", ["channels", "telegram", "chatId"]],
-      ["OPENACP_DISCORD_BOT_TOKEN", ["channels", "discord", "botToken"]],
-      ["OPENACP_DISCORD_GUILD_ID", ["channels", "discord", "guildId"]],
-      ["OPENACP_SLACK_BOT_TOKEN", ["channels", "slack", "botToken"]],
-      ["OPENACP_SLACK_APP_TOKEN", ["channels", "slack", "appToken"]],
-      ["OPENACP_SLACK_SIGNING_SECRET", ["channels", "slack", "signingSecret"]],
       ["OPENACP_DEFAULT_AGENT", ["defaultAgent"]],
       ["OPENACP_RUN_MODE", ["runMode"]],
-      ["OPENACP_API_PORT", ["api", "port"]],
     ];
     for (const [envVar, configPath] of overrides) {
       const value = process.env[envVar];
@@ -418,9 +284,7 @@ export class ConfigManager extends EventEmitter {
           target = target[configPath[i]] as Record<string, unknown>;
         }
         const key = configPath[configPath.length - 1];
-        // Convert numeric fields to number
-        target[key] =
-          key === "chatId" || key === "port" ? Number(value) : value;
+        target[key] = value;
       }
     }
 
@@ -439,51 +303,15 @@ export class ConfigManager extends EventEmitter {
       raw.logging = raw.logging || {};
       (raw.logging as Record<string, unknown>).level = "debug";
     }
-
-    // Tunnel env var overrides
-    if (process.env.OPENACP_TUNNEL_ENABLED) {
-      raw.tunnel = raw.tunnel || {};
-      (raw.tunnel as Record<string, unknown>).enabled =
-        process.env.OPENACP_TUNNEL_ENABLED === "true";
-    }
-    if (process.env.OPENACP_TUNNEL_PORT) {
-      raw.tunnel = raw.tunnel || {};
-      (raw.tunnel as Record<string, unknown>).port = Number(
-        process.env.OPENACP_TUNNEL_PORT,
-      );
-    }
-    if (process.env.OPENACP_TUNNEL_PROVIDER) {
-      raw.tunnel = raw.tunnel || {};
-      (raw.tunnel as Record<string, unknown>).provider =
-        process.env.OPENACP_TUNNEL_PROVIDER;
-    }
-
-    // Speech env var overrides
-    if (process.env.OPENACP_SPEECH_STT_PROVIDER) {
-      raw.speech = raw.speech || {};
-      const speech = raw.speech as Record<string, unknown>;
-      speech.stt = speech.stt || {};
-      (speech.stt as Record<string, unknown>).provider =
-        process.env.OPENACP_SPEECH_STT_PROVIDER;
-    }
-    if (process.env.OPENACP_SPEECH_GROQ_API_KEY) {
-      raw.speech = raw.speech || {};
-      const speech = raw.speech as Record<string, unknown>;
-      speech.stt = speech.stt || {};
-      const stt = speech.stt as Record<string, unknown>;
-      stt.providers = stt.providers || {};
-      const providers = stt.providers as Record<string, unknown>;
-      providers.groq = providers.groq || {};
-      (providers.groq as Record<string, unknown>).apiKey =
-        process.env.OPENACP_SPEECH_GROQ_API_KEY;
-    }
   }
 
   private deepMerge(
     target: Record<string, unknown>,
     source: Record<string, unknown>,
   ): void {
+    const DANGEROUS_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
     for (const key of Object.keys(source)) {
+      if (DANGEROUS_KEYS.has(key)) continue;
       const val = source[key];
       if (val && typeof val === "object" && !Array.isArray(val)) {
         if (!target[key]) target[key] = {};

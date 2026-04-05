@@ -64,7 +64,7 @@ Requires an existing config — run 'openacp' first to set up.
         port = parseInt(portStr) || null
       } catch {
         // Fall back to configured port
-        port = config.api.port ?? null
+        port = 21420
       }
       jsonSuccess({
         pid: result.pid,

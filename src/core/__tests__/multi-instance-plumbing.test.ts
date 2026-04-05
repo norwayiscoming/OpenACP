@@ -105,38 +105,6 @@ describe('AgentCatalog cachePath isolation', () => {
   })
 })
 
-describe('Config migration with custom configDir', () => {
-  let tmpDir: string
-
-  beforeEach(() => {
-    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'migration-test-'))
-  })
-
-  afterEach(() => {
-    fs.rmSync(tmpDir, { recursive: true, force: true })
-  })
-
-  it('migrate-agents-to-store uses ctx.configDir when provided', async () => {
-    const { applyMigrations } = await import('../config/config-migrations.js')
-
-    const raw: Record<string, unknown> = {
-      agents: {
-        claude: { command: 'claude-agent-acp', args: [], env: {} },
-      },
-      defaultAgent: 'claude',
-    }
-
-    const { changed } = applyMigrations(raw, undefined, { configDir: tmpDir })
-
-    // Migration should have created agents.json in tmpDir (not ~/.openacp)
-    expect(changed).toBe(true)
-    const agentsPath = path.join(tmpDir, 'agents.json')
-    expect(fs.existsSync(agentsPath)).toBe(true)
-    const data = JSON.parse(fs.readFileSync(agentsPath, 'utf-8'))
-    expect(data.installed.claude).toBeDefined()
-  })
-})
-
 describe('InstanceRegistry edge cases', () => {
   let tmpDir: string
   let registryPath: string

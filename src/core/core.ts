@@ -583,8 +583,8 @@ export class OpenACPCore {
       };
     }
 
-    // 3. Check session limit
-    const maxSessions = this.configManager.get().security.maxConcurrentSessions;
+    // 3. Check session limit (default 20; security plugin may override via plugin settings)
+    const maxSessions = 20;
     if (this.sessionManager.listSessions().length >= maxSessions) {
       return {
         ok: false,

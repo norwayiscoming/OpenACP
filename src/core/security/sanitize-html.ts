@@ -1,20 +1,51 @@
+import sanitizeHtmlLib from "sanitize-html";
+
+const ALLOWED_TAGS = [
+  "b",
+  "i",
+  "u",
+  "em",
+  "strong",
+  "a",
+  "code",
+  "pre",
+  "br",
+  "p",
+  "ul",
+  "ol",
+  "li",
+  "blockquote",
+  "h1",
+  "h2",
+  "h3",
+  "h4",
+  "h5",
+  "h6",
+  "span",
+  "div",
+  "hr",
+  "s",
+  "strike",
+  "del",
+  "sub",
+  "sup",
+  "table",
+  "thead",
+  "tbody",
+  "tr",
+  "th",
+  "td",
+];
+
+const SANITIZE_OPTIONS: sanitizeHtmlLib.IOptions = {
+  allowedTags: ALLOWED_TAGS,
+  allowedAttributes: {
+    a: ["href"],
+  },
+  allowedSchemes: ["http", "https", "mailto"],
+  disallowedTagsMode: "discard",
+};
+
 export function sanitizeHtml(html: string): string {
-  let result = html;
-
-  // Strip <script> tags and content (case-insensitive, handles nesting)
-  for (let i = 0; i < 3; i++) {
-    result = result.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, "");
-  }
-  result = result.replace(/<\/?script\b[^>]*>/gi, "");
-
-  // Remove all on* event handler attributes
-  result = result.replace(/\s+on\w+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]*)/gi, "");
-
-  // Remove javascript: and data: URIs from href and src attributes
-  result = result.replace(
-    /(href|src)\s*=\s*(?:"(?:javascript|data):[^"]*"|'(?:javascript|data):[^']*')/gi,
-    '$1=""',
-  );
-
-  return result;
+  return sanitizeHtmlLib(html, SANITIZE_OPTIONS);
 }

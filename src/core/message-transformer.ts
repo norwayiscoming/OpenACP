@@ -192,6 +192,22 @@ export class MessageTransformer {
     }
   }
 
+  /** Clear cached entries whose key starts with the given prefix. */
+  clearSessionCaches(prefix: string): void {
+    for (const key of this.toolRawInputCache.keys()) {
+      if (key.startsWith(prefix)) this.toolRawInputCache.delete(key);
+    }
+    for (const key of this.toolViewerCache.keys()) {
+      if (key.startsWith(prefix)) this.toolViewerCache.delete(key);
+    }
+  }
+
+  /** Clear all caches. */
+  clearCaches(): void {
+    this.toolRawInputCache.clear();
+    this.toolViewerCache.clear();
+  }
+
   /** Check if rawInput is a non-empty object (not null, not {}) */
   private isNonEmptyInput(input: unknown): input is Record<string, unknown> {
     return input !== null && input !== undefined && typeof input === "object" && !Array.isArray(input) && Object.keys(input as object).length > 0;

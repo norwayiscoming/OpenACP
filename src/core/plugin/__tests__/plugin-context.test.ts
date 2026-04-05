@@ -163,6 +163,37 @@ describe('PluginContext sendMessage', () => {
   })
 })
 
+describe('registerEditableFields', () => {
+  it('throws without commands:register permission', () => {
+    const { ctx } = makeContext([])
+    expect(() => ctx.registerEditableFields([
+      { key: 'token', displayName: 'Token', type: 'string', scope: 'sensitive' },
+    ])).toThrow(/commands:register/)
+  })
+
+  it('registers fields into the field-registry service', () => {
+    const { ctx, serviceRegistry } = makeContext(['commands:register'])
+    const mockRegistry = { register: vi.fn() }
+    serviceRegistry.register('field-registry', mockRegistry, 'system')
+
+    ctx.registerEditableFields([
+      { key: 'botToken', displayName: 'Bot Token', type: 'string', scope: 'sensitive' },
+    ])
+
+    expect(mockRegistry.register).toHaveBeenCalledWith(
+      expect.any(String), // pluginName
+      [{ key: 'botToken', displayName: 'Bot Token', type: 'string', scope: 'sensitive' }],
+    )
+  })
+
+  it('is a no-op when field-registry service is not registered', () => {
+    const { ctx } = makeContext(['commands:register'])
+    expect(() => ctx.registerEditableFields([
+      { key: 'x', displayName: 'X', type: 'string', scope: 'safe' },
+    ])).not.toThrow()
+  })
+})
+
 describe('PluginContext cleanup', () => {
   it('auto-cleans event listeners on cleanup()', () => {
     const { ctx, eventBus } = makeContext(['events:read'])

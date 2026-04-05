@@ -31,8 +31,17 @@ export const agentsCheck: DoctorCheck = {
       return results;
     }
 
-    const agents = ctx.config.agents;
     const defaultAgent = ctx.config.defaultAgent;
+
+    // Read agents from agents.json (agents were migrated out of config.json)
+    let agents: Record<string, { command: string }> = {};
+    try {
+      const agentsPath = path.join(ctx.dataDir, "agents.json");
+      if (fs.existsSync(agentsPath)) {
+        const data = JSON.parse(fs.readFileSync(agentsPath, "utf-8"));
+        agents = data.installed ?? {};
+      }
+    } catch { /* proceed with empty agents */ }
 
     if (!agents[defaultAgent]) {
       results.push({
@@ -43,15 +52,17 @@ export const agentsCheck: DoctorCheck = {
 
     for (const [name, agent] of Object.entries(agents)) {
       const isDefault = name === defaultAgent;
-      if (commandExists(agent.command)) {
+      const agentEntry = agent as { command?: string };
+      const agentCommand = agentEntry.command ?? name;
+      if (commandExists(agentCommand)) {
         results.push({
           status: "pass",
-          message: `${agent.command} found${isDefault ? " (default)" : ""}`,
+          message: `${agentCommand} found${isDefault ? " (default)" : ""}`,
         });
       } else {
         results.push({
           status: isDefault ? "fail" : "warn",
-          message: `${agent.command} not found in PATH${isDefault ? " (default agent!)" : ""}`,
+          message: `${agentCommand} not found in PATH${isDefault ? " (default agent!)" : ""}`,
         });
       }
     }

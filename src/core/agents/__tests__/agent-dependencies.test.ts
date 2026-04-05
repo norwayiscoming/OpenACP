@@ -39,6 +39,14 @@ describe("agent-dependencies", () => {
       const caps = getAgentCapabilities("unknown");
       expect(caps.supportsResume).toBe(false);
     });
+
+    it("returns opencode resume and plugin integration", () => {
+      const caps = getAgentCapabilities("opencode");
+      expect(caps.supportsResume).toBe(true);
+      expect(caps.resumeCommand?.("sess-123")).toBe("opencode --session sess-123");
+      expect(caps.integration?.strategy).toBe("plugin");
+      expect(caps.integration?.handoffCommandName).toBe("openacp:handoff");
+    });
   });
 
   describe("REGISTRY_AGENT_ALIASES", () => {

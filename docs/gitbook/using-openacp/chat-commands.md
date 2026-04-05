@@ -55,7 +55,7 @@ Create a new agent session. If you omit arguments, OpenACP walks you through an 
 /new claude ~/code/my-project # create directly
 ```
 
-On Telegram, each session gets its own forum topic. On Discord, a new thread is created in the configured channel.
+On Telegram, each session gets its own topic. On Discord, a new thread is created in the configured channel.
 
 ### `/newchat`
 

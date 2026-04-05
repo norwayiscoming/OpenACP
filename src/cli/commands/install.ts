@@ -20,7 +20,7 @@ export async function cmdInstall(args: string[], instanceRoot?: string): Promise
   openacp install <package>
 
 \x1b[1mArguments:\x1b[0m
-  <package>       npm package name (e.g. @openacp/adapter-discord)
+  <package>       npm package name (e.g. @openacp/discord-adapter)
 
 Installs the plugin to ~/.openacp/plugins/.
 
@@ -29,7 +29,7 @@ Installs the plugin to ~/.openacp/plugins/.
   -h, --help      Show this help message
 
 \x1b[1mExamples:\x1b[0m
-  openacp install @openacp/adapter-discord
+  openacp install @openacp/discord-adapter
 `)
     return
   }

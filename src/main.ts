@@ -14,6 +14,7 @@ import { registerSystemCommands } from './core/commands/index.js'
 import type { IChannelAdapter } from './core/channel.js'
 import type { TunnelService } from './plugins/tunnel/tunnel-service.js'
 import { InstanceRegistry } from './core/instance/instance-registry.js'
+import { PluginFieldRegistry } from './core/plugin/plugin-field-registry.js'
 import { randomUUID } from 'node:crypto'
 import fs from 'node:fs'
 
@@ -90,7 +91,7 @@ export async function startServer(opts?: StartServerOptions) {
 
   // First boot: auto-register built-in plugins if registry is empty
   if (pluginRegistry.list().size === 0) {
-    await autoRegisterBuiltinPlugins(settingsManager, pluginRegistry, configManager)
+    await autoRegisterBuiltinPlugins(settingsManager, pluginRegistry)
   }
 
   // Show banner in foreground TTY mode (not daemon, not piped)
@@ -128,6 +129,9 @@ export async function startServer(opts?: StartServerOptions) {
   const commandRegistry = new CommandRegistry()
   const serviceRegistry = core.lifecycleManager.serviceRegistry
   serviceRegistry.register('command-registry', commandRegistry, 'core')
+
+  const fieldRegistry = new PluginFieldRegistry()
+  serviceRegistry.register('field-registry', fieldRegistry, 'core')
 
   // 3c. Register system commands
   registerSystemCommands(commandRegistry, core)
@@ -461,7 +465,7 @@ export async function startServer(opts?: StartServerOptions) {
     }
 
     const apiSvc = core.lifecycleManager.serviceRegistry.get<import('./plugins/api-server/service.js').ApiServerService>('api-server')
-    const apiPort = apiSvc ? apiSvc.getPort() : (config.api?.port ?? 21420)
+    const apiPort = apiSvc ? apiSvc.getPort() : 21420
     if (apiSvc) ok(`API server on port ${apiPort}`)
 
     // Links as plain text — easily copyable
@@ -474,17 +478,16 @@ export async function startServer(opts?: StartServerOptions) {
     console.log(`\nOpenACP is running. Press Ctrl+C to stop.\n`)
     unmuteLogger()
   }
-  log.debug({ agents: Object.keys(config.agents) }, 'OpenACP started')
+  log.debug('OpenACP started')
 }
 
 /**
- * Auto-register all built-in plugins when the registry is empty (first boot with new plugin system,
- * or upgrade from legacy config). Also runs legacy config migration for each plugin.
+ * Auto-register all built-in plugins when the registry is empty (first boot with new plugin system).
+ * For each plugin that has an install() hook and no existing settings, run install() silently.
  */
 async function autoRegisterBuiltinPlugins(
   settingsManager: SettingsManager,
   pluginRegistry: PluginRegistry,
-  configManager: ConfigManager,
 ): Promise<void> {
   const allPlugins = [
     { name: '@openacp/security', version: '1.0.0', description: 'User access control and session limits' },
@@ -498,54 +501,40 @@ async function autoRegisterBuiltinPlugins(
     { name: '@openacp/telegram', version: '1.0.0', description: 'Telegram adapter with forum topics' },
   ]
 
-  // Try to read legacy config for migration
-  let legacyConfig: Record<string, unknown> | undefined
-  try {
-    const cfg = configManager.get()
-    if (cfg && typeof cfg === 'object') {
-      legacyConfig = cfg as unknown as Record<string, unknown>
-    }
-  } catch {
-    // No config loaded yet — skip migration
-  }
+  // Run install() for each plugin that has no existing settings
+  const pluginModules = await Promise.allSettled([
+    import('./plugins/security/index.js'),
+    import('./plugins/file-service/index.js'),
+    import('./plugins/context/index.js'),
+    import('./plugins/speech/index.js'),
+    import('./plugins/notifications/index.js'),
+    import('./plugins/tunnel/index.js'),
+    import('./plugins/api-server/index.js'),
+    import('./plugins/sse-adapter/index.js'),
+    import('./plugins/telegram/index.js'),
+  ])
 
-  // Run legacy migration for each plugin silently
-  if (legacyConfig) {
-    const pluginModules = await Promise.allSettled([
-      import('./plugins/security/index.js'),
-      import('./plugins/file-service/index.js'),
-      import('./plugins/context/index.js'),
-      import('./plugins/speech/index.js'),
-      import('./plugins/notifications/index.js'),
-      import('./plugins/tunnel/index.js'),
-      import('./plugins/api-server/index.js'),
-      import('./plugins/sse-adapter/index.js'),
-      import('./plugins/telegram/index.js'),
-    ])
+  for (const result of pluginModules) {
+    if (result.status !== 'fulfilled') continue
+    const plugin = result.value.default
+    if (plugin?.install) {
+      try {
+        // Check if settings already exist
+        const existing = await settingsManager.loadSettings(plugin.name)
+        if (Object.keys(existing).length > 0) continue
 
-    for (const result of pluginModules) {
-      if (result.status !== 'fulfilled') continue
-      const plugin = result.value.default
-      if (plugin?.install) {
-        try {
-          // Check if settings already exist
-          const existing = await settingsManager.loadSettings(plugin.name)
-          if (Object.keys(existing).length > 0) continue
-
-          // Create a silent install context for migration only
-          const { createInstallContext } = await import('./core/plugin/install-context.js')
-          const ctx = createInstallContext({
-            pluginName: plugin.name,
-            settingsManager,
-            basePath: settingsManager.getBasePath(),
-            legacyConfig,
-          })
-          // Override terminal to be silent
-          ctx.terminal = createSilentTerminal()
-          await plugin.install(ctx)
-        } catch {
-          // Silently skip — migration is best-effort
-        }
+        // Create a silent install context
+        const { createInstallContext } = await import('./core/plugin/install-context.js')
+        const ctx = createInstallContext({
+          pluginName: plugin.name,
+          settingsManager,
+          basePath: settingsManager.getBasePath(),
+        })
+        // Override terminal to be silent
+        ctx.terminal = createSilentTerminal()
+        await plugin.install(ctx)
+      } catch {
+        // Silently skip — install is best-effort
       }
     }
   }

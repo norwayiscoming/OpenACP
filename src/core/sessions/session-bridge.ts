@@ -93,10 +93,17 @@ export class SessionBridge {
     if (this.connected) return;
     this.connected = true;
 
-    // Wire agent events to session (agent → session relay)
-    this.listen(this.session.agentInstance, "agent_event", (event: AgentEvent) => {
-      this.session.emit("agent_event", event);
-    });
+    // Wire agent events to session (agent → session relay).
+    // Only wire once per session per agentInstance — multiple bridges share the same
+    // session, so without this guard the relay would fire N times for N bridges.
+    // When the agent is swapped (disconnect → swap → reconnect), the relay is re-wired
+    // to the new agentInstance because agentRelaySource no longer matches.
+    if (this.session.agentRelaySource !== this.session.agentInstance) {
+      this.listen(this.session.agentInstance, "agent_event", (event: AgentEvent) => {
+        this.session.emit("agent_event", event);
+      });
+      this.session.agentRelaySource = this.session.agentInstance;
+    }
 
     // Wire session events to adapter (session → adapter dispatch)
     this.listen(this.session, "agent_event", (event: AgentEvent) => {
@@ -212,6 +219,8 @@ export class SessionBridge {
     if (current?.__bridgeId === this.adapterId) {
       this.session.agentInstance.onPermissionRequest = async () => "";
     }
+    // Clean up transformer caches for this session
+    this.deps.messageTransformer.clearSessionCaches?.(this.session.id);
   }
 
   /** Dispatch an agent event through middleware and to the adapter */

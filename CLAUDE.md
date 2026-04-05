@@ -81,7 +81,7 @@ All features are plugins. Core only provides infrastructure (ServiceRegistry, Mi
 
 ### Adapter Patterns
 
-- **Forum topics** (Telegram): Each session gets its own topic
+- **Topics** (Telegram): Each session gets its own topic
 - **Callback routing**: Permission buttons use `p:` prefix, command buttons use `c/` prefix
 - **Response renderers**: Adapters render CommandResponse types (text, menu, list, confirm, error, silent) per platform
 

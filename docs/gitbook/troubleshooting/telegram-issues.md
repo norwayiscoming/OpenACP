@@ -14,7 +14,7 @@ If you haven't finished initial setup, see the [Telegram Setup guide](../platfor
 
 **Solution:**
 1. Open your Telegram group → **Edit → Administrators** → add your bot and enable at minimum "Manage Topics".
-2. Confirm the chat ID in `~/.openacp/config.json` matches the group. The ID of a supergroup is negative (e.g., `-1001234567890`).
+2. Confirm the chat ID in `~/.openacp/config.json` matches the group. The ID of a group is negative (e.g., `-1001234567890`).
 3. Restart OpenACP after making changes.
 
 ---
@@ -23,25 +23,42 @@ If you haven't finished initial setup, see the [Telegram Setup guide](../platfor
 
 **Symptoms:** OpenACP logs show `Not enough rights` or `TOPIC_CLOSED` errors when trying to send messages.
 
-**Cause:** The bot lacks administrator permissions in the group, or topics (forum mode) are not enabled.
+**Cause:** The bot lacks administrator permissions in the group, or Topics are not enabled.
 
 **Solution:**
 1. Promote the bot to administrator in the group settings.
-2. Enable Topics: **Group Settings → Topics → Enable**.
-3. The group must be a **supergroup** — regular groups do not support topics. Convert it via **Group Settings → Advanced → Convert to Supergroup**.
+2. Enable Topics: **Group Settings → Edit → Topics**.
+3. In the bot's admin settings, ensure "Manage Topics" is enabled.
 
 ---
 
 ### Topics are not created on startup
 
-**Symptoms:** OpenACP starts without error but no "Notifications" or "Assistant" topics appear in the group.
+**Symptoms:** OpenACP starts but no "Notifications" or "Assistant" topics appear.
 
-**Cause:** The group does not have forum/topics mode enabled, or the bot is not an admin with topic management rights.
+**Cause:** Either Topics are not enabled on the group, or the bot lacks the "Manage Topics" admin permission.
+
+**New behavior (automatic):** OpenACP detects this at startup and sends a message to the group's **General** topic listing exactly what needs to be fixed. It then retries every 30 seconds automatically. Once the issues are resolved, topics are created and a confirmation message is sent.
+
+**If you don't see the setup message:**
+1. Confirm the bot is a member of the group.
+2. Check logs for error details.
+3. Run `openacp doctor` to diagnose.
+
+---
+
+### Bot cannot manage topics
+
+**Symptoms:** Topics are enabled, but the bot still cannot create session topics. Logs may show `Not enough rights to manage forum topics`.
+
+**Cause:** The bot is an admin but the "Manage Topics" permission is not enabled in its admin role.
 
 **Solution:**
-1. Enable forum mode: **Group Settings → Topics → Enable**.
-2. Ensure the bot has "Manage Topics" permission under its administrator role.
-3. Delete any stale `notificationTopicId` / `assistantTopicId` values from `~/.openacp/config.json` so OpenACP recreates them on next start.
+1. Open the group in Telegram.
+2. Go to **Group Settings → Administrators**.
+3. Select your bot.
+4. Enable the **Manage Topics** toggle.
+5. Save. OpenACP will detect this within 30 seconds and complete setup automatically.
 
 ---
 
@@ -54,7 +71,7 @@ If you haven't finished initial setup, see the [Telegram Setup guide](../platfor
 **Solution:**
 1. Add the bot to your group if you haven't already.
 2. Run `openacp doctor` — it calls `getChat` and reports the exact error from the Telegram API.
-3. If the ID looks correct, check that it is a negative integer for supergroups.
+3. If the ID looks correct, check that it is a negative integer for groups.
 
 ---
 

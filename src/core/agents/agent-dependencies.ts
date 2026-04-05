@@ -14,7 +14,8 @@ export interface AgentSetupInfo {
   loginCommand?: string;
 }
 
-export interface AgentIntegrationSpec {
+export interface AgentHooksIntegrationSpec {
+  strategy: "hooks";
   hookEvent: string;
   settingsPath: string;
   settingsFormat: "settings_json" | "hooks_json";
@@ -27,6 +28,18 @@ export interface AgentIntegrationSpec {
   sessionIdVar?: string;
   workingDirVar?: string;
 }
+
+export interface AgentPluginIntegrationSpec {
+  strategy: "plugin";
+  pluginProvider: "opencode";
+  commandsPath: string;
+  pluginsPath: string;
+  handoffCommandName: string;
+  handoffCommandFile: string;
+  pluginFileName: string;
+}
+
+export type AgentIntegrationSpec = AgentHooksIntegrationSpec | AgentPluginIntegrationSpec;
 
 export interface AgentCapability {
   supportsResume: boolean;
@@ -188,6 +201,7 @@ const AGENT_CAPABILITIES: Record<string, AgentCapability> = {
     supportsResume: true,
     resumeCommand: (sid) => `claude --resume ${sid}`,
     integration: {
+      strategy: "hooks",
       hookEvent: "UserPromptSubmit",
       settingsPath: "~/.claude/settings.json",
       settingsFormat: "settings_json",
@@ -205,6 +219,7 @@ const AGENT_CAPABILITIES: Record<string, AgentCapability> = {
     supportsResume: true,
     resumeCommand: (sid) => `cursor --resume ${sid}`,
     integration: {
+      strategy: "hooks",
       hookEvent: "beforeSubmitPrompt",
       settingsPath: "~/.cursor/hooks.json",
       settingsFormat: "hooks_json",
@@ -220,6 +235,7 @@ const AGENT_CAPABILITIES: Record<string, AgentCapability> = {
     supportsResume: true,
     resumeCommand: (sid) => `gemini --resume ${sid}`,
     integration: {
+      strategy: "hooks",
       hookEvent: "BeforeAgent",
       settingsPath: "~/.gemini/settings.json",
       settingsFormat: "settings_json",
@@ -232,6 +248,7 @@ const AGENT_CAPABILITIES: Record<string, AgentCapability> = {
     supportsResume: true,
     resumeCommand: () => `cline --continue`,
     integration: {
+      strategy: "hooks",
       hookEvent: "TaskStart",
       settingsPath: "~/.cline/settings.json",
       settingsFormat: "settings_json",
@@ -251,6 +268,19 @@ const AGENT_CAPABILITIES: Record<string, AgentCapability> = {
   amp: {
     supportsResume: true,
     resumeCommand: (sid) => `amp threads continue ${sid}`,
+  },
+  opencode: {
+    supportsResume: true,
+    resumeCommand: (sid) => `opencode --session ${sid}`,
+    integration: {
+      strategy: "plugin",
+      pluginProvider: "opencode",
+      commandsPath: "~/.config/opencode/commands/",
+      pluginsPath: "~/.config/opencode/plugins/",
+      handoffCommandName: "openacp:handoff",
+      handoffCommandFile: "openacp-handoff.md",
+      pluginFileName: "openacp-handoff.js",
+    },
   },
 };
 

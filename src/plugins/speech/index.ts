@@ -18,27 +18,8 @@ const speechPlugin: OpenACPPlugin = {
   inheritableKeys: ['ttsProvider', 'ttsVoice'],
 
   async install(ctx: InstallContext) {
-    const { terminal, settings, legacyConfig } = ctx
+    const { terminal, settings } = ctx
     const pluginsDir = ctx.instanceRoot ? path.join(ctx.instanceRoot, 'plugins') : undefined
-
-    // Migrate from legacy config if present
-    if (legacyConfig) {
-      const speechCfg = legacyConfig.speech as Record<string, unknown> | undefined
-      if (speechCfg) {
-        const stt = speechCfg.stt as Record<string, unknown> | undefined
-        const tts = speechCfg.tts as Record<string, unknown> | undefined
-        const groqProviders = stt?.providers as Record<string, unknown> | undefined
-        const groqConfig = groqProviders?.groq as Record<string, unknown> | undefined
-        await settings.setAll({
-          sttProvider: stt?.provider ?? null,
-          groqApiKey: groqConfig?.apiKey ?? '',
-          ttsProvider: tts?.provider ?? 'edge-tts',
-          ttsVoice: '',
-        })
-        terminal.log.success('Speech settings migrated from legacy config')
-        return
-      }
-    }
 
     // Interactive setup
     const enableStt = await terminal.confirm({
@@ -138,6 +119,12 @@ const speechPlugin: OpenACPPlugin = {
   },
 
   async setup(ctx) {
+    ctx.registerEditableFields([
+      { key: 'sttProvider', displayName: 'Speech to Text', type: 'select', scope: 'safe', hotReload: true, options: ['groq'] },
+      { key: 'groqApiKey', displayName: 'STT API Key', type: 'string', scope: 'sensitive', hotReload: true },
+      { key: 'ttsProvider', displayName: 'Text to Speech', type: 'select', scope: 'safe', hotReload: true, options: ['edge-tts'] },
+    ])
+
     const pluginsDir = ctx.instanceRoot ? path.join(ctx.instanceRoot, 'plugins') : undefined
     const config = ctx.pluginConfig as Record<string, unknown>
     const groqApiKey = config.groqApiKey as string | undefined

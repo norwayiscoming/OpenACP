@@ -2,7 +2,11 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync, unlinkSync, chmodSy
 import { join, dirname } from "node:path";
 import { homedir } from "node:os";
 import { getAgentCapabilities, commandExists, listAgentsWithIntegration } from "../core/agents/agent-dependencies.js";
-import type { AgentIntegrationSpec } from "../core/agents/agent-dependencies.js";
+import type {
+  AgentIntegrationSpec,
+  AgentHooksIntegrationSpec,
+  AgentPluginIntegrationSpec,
+} from "../core/agents/agent-dependencies.js";
 
 export interface IntegrationResult {
   success: boolean;
@@ -24,13 +28,21 @@ export interface AgentIntegration {
 
 const HOOK_MARKER = "openacp-inject-session.sh";
 
+function isPluginIntegrationSpec(spec: AgentIntegrationSpec): spec is AgentPluginIntegrationSpec {
+  return spec.strategy === "plugin";
+}
+
+function isHooksIntegrationSpec(spec: AgentIntegrationSpec): spec is AgentHooksIntegrationSpec {
+  return spec.strategy === "hooks";
+}
+
 function expandPath(p: string): string {
   return p.replace(/^~/, homedir());
 }
 
 // --- Script generators ---
 
-function generateInjectScript(_agentKey: string, spec: AgentIntegrationSpec): string {
+function generateInjectScript(_agentKey: string, spec: AgentHooksIntegrationSpec): string {
   const sidVar = spec.sessionIdVar ?? "SESSION_ID";
   const cwdVar = spec.workingDirVar ?? "WORKING_DIR";
 
@@ -131,7 +143,7 @@ User: "I want to see this React app on my phone"
 `;
 }
 
-function generateHandoffCommand(_agentKey: string, spec: AgentIntegrationSpec): string {
+function generateHandoffCommand(_agentKey: string, spec: AgentHooksIntegrationSpec): string {
   const sidVar = spec.sessionIdVar ?? "SESSION_ID";
   const cwdVar = spec.workingDirVar ?? "WORKING_DIR";
   const hooksDir = expandPath(spec.hooksDirPath);
@@ -151,6 +163,44 @@ Usage: /openacp:handoff [channel]
 Examples:
   /openacp:handoff
   /openacp:handoff telegram
+`;
+}
+
+function generateOpencodeHandoffCommand(spec: AgentPluginIntegrationSpec): string {
+  return `---
+name: ${spec.handoffCommandName}
+description: Transfer current OpenCode session to OpenACP (Telegram/Discord)
+---
+
+Use OPENCODE_SESSION_ID from injected context, then run:
+
+openacp adopt opencode <OPENCODE_SESSION_ID>
+
+If a channel argument is provided, append:
+
+--channel <channel_name>
+
+Usage:
+  /${spec.handoffCommandName}
+  /${spec.handoffCommandName} telegram
+`;
+}
+
+function generateOpencodePlugin(spec: AgentPluginIntegrationSpec): string {
+  return `export const OpenACPHandoffPlugin = async () => {
+  return {
+    "command.execute.before": async (input, output) => {
+      if (input.command !== ${JSON.stringify(spec.handoffCommandName)}) return
+      output.parts.unshift({
+        id: "openacp-session-inject",
+        sessionID: input.sessionID,
+        messageID: "openacp-inject",
+        type: "text",
+        text: \`OPENCODE_SESSION_ID: \${input.sessionID}\\n\`,
+      })
+    },
+  }
+}
 `;
 }
 
@@ -254,7 +304,7 @@ function removeFromHooksJson(settingsPath: string, hookEvent: string): void {
 
 // --- Core install/uninstall ---
 
-export async function installIntegration(agentKey: string, spec: AgentIntegrationSpec): Promise<IntegrationResult> {
+async function installHooksIntegration(agentKey: string, spec: AgentHooksIntegrationSpec): Promise<IntegrationResult> {
   const logs: string[] = [];
   try {
     // Check jq
@@ -313,7 +363,7 @@ export async function installIntegration(agentKey: string, spec: AgentIntegratio
   }
 }
 
-export async function uninstallIntegration(agentKey: string, spec: AgentIntegrationSpec): Promise<IntegrationResult> {
+async function uninstallHooksIntegration(agentKey: string, spec: AgentHooksIntegrationSpec): Promise<IntegrationResult> {
   const logs: string[] = [];
   try {
     const hooksDir = expandPath(spec.hooksDirPath);
@@ -361,26 +411,107 @@ export async function uninstallIntegration(agentKey: string, spec: AgentIntegrat
   }
 }
 
+async function installPluginIntegration(_agentKey: string, spec: AgentPluginIntegrationSpec): Promise<IntegrationResult> {
+  const logs: string[] = [];
+  try {
+    const commandsDir = expandPath(spec.commandsPath);
+    mkdirSync(commandsDir, { recursive: true });
+    const commandPath = join(commandsDir, spec.handoffCommandFile);
+
+    const pluginsDir = expandPath(spec.pluginsPath);
+    mkdirSync(pluginsDir, { recursive: true });
+    const pluginPath = join(pluginsDir, spec.pluginFileName);
+
+    if (existsSync(commandPath) && existsSync(pluginPath)) {
+      logs.push("Already installed, skipping.");
+      return { success: true, logs };
+    }
+
+    if (existsSync(commandPath) || existsSync(pluginPath)) {
+      logs.push("Overwriting existing files.");
+    }
+
+    writeFileSync(commandPath, generateOpencodeHandoffCommand(spec));
+    logs.push(`Created ${commandPath}`);
+
+    writeFileSync(pluginPath, generateOpencodePlugin(spec));
+    logs.push(`Created ${pluginPath}`);
+
+    return { success: true, logs };
+  } catch (err) {
+    logs.push(`Error: ${err instanceof Error ? err.message : String(err)}`);
+    return { success: false, logs };
+  }
+}
+
+async function uninstallPluginIntegration(_agentKey: string, spec: AgentPluginIntegrationSpec): Promise<IntegrationResult> {
+  const logs: string[] = [];
+  try {
+    const commandPath = join(expandPath(spec.commandsPath), spec.handoffCommandFile);
+    let removedCount = 0;
+    if (existsSync(commandPath)) {
+      unlinkSync(commandPath);
+      logs.push(`Removed ${commandPath}`);
+      removedCount += 1;
+    }
+
+    const pluginPath = join(expandPath(spec.pluginsPath), spec.pluginFileName);
+    if (existsSync(pluginPath)) {
+      unlinkSync(pluginPath);
+      logs.push(`Removed ${pluginPath}`);
+      removedCount += 1;
+    }
+
+    if (removedCount === 0) {
+      logs.push("Nothing to remove.");
+    }
+
+    return { success: true, logs };
+  } catch (err) {
+    logs.push(`Error: ${err instanceof Error ? err.message : String(err)}`);
+    return { success: false, logs };
+  }
+}
+
+export async function installIntegration(agentKey: string, spec: AgentIntegrationSpec): Promise<IntegrationResult> {
+  if (isHooksIntegrationSpec(spec)) {
+    return installHooksIntegration(agentKey, spec);
+  }
+  return installPluginIntegration(agentKey, spec);
+}
+
+export async function uninstallIntegration(agentKey: string, spec: AgentIntegrationSpec): Promise<IntegrationResult> {
+  if (isHooksIntegrationSpec(spec)) {
+    return uninstallHooksIntegration(agentKey, spec);
+  }
+  return uninstallPluginIntegration(agentKey, spec);
+}
+
 // --- Public API (backward compat with existing cmdIntegrate / Telegram integrate) ---
 
 function buildHandoffItem(agentKey: string, spec: AgentIntegrationSpec): IntegrationItem {
-  const hooksDir = expandPath(spec.hooksDirPath);
   return {
     id: "handoff",
     name: "Handoff",
     description: "Transfer sessions between terminal and messaging platforms",
     isInstalled(): boolean {
-      return (
-        existsSync(join(hooksDir, "openacp-inject-session.sh")) &&
-        existsSync(join(hooksDir, "openacp-handoff.sh"))
-      );
+      if (isHooksIntegrationSpec(spec)) {
+        const hooksDir = expandPath(spec.hooksDirPath);
+        return (
+          existsSync(join(hooksDir, "openacp-inject-session.sh")) &&
+          existsSync(join(hooksDir, "openacp-handoff.sh"))
+        );
+      }
+      const commandPath = join(expandPath(spec.commandsPath), spec.handoffCommandFile);
+      const pluginPath = join(expandPath(spec.pluginsPath), spec.pluginFileName);
+      return existsSync(commandPath) && existsSync(pluginPath);
     },
     install: () => installIntegration(agentKey, spec),
     uninstall: () => uninstallIntegration(agentKey, spec),
   };
 }
 
-function getSkillBasePath(spec: AgentIntegrationSpec): string {
+function getSkillBasePath(spec: AgentHooksIntegrationSpec): string {
   // Skills go into the agent's skills directory (sibling to commands)
   // Claude: ~/.claude/skills/, Cursor: ~/.cursor/skills/
   const base = spec.commandsPath!;
@@ -390,10 +521,11 @@ function getSkillBasePath(spec: AgentIntegrationSpec): string {
 }
 
 function buildTunnelItem(spec: AgentIntegrationSpec): IntegrationItem | null {
-  if (!spec.commandsPath) return null;
+  if (!isHooksIntegrationSpec(spec) || !spec.commandsPath) return null;
+  const hooksSpec = spec;
 
   function getTunnelPath(): string {
-    return join(getSkillBasePath(spec), "openacp-tunnel", "SKILL.md");
+    return join(getSkillBasePath(hooksSpec), "openacp-tunnel", "SKILL.md");
   }
 
   return {

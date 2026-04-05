@@ -304,17 +304,17 @@ describe('CLI command args parsing', () => {
 
   describe('cmdInstall', () => {
     it('parses package name from args[0]', () => {
-      const { args } = simulateDispatch(['install', '@openacp/adapter-discord'])
+      const { args } = simulateDispatch(['install', '@openacp/discord-adapter'])
       const pkg = args[0]
-      expect(pkg).toBe('@openacp/adapter-discord')
+      expect(pkg).toBe('@openacp/discord-adapter')
     })
   })
 
   describe('cmdUninstall', () => {
     it('parses package name from args[0]', () => {
-      const { args } = simulateDispatch(['uninstall', '@openacp/adapter-discord'])
+      const { args } = simulateDispatch(['uninstall', '@openacp/discord-adapter'])
       const pkg = args[0]
-      expect(pkg).toBe('@openacp/adapter-discord')
+      expect(pkg).toBe('@openacp/discord-adapter')
     })
   })
 
@@ -332,9 +332,9 @@ describe('CLI command args parsing', () => {
     })
 
     it('parses install package from args[1]', () => {
-      const { args } = simulateDispatch(['plugin', 'add', '@openacp/adapter-discord'])
+      const { args } = simulateDispatch(['plugin', 'add', '@openacp/discord-adapter'])
       expect(args[0]).toBe('add')
-      expect(args[1]).toBe('@openacp/adapter-discord')
+      expect(args[1]).toBe('@openacp/discord-adapter')
     })
   })
 })

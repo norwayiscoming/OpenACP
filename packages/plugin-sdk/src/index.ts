@@ -18,6 +18,9 @@ export type {
   CommandDef, CommandArgs, CommandResponse, MenuOption, ListItem,
 } from '@openacp/cli'
 
+// --- Config field types ---
+export type { FieldDef } from '@openacp/cli'
+
 // --- Service interfaces ---
 export type {
   SecurityService, FileServiceInterface, NotificationService,

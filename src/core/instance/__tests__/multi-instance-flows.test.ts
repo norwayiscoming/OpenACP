@@ -380,8 +380,8 @@ describe('status reads instance info from files', () => {
     fs.writeFileSync(path.join(root, 'plugins.json'), JSON.stringify({
       installed: {
         '@openacp/telegram': { enabled: true },
-        '@openacp/discord': { enabled: true },
-        '@openacp/slack': { enabled: false },
+        '@openacp/discord-adapter': { enabled: true },
+        '@openacp/slack-adapter': { enabled: false },
       },
     }))
     const info = readInstanceInfo(root)

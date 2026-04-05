@@ -38,10 +38,8 @@ function resolvePluginConfig(pluginName: string, configManager: unknown): Record
       '@openacp/file-service': 'files',
       '@openacp/api-server': 'api',
       '@openacp/telegram': 'channels.telegram',
-      '@openacp/discord': 'channels.discord',
-      '@openacp/adapter-discord': 'channels.discord',
-      '@openacp/plugin-discord': 'channels.discord', // alias for old name
-      '@openacp/slack': 'channels.slack',
+      '@openacp/discord-adapter': 'channels.discord',
+      '@openacp/slack-adapter': 'channels.slack',
     }
     const legacyKey = legacyMap[pluginName]
     if (legacyKey) {

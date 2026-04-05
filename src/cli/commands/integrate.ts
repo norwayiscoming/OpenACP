@@ -17,11 +17,12 @@ export async function cmdIntegrate(args: string[]): Promise<void> {
   -h, --help      Show this help message
 
 Integrations enable features like session handoff from an agent
-to OpenACP (Telegram/Discord). For example, the Claude integration adds
-a "Handoff" slash command to Claude Code.
+to OpenACP (Telegram/Discord). For example, integrations add an
+agent-native handoff command such as /openacp:handoff.
 
 \x1b[1mExamples:\x1b[0m
   openacp integrate claude
+  openacp integrate opencode
   openacp integrate claude --uninstall
 `)
     return

@@ -75,6 +75,35 @@ describe("SessionFactory", () => {
       );
     });
 
+    it("falls back to spawn when resume fails due to expired session", async () => {
+      const spawnedAgent = createMockAgentInstance("new-spawn-session");
+      deps.agentManager.resume = vi.fn().mockRejectedValue(new Error("Session not found"));
+      deps.agentManager.spawn = vi.fn().mockResolvedValue(spawnedAgent);
+
+      const session = await factory.create({
+        channelId: "telegram",
+        agentName: "claude",
+        workingDirectory: "/tmp/test",
+        resumeAgentSessionId: "expired-session-id",
+      });
+
+      expect(deps.agentManager.resume).toHaveBeenCalledWith("claude", "/tmp/test", "expired-session-id");
+      expect(deps.agentManager.spawn).toHaveBeenCalledWith("claude", "/tmp/test");
+      expect(session.agentSessionId).toBe("new-spawn-session");
+    });
+
+    it("still throws when spawn also fails after resume failure", async () => {
+      deps.agentManager.resume = vi.fn().mockRejectedValue(new Error("Session not found"));
+      deps.agentManager.spawn = vi.fn().mockRejectedValue(new Error("Agent not installed"));
+
+      await expect(factory.create({
+        channelId: "telegram",
+        agentName: "claude",
+        workingDirectory: "/tmp/test",
+        resumeAgentSessionId: "expired-session-id",
+      })).rejects.toThrow("Agent not installed");
+    });
+
     it("resumes agent when resumeAgentSessionId is provided", async () => {
       const session = await factory.create({
         channelId: "telegram",

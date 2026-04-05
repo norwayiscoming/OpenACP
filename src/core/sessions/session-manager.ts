@@ -150,6 +150,7 @@ export class SessionManager {
         // Agent may already be dead — continue with cleanup
       }
       session.markCancelled();
+      await session.destroy();
       this.sessions.delete(sessionId);
     }
     if (this.store) {

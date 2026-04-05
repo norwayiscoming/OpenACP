@@ -59,16 +59,4 @@ describe('summarizeConfig', () => {
     expect(summary).toContain('Telegram (not configured)')
   })
 
-  it('shows Telegram as enabled with legacy config.channels', async () => {
-    const config = makeEmptyConfig()
-    ;(config.channels as Record<string, unknown>).telegram = {
-      botToken: 'legacy-token',
-      chatId: -1001111111111,
-      enabled: true,
-    }
-
-    const summary = await summarizeConfig(config)
-
-    expect(summary).toContain('Telegram (enabled)')
-  })
 })

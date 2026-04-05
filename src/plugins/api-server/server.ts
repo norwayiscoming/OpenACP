@@ -55,12 +55,17 @@ export async function createApiServer(options: ApiServerOptions): Promise<ApiSer
     // per-tunnel.  Only the first value in X-Forwarded-For is taken (the client); the
     // rest may be added by intermediate proxies and must not be trusted for limiting.
     keyGenerator: (request) => {
-      const cfIp = request.headers['cf-connecting-ip'];
-      if (cfIp && typeof cfIp === 'string') return cfIp;
-      const xff = request.headers['x-forwarded-for'];
-      if (xff) {
-        const first = (Array.isArray(xff) ? xff[0] : xff).split(',')[0]?.trim();
-        if (first) return first;
+      // Only trust forwarded headers when binding to localhost (behind tunnel)
+      const bindHost = options.host;
+      const isBehindProxy = !bindHost || bindHost === '127.0.0.1' || bindHost === 'localhost' || bindHost === '::1';
+      if (isBehindProxy) {
+        const cfIp = request.headers['cf-connecting-ip'];
+        if (cfIp && typeof cfIp === 'string') return cfIp;
+        const xff = request.headers['x-forwarded-for'];
+        if (xff) {
+          const first = (Array.isArray(xff) ? xff[0] : xff).split(',')[0]?.trim();
+          if (first) return first;
+        }
       }
       return request.ip;
     },

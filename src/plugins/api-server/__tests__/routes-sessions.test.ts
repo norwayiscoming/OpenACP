@@ -29,6 +29,7 @@ function createMockSession(overrides: Record<string, unknown> = {}) {
       resolve: vi.fn(),
     },
     enqueuePrompt: vi.fn().mockResolvedValue(undefined),
+    abortPrompt: vi.fn().mockResolvedValue(undefined),
     ...overrides,
   };
 }
@@ -212,10 +213,13 @@ describe('session routes', () => {
     });
 
     it('returns 429 when max sessions reached', async () => {
-      (deps.core.configManager.get as any).mockReturnValue({
-        defaultAgent: 'claude',
-        security: { maxConcurrentSessions: 0 },
-      });
+      // Override lifecycleManager with settingsManager returning maxConcurrentSessions=0
+      // so that any active session triggers the limit
+      deps.lifecycleManager = {
+        settingsManager: {
+          loadSettings: vi.fn().mockResolvedValue({ maxConcurrentSessions: 0 }),
+        },
+      } as any;
 
       const response = await app.inject({
         method: 'POST',
@@ -234,6 +238,38 @@ describe('session routes', () => {
       });
 
       expect(response.statusCode).toBe(400);
+    });
+
+    it('creates headless API session when no channel is provided, even if adapters are registered', async () => {
+      // Simulate a Telegram adapter being registered
+      (deps.core.adapters as Map<string, any>).set('telegram', {} as any);
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/v1/sessions',
+        payload: { agent: 'claude' },
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(deps.core.createSession).toHaveBeenCalledWith(
+        expect.objectContaining({ channelId: 'api', createThread: false }),
+      );
+    });
+
+    it('creates adapter session when explicit channel is provided', async () => {
+      const mockAdapter = {} as any;
+      (deps.core.adapters as Map<string, any>).set('telegram', mockAdapter);
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/v1/sessions',
+        payload: { agent: 'claude', channel: 'telegram' },
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(deps.core.createSession).toHaveBeenCalledWith(
+        expect.objectContaining({ channelId: 'telegram', createThread: true }),
+      );
     });
   });
 
@@ -335,6 +371,60 @@ describe('session routes', () => {
       });
 
       expect(response.statusCode).toBe(400);
+    });
+
+    it('aborts current turn and enqueues feedback when feedback provided', async () => {
+      const mockAbortPrompt = vi.fn().mockResolvedValue(undefined);
+      const mockEnqueuePrompt = vi.fn().mockResolvedValue('turn-1');
+      const mockResolve = vi.fn();
+      (deps.core.sessionManager.getSession as any).mockReturnValue(
+        createMockSession({
+          permissionGate: { isPending: true, requestId: 'perm-1', resolve: mockResolve },
+          abortPrompt: mockAbortPrompt,
+          enqueuePrompt: mockEnqueuePrompt,
+        }),
+      );
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/v1/sessions/sess-1/permission',
+        payload: { permissionId: 'perm-1', optionId: 'deny', feedback: 'Please use a different approach' },
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(mockResolve).toHaveBeenCalledWith('deny');
+      expect(mockAbortPrompt).toHaveBeenCalled();
+      expect(mockEnqueuePrompt).toHaveBeenCalledWith(
+        'Please use a different approach',
+        undefined,
+        { sourceAdapterId: 'api' },
+      );
+      // abort must complete before enqueue (sequential, not concurrent)
+      const abortOrder = mockAbortPrompt.mock.invocationCallOrder[0];
+      const enqueueOrder = mockEnqueuePrompt.mock.invocationCallOrder[0];
+      expect(abortOrder).toBeLessThan(enqueueOrder);
+    });
+
+    it('does not abort or enqueue when no feedback provided', async () => {
+      const mockAbortPrompt = vi.fn().mockResolvedValue(undefined);
+      const mockEnqueuePrompt = vi.fn().mockResolvedValue('turn-1');
+      (deps.core.sessionManager.getSession as any).mockReturnValue(
+        createMockSession({
+          permissionGate: { isPending: true, requestId: 'perm-1', resolve: vi.fn() },
+          abortPrompt: mockAbortPrompt,
+          enqueuePrompt: mockEnqueuePrompt,
+        }),
+      );
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/v1/sessions/sess-1/permission',
+        payload: { permissionId: 'perm-1', optionId: 'allow' },
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(mockAbortPrompt).not.toHaveBeenCalled();
+      expect(mockEnqueuePrompt).not.toHaveBeenCalled();
     });
   });
 

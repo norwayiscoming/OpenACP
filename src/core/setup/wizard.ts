@@ -428,11 +428,8 @@ export async function runSetup(
 
     const config: Config = {
       instanceName,
-      channels: {},
-      agents: {},
       defaultAgent,
       workspace: { ...workspace, security: { allowedPaths: [], envWhitelist: [] } },
-      security,
       logging: {
         level: "info",
         logDir: path.join(instanceRoot, "logs"),
@@ -442,31 +439,8 @@ export async function runSetup(
       },
       runMode,
       autoStart,
-      api: {
-        port: 21420,
-        host: '127.0.0.1',
-      },
       sessionStore: { ttlDays: 30 },
-      tunnel: {
-        enabled: true,
-        port: 3100,
-        provider: "cloudflare",
-        options: {},
-        maxUserTunnels: 5,
-        storeTtlMinutes: 60,
-        auth: { enabled: false },
-      },
-      usage: {
-        enabled: true,
-        warningThreshold: 0.8,
-        currency: "USD",
-        retentionDays: 90,
-      },
       integrations: {},
-      speech: {
-        stt: { provider: null, providers: {} },
-        tts: { provider: null, providers: {} },
-      },
       agentSwitch: { labelHistory: true },
     };
 
@@ -601,14 +575,8 @@ export async function runReconfigure(configManager: ConfigManager, settingsManag
       ranSection = true;
 
       if (choice === "channels") {
-        const result = await configureChannels(config, settingsManager);
-        if (result.changed) {
-          // IMPORTANT: Use writeNew() instead of save() because save() uses deepMerge
-          // which cannot delete keys. Channel deletion (delete next.channels.telegram)
-          // would be silently ignored by deepMerge. writeNew() overwrites the full config.
-          config = { ...config, channels: result.config.channels };
-          await configManager.writeNew(config);
-        }
+        // configureChannels now updates plugin settings directly (channels migrated out of config.json)
+        await configureChannels(config, settingsManager);
       }
 
       if (choice === "agents") {

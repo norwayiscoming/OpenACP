@@ -1,4 +1,13 @@
-import type { TunnelConfig } from '../../core/config/config.js'
+// TunnelConfig was removed from config.ts (migrated to plugin settings)
+export interface TunnelConfig {
+  enabled: boolean
+  port: number
+  provider: string
+  options: Record<string, unknown>
+  storeTtlMinutes: number
+  maxUserTunnels?: number
+  auth: { enabled: boolean; token?: string }
+}
 import { createChildLogger } from '../../core/utils/log.js'
 import { TunnelRegistry, type TunnelEntry } from './tunnel-registry.js'
 import { ViewerStore } from './viewer-store.js'

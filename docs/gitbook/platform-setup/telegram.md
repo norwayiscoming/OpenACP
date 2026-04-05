@@ -1,6 +1,13 @@
 # Telegram Setup
 
-This guide walks you through connecting OpenACP to Telegram. OpenACP uses a Telegram Supergroup with Topics enabled — each coding session gets its own topic thread for an organized, isolated workspace.
+This guide walks you through connecting OpenACP to Telegram. OpenACP uses a Telegram group with Topics enabled — each coding session gets its own topic thread for an organized, isolated workspace.
+
+> **Prerequisites:**
+> 1. A Telegram group (any size)
+> 2. **Topics enabled** — Group Settings → Edit → Topics
+> 3. **Bot is admin with "Manage Topics" permission** — Group Settings → Administrators
+>
+> If these aren't set up when OpenACP first starts, it will send instructions to your group's General topic and keep retrying automatically.
 
 ## Prerequisites
 
@@ -26,16 +33,16 @@ This guide walks you through connecting OpenACP to Telegram. OpenACP uses a Tele
 
 ---
 
-## Step 2: Create a Supergroup with Topics Enabled
+## Step 2: Create a Group with Topics Enabled
 
-OpenACP requires a Telegram **Supergroup** with the **Topics** feature enabled. Topics create forum-like threads — one per coding session.
+OpenACP requires a Telegram group with the **Topics** feature enabled. Topics create thread-like channels — one per coding session.
 
 1. In Telegram, tap the compose icon and select **New Group**.
 2. Add your bot as a member (search for its username).
 3. Give the group a name (e.g., `OpenACP`) and create it.
 4. Open the group → tap the group name at the top → **Edit** (pencil icon).
 5. Scroll down and enable **Topics**.
-6. Save the changes. Telegram converts the group to a Supergroup automatically.
+6. Save the changes.
 
 ---
 
@@ -58,7 +65,7 @@ The bot must be an administrator with the following permissions to manage topics
 
 ## Step 4: Get the Chat ID
 
-The Chat ID is the unique numeric identifier for your Supergroup. You need it for the config.
+The Chat ID is the unique numeric identifier for your group. You need it for the config.
 
 **Option A: Use the OpenACP setup wizard (recommended)**
 
@@ -110,7 +117,7 @@ Edit `~/.openacp/config.json` and fill in the Telegram section (see the [full co
 |-------|-------------|
 | `enabled` | Set to `true` to activate the Telegram adapter |
 | `botToken` | The token from BotFather (Step 1) |
-| `chatId` | The Supergroup's Chat ID — negative number starting with `-100` (Step 4) |
+| `chatId` | The group's Chat ID — negative number starting with `-100` (Step 4) |
 | `notificationTopicId` | Leave `null` — OpenACP creates this topic on first start |
 | `assistantTopicId` | Leave `null` — OpenACP creates this topic on first start |
 
@@ -214,13 +221,14 @@ Environment variables take precedence over values in `config.json`.
 - Verify `enabled: true` in the config.
 - Check `~/.openacp/logs/` for error messages.
 
-**"Chat is not a supergroup" error**
-- The group must be a Supergroup. Go to Group Settings and convert it if needed.
+**"Chat must be a group" error**
+- Make sure you are using a group (not a channel). Channels are not supported.
 - If the group was just created, wait a moment and try again.
 
-**Topics not appearing**
-- Topics must be enabled in the group settings before OpenACP starts.
-- The bot needs **Manage Topics** admin permission.
+**Topics not appearing after first start**
+- If OpenACP cannot create topics, it sends a message to the group's General topic with instructions.
+- Follow the instructions in that message: enable Topics and/or grant the bot "Manage Topics" permission.
+- OpenACP retries automatically every 30 seconds — no need to restart.
 
 **Chat ID is not detected**
 - Make sure you sent a message in the group after adding the bot.

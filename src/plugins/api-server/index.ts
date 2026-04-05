@@ -98,23 +98,10 @@ function createApiServerPlugin(): OpenACPPlugin {
     version: '1.0.0',
     description: 'REST API + SSE streaming server',
     essential: false,
-    permissions: ['services:register', 'services:use', 'kernel:access', 'events:read', 'events:emit'],
+    permissions: ['services:register', 'services:use', 'kernel:access', 'commands:register', 'events:read', 'events:emit'],
 
     async install(ctx: InstallContext) {
-      const { settings, legacyConfig, terminal } = ctx
-
-      // Migrate from legacy config if present
-      if (legacyConfig) {
-        const apiCfg = legacyConfig.api as Record<string, unknown> | undefined
-        if (apiCfg) {
-          await settings.setAll({
-            port: apiCfg.port ?? 21420,
-            host: apiCfg.host ?? '127.0.0.1',
-          })
-          terminal.log.success('API server settings migrated from legacy config')
-          return
-        }
-      }
+      const { settings, terminal } = ctx
 
       // Save defaults
       await settings.setAll({
@@ -169,6 +156,10 @@ function createApiServerPlugin(): OpenACPPlugin {
     inheritableKeys: ['host'],
 
     async setup(ctx) {
+      ctx.registerEditableFields([
+        { key: 'port', displayName: 'API Port', type: 'number', scope: 'safe', hotReload: false },
+      ])
+
       const config = ctx.pluginConfig as Record<string, unknown>
       const instanceRoot = ctx.instanceRoot
       const core = ctx.core as OpenACPCore

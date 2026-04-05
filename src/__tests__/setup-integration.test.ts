@@ -229,14 +229,8 @@ describe('runSetup integration', () => {
     )
 
     const written = JSON.parse(fs.readFileSync(configPath, 'utf-8'))
-    // Channels are now managed by plugins, core config has empty channels
-    expect(written.channels).toEqual({})
-    // agents are now stored in agents.json, not config.json
-    expect(written.agents).toEqual({})
     expect(written.defaultAgent).toBe('claude')
     expect(written.workspace.baseDir).toBe('~/my-workspace')
-    expect(written.security.maxConcurrentSessions).toBe(20)
-    expect(written.security.sessionTimeoutMinutes).toBe(60)
 
     // Built-in plugins were auto-registered
     expect(mockPluginRegistry.save).toHaveBeenCalled()

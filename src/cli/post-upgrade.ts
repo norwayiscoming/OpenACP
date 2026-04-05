@@ -10,27 +10,37 @@ const log = createChildLogger({ module: "post-upgrade" });
  * Silent if everything is OK.
  */
 export async function runPostUpgradeChecks(config: Config): Promise<void> {
-  // 1. Tunnel provider binary
-  if (config.tunnel.enabled) {
-    if (config.tunnel.provider === "cloudflare") {
-      try {
-        const { ensureCloudflared } = await import(
-          "../plugins/tunnel/providers/install-cloudflared.js"
-        );
-        await ensureCloudflared();
-      } catch (err) {
-        log.warn(
-          { err: (err as Error).message },
-          "Could not install cloudflared. Tunnel may not work.",
-        );
-      }
-    } else {
-      if (!commandExists(config.tunnel.provider)) {
-        log.warn(
-          `Tunnel provider "${config.tunnel.provider}" is not installed. Install it or switch to cloudflare (free, auto-installed).`,
-        );
+  // 1. Tunnel provider binary — read from plugin settings (tunnel migrated out of config.json)
+  try {
+    const { SettingsManager } = await import("../core/plugin/settings-manager.js");
+    const sm = new SettingsManager(config.workspace?.baseDir ?? "~/.openacp/plugins/data");
+    const tunnelSettings = await sm.loadSettings("@openacp/tunnel");
+    const tunnelEnabled = (tunnelSettings.enabled as boolean) ?? false;
+    const tunnelProvider = (tunnelSettings.provider as string) ?? "cloudflare";
+
+    if (tunnelEnabled) {
+      if (tunnelProvider === "cloudflare") {
+        try {
+          const { ensureCloudflared } = await import(
+            "../plugins/tunnel/providers/install-cloudflared.js"
+          );
+          await ensureCloudflared();
+        } catch (err) {
+          log.warn(
+            { err: (err as Error).message },
+            "Could not install cloudflared. Tunnel may not work.",
+          );
+        }
+      } else {
+        if (!commandExists(tunnelProvider)) {
+          log.warn(
+            `Tunnel provider "${tunnelProvider}" is not installed. Install it or switch to cloudflare (free, auto-installed).`,
+          );
+        }
       }
     }
+  } catch {
+    // tunnel settings not available — skip tunnel check
   }
 
   // 2. Claude CLI integration + jq

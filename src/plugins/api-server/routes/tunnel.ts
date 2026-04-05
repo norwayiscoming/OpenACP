@@ -20,7 +20,7 @@ export async function tunnelRoutes(
       return {
         enabled: true,
         url: tunnel.getPublicUrl(),
-        provider: deps.core.configManager.get().tunnel.provider,
+        provider: 'cloudflare',
       };
     }
     return { enabled: false };

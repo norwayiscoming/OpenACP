@@ -30,31 +30,26 @@ describe("createConfigSection", () => {
 
   it("shows STT configured when speech service isSTTAvailable returns true", () => {
     const section = createConfigSection(makeCore({
-      legacySpeechProvider: "groq",
       speechService: { isSTTAvailable: () => true },
     }));
     const ctx = section.buildContext!();
-    expect(ctx).toContain("groq");
-    expect(ctx).toContain("✅");
+    expect(ctx).toContain("configured ✅");
   });
 
   it("shows STT not configured when speech service exists but isSTTAvailable returns false", () => {
-    // This is the bug case: legacy config says 'groq' but service is not actually available
     const section = createConfigSection(makeCore({
-      legacySpeechProvider: "groq", // legacy config claims configured
-      speechService: { isSTTAvailable: () => false }, // but service says no
+      speechService: { isSTTAvailable: () => false },
     }));
     const ctx = section.buildContext!();
     expect(ctx).toContain("Not configured");
     expect(ctx).not.toContain("✅");
   });
 
-  it("falls back to legacy config check when no lifecycleManager", () => {
+  it("shows STT not configured when no lifecycleManager", () => {
     const section = createConfigSection(makeCore({
-      legacySpeechProvider: "groq",
       speechService: undefined, // no lifecycleManager
     }));
     const ctx = section.buildContext!();
-    expect(ctx).toContain("groq");
+    expect(ctx).toContain("Not configured");
   });
 });

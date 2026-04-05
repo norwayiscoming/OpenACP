@@ -183,49 +183,4 @@ describe('Plugin Setup Integration — full lifecycle', () => {
     expect(registry.get(pluginName)).toBeUndefined()
   })
 
-  it('legacy config migration during install', async () => {
-    const { createInstallContext } = await import('../install-context.js')
-    const legacyConfig = {
-      botToken: 'old-bot-token-123',
-      chatId: '-100999',
-      debugMode: true,
-    }
-
-    const plugin = createTestPlugin({
-      name: '@openacp/legacy-migrator',
-      async install(ctx: InstallContext) {
-        // Plugin checks legacyConfig and migrates to settings.json
-        if (ctx.legacyConfig) {
-          const legacy = ctx.legacyConfig
-          await ctx.settings.set('botToken', legacy.botToken)
-          await ctx.settings.set('chatId', legacy.chatId)
-          if (legacy.debugMode) {
-            await ctx.settings.set('logLevel', 'debug')
-          }
-        } else {
-          // Interactive install would prompt user via ctx.terminal
-          const token = await ctx.terminal.text({ message: 'Enter bot token:' })
-          await ctx.settings.set('botToken', token)
-        }
-      },
-    })
-
-    const ctx = createInstallContext({
-      pluginName: plugin.name,
-      settingsManager,
-      basePath: tmpDir,
-      legacyConfig,
-    })
-
-    await plugin.install!(ctx)
-
-    // Verify plugin migrated legacy config to settings.json without prompting
-    const settings = await settingsManager.loadSettings(plugin.name)
-    expect(settings.botToken).toBe('old-bot-token-123')
-    expect(settings.chatId).toBe('-100999')
-    expect(settings.logLevel).toBe('debug')
-
-    // terminal.text should NOT have been called (no interactive prompting)
-    expect(ctx.terminal.text).not.toHaveBeenCalled()
-  })
 })

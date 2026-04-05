@@ -212,10 +212,13 @@ describe('session routes', () => {
     });
 
     it('returns 429 when max sessions reached', async () => {
-      (deps.core.configManager.get as any).mockReturnValue({
-        defaultAgent: 'claude',
-        security: { maxConcurrentSessions: 0 },
-      });
+      // Override lifecycleManager with settingsManager returning maxConcurrentSessions=0
+      // so that any active session triggers the limit
+      deps.lifecycleManager = {
+        settingsManager: {
+          loadSettings: vi.fn().mockResolvedValue({ maxConcurrentSessions: 0 }),
+        },
+      } as any;
 
       const response = await app.inject({
         method: 'POST',

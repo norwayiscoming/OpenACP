@@ -38,8 +38,6 @@ describe('config-registry', () => {
   it('isHotReloadable returns correct values', () => {
     expect(isHotReloadable('defaultAgent')).toBe(true)
     expect(isHotReloadable('logging.level')).toBe(true)
-    expect(isHotReloadable('tunnel.enabled')).toBe(false)
-    expect(isHotReloadable('channels.telegram.botToken')).toBe(false)
   })
 
   it('all safe fields have required metadata', () => {

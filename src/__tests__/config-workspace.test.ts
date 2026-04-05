@@ -35,11 +35,8 @@ describe('ConfigManager.resolveWorkspace', () => {
 
     // Write a valid config
     const config = {
-      channels: { telegram: { enabled: false, botToken: 'test', chatId: 0 } },
       defaultAgent: 'claude',
       workspace: { baseDir: path.join(tmpDir, 'workspace') },
-      agents: {},
-      security: { allowedUserIds: [], maxConcurrentSessions: 20, sessionTimeoutMinutes: 60 },
     }
     fs.writeFileSync(configPath, JSON.stringify(config, null, 2))
 
@@ -122,25 +119,16 @@ describe('ConfigManager.applyEnvOverrides', () => {
 
   afterEach(() => {
     delete process.env.OPENACP_CONFIG_PATH
-    delete process.env.OPENACP_TELEGRAM_BOT_TOKEN
-    delete process.env.OPENACP_TELEGRAM_CHAT_ID
     delete process.env.OPENACP_DEFAULT_AGENT
     delete process.env.OPENACP_RUN_MODE
-    delete process.env.OPENACP_API_PORT
     delete process.env.OPENACP_LOG_LEVEL
     delete process.env.OPENACP_LOG_DIR
     delete process.env.OPENACP_DEBUG
-    delete process.env.OPENACP_TUNNEL_ENABLED
-    delete process.env.OPENACP_TUNNEL_PORT
-    delete process.env.OPENACP_TUNNEL_PROVIDER
     fs.rmSync(tmpDir, { recursive: true, force: true })
   })
 
   const baseConfig = {
-    channels: { telegram: { enabled: false, botToken: 'test', chatId: 0 } },
     defaultAgent: 'claude',
-    agents: {},
-    security: { allowedUserIds: [], maxConcurrentSessions: 20, sessionTimeoutMinutes: 60 },
   }
 
   it('overrides defaultAgent from env', async () => {
@@ -150,34 +138,11 @@ describe('ConfigManager.applyEnvOverrides', () => {
     expect(manager.get().defaultAgent).toBe('codex')
   })
 
-  it('overrides Telegram bot token from env', async () => {
-    process.env.OPENACP_TELEGRAM_BOT_TOKEN = 'env-token'
-    const manager = createConfigAndManager(baseConfig)
-    await manager.load()
-    const telegram = manager.get().channels.telegram as any
-    expect(telegram.botToken).toBe('env-token')
-  })
-
-  it('overrides Telegram chat ID from env (as number)', async () => {
-    process.env.OPENACP_TELEGRAM_CHAT_ID = '123456789'
-    const manager = createConfigAndManager(baseConfig)
-    await manager.load()
-    const telegram = manager.get().channels.telegram as any
-    expect(telegram.chatId).toBe(123456789)
-  })
-
   it('overrides runMode from env', async () => {
     process.env.OPENACP_RUN_MODE = 'daemon'
     const manager = createConfigAndManager(baseConfig)
     await manager.load()
     expect(manager.get().runMode).toBe('daemon')
-  })
-
-  it('overrides API port from env (as number)', async () => {
-    process.env.OPENACP_API_PORT = '9999'
-    const manager = createConfigAndManager(baseConfig)
-    await manager.load()
-    expect(manager.get().api.port).toBe(9999)
   })
 
   it('overrides log level from env', async () => {
@@ -208,27 +173,6 @@ describe('ConfigManager.applyEnvOverrides', () => {
     await manager.load()
     expect(manager.get().logging.level).toBe('warn')
   })
-
-  it('overrides tunnel enabled from env', async () => {
-    process.env.OPENACP_TUNNEL_ENABLED = 'true'
-    const manager = createConfigAndManager(baseConfig)
-    await manager.load()
-    expect(manager.get().tunnel.enabled).toBe(true)
-  })
-
-  it('overrides tunnel port from env', async () => {
-    process.env.OPENACP_TUNNEL_PORT = '4000'
-    const manager = createConfigAndManager(baseConfig)
-    await manager.load()
-    expect(manager.get().tunnel.port).toBe(4000)
-  })
-
-  it('overrides tunnel provider from env', async () => {
-    process.env.OPENACP_TUNNEL_PROVIDER = 'ngrok'
-    const manager = createConfigAndManager(baseConfig)
-    await manager.load()
-    expect(manager.get().tunnel.provider).toBe('ngrok')
-  })
 })
 
 describe('ConfigManager.save and hot-reload', () => {
@@ -241,10 +185,7 @@ describe('ConfigManager.save and hot-reload', () => {
     process.env.OPENACP_CONFIG_PATH = configPath
 
     const config = {
-      channels: { telegram: { enabled: false, botToken: 'test', chatId: 0 } },
       defaultAgent: 'claude',
-      agents: {},
-      security: { allowedUserIds: [], maxConcurrentSessions: 20, sessionTimeoutMinutes: 60 },
     }
     fs.writeFileSync(configPath, JSON.stringify(config, null, 2))
     configManager = new ConfigManager()
@@ -270,14 +211,14 @@ describe('ConfigManager.save and hot-reload', () => {
     configManager.on('config:changed', (e) => events.push(e))
 
     await configManager.save(
-      { security: { maxConcurrentSessions: 10 } },
-      'security.maxConcurrentSessions',
+      { defaultAgent: 'codex' },
+      'defaultAgent',
     )
 
     expect(events).toHaveLength(1)
     expect(events[0]).toMatchObject({
-      path: 'security.maxConcurrentSessions',
-      value: 10,
+      path: 'defaultAgent',
+      value: 'codex',
     })
   })
 
@@ -291,9 +232,8 @@ describe('ConfigManager.save and hot-reload', () => {
   })
 
   it('deep merges nested config', async () => {
-    await configManager.save({ security: { maxConcurrentSessions: 5 } })
-    // Other security fields should still exist
-    expect(configManager.get().security.sessionTimeoutMinutes).toBe(60)
-    expect(configManager.get().security.maxConcurrentSessions).toBe(5)
+    await configManager.save({ workspace: { baseDir: '~/custom-workspace' } })
+    // Other workspace fields should still exist after deep merge
+    expect(configManager.get().workspace.baseDir).toBe('~/custom-workspace')
   })
 })

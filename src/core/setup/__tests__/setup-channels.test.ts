@@ -60,21 +60,6 @@ describe('getChannelStatuses', () => {
     expect(tg?.configured).toBe(false)
   })
 
-  it('shows telegram as configured when config.channels has legacy data (no settingsManager)', async () => {
-    const config = makeEmptyConfig()
-    ;(config.channels as Record<string, unknown>).telegram = {
-      botToken: 'legacy-token',
-      chatId: -1001111111111,
-      enabled: true,
-    }
-
-    const statuses = await getChannelStatuses(config)
-
-    const tg = statuses.find(s => s.id === 'telegram')
-    expect(tg?.configured).toBe(true)
-    expect(tg?.enabled).toBe(true)
-  })
-
   it('prefers plugin settings over legacy config.channels', async () => {
     // Plugin settings exist (new-style)
     await settingsManager.updatePluginSettings('@openacp/telegram', {

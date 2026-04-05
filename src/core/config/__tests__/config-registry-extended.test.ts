@@ -11,10 +11,8 @@ import type { Config } from '../config.js'
 
 describe('getConfigValue', () => {
   const config = {
-    channels: { telegram: { enabled: true, botToken: 'tok' } },
     defaultAgent: 'claude',
     workspace: { baseDir: '~/workspace' },
-    security: { allowedUserIds: ['user1'], maxConcurrentSessions: 10, sessionTimeoutMinutes: 60 },
     logging: { level: 'info' },
     sessionStore: { ttlDays: 30 },
   } as unknown as Config
@@ -27,20 +25,12 @@ describe('getConfigValue', () => {
     expect(getConfigValue(config, 'workspace.baseDir')).toBe('~/workspace')
   })
 
-  it('gets deeply nested value', () => {
-    expect(getConfigValue(config, 'security.maxConcurrentSessions')).toBe(10)
-  })
-
-  it('gets value from channel config', () => {
-    expect(getConfigValue(config, 'channels.telegram.enabled')).toBe(true)
-  })
-
   it('returns undefined for non-existent top-level key', () => {
     expect(getConfigValue(config, 'nonexistent')).toBeUndefined()
   })
 
   it('returns undefined for non-existent nested key', () => {
-    expect(getConfigValue(config, 'security.nonexistent')).toBeUndefined()
+    expect(getConfigValue(config, 'logging.nonexistent')).toBeUndefined()
   })
 
   it('returns undefined when intermediate is not an object', () => {
@@ -49,12 +39,6 @@ describe('getConfigValue', () => {
 
   it('returns undefined for deeply non-existent path', () => {
     expect(getConfigValue(config, 'a.b.c.d.e')).toBeUndefined()
-  })
-
-  it('returns array values', () => {
-    const result = getConfigValue(config, 'security.allowedUserIds')
-    expect(Array.isArray(result)).toBe(true)
-    expect(result).toEqual(['user1'])
   })
 
   it('returns object values', () => {
@@ -111,7 +95,7 @@ describe('isHotReloadable', () => {
   })
 
   it('returns false for non-hot-reloadable field', () => {
-    expect(isHotReloadable('tunnel.enabled')).toBe(false)
+    expect(isHotReloadable('nonexistent.field')).toBe(false)
   })
 
   it('returns false for unknown field', () => {

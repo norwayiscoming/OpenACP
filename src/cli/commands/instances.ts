@@ -33,7 +33,7 @@ export async function buildInstanceListEntries(): Promise<InstanceListEntry[]> {
   })
 }
 
-export async function cmdInstances(args: string[] = []): Promise<void> {
+export async function cmdInstances(args: string[] = [], parentFlags?: { dir?: string; from?: string; name?: string }): Promise<void> {
   if (wantsHelp(args)) {
     printInstancesHelp()
     return
@@ -41,6 +41,13 @@ export async function cmdInstances(args: string[] = []): Promise<void> {
 
   const sub = args[0]
   const subArgs = args.slice(1)
+
+  // Re-inject flags that were consumed by top-level parser
+  if (parentFlags) {
+    if (parentFlags.dir && !subArgs.includes('--dir')) subArgs.push('--dir', parentFlags.dir)
+    if (parentFlags.from && !subArgs.includes('--from')) subArgs.push('--from', parentFlags.from)
+    if (parentFlags.name && !subArgs.includes('--name')) subArgs.push('--name', parentFlags.name)
+  }
 
   if (!sub || sub === 'list') return cmdInstancesList(subArgs)
   if (sub === 'create') return cmdInstancesCreate(subArgs)
@@ -167,15 +174,27 @@ export async function cmdInstancesCreate(args: string[]): Promise<void> {
   } else if (noInteractive || !process.stdin.isTTY) {
     // Minimal config for non-interactive mode
     fs.mkdirSync(instanceRoot, { recursive: true })
-    const config: Record<string, unknown> = { instanceName: name, runMode: 'daemon' }
-    if (agent) config.defaultAgent = agent
+    const config: Record<string, unknown> = {
+      channels: { sse: { enabled: true } },
+      defaultAgent: agent || 'claude',
+      workspace: { baseDir: '~/openacp-workspace' },
+      runMode: 'daemon',
+      autoStart: false,
+      instanceName: name,
+    }
     fs.writeFileSync(path.join(instanceRoot, 'config.json'), JSON.stringify(config, null, 2))
     fs.writeFileSync(path.join(instanceRoot, 'plugins.json'), JSON.stringify({ version: 1, installed: {} }, null, 2))
   } else {
     // Interactive wizard — requires plugin system; fall back to minimal config
     fs.mkdirSync(instanceRoot, { recursive: true })
-    const config: Record<string, unknown> = { instanceName: name, runMode: 'daemon' }
-    if (agent) config.defaultAgent = agent
+    const config: Record<string, unknown> = {
+      channels: { sse: { enabled: true } },
+      defaultAgent: agent || 'claude',
+      workspace: { baseDir: '~/openacp-workspace' },
+      runMode: 'daemon',
+      autoStart: false,
+      instanceName: name,
+    }
     fs.writeFileSync(path.join(instanceRoot, 'config.json'), JSON.stringify(config, null, 2))
     fs.writeFileSync(path.join(instanceRoot, 'plugins.json'), JSON.stringify({ version: 1, installed: {} }, null, 2))
     console.log(`Instance created at ${resolvedDir}. Run 'openacp setup' inside that directory to configure it.`)

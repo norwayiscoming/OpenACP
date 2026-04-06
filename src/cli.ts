@@ -90,7 +90,7 @@ const noInstanceCommands: Record<string, () => Promise<void>> = {
   '-v': () => cmdVersion(args),
   'update': () => cmdUpdate(args),
   'adopt': () => cmdAdopt(args),
-  'instances': async () => cmdInstances(args),
+  'instances': async () => cmdInstances(args, flags),
   'integrate': () => cmdIntegrate(args),
   'dev': () => cmdDev(args),
 }

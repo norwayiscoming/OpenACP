@@ -57,6 +57,14 @@ Connect messaging platforms (Telegram, Discord) to 28+ AI coding agents via ACP 
   openacp integrate <agent> --uninstall
   openacp adopt <agent> <id>           Adopt an external session  \x1b[2m[--json]\x1b[0m
 
+\x1b[1mRemote Access:\x1b[0m
+  openacp remote                            Generate one-time remote access link  \x1b[2m[--json]\x1b[0m
+  openacp remote --role admin               Specify role: admin (default) or viewer
+  openacp remote --expire 48h              Set expiry duration (default: 24h)
+  openacp remote --no-tunnel               Local link only (skip tunnel URL)
+  openacp remote --no-qr                   Skip QR code output
+  openacp remote --name <label>            Custom token name
+
 \x1b[1mTunnels:\x1b[0m
   openacp tunnel add <port> [--label name]  Create tunnel to local port  \x1b[2m[--json]\x1b[0m
   openacp tunnel list                       List active tunnels           \x1b[2m[--json]\x1b[0m

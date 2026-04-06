@@ -355,6 +355,7 @@ export interface MiddlewarePayloadMap {
     sessionId: string
     text: string
     attachments?: Attachment[]
+    sourceAdapterId?: string
   }
   'agent:beforeEvent': {
     sessionId: string

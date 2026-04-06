@@ -387,6 +387,10 @@ export class OpenACPCore {
     // Emit message:queued immediately (before awaiting the queue) so SSE clients see the
     // incoming message right away, not after the AI finishes processing.
     const sourceAdapterId = message.routing?.sourceAdapterId ?? message.channelId;
+    // Merge sourceAdapterId into routing so middleware (e.g. history recorder) receives it
+    const routing = sourceAdapterId !== message.routing?.sourceAdapterId
+      ? { ...message.routing, sourceAdapterId }
+      : message.routing;
     if (sourceAdapterId && sourceAdapterId !== 'sse' && sourceAdapterId !== 'api') {
       const turnId = nanoid(8);
       this.eventBus.emit(BusEvent.MESSAGE_QUEUED, {
@@ -399,9 +403,9 @@ export class OpenACPCore {
         queueDepth: session.queueDepth,
       });
       // Pass pre-generated turnId so message:processing shares the same ID
-      await session.enqueuePrompt(text, message.attachments, message.routing, turnId);
+      await session.enqueuePrompt(text, message.attachments, routing, turnId);
     } else {
-      await session.enqueuePrompt(text, message.attachments, message.routing);
+      await session.enqueuePrompt(text, message.attachments, routing);
     }
   }
 

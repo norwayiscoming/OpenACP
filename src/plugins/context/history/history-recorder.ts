@@ -86,6 +86,7 @@ export class HistoryRecorder {
     sessionId: string,
     text: string,
     attachments: Attachment[] | undefined,
+    sourceAdapterId?: string,
   ): void {
     let state = this.states.get(sessionId);
     if (!state) {
@@ -104,6 +105,9 @@ export class HistoryRecorder {
     };
     if (attachments && attachments.length > 0) {
       userTurn.attachments = attachments.map(toHistoryAttachment);
+    }
+    if (sourceAdapterId) {
+      userTurn.sourceAdapterId = sourceAdapterId;
     }
     state.history.turns.push(userTurn);
 

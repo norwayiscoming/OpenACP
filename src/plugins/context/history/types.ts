@@ -13,6 +13,7 @@ export interface Turn {
   // User turn
   content?: string;
   attachments?: HistoryAttachment[];
+  sourceAdapterId?: string;
   // Assistant turn
   steps?: Step[];
   usage?: HistoryUsage;

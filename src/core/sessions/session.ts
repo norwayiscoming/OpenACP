@@ -220,7 +220,7 @@ export class Session extends TypedEmitter<SessionEvents> {
     const turnId = externalTurnId ?? nanoid(8);
     // Hook: agent:beforePrompt — modifiable, can block
     if (this.middlewareChain) {
-      const payload = { text, attachments, sessionId: this.id };
+      const payload = { text, attachments, sessionId: this.id, sourceAdapterId: routing?.sourceAdapterId };
       const result = await this.middlewareChain.execute(Hook.AGENT_BEFORE_PROMPT, payload, async (p) => p);
       if (!result) return turnId; // blocked by middleware
       text = result.text;

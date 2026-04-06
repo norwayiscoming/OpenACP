@@ -25,7 +25,7 @@ import { LifecycleManager } from "./plugin/lifecycle-manager.js";
 import { MenuRegistry } from './menu-registry.js';
 import { AssistantRegistry, AssistantManager } from './assistant/index.js';
 import { registerCoreMenuItems } from './menu/core-items.js';
-import { createSessionsSection, createAgentsSection, createConfigSection, createSystemSection } from './assistant/index.js';
+import { createSessionsSection, createAgentsSection, createConfigSection, createSystemSection, createRemoteSection } from './assistant/index.js';
 import { ServiceRegistry } from "./plugin/service-registry.js";
 import { MiddlewareChain } from "./plugin/middleware-chain.js";
 import { ErrorTracker } from "./plugin/error-tracker.js";
@@ -216,7 +216,8 @@ export class OpenACPCore {
     this.assistantRegistry.register(createSessionsSection(this));
     this.assistantRegistry.register(createAgentsSection(this as any));
     this.assistantRegistry.register(createConfigSection(this as any));
-    this.assistantRegistry.register(createSystemSection());
+    this.assistantRegistry.register(createSystemSection())
+    this.assistantRegistry.register(createRemoteSection());
 
     // Create assistant manager
     this.assistantManager = new AssistantManager(this as any, this.assistantRegistry);

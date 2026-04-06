@@ -1,0 +1,27 @@
+import type { AssistantSection } from '../assistant-registry.js'
+
+export function createRemoteSection(): AssistantSection {
+  return {
+    id: 'core:remote',
+    title: 'Remote Access',
+    priority: 35,
+    buildContext: () => {
+      return (
+        `Generate a one-time remote access link so the user can connect to this OpenACP instance from the app or a browser.\n\n` +
+        `The link contains a short-lived code (expires in 30 minutes, single-use) that exchanges for a long-lived token.\n\n` +
+        `Roles:\n` +
+        `  admin   — full control (default)\n` +
+        `  viewer  — read-only access\n\n` +
+        `The command automatically includes the tunnel URL if a tunnel is active. ` +
+        `Without a tunnel, the local link only works on the same machine.\n\n` +
+        `Always show both the link and QR code when available so the user can choose how to open it.`
+      )
+    },
+    commands: [
+      { command: 'openacp remote', description: 'Generate remote access link (admin role, 24h expiry)' },
+      { command: 'openacp remote --role viewer', description: 'Generate read-only access link' },
+      { command: 'openacp remote --expire 48h', description: 'Generate link with custom expiry' },
+      { command: 'openacp remote --no-qr', description: 'Skip QR code output' },
+    ],
+  }
+}

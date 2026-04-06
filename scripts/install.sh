@@ -23,6 +23,15 @@ NODE_MIN_MAJOR=20
 NODE_MIN_MINOR=0
 NODE_MIN_VERSION="${NODE_MIN_MAJOR}.${NODE_MIN_MINOR}"
 
+# Initialize Homebrew PATH for non-login shells (macOS).
+# ~/.zprofile is not sourced when running as 'bash install.sh' or 'curl | bash',
+# so /opt/homebrew/bin (Apple Silicon) or /usr/local/bin (Intel) may be missing from PATH.
+if [[ -x "/opt/homebrew/bin/brew" ]]; then
+    eval "$(/opt/homebrew/bin/brew shellenv)" 2>/dev/null || true
+elif [[ -x "/usr/local/bin/brew" ]]; then
+    eval "$(/usr/local/bin/brew shellenv)" 2>/dev/null || true
+fi
+
 ORIGINAL_PATH="${PATH:-}"
 
 TMPFILES=()
@@ -731,6 +740,18 @@ ensure_default_node_active_shell() {
             return 0
         fi
     fi
+
+    # Try Homebrew-managed Node (macOS) — covers cases where Homebrew shellenv
+    # was not initialized (e.g. non-login shell without ~/.zprofile sourced).
+    for brew_bin in "/opt/homebrew/bin" "/usr/local/bin"; do
+        if [[ -x "${brew_bin}/node" ]]; then
+            export PATH="${brew_bin}:${PATH}"
+            hash -r 2>/dev/null || true
+            if node_is_at_least_required; then
+                return 0
+            fi
+        fi
+    done
 
     return 1
 }

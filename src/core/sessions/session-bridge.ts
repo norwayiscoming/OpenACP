@@ -93,19 +93,9 @@ export class SessionBridge {
     if (this.connected) return;
     this.connected = true;
 
-    // Wire agent events to session (agent → session relay).
-    // Only wire once per session per agentInstance — multiple bridges share the same
-    // session, so without this guard the relay would fire N times for N bridges.
-    // When the agent is swapped (disconnect → swap → reconnect), the relay is re-wired
-    // to the new agentInstance because agentRelaySource no longer matches.
-    if (this.session.agentRelaySource !== this.session.agentInstance) {
-      this.listen(this.session.agentInstance, "agent_event", (event: AgentEvent) => {
-        this.session.emit("agent_event", event);
-      });
-      this.session.agentRelaySource = this.session.agentInstance;
-    }
-
     // Wire session events to adapter (session → adapter dispatch)
+    // The agent→session relay is owned by the Session itself (wireAgentRelay),
+    // so session.on("agent_event") fires for all sessions including headless ones.
     this.listen(this.session, "agent_event", (event: AgentEvent) => {
       if (this.shouldForward(event)) {
         this.dispatchAgentEvent(event);
@@ -153,10 +143,12 @@ export class SessionBridge {
         status: to,
         lastActiveAt: new Date().toISOString(),
       });
-      this.deps.eventBus?.emit("session:updated", {
-        sessionId: this.session.id,
-        status: to,
-      });
+      if (!this.session.isAssistant) {
+        this.deps.eventBus?.emit("session:updated", {
+          sessionId: this.session.id,
+          status: to,
+        });
+      }
 
       // Auto-disconnect on terminal states (finished only — cancelled sessions can resume)
       if (to === "finished") {
@@ -170,10 +162,12 @@ export class SessionBridge {
       const record = this.deps.sessionManager.getSessionRecord(this.session.id);
       const alreadyNamed = !!record?.name;
       await this.deps.sessionManager.patchRecord(this.session.id, { name });
-      this.deps.eventBus?.emit("session:updated", {
-        sessionId: this.session.id,
-        name,
-      });
+      if (!this.session.isAssistant) {
+        this.deps.eventBus?.emit("session:updated", {
+          sessionId: this.session.id,
+          name,
+        });
+      }
       if (!alreadyNamed) {
         await this.adapter.renameSessionThread(this.session.id, name);
       }
@@ -233,13 +227,7 @@ export class SessionBridge {
         this.tracer?.log("core", { step: "middleware:before", sessionId: this.session.id, hook: "agent:beforeEvent", blocked: !result });
         if (!result) return; // blocked by middleware
         const transformedEvent = result.event;
-        const outgoing = this.handleAgentEvent(transformedEvent);
-        // Hook: agent:afterEvent — read-only, fire-and-forget
-        mw.execute('agent:afterEvent', {
-          sessionId: this.session.id,
-          event: transformedEvent,
-          outgoingMessage: outgoing ?? { type: 'text' as const, text: '' },
-        }, async (e) => e).catch(() => {});
+        this.handleAgentEvent(transformedEvent);
       } catch {
         // Middleware error — proceed with original event
         try {

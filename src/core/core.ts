@@ -14,7 +14,7 @@ import type { FileServiceInterface } from "./plugin/types.js";
 import { JsonFileSessionStore, type SessionStore } from "./sessions/session-store.js";
 import type { SecurityGuard } from "../plugins/security/security-guard.js";
 import { SessionFactory } from "./sessions/session-factory.js";
-import type { IncomingMessage } from "./types.js";
+import type { IncomingMessage, AgentEvent, SessionStatus } from "./types.js";
 import type { TunnelService } from "../plugins/tunnel/tunnel-service.js";
 import { getAgentCapabilities } from "./agents/agent-registry.js";
 import { AgentSwitchHandler } from "./agent-switch-handler.js";
@@ -499,9 +499,10 @@ export class OpenACPCore {
       }
     }
 
-    // 6b. Headless sessions (no adapter): auto-approve safe permissions so agents don't hang.
-    // Permissions without an explicit allow option are NOT auto-approved — they will time out.
+    // 6b. Headless sessions (no adapter): wire fallbacks normally handled by SessionBridge.
     if (!adapter) {
+      // Auto-approve safe permissions so agents don't hang.
+      // Permissions without an explicit allow option are NOT auto-approved — they will time out.
       session.agentInstance.onPermissionRequest = async (permRequest) => {
         const allowOption = permRequest.options.find((o) => o.isAllow);
         if (!allowOption) {
@@ -517,6 +518,48 @@ export class OpenACPCore {
         );
         return allowOption.id;
       };
+
+      // Persist session name and notify SSE clients when autoName fires.
+      // For bridged sessions this is handled by SessionBridge's "named" listener;
+      // headless sessions have no bridge so we wire it here instead.
+      session.on("named", async (name: string) => {
+        await this.sessionManager.patchRecord(session.id, { name });
+        this.eventBus.emit("session:updated", { sessionId: session.id, name });
+      });
+
+      // Forward agent events to EventBus so SSE clients can observe the session.
+      // Also handles session lifecycle transitions (session_end → finish, error → fail)
+      // and fires agent:beforeEvent middleware — all normally handled by SessionBridge.
+      const mw = () => this.lifecycleManager?.middlewareChain;
+      session.on("agent_event", async (event: AgentEvent) => {
+        let processedEvent = event;
+        const chain = mw();
+        if (chain) {
+          const result = await chain.execute('agent:beforeEvent', { sessionId: session.id, event }, async (e) => e);
+          if (!result) return; // blocked by middleware
+          processedEvent = result.event;
+        }
+        if (processedEvent.type === "session_end") {
+          session.finish((processedEvent as { reason?: string }).reason);
+        } else if (processedEvent.type === "error") {
+          session.fail((processedEvent as { message: string }).message);
+        }
+        this.eventBus.emit("agent:event", { sessionId: session.id, event: processedEvent });
+      });
+
+      // Persist status changes and notify SSE clients — normally wired by SessionBridge.
+      session.on("status_change", (_from: SessionStatus, to: SessionStatus) => {
+        this.sessionManager.patchRecord(session.id, {
+          status: to,
+          lastActiveAt: new Date().toISOString(),
+        });
+        this.eventBus.emit("session:updated", { sessionId: session.id, status: to });
+      });
+
+      // Persist prompt count after each prompt — normally wired by SessionBridge.
+      session.on("prompt_count_changed", (count: number) => {
+        this.sessionManager.patchRecord(session.id, { currentPromptCount: count });
+      });
     }
 
     // 6c. Wire usage tracking and tunnel cleanup

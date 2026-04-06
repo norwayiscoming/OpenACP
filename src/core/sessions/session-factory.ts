@@ -194,11 +194,13 @@ export class SessionFactory {
 
     // 4. Register in SessionManager
     this.sessionManager.registerSession(session);
-    this.eventBus.emit("session:created", {
-      sessionId: session.id,
-      agent: session.agentName,
-      status: session.status,
-    });
+    if (!session.isAssistant) {
+      this.eventBus.emit("session:created", {
+        sessionId: session.id,
+        agent: session.agentName,
+        status: session.status,
+      });
+    }
 
     return session;
   }

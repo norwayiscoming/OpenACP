@@ -76,9 +76,6 @@ export class Session extends TypedEmitter<SessionEvents> {
   threadIds: Map<string, string> = new Map();
   /** Active turn context — sealed on prompt dequeue, cleared on turn end */
   activeTurnContext: TurnContext | null = null;
-  /** The agentInstance for which the agent→session event relay is wired (prevents duplicate relays from multiple bridges).
-   *  When the agent is swapped, the relay must be re-wired to the new instance. */
-  agentRelaySource: AgentInstance | null = null;
 
   readonly permissionGate = new PermissionGate();
   private readonly queue: PromptQueue;
@@ -117,7 +114,22 @@ export class Session extends TypedEmitter<SessionEvents> {
       },
     );
 
+    this.wireAgentRelay();
     this.wireCommandsBuffer();
+  }
+
+  /** Wire the agent→session event relay on the current agentInstance.
+   *  Removes any previous relay first to avoid duplicates on agent switch.
+   *  This relay ensures session.emit("agent_event") fires for ALL sessions,
+   *  including headless API sessions that have no SessionBridge attached. */
+  private agentRelayCleanup?: () => void;
+  private wireAgentRelay(): void {
+    this.agentRelayCleanup?.();
+    const handler = (event: AgentEvent) => {
+      this.emit("agent_event", event);
+    };
+    this.agentInstance.on("agent_event", handler);
+    this.agentRelayCleanup = () => this.agentInstance.off("agent_event", handler);
   }
 
   /** Wire a listener on the current agentInstance to buffer commands_update events.
@@ -275,6 +287,21 @@ export class Session extends TypedEmitter<SessionEvents> {
       this.on("agent_event", accumulatorListener);
     }
 
+    // Hook: agent:afterEvent — fire for every agent event, including headless API sessions.
+    // Listens directly on agentInstance so it works regardless of whether a SessionBridge is connected.
+    // The bridge previously fired this hook from dispatchAgentEvent, but that path is skipped when
+    // no adapter is attached (headless), causing AI response steps to be missing from history.
+    const mw = this.middlewareChain;
+    const afterEventListener = mw
+      ? (event: AgentEvent) => {
+          mw.execute('agent:afterEvent', { sessionId: this.id, event, outgoingMessage: { type: 'text' as const, text: '' } }, async (e) => e).catch(() => {});
+        }
+      : null;
+
+    if (afterEventListener) {
+      this.agentInstance.on("agent_event", afterEventListener);
+    }
+
     // Hook: turn:start — read-only, fire-and-forget
     if (this.middlewareChain) {
       this.middlewareChain.execute('turn:start', { sessionId: this.id, promptText: processed.text, promptNumber: this.promptCount }, async (p) => p).catch(() => {});
@@ -301,6 +328,9 @@ export class Session extends TypedEmitter<SessionEvents> {
     } finally {
       if (accumulatorListener) {
         this.off("agent_event", accumulatorListener);
+      }
+      if (afterEventListener) {
+        this.agentInstance.off("agent_event", afterEventListener);
       }
       // Hook: turn:end — always fires, even on error
       if (this.middlewareChain) {
@@ -627,6 +657,7 @@ export class Session extends TypedEmitter<SessionEvents> {
     this.configOptions = [];
     this.latestCommands = null;
     this.applySpawnResponse(newAgent.initialSessionResponse, newAgent.agentCapabilities);
+    this.wireAgentRelay();
     this.wireCommandsBuffer();
 
     this.log.info({ from: this.agentSwitchHistory.at(-1)!.agentName, to: agentName }, "Agent switched");

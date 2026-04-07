@@ -107,7 +107,7 @@ describe("_sendCustomPathPrompt", () => {
     const [callChatId, callText, callOpts] = (ctx.api.sendMessage as ReturnType<typeof vi.fn>).mock.calls[0];
     expect(callChatId).toBe(42);
     expect(callText).toContain("workspace path");
-    expect((callOpts as any).reply_markup).toEqual({ force_reply: true, selective: true });
+    expect((callOpts as any).reply_markup).toEqual({ force_reply: true });
     expect((callOpts as any).message_thread_id).toBe(5);
 
     // Entry stored in map
@@ -165,7 +165,7 @@ describe("_handleCustomPathReply", () => {
     // Should send new force_reply
     expect(ctx.api.sendMessage).toHaveBeenCalledOnce();
     const sendOpts = (ctx.api.sendMessage as ReturnType<typeof vi.fn>).mock.calls[0][2];
-    expect((sendOpts as any).reply_markup).toEqual({ force_reply: true, selective: true });
+    expect((sendOpts as any).reply_markup).toEqual({ force_reply: true });
 
     // New entry stored in map
     expect(_forceReplyMap.size).toBe(1);

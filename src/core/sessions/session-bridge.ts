@@ -179,9 +179,10 @@ export class SessionBridge {
       this.deps.sessionManager.patchRecord(this.session.id, { currentPromptCount: count });
     });
 
-    // Wire turn_started: emit message:processing on EventBus for external adapter turns
+    // Wire turn_started: emit message:processing on EventBus so SSE clients
+    // (including other connected App windows) can show the streaming assistant stub.
     this.listen(this.session, SessionEv.TURN_STARTED, (ctx: TurnContext) => {
-      if (ctx.sourceAdapterId !== 'sse' && ctx.sourceAdapterId !== 'api') {
+      if (ctx.sourceAdapterId !== 'sse') {
         this.deps.eventBus?.emit(BusEvent.MESSAGE_PROCESSING, {
           sessionId: this.session.id,
           turnId: ctx.turnId,

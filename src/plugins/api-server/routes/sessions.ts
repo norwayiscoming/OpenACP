@@ -1,8 +1,10 @@
 import type { FastifyInstance } from 'fastify';
 import type { RouteDeps } from './types.js';
+import { nanoid } from 'nanoid';
 import { BadRequestError, NotFoundError, ServiceUnavailableError } from '../middleware/error-handler.js';
 import { requireScopes } from '../middleware/auth.js';
 import { resolveAttachments } from './attachment-utils.js';
+import { BusEvent } from '../../../core/events.js';
 import {
   SessionIdParamSchema,
   ConfigIdParamSchema,
@@ -220,14 +222,30 @@ export async function sessionRoutes(
         attachments = await resolveAttachments(fileService, sessionId, body.attachments);
       }
 
-      await session.enqueuePrompt(body.prompt, attachments, {
-        sourceAdapterId: body.sourceAdapterId ?? 'api',
-        responseAdapterId: body.responseAdapterId,
+      const sourceAdapterId = body.sourceAdapterId ?? 'api';
+      const turnId = nanoid(8);
+
+      // Emit message:queued so all SSE clients (including other connected App windows)
+      // see the user message immediately, not just the sender's optimistic UI update.
+      deps.core.eventBus.emit(BusEvent.MESSAGE_QUEUED, {
+        sessionId,
+        turnId,
+        text: body.prompt,
+        sourceAdapterId,
+        attachments: attachments,
+        timestamp: new Date().toISOString(),
+        queueDepth: session.queueDepth,
       });
+
+      await session.enqueuePrompt(body.prompt, attachments, {
+        sourceAdapterId,
+        responseAdapterId: body.responseAdapterId,
+      }, turnId);
       return {
         ok: true,
         sessionId,
         queueDepth: session.queueDepth,
+        turnId,
       };
     },
   );

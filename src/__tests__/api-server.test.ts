@@ -43,6 +43,7 @@ describe("ApiServer", () => {
     configManager: {
       get: vi.fn(() => ({
         defaultAgent: "claude",
+        agents: { claude: { command: "claude-agent-acp", args: [], env: {} } },
         workspace: { baseDir: "~/openacp-workspace" },
         logging: {
           level: "info",

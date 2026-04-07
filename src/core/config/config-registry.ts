@@ -19,7 +19,11 @@ export const CONFIG_REGISTRY: ConfigFieldDef[] = [
     displayName: "Default Agent",
     group: "agent",
     type: "select",
-    options: () => {
+    options: (config) => {
+      // Primary: agents defined in config
+      const configAgents = Object.keys((config as Record<string, unknown> & { agents?: Record<string, unknown> }).agents ?? {});
+      if (configAgents.length > 0) return configAgents;
+      // Fallback: read from agents.json (legacy/installed catalog)
       try {
         const agentsPath = path.join(getGlobalRoot(), "agents.json");
         if (fs.existsSync(agentsPath)) {

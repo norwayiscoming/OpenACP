@@ -1360,6 +1360,14 @@ main() {
     # ── Stage 1: Prepare environment ──
     ui_stage "Preparing environment"
 
+    # Attempt to activate an existing node installation (e.g. via nvm, fnm, nodenv,
+    # or Homebrew) before checking whether node is present. This is necessary because
+    # the script may run in a non-login shell (e.g. launched from a GUI app) where
+    # shell rc files are never sourced and PATH-based node managers are invisible.
+    # If activation fails silently here that is fine — check_node / install_node below
+    # will handle the missing-node case.
+    ensure_default_node_active_shell 2>/dev/null || true
+
     if ! check_node; then
         install_node
     fi

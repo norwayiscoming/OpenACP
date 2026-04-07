@@ -687,7 +687,7 @@ describe("ApiServer", () => {
     const data = await res.json();
     expect(data.ok).toBe(true);
     expect(data.sessionId).toBe("abc123");
-    expect(mockSession.enqueuePrompt).toHaveBeenCalledWith("Hello world", undefined, expect.objectContaining({ sourceAdapterId: "api" }));
+    expect(mockSession.enqueuePrompt).toHaveBeenCalledWith("Hello world", undefined, expect.objectContaining({ sourceAdapterId: "api" }), expect.any(String));
   });
 
   it("POST /api/sessions/:id/prompt returns 404 for unknown session", async () => {

@@ -205,6 +205,73 @@ const WS_CACHE_MAX = 50
 const workspaceCache = new Map<number, { agentKey: string; workspace: string; ts: number }>()
 let nextWsId = 0
 
+// --- Force Reply state for custom path input ---
+
+interface ForceReplyEntry {
+  agentKey: string;
+  chatId: number;
+  createdAt: number; // ms timestamp, for TTL
+}
+
+export const _forceReplyMap = new Map<number, ForceReplyEntry>();
+
+export function _pruneExpiredForceReplies(): void {
+  const cutoff = Date.now() - 10 * 60 * 1000;
+  for (const [msgId, entry] of _forceReplyMap) {
+    if (entry.createdAt < cutoff) _forceReplyMap.delete(msgId);
+  }
+}
+
+export async function _sendCustomPathPrompt(
+  ctx: Context,
+  chatId: number,
+  agentKey: string,
+): Promise<void> {
+  const threadId =
+    ctx.message?.message_thread_id ??
+    (ctx as Context & { callbackQuery?: { message?: { message_thread_id?: number } } })
+      .callbackQuery?.message?.message_thread_id;
+
+  const sent = await ctx.api.sendMessage(
+    chatId,
+    `Please type the workspace path.\n\n` +
+      `Examples:\n` +
+      `• <code>/absolute/path/to/project</code>\n` +
+      `• <code>~/my-project</code>\n` +
+      `• <code>project-name</code> (created under your base directory)\n\n` +
+      `Reply to this message with your path.`,
+    {
+      parse_mode: 'HTML',
+      reply_markup: { force_reply: true, selective: true },
+      ...(threadId !== undefined ? { message_thread_id: threadId } : {}),
+    },
+  );
+  _forceReplyMap.set(sent.message_id, { agentKey, chatId, createdAt: Date.now() });
+}
+
+export async function _handleCustomPathReply(
+  ctx: Context,
+  core: OpenACPCore,
+  chatId: number,
+  entry: ForceReplyEntry,
+): Promise<void> {
+  const input = (ctx.message!.text ?? '').trim();
+
+  let resolvedPath: string;
+  try {
+    resolvedPath = core.configManager.resolveWorkspace(input);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    await ctx.reply(`❌ ${escapeHtml(message)}\n\nPlease try again:`, {
+      parse_mode: 'HTML',
+    }).catch(() => {});
+    await _sendCustomPathPrompt(ctx, chatId, entry.agentKey);
+    return;
+  }
+
+  await createSessionDirect(ctx, core, chatId, entry.agentKey, resolvedPath);
+}
+
 function cacheWorkspace(agentKey: string, workspace: string): number {
   // Evict stale entries (>5 min) and cap size
   const now = Date.now()

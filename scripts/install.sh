@@ -1384,6 +1384,10 @@ main() {
     # ── Stage 2: Install ──
     ui_stage "Installing OpenACP"
 
+    # Fix npm permissions before any npm global install, regardless of install method.
+    # Both "npm" and "git" paths may call `npm install -g` (pnpm, openacp).
+    fix_npm_permissions
+
     if [[ "$INSTALL_METHOD" == "git" ]]; then
         if ! check_git; then
             install_git
@@ -1395,8 +1399,6 @@ main() {
         fi
         install_openacp_from_git "$GIT_DIR"
     else
-        fix_npm_permissions
-
         local install_spec=""
         install_spec="$(resolve_package_install_spec "$INSTALL_TAG")"
         install_openacp_npm "$install_spec"

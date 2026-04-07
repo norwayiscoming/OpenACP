@@ -137,6 +137,10 @@ export class AgentCatalog {
       const dist = resolveDistribution(agent);
       const availability = checkDependencies(agent.id);
 
+      // An uninstalled agent is "available" (shows Install button) as long as a
+      // distribution exists for this platform. Missing external dependencies
+      // (e.g. claude CLI, codex CLI) are surfaced via missingDeps so the UI can
+      // show post-install setup instructions — they should NOT block installation.
       items.push({
         key: alias,
         registryId: agent.id,
@@ -145,7 +149,7 @@ export class AgentCatalog {
         description: agent.description,
         distribution: dist?.type ?? "binary",
         installed: false,
-        available: dist !== null && availability.available,
+        available: dist !== null,
         missingDeps: availability.missing?.map((m) => m.label),
       });
     }

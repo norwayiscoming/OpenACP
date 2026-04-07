@@ -164,17 +164,7 @@ export async function installAgent(
   const agentKey = getAgentAlias(agent.id);
   await progress?.onStart(agent.id, agent.name);
 
-  // 1. Check dependencies
-  await progress?.onStep("Checking requirements...");
-  const depResult = checkDependencies(agent.id);
-  if (!depResult.available) {
-    const hints = depResult.missing!.map((m) => `  ${m.label}: ${m.installHint}`).join("\n");
-    const msg = `${agent.name} needs some tools installed first:\n${hints}`;
-    await progress?.onError(msg);
-    return { ok: false, agentKey, error: msg };
-  }
-
-  // 2. Resolve distribution
+  // 1. Resolve distribution
   const dist = resolveDistribution(agent);
   if (!dist) {
     const platformKey = getPlatformKey();
@@ -183,14 +173,18 @@ export async function installAgent(
     return { ok: false, agentKey, error: msg };
   }
 
-  // 3. Check runtime
+  // 2. Check runtime availability (hard requirement — uvx/npx must exist to run)
   if (dist.type === "uvx" && !checkRuntimeAvailable("uvx")) {
     const msg = `${agent.name} requires Python's uvx tool.\nInstall it with: pip install uv`;
     await progress?.onError(msg, "pip install uv");
     return { ok: false, agentKey, error: msg, hint: "pip install uv" };
   }
 
-  // 4. Install based on type
+  // 3. Check external CLI dependencies (non-blocking — install proceeds, setup steps
+  //    guide the user to install required CLIs afterward)
+  const depResult = checkDependencies(agent.id);
+
+  // 4. Install based on distribution type
   let binaryPath: string | undefined;
 
   if (dist.type === "binary") {
@@ -209,9 +203,14 @@ export async function installAgent(
   const installed = buildInstalledAgent(agent.id, agent.name, agent.version, dist, binaryPath);
   store.addAgent(agentKey, installed);
 
+  // 6. Build setup steps: prefer agent-specific steps; fall back to dep install hints
   const setup = getAgentSetup(agent.id);
+  const setupSteps = setup?.setupSteps ?? (
+    depResult.missing?.map((m) => `${m.label}: ${m.installHint}`) ?? []
+  );
+
   await progress?.onSuccess(agent.name);
-  return { ok: true, agentKey, setupSteps: setup?.setupSteps };
+  return { ok: true, agentKey, setupSteps: setupSteps.length > 0 ? setupSteps : undefined };
 }
 
 async function downloadAndExtract(

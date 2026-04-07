@@ -712,9 +712,11 @@ check_node() {
 }
 
 ensure_default_node_active_shell() {
-    if node_is_at_least_required; then
-        return 0
-    fi
+    # Always try version managers first (nvm, fnm, nodenv) before falling back to
+    # system node. This is important because version-manager-installed node has a
+    # user-writable npm prefix, whereas system node (installed via pkg/brew without
+    # a version manager) typically uses /usr/local which may require sudo for global
+    # installs — even when the node version itself meets the minimum requirement.
 
     # Try sourcing nvm.
     # Check NVM_DIR first, then fall back to the default ~/.nvm location.
@@ -751,6 +753,11 @@ ensure_default_node_active_shell() {
         if node_is_at_least_required; then
             return 0
         fi
+    fi
+
+    # Fall back to whatever node is already in PATH (system node, Homebrew, etc.)
+    if node_is_at_least_required; then
+        return 0
     fi
 
     # Try Homebrew-managed Node (macOS) — covers cases where Homebrew shellenv
@@ -1041,7 +1048,16 @@ fix_npm_permissions() {
         return 0
     fi
 
-    if [[ -w "$npm_prefix" || -w "$npm_prefix/lib" ]]; then
+    # Check if npm global installs would succeed by verifying write access to the
+    # node_modules directory specifically. Checking $prefix or $prefix/lib alone is
+    # not sufficient: on Intel Macs with Homebrew, /usr/local/lib is user-writable
+    # (Homebrew sets this up) but /usr/local/lib/node_modules may be owned by root
+    # if Node was previously installed via the official pkg installer.
+    local nm_dir="$npm_prefix/lib/node_modules"
+    if [[ -d "$nm_dir" && -w "$nm_dir" ]]; then
+        return 0
+    fi
+    if [[ ! -d "$nm_dir" && -w "$npm_prefix/lib" ]]; then
         return 0
     fi
 

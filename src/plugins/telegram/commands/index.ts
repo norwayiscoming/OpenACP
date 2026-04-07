@@ -65,7 +65,7 @@ export function setupAllCallbacks(
   });
 
   // New Session button flow — must be before broad m: handler
-  setupNewSessionCallbacks(bot, core, chatId, getAssistantSession);
+  setupNewSessionCallbacks(bot, core, chatId);
 
   // Archive confirmation callbacks
   bot.callbackQuery(/^ar:/, (ctx) => handleArchiveConfirm(ctx, core, chatId));

@@ -109,7 +109,19 @@ function resolveAgentCommand(cmd: string): { command: string; args: string[] } {
     // which failed
   }
 
-  // 4. Fallback: use command as-is
+  // 4. For npx/uvx: derive from the running Node's bin directory.
+  //    When openacp is installed globally (e.g. via Homebrew or nvm), npx lives
+  //    next to the same node binary that is executing this process.  The user's
+  //    shell PATH may not include that directory (common with nvm in non-interactive
+  //    shells), so resolve it explicitly.
+  if (cmd === "npx" || cmd === "uvx") {
+    const sibling = path.join(path.dirname(process.execPath), cmd);
+    if (fs.existsSync(sibling)) {
+      return { command: sibling, args: [] };
+    }
+  }
+
+  // 5. Fallback: use command as-is
   return { command: cmd, args: [] };
 }
 

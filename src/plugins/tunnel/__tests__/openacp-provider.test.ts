@@ -251,3 +251,128 @@ describe('OpenACPTunnelProvider', () => {
     await expect(provider.start(3100)).rejects.toThrow('429')
   })
 })
+
+describe('OpenACPTunnelProvider — preserveState', () => {
+  let storage: ReturnType<typeof makeStorage>
+  let fetchMock: ReturnType<typeof vi.fn>
+
+  beforeEach(() => {
+    storage = makeStorage()
+    fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+    vi.useFakeTimers()
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+    vi.useRealTimers()
+  })
+
+  it('stop(true, true) kills process but does NOT delete from worker or clear storage', async () => {
+    const saved = { '3100': { tunnelId: 'cf-ps', token: 'tok-ps', publicUrl: 'https://ps.tunnel.openacp.ai' } }
+    storage = makeStorage({ 'openacp-tunnels': saved })
+
+    const proc = makeProcess()
+    vi.mocked(spawn).mockReturnValue(proc as any)
+    fetchMock.mockResolvedValue({ ok: true, json: async () => ({ ok: true }) })
+
+    const provider = new OpenACPTunnelProvider({}, '/mock/bin', storage)
+    const startPromise = provider.start(3100)
+    await vi.advanceTimersByTimeAsync(15_001)
+    await startPromise
+
+    await provider.stop(true, true)
+
+    expect(proc.kill).toHaveBeenCalledWith('SIGKILL')
+
+    const deleteCalls = fetchMock.mock.calls.filter(
+      ([url, init]: [any, any]) => init?.method === 'DELETE'
+    )
+    expect(deleteCalls.length).toBe(0)
+
+    const state = await storage.get<Record<string, unknown>>('openacp-tunnels')
+    expect(state).toEqual(saved)
+  })
+
+  it('stop(false, false) still deletes from worker and clears storage (default behavior)', async () => {
+    const proc = makeProcess()
+    vi.mocked(spawn).mockReturnValue(proc as any)
+
+    fetchMock
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ tunnelId: 'cf-del', token: 'tok-del', publicUrl: 'https://del.tunnel.openacp.ai' }) })
+      .mockResolvedValue({ ok: true, json: async () => ({}) })
+
+    const provider = new OpenACPTunnelProvider({}, '/mock/bin', storage)
+    const startPromise = provider.start(3100)
+    await vi.advanceTimersByTimeAsync(15_001)
+    await startPromise
+
+    await provider.stop()
+
+    const deleteCalls = fetchMock.mock.calls.filter(
+      ([url, init]: [any, any]) => String(url).includes('/tunnel/cf-del') && init?.method === 'DELETE'
+    )
+    expect(deleteCalls.length).toBe(1)
+    expect(storage.set).toHaveBeenLastCalledWith('openacp-tunnels', {})
+  })
+})
+
+describe('OpenACPTunnelProvider — fast startup via stderr', () => {
+  let storage: ReturnType<typeof makeStorage>
+  let fetchMock: ReturnType<typeof vi.fn>
+
+  beforeEach(() => {
+    storage = makeStorage()
+    fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+    vi.useFakeTimers()
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+    vi.useRealTimers()
+  })
+
+  it('resolves immediately when cloudflared logs "Registered tunnel connection"', async () => {
+    const proc = makeProcess()
+    vi.mocked(spawn).mockReturnValue(proc as any)
+
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({ tunnelId: 'cf-fast', token: 'tok-fast', publicUrl: 'https://fast.tunnel.openacp.ai' }),
+    })
+
+    const provider = new OpenACPTunnelProvider({}, '/mock/bin', storage)
+    const startPromise = provider.start(3100)
+
+    // Simulate cloudflared printing connection message after 2 seconds
+    await vi.advanceTimersByTimeAsync(2_000)
+    proc.stderr.emit('data', Buffer.from('2025-01-01T00:00:00Z INF Registered tunnel connection connIndex=0 connection=abc location=AMS protocol=quic\n'))
+
+    // Should resolve without needing to wait 15s
+    const url = await startPromise
+    expect(url).toBe('https://fast.tunnel.openacp.ai')
+  })
+
+  it('still falls back to timeout when no connection message received', async () => {
+    const proc = makeProcess()
+    vi.mocked(spawn).mockReturnValue(proc as any)
+
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({ tunnelId: 'cf-slow', token: 'tok-slow', publicUrl: 'https://slow.tunnel.openacp.ai' }),
+    })
+
+    const provider = new OpenACPTunnelProvider({}, '/mock/bin', storage)
+    const startPromise = provider.start(3100)
+
+    // Emit some unrelated log output
+    proc.stderr.emit('data', Buffer.from('INF Starting tunnel\n'))
+
+    // Wait for timeout
+    await vi.advanceTimersByTimeAsync(15_001)
+
+    const url = await startPromise
+    expect(url).toBe('https://slow.tunnel.openacp.ai')
+  })
+})

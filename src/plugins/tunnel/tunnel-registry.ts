@@ -264,19 +264,29 @@ export class TunnelRegistry {
   }
 
   async shutdown(): Promise<void> {
+    if (this.shuttingDown) return
+
     this.keepalive.stop()
     this.shuttingDown = true
+
+    // Cancel any pending save timers
+    if (this.saveTimeout) {
+      clearTimeout(this.saveTimeout)
+      this.saveTimeout = null
+    }
 
     const stopPromises: Promise<void>[] = []
     for (const [, live] of this.entries) {
       if (live.retryTimer) clearTimeout(live.retryTimer)
       if (live.process) {
-        stopPromises.push(live.process.stop(true).catch(() => { /* ignore */ }))
+        stopPromises.push(live.process.stop(true, true).catch(() => { /* ignore */ }))
       }
     }
     await Promise.all(stopPromises)
+
+    // Persist current state so tunnels can reconnect on next startup
+    this.save()
     this.entries.clear()
-    this.scheduleSave()
   }
 
   list(includeSystem = false): TunnelEntry[] {
@@ -309,16 +319,21 @@ export class TunnelRegistry {
 
       // Only restore user tunnels — system tunnel is registered separately by TunnelService.start()
       const userEntries = raw.filter(e => e.type === 'user')
-      for (const persisted of userEntries) {
-        try {
-          await this.add(persisted.port, {
+      const results = await Promise.allSettled(
+        userEntries.map(persisted =>
+          this.add(persisted.port, {
             type: persisted.type,
             provider: persisted.provider,
             label: persisted.label,
-            sessionId: persisted.sessionId,
+            // sessionId intentionally omitted — sessions don't survive restart
           })
-        } catch (err) {
-          log.warn({ port: persisted.port, err: (err as Error).message }, 'Failed to restore tunnel')
+        )
+      )
+
+      for (let i = 0; i < results.length; i++) {
+        if (results[i].status === 'rejected') {
+          const reason = (results[i] as PromiseRejectedResult).reason as Error
+          log.warn({ port: userEntries[i].port, err: reason.message }, 'Failed to restore tunnel')
         }
       }
     } catch (err) {
@@ -381,6 +396,8 @@ export class TunnelRegistry {
       clearTimeout(this.saveTimeout)
       this.saveTimeout = null
     }
-    this.save()
+    if (!this.shuttingDown) {
+      this.save()
+    }
   }
 }

@@ -264,19 +264,29 @@ export class TunnelRegistry {
   }
 
   async shutdown(): Promise<void> {
+    if (this.shuttingDown) return
+
     this.keepalive.stop()
     this.shuttingDown = true
+
+    // Cancel any pending save timers
+    if (this.saveTimeout) {
+      clearTimeout(this.saveTimeout)
+      this.saveTimeout = null
+    }
 
     const stopPromises: Promise<void>[] = []
     for (const [, live] of this.entries) {
       if (live.retryTimer) clearTimeout(live.retryTimer)
       if (live.process) {
-        stopPromises.push(live.process.stop(true).catch(() => { /* ignore */ }))
+        stopPromises.push(live.process.stop(true, true).catch(() => { /* ignore */ }))
       }
     }
     await Promise.all(stopPromises)
+
+    // Persist current state so tunnels can reconnect on next startup
+    this.save()
     this.entries.clear()
-    this.scheduleSave()
   }
 
   list(includeSystem = false): TunnelEntry[] {
@@ -315,7 +325,7 @@ export class TunnelRegistry {
             type: persisted.type,
             provider: persisted.provider,
             label: persisted.label,
-            sessionId: persisted.sessionId,
+            // sessionId intentionally omitted — sessions don't survive restart
           })
         } catch (err) {
           log.warn({ port: persisted.port, err: (err as Error).message }, 'Failed to restore tunnel')
@@ -381,6 +391,8 @@ export class TunnelRegistry {
       clearTimeout(this.saveTimeout)
       this.saveTimeout = null
     }
-    this.save()
+    if (!this.shuttingDown) {
+      this.save()
+    }
   }
 }

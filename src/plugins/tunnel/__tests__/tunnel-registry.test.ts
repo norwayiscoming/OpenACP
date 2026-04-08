@@ -495,4 +495,85 @@ describe('TunnelRegistry — restore', () => {
     await registry.restore()
     expect(registry.list(true)).toHaveLength(0)
   })
+
+  it('restores user tunnels without sessionId (sessions do not survive restart)', async () => {
+    const persisted = [
+      { port: 3200, type: 'user', provider: 'cloudflare', label: 'my-app', sessionId: 'sess-old', createdAt: new Date().toISOString() },
+    ]
+    vi.mocked(fs.existsSync).mockReturnValue(true)
+    vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify(persisted))
+
+    const registry = new TunnelRegistry()
+    await registry.restore()
+
+    const restored = registry.list(false)
+    expect(restored).toHaveLength(1)
+    expect(restored[0].label).toBe('my-app')
+    expect(restored[0].sessionId).toBeUndefined()
+  })
+})
+
+describe('TunnelRegistry — shutdown persistence', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+    mockProviderInstances = []
+    nextMockOverride = null
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('shutdown passes preserveState=true to providers', async () => {
+    const registry = new TunnelRegistry()
+    await registry.add(3100, { type: 'system', provider: 'cloudflare' })
+    await registry.add(3200, { type: 'user', provider: 'cloudflare' })
+
+    await registry.shutdown()
+
+    for (const mock of mockProviderInstances) {
+      expect(mock.stop).toHaveBeenCalledWith(true, true)
+    }
+  })
+
+  it('shutdown persists entries to tunnels.json before clearing', async () => {
+    const registry = new TunnelRegistry()
+    await registry.add(3100, { type: 'system', provider: 'cloudflare' })
+    await registry.add(3200, { type: 'user', provider: 'cloudflare', label: 'my-app' })
+
+    await registry.shutdown()
+
+    const writeCalls = vi.mocked(fs.writeFileSync).mock.calls
+    const lastWrite = writeCalls[writeCalls.length - 1]
+    const persisted = JSON.parse(lastWrite[1] as string) as Array<{ port: number; type: string }>
+
+    expect(persisted).toHaveLength(2)
+    expect(persisted.map(e => e.port).sort()).toEqual([3100, 3200])
+  })
+
+  it('flush() is a no-op after shutdown (does not overwrite with empty)', async () => {
+    const registry = new TunnelRegistry()
+    await registry.add(3100, { type: 'user', provider: 'cloudflare' })
+
+    await registry.shutdown()
+
+    const writeCountAfterShutdown = vi.mocked(fs.writeFileSync).mock.calls.length
+
+    registry.flush()
+
+    expect(vi.mocked(fs.writeFileSync).mock.calls.length).toBe(writeCountAfterShutdown)
+  })
+
+  it('double shutdown does not overwrite preserved tunnels.json', async () => {
+    const registry = new TunnelRegistry()
+    await registry.add(3100, { type: 'user', provider: 'cloudflare' })
+
+    await registry.shutdown()
+
+    const writeCountAfterFirst = vi.mocked(fs.writeFileSync).mock.calls.length
+
+    await registry.shutdown()
+
+    expect(vi.mocked(fs.writeFileSync).mock.calls.length).toBe(writeCountAfterFirst)
+  })
 })

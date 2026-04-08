@@ -40,8 +40,8 @@ export class AgentCatalog {
 
     // If the instance store is NOT the global one, load global as fallback
     const globalPath = path.join(os.homedir(), ".openacp", "agents.json");
-    const storePath = (store as any)?.filePath;
-    if (storePath && path.resolve(storePath) !== path.resolve(globalPath)) {
+    const storePath = this.store.filePath;
+    if (path.resolve(storePath) !== path.resolve(globalPath)) {
       this.globalStore = new AgentStore(globalPath);
     }
   }
@@ -114,7 +114,7 @@ export class AgentCatalog {
   // --- Discovery ---
 
   getAvailable(): AgentListItem[] {
-    const installed = this.store.getInstalled();
+    const installed = this.getInstalledEntries();
     const items: AgentListItem[] = [];
     const seenKeys = new Set<string>();
 
@@ -210,17 +210,20 @@ export class AgentCatalog {
   }
 
   async uninstall(key: string): Promise<{ ok: boolean; error?: string }> {
-    if (!this.store.hasAgent(key)) {
-      return { ok: false, error: `"${key}" is not installed.` };
+    if (this.store.hasAgent(key)) {
+      await uninstallAgent(key, this.store);
+      return { ok: true };
     }
-    await uninstallAgent(key, this.store);
-    return { ok: true };
+    if (this.globalStore?.getAgent(key)) {
+      return { ok: false, error: `"${key}" is installed globally. Uninstall it from the global instance instead.` };
+    }
+    return { ok: false, error: `"${key}" is not installed.` };
   }
 
   // --- Resolution (for AgentManager) ---
 
   resolve(key: string): AgentDefinition | undefined {
-    const agent = this.store.getAgent(key);
+    const agent = this.store.getAgent(key) ?? this.globalStore?.getAgent(key);
     if (!agent) return undefined;
     return {
       name: key,

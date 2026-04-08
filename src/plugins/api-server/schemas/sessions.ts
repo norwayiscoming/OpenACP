@@ -50,6 +50,8 @@ export const PromptBodySchema = z.object({
   responseAdapterId: z.string().nullable().optional(),
   // Optional file attachments; each decoded and stored via FileService
   attachments: z.array(AttachmentInputSchema).max(10).optional(),
+  // Client-provided turnId to avoid SSE echo race condition
+  turnId: z.string().max(64).optional(),
 });
 
 export const PermissionResponseBodySchema = z.object({

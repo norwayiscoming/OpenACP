@@ -223,7 +223,7 @@ export async function sessionRoutes(
       }
 
       const sourceAdapterId = body.sourceAdapterId ?? 'api';
-      const turnId = nanoid(8);
+      const turnId = body.turnId ?? nanoid(8);
 
       // Emit message:queued so all SSE clients (including other connected App windows)
       // see the user message immediately, not just the sender's optimistic UI update.

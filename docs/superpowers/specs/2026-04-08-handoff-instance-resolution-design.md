@@ -5,7 +5,9 @@
 
 ## Problem
 
-When multiple OpenACP instances run on the same machine (e.g., global `~/.openacp/` + local project `~/workspace/.openacp/`), the handoff flow always targets the global instance. The CLI `adopt` command hardcodes `~/.openacp/api.port` — it has no awareness of local instances.
+When multiple OpenACP instances run on the same machine (e.g., global `~/.openacp/` + local project `~/workspace/.openacp/`), the handoff flow always targets the global instance. The CLI `adopt` command calls `readApiPort()` with no arguments, which defaults to `~/.openacp/api.port` — it has no awareness of local instances.
+
+Note: other CLI commands (`api.ts`, `config.ts`, `tunnel.ts`, `remote.ts`) already pass `instanceRoot` to `readApiPort()` correctly. `adopt.ts` is the outlier.
 
 Users commonly work in workspaces with nested project directories. An agent running in `~/workspace/project-A/src/core/` should handoff to the instance at `~/workspace/.openacp/` if one is running, not to the unrelated global instance.
 
@@ -13,12 +15,12 @@ Users commonly work in workspaces with nested project directories. An agent runn
 
 ### Instance Resolution Algorithm
 
-Add a `resolveInstanceRoot(cwd)` utility that walks up the directory tree from the agent's working directory, looking for a running `.openacp/` instance:
+Enhance the existing `resolveInstanceRoot()` in `instance-context.ts` to walk up the directory tree from the agent's working directory, looking for a running `.openacp/` instance. Currently it only checks the exact CWD — it needs to climb like `findPackageRoot()` in `agent-instance.ts`.
 
 ```
-resolveInstanceRoot(cwd):
+resolveRunningInstance(cwd):
   dir = cwd
-  while dir != os.homedir()'s parent:
+  while dir != path.dirname(dir):     // stop at filesystem root
     candidate = path.join(dir, '.openacp')
     if candidate exists:
       port = read candidate/api.port
@@ -34,46 +36,49 @@ resolveInstanceRoot(cwd):
     return global
 
   // nothing running
-  throw error "No running OpenACP instance found"
+  return null
 ```
 
 **Key behaviors:**
 - Nearest running instance wins (like `.git` discovery)
 - Dead instances (exist but not running) are skipped — continue walking up
 - Fallback to global `~/.openacp/` if no local instance found
-- Stop walking at `$HOME`'s parent directory
-- Health check: read `api.port` file + HTTP GET to `/api/v1/system/health`
+- Health check: read `api.port` file + HTTP GET to `/api/v1/system/health` (reuse `checkHealth()` from `instance-discovery.ts`)
 
 ### Changes Required
 
-#### 1. New utility: `resolveInstanceRoot()`
+#### 1. New async function: `resolveRunningInstance()`
 
-**Location**: `src/core/instance/resolve-instance.ts`
+**Location**: `src/core/instance/instance-context.ts` (alongside existing `resolveInstanceRoot()`)
 
 ```typescript
-export async function resolveInstanceRoot(cwd: string): Promise<string>
+export async function resolveRunningInstance(cwd: string): Promise<string | null>
 ```
 
-- Accepts the agent's working directory
-- Returns the instance root path (e.g., `~/workspace/.openacp/`)
-- Uses existing `readApiPort()` and health check logic from `instance-discovery.ts`
-- Throws descriptive error if no running instance found
+- New function — does NOT modify or replace the existing sync `resolveInstanceRoot()`, which is used by multiple CLI commands for non-network resolution
+- Walks up directory tree using the same pattern as `findPackageRoot()` in `agent-instance.ts`
+- At each `.openacp/` candidate: reads `api.port`, calls `checkHealth()` from `instance-discovery.ts`
+- Returns instance root path, or `null` if nothing running
 
 #### 2. Modify CLI `adopt.ts`
 
-Replace the current hardcoded port resolution:
+Replace the current port resolution:
 
 ```typescript
 // Before
-const port = await readApiPort()
+const port = readApiPort()
 
 // After
-const instanceRoot = await resolveInstanceRoot(cwd ?? process.cwd())
-const port = await readApiPort(instanceRoot)
+const instanceRoot = await resolveRunningInstance(cwd ?? process.cwd())
+if (!instanceRoot) {
+  console.error('No running OpenACP instance found')
+  process.exit(1)
+}
+const port = readApiPort(undefined, instanceRoot)
 ```
 
-- `cwd` comes from the `--cwd` flag (already available in adopt command)
-- If `--cwd` not provided, falls back to `process.cwd()` (current behavior)
+- `cwd` comes from the `--cwd` flag (already parsed in adopt.ts but unused for instance resolution)
+- If `--cwd` not provided, falls back to `process.cwd()`
 
 #### 3. No changes to shell scripts
 
@@ -94,21 +99,21 @@ The handoff scripts (`openacp-handoff.sh`, `openacp-inject-session.sh`) and slas
 
 ### What Does NOT Change
 
+- Existing sync `resolveInstanceRoot()` — untouched, no breaking change
 - Shell hook scripts (no re-integration needed)
 - Daemon-side adopt logic (`core.adoptSession()`)
 - API endpoints
 - Session storage format
 - Instance registry format
-- Any other CLI commands (they can adopt `resolveInstanceRoot` later)
 
 ## Testing
 
-1. **Unit tests for `resolveInstanceRoot()`**:
-   - Walk up finds nearest instance
-   - Skips dead instances, finds next running one
-   - Falls back to global when no local instance
-   - Errors when nothing is running
-   - Stops at `$HOME` parent
+1. **Unit tests for `resolveRunningInstance()`**:
+   - Walk up finds nearest running instance
+   - Skips dead instances (`.openacp/` exists, no running daemon), finds next running one
+   - Falls back to global when no local instance found
+   - Returns null when nothing is running
+   - Nested instances: nearest running wins over parent
 
 2. **Integration test**:
    - Two instances running (local + global), adopt from nested CWD routes to local

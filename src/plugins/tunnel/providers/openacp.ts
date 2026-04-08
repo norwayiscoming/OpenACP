@@ -166,6 +166,17 @@ export class OpenACPTunnelProvider implements TunnelProvider {
 
       this.child = child
 
+      const onData = (data: Buffer): void => {
+        const line = data.toString()
+        if (/Registered tunnel connection/.test(line)) {
+          clearTimeout(timeout)
+          log.info({ port }, 'cloudflared connection registered')
+          settle(resolve)
+        }
+      }
+      child.stdout?.on('data', onData)
+      child.stderr?.on('data', onData)
+
       child.on('error', (err) => {
         clearTimeout(timeout)
         settle(() => reject(new Error(`cloudflared failed to start: ${err.message}`)))

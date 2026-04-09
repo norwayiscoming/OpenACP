@@ -1,6 +1,9 @@
-import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { randomUUID } from 'node:crypto'
 import { jsonSuccess, jsonError, muteForJson, ErrorCodes } from '../output.js'
+import { getGlobalRoot } from '../../core/instance/instance-context.js'
+import { InstanceRegistry } from '../../core/instance/instance-registry.js'
+import { initInstanceFiles } from '../../core/instance/instance-init.js'
 
 function parseFlag(args: string[], flag: string): string | undefined {
   const idx = args.indexOf(flag);
@@ -26,58 +29,23 @@ export async function cmdSetup(args: string[], instanceRoot: string): Promise<vo
   }
   const runMode = rawRunMode as 'daemon' | 'foreground';
 
-  const defaultAgent = agentRaw.split(',')[0]!.trim();
+  const agents = agentRaw.split(',').map(a => a.trim());
+
+  // Write config.json (merged), agents.json, and plugins.json via shared init logic
+  initInstanceFiles(instanceRoot, { agents, runMode, mergeExisting: true })
+
+  // Register this instance in the global registry if not already present.
+  // This ensures `openacp instances list` and the interactive instance picker
+  // can discover instances created via `openacp setup` directly.
+  const registryPath = path.join(getGlobalRoot(), 'instances.json')
+  const registry = new InstanceRegistry(registryPath)
+  registry.load()
+  if (!registry.getByRoot(instanceRoot)) {
+    registry.register(randomUUID(), instanceRoot)
+    registry.save()
+  }
 
   const configPath = path.join(instanceRoot, 'config.json');
-
-  // Read existing config if present so we don't overwrite unrelated fields
-  let existing: Record<string, unknown> = {};
-  if (fs.existsSync(configPath)) {
-    try {
-      existing = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
-    } catch {
-      // Ignore parse errors — overwrite with fresh config
-    }
-  }
-
-  // Preserve existing channels; always ensure the SSE adapter is enabled
-  const existingChannels = (existing['channels'] as Record<string, unknown>) ?? {};
-  const channels = {
-    ...existingChannels,
-    sse: { ...(existingChannels['sse'] as Record<string, unknown> ?? {}), enabled: true },
-  };
-
-  const config = {
-    ...existing,
-    channels,
-    defaultAgent,
-    runMode,
-    autoStart: false,
-  };
-
-  fs.mkdirSync(instanceRoot, { recursive: true });
-  fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
-
-  const agentsJsonPath = path.join(instanceRoot, 'agents.json');
-  if (!fs.existsSync(agentsJsonPath)) {
-    const agents = agentRaw.split(',').map(a => a.trim());
-    const installed: Record<string, unknown> = {};
-    for (const agentName of agents) {
-      installed[agentName] = {
-        registryId: null,
-        name: agentName.charAt(0).toUpperCase() + agentName.slice(1),
-        version: 'unknown',
-        distribution: 'custom',
-        command: agentName,
-        args: [],
-        env: {},
-        installedAt: new Date().toISOString(),
-        binaryPath: null,
-      };
-    }
-    fs.writeFileSync(agentsJsonPath, JSON.stringify({ version: 1, installed }, null, 2));
-  }
-
   if (json) {
     jsonSuccess({ configPath });
   } else {

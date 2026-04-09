@@ -1,8 +1,10 @@
 import path from 'node:path'
 import os from 'node:os'
 import fs from 'node:fs'
+import { randomUUID } from 'node:crypto'
 import { InstanceRegistry } from '../../core/instance/instance-registry.js'
-import { getGlobalRoot, generateSlug } from '../../core/instance/instance-context.js'
+import { getGlobalRoot } from '../../core/instance/instance-context.js'
+import { initInstanceFiles } from '../../core/instance/instance-init.js'
 import { readInstanceInfo } from './status.js'
 import { isJsonMode, jsonSuccess, jsonError, muteForJson, ErrorCodes } from '../output.js'
 import { wantsHelp } from './helpers.js'
@@ -137,13 +139,7 @@ export async function cmdInstancesCreate(args: string[]): Promise<void> {
       process.exit(1)
     }
     // .openacp exists but not registered — register it
-    const configPath = path.join(instanceRoot, 'config.json')
-    let name = path.basename(resolvedDir)
-    try {
-      const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'))
-      name = config.instanceName ?? name
-    } catch {}
-    const id = registry.uniqueId(generateSlug(name))
+    const id = randomUUID()
     registry.register(id, instanceRoot)
     registry.save()
     await outputInstance(json, { id, root: instanceRoot })
@@ -152,7 +148,7 @@ export async function cmdInstancesCreate(args: string[]): Promise<void> {
 
   // Case: create new
   const name = instanceName ?? `openacp-${registry.list().length + 1}`
-  const id = registry.uniqueId(generateSlug(name))
+  const id = randomUUID()
 
   if (rawFrom) {
     // Clone from existing instance using copyInstance
@@ -172,31 +168,13 @@ export async function cmdInstancesCreate(args: string[]): Promise<void> {
       delete config.workspace
       fs.writeFileSync(configPath, JSON.stringify(config, null, 2))
     } catch {}
-  } else if (noInteractive || !process.stdin.isTTY) {
-    // Minimal config for non-interactive mode
-    fs.mkdirSync(instanceRoot, { recursive: true })
-    const config: Record<string, unknown> = {
-      channels: { sse: { enabled: true } },
-      defaultAgent: agent || 'claude',
-      runMode: 'daemon',
-      autoStart: false,
-      instanceName: name,
-    }
-    fs.writeFileSync(path.join(instanceRoot, 'config.json'), JSON.stringify(config, null, 2))
-    fs.writeFileSync(path.join(instanceRoot, 'plugins.json'), JSON.stringify({ version: 1, installed: {} }, null, 2))
   } else {
-    // Interactive wizard — requires plugin system; fall back to minimal config
-    fs.mkdirSync(instanceRoot, { recursive: true })
-    const config: Record<string, unknown> = {
-      channels: { sse: { enabled: true } },
-      defaultAgent: agent || 'claude',
-      runMode: 'daemon',
-      autoStart: false,
-      instanceName: name,
+    // Non-interactive or interactive (no wizard yet — both use same init logic)
+    const agents = agent ? [agent] : undefined
+    initInstanceFiles(instanceRoot, { agents, instanceName: name })
+    if (!noInteractive && process.stdin.isTTY) {
+      console.log(`Instance created at ${resolvedDir}. Run 'openacp setup' inside that directory to configure it.`)
     }
-    fs.writeFileSync(path.join(instanceRoot, 'config.json'), JSON.stringify(config, null, 2))
-    fs.writeFileSync(path.join(instanceRoot, 'plugins.json'), JSON.stringify({ version: 1, installed: {} }, null, 2))
-    console.log(`Instance created at ${resolvedDir}. Run 'openacp setup' inside that directory to configure it.`)
   }
 
   registry.register(id, instanceRoot)

@@ -15,9 +15,12 @@ vi.mock('../../core/instance/instance-registry.js', () => ({
   })),
 }))
 
+vi.mock('node:crypto', () => ({
+  randomUUID: vi.fn().mockReturnValue('00000000-0000-0000-0000-000000000001'),
+}))
+
 vi.mock('../../core/instance/instance-context.js', () => ({
   getGlobalRoot: vi.fn().mockReturnValue('/Users/user/.openacp'),
-  generateSlug: vi.fn().mockImplementation((name: string) => name.toLowerCase().replace(/[^a-z0-9-]/g, '-')),
 }))
 
 vi.mock('node:fs')
@@ -128,12 +131,10 @@ describe('cmdInstancesCreate', () => {
   it('registers .openacp that exists but is not in registry', async () => {
     // .openacp exists but registry has no entry for it
     vi.mocked(fs.existsSync).mockReturnValue(true)
-    vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({ instanceName: 'My Project' }))
     const mockRegistry = {
       load: vi.fn(),
       list: vi.fn().mockReturnValue([]),
       getByRoot: vi.fn().mockReturnValue(undefined),
-      uniqueId: vi.fn().mockReturnValue('my-project'),
       register: vi.fn(),
       save: vi.fn(),
     }
@@ -145,7 +146,11 @@ describe('cmdInstancesCreate', () => {
 
     const mockLog = vi.spyOn(console, 'log').mockImplementation(() => {})
     await cmdInstancesCreate(['--dir', '/Users/user/my-project'])
-    expect(mockRegistry.register).toHaveBeenCalledWith('my-project', '/Users/user/my-project/.openacp')
+    // ID must be a UUID, not a slug
+    expect(mockRegistry.register).toHaveBeenCalledWith(
+      expect.stringMatching(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/),
+      '/Users/user/my-project/.openacp'
+    )
     expect(mockRegistry.save).toHaveBeenCalled()
     mockLog.mockRestore()
   })
@@ -159,7 +164,6 @@ describe('cmdInstancesCreate', () => {
       load: vi.fn(),
       list: vi.fn().mockReturnValue([]),
       getByRoot: vi.fn().mockReturnValue(undefined),
-      uniqueId: vi.fn().mockReturnValue('my-instance'),
       register: vi.fn(),
       save: vi.fn(),
     }
@@ -190,8 +194,11 @@ describe('cmdInstancesCreate', () => {
     )
     expect(pluginsWriteCall).toBeDefined()
 
-    // registered in registry
-    expect(mockRegistry.register).toHaveBeenCalledWith('my-instance', '/Users/user/new-instance/.openacp')
+    // ID must be a UUID, not a slug
+    expect(mockRegistry.register).toHaveBeenCalledWith(
+      expect.stringMatching(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/),
+      '/Users/user/new-instance/.openacp'
+    )
     expect(mockRegistry.save).toHaveBeenCalled()
 
     mockLog.mockRestore()

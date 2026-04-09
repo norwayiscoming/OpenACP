@@ -70,13 +70,13 @@ Or non-interactively:
 openacp setup --dir ~/work-project --agent claude
 ```
 
-You can copy settings from an existing instance so you don't have to configure everything from scratch:
+You can copy structure from an existing instance so you don't have to reinstall plugins and agents from scratch:
 
 ```bash
 openacp instances create --dir ~/work-project --from ~/openacp-workspace
 ```
 
-This copies your existing settings but prompts you to confirm sensitive values like bot tokens (since a different Telegram group or Discord server may be needed).
+This copies your installed plugins, plugin packages, and agent definitions — but **not** credentials or sensitive settings (bot tokens, API keys, channel IDs). After cloning, run `openacp config` or `openacp onboard` in the new workspace to enter your credentials for the new instance.
 
 ---
 

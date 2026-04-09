@@ -70,7 +70,8 @@ export async function promptForInstance(opts: {
         const parsed = JSON.parse(raw)
         if (parsed.instanceName) name = parsed.instanceName
       } catch { /* use id */ }
-      const displayPath = e.root.replace(os.homedir(), '~')
+      const workspaceDir = path.dirname(e.root)
+      const displayPath = workspaceDir.replace(os.homedir(), '~')
       return { value: e.root, label: `${name} (${displayPath})` }
     })
 
@@ -82,7 +83,8 @@ export async function promptForInstance(opts: {
       const parsed = JSON.parse(raw)
       if (parsed.instanceName) name = parsed.instanceName
     } catch { /* use dir name */ }
-    const displayPath = detectedParent.replace(os.homedir(), '~')
+    const workspaceDir = path.dirname(detectedParent)
+    const displayPath = workspaceDir.replace(os.homedir(), '~')
     instanceOptions.unshift({ value: detectedParent, label: `${name} (${displayPath})` })
   }
 

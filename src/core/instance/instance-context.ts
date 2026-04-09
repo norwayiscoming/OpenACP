@@ -5,7 +5,6 @@ import os from 'node:os'
 export interface InstanceContext {
   id: string
   root: string
-  isGlobal: boolean
   paths: {
     config: string
     sessions: string
@@ -29,18 +28,18 @@ export interface InstanceContext {
 export interface CreateInstanceContextOpts {
   id: string
   root: string
-  isGlobal: boolean
 }
 
 export function createInstanceContext(opts: CreateInstanceContextOpts): InstanceContext {
-  const { id, root, isGlobal } = opts
+  const { id, root } = opts
+  const globalRoot = getGlobalRoot()
   return {
-    id, root, isGlobal,
+    id, root,
     paths: {
       config: path.join(root, 'config.json'),
       sessions: path.join(root, 'sessions.json'),
       agents: path.join(root, 'agents.json'),
-      registryCache: path.join(root, 'registry-cache.json'),
+      registryCache: path.join(globalRoot, 'cache', 'registry-cache.json'),
       plugins: path.join(root, 'plugins'),
       pluginsData: path.join(root, 'plugins', 'data'),
       pluginRegistry: path.join(root, 'plugins.json'),
@@ -49,10 +48,10 @@ export function createInstanceContext(opts: CreateInstanceContextOpts): Instance
       running: path.join(root, 'running'),
       apiPort: path.join(root, 'api.port'),
       apiSecret: path.join(root, 'api-secret'),
-      bin: path.join(root, 'bin'),
+      bin: path.join(globalRoot, 'bin'),
       cache: path.join(root, 'cache'),
       tunnels: path.join(root, 'tunnels.json'),
-      agentsDir: path.join(root, 'agents'),
+      agentsDir: path.join(globalRoot, 'agents'),
     },
   }
 }
@@ -70,19 +69,46 @@ function expandHome(p: string): string {
 export interface ResolveOpts {
   dir?: string
   local?: boolean
-  global?: boolean
   cwd?: string
 }
 
 export function resolveInstanceRoot(opts: ResolveOpts): string | null {
   const cwd = opts.cwd ?? process.cwd()
+  const home = os.homedir()
+  const globalRoot = getGlobalRoot()
+
+  // 1. --dir flag → return <dir>/.openacp
   if (opts.dir) return path.join(expandHome(opts.dir), '.openacp')
+
+  // 2. --local flag → return cwd/.openacp
   if (opts.local) return path.join(cwd, '.openacp')
-  if (opts.global) return path.join(os.homedir(), '.openacp')
-  const localRoot = path.join(cwd, '.openacp')
-  if (fs.existsSync(localRoot)) return localRoot
-  // Inherit instance root from parent process (e.g. restart respawn)
+
+  // 3. CWD has .openacp/config.json → return it
+  const cwdRoot = path.join(cwd, '.openacp')
+  if (fs.existsSync(path.join(cwdRoot, 'config.json'))) return cwdRoot
+
+  // 4. Walk-up parent dirs (stop at $HOME inclusive)
+  let dir = path.resolve(cwd)
+  while (true) {
+    const parent = path.dirname(dir)
+    if (parent === dir) break // filesystem root
+    dir = parent
+    const candidate = path.join(dir, '.openacp')
+    // Skip ~/.openacp (shared store, not an instance)
+    if (candidate === globalRoot) {
+      // If we've reached $HOME, stop after checking (skip it)
+      if (dir === home) break
+      continue
+    }
+    if (fs.existsSync(path.join(candidate, 'config.json'))) return candidate
+    // Stop at $HOME (inclusive — we checked it above)
+    if (dir === home) break
+  }
+
+  // 5. Check OPENACP_INSTANCE_ROOT env
   if (process.env.OPENACP_INSTANCE_ROOT) return process.env.OPENACP_INSTANCE_ROOT
+
+  // 6. return null
   return null
 }
 
@@ -93,26 +119,26 @@ export function getGlobalRoot(): string {
 /**
  * Walk up directory tree from `cwd` looking for a running `.openacp/` instance.
  * Skips instances that exist but aren't running (dead daemon).
- * Falls back to global `~/.openacp/` if no local instance found.
- * Returns the instance root path, or null if nothing is running.
+ * Skips `~/.openacp` (shared store, not an instance).
+ * Stops at $HOME (inclusive). Returns null if nothing is running.
  */
 export async function resolveRunningInstance(cwd: string): Promise<string | null> {
   const globalRoot = getGlobalRoot()
+  const home = os.homedir()
   let dir = path.resolve(cwd)
 
   while (true) {
     const candidate = path.join(dir, '.openacp')
-    // Skip global root during walk-up — checked as fallback at the end
+    // Skip ~/.openacp (shared store, not an instance)
     if (candidate !== globalRoot && fs.existsSync(candidate)) {
       if (await isInstanceRunning(candidate)) return candidate
     }
     const parent = path.dirname(dir)
     if (parent === dir) break // filesystem root
+    // Stop at $HOME (inclusive — we already checked it)
+    if (dir === home) break
     dir = parent
   }
-
-  // Fallback: global instance
-  if (fs.existsSync(globalRoot) && await isInstanceRunning(globalRoot)) return globalRoot
 
   return null
 }

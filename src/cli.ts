@@ -37,19 +37,17 @@ import { resolveInstanceRoot } from './core/instance/instance-context.js'
 
 export interface InstanceFlags {
   local: boolean
-  global: boolean
   dir?: string
   from?: string
   name?: string
 }
 
 function extractInstanceFlags(args: string[]): { flags: InstanceFlags; remaining: string[] } {
-  const flags: InstanceFlags = { local: false, global: false }
+  const flags: InstanceFlags = { local: false }
   const remaining: string[] = []
   let i = 0
   while (i < args.length) {
     if (args[i] === '--local') { flags.local = true; i++ }
-    else if (args[i] === '--global') { flags.global = true; i++ }
     else if (args[i] === '--dir' && args[i + 1]) { flags.dir = args[i + 1]; i += 2 }
     else if (args[i] === '--from' && args[i + 1]) { flags.from = args[i + 1]; i += 2 }
     else if (args[i] === '--name' && args[i + 1]) { flags.name = args[i + 1]; i += 2 }
@@ -59,7 +57,7 @@ function extractInstanceFlags(args: string[]): { flags: InstanceFlags; remaining
 }
 
 let resolvedInstanceRoot: string | null = null
-let instanceFlags: InstanceFlags = { local: false, global: false }
+let instanceFlags: InstanceFlags = { local: false }
 
 export function getResolvedInstanceRoot(): string | null {
   return resolvedInstanceRoot
@@ -78,7 +76,6 @@ const [command, ...args] = remaining
 resolvedInstanceRoot = resolveInstanceRoot({
   dir: flags.dir,
   local: flags.local,
-  global: flags.global,
   cwd: process.cwd(),
 })
 
@@ -130,7 +127,6 @@ async function main() {
       const ctx = createInstanceContext({
         id,
         root: envRoot,
-        isGlobal: envRoot === getGlobal(),
       })
       await startServer({ instanceContext: ctx })
     } else {

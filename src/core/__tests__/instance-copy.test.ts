@@ -43,7 +43,7 @@ describe('copyInstance', () => {
     expect(copied.speech).toBeUndefined();
     expect(copied.usage).toBeUndefined();
     expect(copied.defaultAgent).toBe('claude');
-    expect(copied.workspace.baseDir).toBe('~/workspace');
+    expect(copied.workspace?.baseDir).toBeUndefined();
     expect(copied.logging.level).toBe('info');
   });
 

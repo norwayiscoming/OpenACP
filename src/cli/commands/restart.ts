@@ -82,7 +82,6 @@ Stops the running daemon (if any) and starts a new one.
     const ctx = createInstanceContext({
       id: existingEntry?.id ?? randomUUID(),
       root,
-      isGlobal: root === getGlobalRoot(),
     })
     await startServer({ instanceContext: ctx })
   } else {

@@ -35,7 +35,7 @@ export async function startServer(opts?: StartServerOptions) {
     const reg = new InstanceRegistry(path.join(globalRoot, 'instances.json'))
     reg.load()
     const entry = reg.getByRoot(globalRoot)
-    opts = { ...opts, instanceContext: createInstanceContext({ id: entry?.id ?? randomUUID(), root: globalRoot, isGlobal: true }) }
+    opts = { ...opts, instanceContext: createInstanceContext({ id: entry?.id ?? randomUUID(), root: globalRoot }) }
   }
   const ctx = opts.instanceContext!
 

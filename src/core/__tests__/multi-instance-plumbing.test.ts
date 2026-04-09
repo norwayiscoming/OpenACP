@@ -164,21 +164,28 @@ describe('InstanceRegistry edge cases', () => {
 describe('InstanceContext path completeness', () => {
   it('creates all 16 path fields', async () => {
     const { createInstanceContext } = await import('../instance/instance-context.js')
-    const ctx = createInstanceContext({ id: 'test', root: '/tmp/test-root', isGlobal: false })
+    const ctx = createInstanceContext({ id: 'test', root: '/tmp/test-root' })
 
     const pathKeys = Object.keys(ctx.paths)
     expect(pathKeys).toHaveLength(16)
 
-    // Verify all paths are under the root
+    // Verify instance-local paths are under the root; shared paths point to ~/.openacp/
+    const sharedPathKeys = new Set(['agentsDir', 'bin', 'registryCache'])
     for (const [key, value] of Object.entries(ctx.paths)) {
-      expect(value).toContain('/tmp/test-root')
+      if (sharedPathKeys.has(key)) {
+        expect(value).toContain(path.join(os.homedir(), '.openacp'))
+      } else {
+        expect(value).toContain('/tmp/test-root')
+      }
     }
 
     // Verify specific critical paths
     expect(ctx.paths.config).toBe('/tmp/test-root/config.json')
     expect(ctx.paths.agents).toBe('/tmp/test-root/agents.json')
     expect(ctx.paths.sessions).toBe('/tmp/test-root/sessions.json')
-    expect(ctx.paths.registryCache).toBe('/tmp/test-root/registry-cache.json')
+    expect(ctx.paths.registryCache).toBe(path.join(os.homedir(), '.openacp', 'cache', 'registry-cache.json'))
+    expect(ctx.paths.bin).toBe(path.join(os.homedir(), '.openacp', 'bin'))
+    expect(ctx.paths.agentsDir).toBe(path.join(os.homedir(), '.openacp', 'agents'))
     expect(ctx.paths.plugins).toBe('/tmp/test-root/plugins')
     expect(ctx.paths.pluginsData).toBe('/tmp/test-root/plugins/data')
     expect(ctx.paths.pluginRegistry).toBe('/tmp/test-root/plugins.json')

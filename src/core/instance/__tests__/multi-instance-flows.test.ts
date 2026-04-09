@@ -2,7 +2,7 @@
 // Comprehensive flow tests for the multi-instance feature.
 // Each test reads like a user story — create, copy, query, manage instances.
 
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import fs from 'node:fs'
 import path from 'node:path'
 import os from 'node:os'
@@ -42,11 +42,6 @@ describe('CLI flag resolution flow', () => {
     expect(root).toBe('/srv/openacp/.openacp')
   })
 
-  it('--global always resolves to home dir', () => {
-    const root = resolveInstanceRoot({ global: true })
-    expect(root).toBe(path.join(os.homedir(), '.openacp'))
-  })
-
   it('no flags + no .openacp in cwd returns null (needs prompt)', () => {
     const saved = process.env.OPENACP_INSTANCE_ROOT
     delete process.env.OPENACP_INSTANCE_ROOT
@@ -61,10 +56,11 @@ describe('CLI flag resolution flow', () => {
     }
   })
 
-  it('auto-detects existing .openacp in cwd', () => {
+  it('auto-detects existing .openacp/config.json in cwd', () => {
     const tmp = makeTmpDir('auto-detect')
     const dotDir = path.join(tmp, '.openacp')
     fs.mkdirSync(dotDir, { recursive: true })
+    fs.writeFileSync(path.join(dotDir, 'config.json'), '{}')
     try {
       const root = resolveInstanceRoot({ cwd: tmp })
       expect(root).toBe(dotDir)
@@ -107,12 +103,14 @@ describe('instance lifecycle: create, register, query, remove', () => {
     expect(root).toBe(path.join(projectDir, '.openacp'))
 
     // Create context
-    const ctx = createInstanceContext({ id: 'my-project', root: root!, isGlobal: false })
+    const ctx = createInstanceContext({ id: 'my-project', root: root! })
     expect(ctx.id).toBe('my-project')
-    expect(ctx.isGlobal).toBe(false)
-    // All paths are under the local root
-    for (const p of Object.values(ctx.paths)) {
-      expect(p.startsWith(root!)).toBe(true)
+    // Instance-local paths are under the local root (shared paths point to ~/.openacp/)
+    const sharedPathKeys = new Set(['agentsDir', 'bin', 'registryCache'])
+    for (const [key, p] of Object.entries(ctx.paths)) {
+      if (!sharedPathKeys.has(key)) {
+        expect(p.startsWith(root!)).toBe(true)
+      }
     }
 
     // Register
@@ -138,8 +136,8 @@ describe('instance lifecycle: create, register, query, remove', () => {
     const dir1 = path.join(tmpDir, 'project-a', '.openacp')
     const dir2 = path.join(tmpDir, 'project-b', '.openacp')
 
-    const ctx1 = createInstanceContext({ id: 'project-a', root: dir1, isGlobal: false })
-    const ctx2 = createInstanceContext({ id: 'project-b', root: dir2, isGlobal: false })
+    const ctx1 = createInstanceContext({ id: 'project-a', root: dir1 })
+    const ctx2 = createInstanceContext({ id: 'project-b', root: dir2 })
 
     await registry.load()
     registry.register(ctx1.id, ctx1.root)
@@ -487,31 +485,25 @@ describe('instance naming flow', () => {
     expect(generateSlug('!!!')).toBe('openacp')
   })
 
-  it('global instance always has id "main"', () => {
-    const ctx = createInstanceContext({ id: 'main', root: getGlobalRoot(), isGlobal: true })
-    expect(ctx.id).toBe('main')
-    expect(ctx.isGlobal).toBe(true)
-  })
+  it('two instances have separate local paths but share global paths', () => {
+    const rootA = '/home/user/project-a/.openacp'
+    const rootB = '/home/user/project-b/.openacp'
+    const globalRoot = getGlobalRoot()
 
-  it('local instance paths are completely separate from global', () => {
-    const globalRoot = path.join(os.homedir(), '.openacp')
-    const localRoot = '/home/user/project/.openacp'
+    const ctxA = createInstanceContext({ id: 'project-a', root: rootA })
+    const ctxB = createInstanceContext({ id: 'project-b', root: rootB })
 
-    const globalCtx = createInstanceContext({ id: 'main', root: globalRoot, isGlobal: true })
-    const localCtx = createInstanceContext({ id: 'my-project', root: localRoot, isGlobal: false })
+    // Instance-local paths differ
+    expect(ctxA.paths.config).not.toBe(ctxB.paths.config)
+    expect(ctxA.paths.sessions).not.toBe(ctxB.paths.sessions)
+    expect(ctxA.paths.plugins).not.toBe(ctxB.paths.plugins)
 
-    // No path in the local context should equal any path in the global context
-    for (const [key, gPath] of Object.entries(globalCtx.paths)) {
-      const lPath = (localCtx.paths as Record<string, string>)[key]
-      expect(lPath).not.toBe(gPath)
-    }
-
-    // Local paths should be under localRoot, global under globalRoot
-    for (const lPath of Object.values(localCtx.paths)) {
-      expect(lPath.startsWith(localRoot)).toBe(true)
-    }
-    for (const gPath of Object.values(globalCtx.paths)) {
-      expect(gPath.startsWith(globalRoot)).toBe(true)
-    }
+    // Shared paths are identical and point to ~/.openacp/
+    expect(ctxA.paths.agentsDir).toBe(ctxB.paths.agentsDir)
+    expect(ctxA.paths.agentsDir).toBe(path.join(globalRoot, 'agents'))
+    expect(ctxA.paths.bin).toBe(ctxB.paths.bin)
+    expect(ctxA.paths.bin).toBe(path.join(globalRoot, 'bin'))
+    expect(ctxA.paths.registryCache).toBe(ctxB.paths.registryCache)
+    expect(ctxA.paths.registryCache).toBe(path.join(globalRoot, 'cache', 'registry-cache.json'))
   })
 })

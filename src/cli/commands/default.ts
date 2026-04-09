@@ -114,7 +114,6 @@ export async function cmdDefault(command: string | undefined, instanceRoot?: str
   const ctx = createInstanceContext({
     id: instanceId,
     root,
-    isGlobal: root === getGlobalRoot(),
   })
 
   if (json) {

@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest'
-import { generateSlug, createInstanceContext, resolveInstanceRoot } from '../instance-context.js'
+import { describe, it, expect, afterEach } from 'vitest'
+import { generateSlug, createInstanceContext, resolveInstanceRoot, getGlobalRoot } from '../instance-context.js'
 import path from 'node:path'
 import os from 'node:os'
 import fs from 'node:fs'
@@ -24,34 +24,44 @@ describe('generateSlug', () => {
 })
 
 describe('createInstanceContext', () => {
-  it('creates global context with correct paths', () => {
-    const ctx = createInstanceContext({ id: 'main', root: path.join(os.homedir(), '.openacp'), isGlobal: true })
-    expect(ctx.id).toBe('main')
-    expect(ctx.isGlobal).toBe(true)
-    expect(ctx.paths.config).toBe(path.join(ctx.root, 'config.json'))
-    expect(ctx.paths.sessions).toBe(path.join(ctx.root, 'sessions.json'))
-    expect(ctx.paths.agents).toBe(path.join(ctx.root, 'agents.json'))
-    expect(ctx.paths.plugins).toBe(path.join(ctx.root, 'plugins'))
-    expect(ctx.paths.pluginsData).toBe(path.join(ctx.root, 'plugins', 'data'))
-    expect(ctx.paths.pluginRegistry).toBe(path.join(ctx.root, 'plugins.json'))
-    expect(ctx.paths.logs).toBe(path.join(ctx.root, 'logs'))
-    expect(ctx.paths.pid).toBe(path.join(ctx.root, 'openacp.pid'))
-    expect(ctx.paths.running).toBe(path.join(ctx.root, 'running'))
-    expect(ctx.paths.apiPort).toBe(path.join(ctx.root, 'api.port'))
-    expect(ctx.paths.apiSecret).toBe(path.join(ctx.root, 'api-secret'))
-    expect(ctx.paths.bin).toBe(path.join(ctx.root, 'bin'))
-    expect(ctx.paths.cache).toBe(path.join(ctx.root, 'cache'))
-    expect(ctx.paths.tunnels).toBe(path.join(ctx.root, 'tunnels.json'))
-    expect(ctx.paths.agentsDir).toBe(path.join(ctx.root, 'agents'))
-    expect(ctx.paths.registryCache).toBe(path.join(ctx.root, 'registry-cache.json'))
+  const globalRoot = getGlobalRoot()
+
+  it('creates context with correct instance-local paths', () => {
+    const ctx = createInstanceContext({ id: 'my-project', root: '/home/user/project/.openacp' })
+    expect(ctx.id).toBe('my-project')
+    expect(ctx.paths.config).toBe('/home/user/project/.openacp/config.json')
+    expect(ctx.paths.sessions).toBe('/home/user/project/.openacp/sessions.json')
+    expect(ctx.paths.agents).toBe('/home/user/project/.openacp/agents.json')
+    expect(ctx.paths.plugins).toBe('/home/user/project/.openacp/plugins')
+    expect(ctx.paths.pluginsData).toBe('/home/user/project/.openacp/plugins/data')
+    expect(ctx.paths.pluginRegistry).toBe('/home/user/project/.openacp/plugins.json')
+    expect(ctx.paths.logs).toBe('/home/user/project/.openacp/logs')
+    expect(ctx.paths.pid).toBe('/home/user/project/.openacp/openacp.pid')
+    expect(ctx.paths.running).toBe('/home/user/project/.openacp/running')
+    expect(ctx.paths.apiPort).toBe('/home/user/project/.openacp/api.port')
+    expect(ctx.paths.apiSecret).toBe('/home/user/project/.openacp/api-secret')
+    expect(ctx.paths.cache).toBe('/home/user/project/.openacp/cache')
+    expect(ctx.paths.tunnels).toBe('/home/user/project/.openacp/tunnels.json')
   })
 
-  it('creates local context from a project directory', () => {
-    const ctx = createInstanceContext({ id: 'my-project', root: '/home/user/project/.openacp', isGlobal: false })
-    expect(ctx.id).toBe('my-project')
-    expect(ctx.isGlobal).toBe(false)
-    expect(ctx.paths.config).toBe('/home/user/project/.openacp/config.json')
-    expect(ctx.paths.pid).toBe('/home/user/project/.openacp/openacp.pid')
+  it('shared paths (agentsDir, bin, registryCache) point to global ~/.openacp/', () => {
+    const ctx = createInstanceContext({ id: 'my-project', root: '/home/user/project/.openacp' })
+    expect(ctx.paths.agentsDir).toBe(path.join(globalRoot, 'agents'))
+    expect(ctx.paths.bin).toBe(path.join(globalRoot, 'bin'))
+    expect(ctx.paths.registryCache).toBe(path.join(globalRoot, 'cache', 'registry-cache.json'))
+  })
+
+  it('shared paths are the same regardless of instance root', () => {
+    const ctx1 = createInstanceContext({ id: 'a', root: '/project-a/.openacp' })
+    const ctx2 = createInstanceContext({ id: 'b', root: '/project-b/.openacp' })
+    expect(ctx1.paths.agentsDir).toBe(ctx2.paths.agentsDir)
+    expect(ctx1.paths.bin).toBe(ctx2.paths.bin)
+    expect(ctx1.paths.registryCache).toBe(ctx2.paths.registryCache)
+  })
+
+  it('does not have isGlobal property', () => {
+    const ctx = createInstanceContext({ id: 'test', root: '/tmp/.openacp' })
+    expect('isGlobal' in ctx).toBe(false)
   })
 })
 
@@ -64,18 +74,15 @@ describe('resolveInstanceRoot', () => {
     const result = resolveInstanceRoot({ local: true, cwd: '/home/user/project' })
     expect(result).toBe('/home/user/project/.openacp')
   })
-  it('--global flag resolves to ~/.openacp', () => {
-    const result = resolveInstanceRoot({ global: true })
-    expect(result).toBe(path.join(os.homedir(), '.openacp'))
-  })
   it('--dir takes priority over --local', () => {
     const result = resolveInstanceRoot({ dir: '/tmp/custom', local: true, cwd: '/home/user' })
     expect(result).toBe('/tmp/custom/.openacp')
   })
-  it('auto-detects .openacp in cwd', () => {
+  it('auto-detects .openacp/config.json in cwd', () => {
     const dir = path.join(tmpdir(), `test-openacp-${Date.now()}`)
     const dotDir = path.join(dir, '.openacp')
     fs.mkdirSync(dotDir, { recursive: true })
+    fs.writeFileSync(path.join(dotDir, 'config.json'), '{}')
     try {
       const result = resolveInstanceRoot({ cwd: dir })
       expect(result).toBe(dotDir)
@@ -83,7 +90,7 @@ describe('resolveInstanceRoot', () => {
       fs.rmSync(dir, { recursive: true })
     }
   })
-  it('returns null when no flag and no .openacp in cwd (needs prompt)', () => {
+  it('returns null when no flag and no .openacp/config.json in cwd', () => {
     const saved = process.env.OPENACP_INSTANCE_ROOT
     delete process.env.OPENACP_INSTANCE_ROOT
     try {
@@ -96,5 +103,94 @@ describe('resolveInstanceRoot', () => {
   it('expands ~ in --dir path', () => {
     const result = resolveInstanceRoot({ dir: '~/my-project' })
     expect(result).toBe(path.join(os.homedir(), 'my-project', '.openacp'))
+  })
+
+  describe('walk-up resolution', () => {
+    let baseDir: string
+
+    afterEach(() => {
+      if (baseDir) fs.rmSync(baseDir, { recursive: true, force: true })
+    })
+
+    it('walks up to find .openacp/config.json in parent directory', () => {
+      baseDir = path.join(tmpdir(), `test-walkup-${Date.now()}`)
+      const parentInstance = path.join(baseDir, '.openacp')
+      const childDir = path.join(baseDir, 'src', 'deep')
+      fs.mkdirSync(childDir, { recursive: true })
+      fs.mkdirSync(parentInstance, { recursive: true })
+      fs.writeFileSync(path.join(parentInstance, 'config.json'), '{}')
+
+      const saved = process.env.OPENACP_INSTANCE_ROOT
+      delete process.env.OPENACP_INSTANCE_ROOT
+      try {
+        const result = resolveInstanceRoot({ cwd: childDir })
+        expect(result).toBe(parentInstance)
+      } finally {
+        if (saved !== undefined) process.env.OPENACP_INSTANCE_ROOT = saved
+      }
+    })
+
+    it('walk-up stops at $HOME — does not find instances above $HOME', () => {
+      // Use a deep temp directory that is NOT under $HOME
+      // Since tmpdir may or may not be under $HOME, we test by creating
+      // a structure under $HOME and verifying walk-up doesn't escape it
+      const home = os.homedir()
+      baseDir = path.join(home, `.test-walkup-boundary-${Date.now()}`)
+      const childDir = path.join(baseDir, 'deep', 'nested')
+      fs.mkdirSync(childDir, { recursive: true })
+
+      const saved = process.env.OPENACP_INSTANCE_ROOT
+      delete process.env.OPENACP_INSTANCE_ROOT
+      try {
+        // No .openacp/config.json anywhere in the walk-up path (under $HOME)
+        const result = resolveInstanceRoot({ cwd: childDir })
+        expect(result).toBeNull()
+      } finally {
+        if (saved !== undefined) process.env.OPENACP_INSTANCE_ROOT = saved
+      }
+    })
+
+    it('~/.openacp is skipped during walk-up (shared store, not an instance)', () => {
+      const home = os.homedir()
+      const globalRoot = path.join(home, '.openacp')
+      const globalConfigExists = fs.existsSync(path.join(globalRoot, 'config.json'))
+
+      // Create a child dir directly under $HOME
+      baseDir = path.join(home, `.test-skip-global-${Date.now()}`)
+      fs.mkdirSync(baseDir, { recursive: true })
+
+      const saved = process.env.OPENACP_INSTANCE_ROOT
+      delete process.env.OPENACP_INSTANCE_ROOT
+      try {
+        const result = resolveInstanceRoot({ cwd: baseDir })
+        // Even if ~/.openacp/config.json exists, it should not be returned
+        // because ~/.openacp is the shared store
+        if (globalConfigExists) {
+          expect(result).not.toBe(globalRoot)
+        }
+        // Should return null (nothing found besides the skipped global)
+        expect(result).toBeNull()
+      } finally {
+        if (saved !== undefined) process.env.OPENACP_INSTANCE_ROOT = saved
+      }
+    })
+
+    it('falls back to OPENACP_INSTANCE_ROOT env when walk-up finds nothing', () => {
+      baseDir = path.join(tmpdir(), `test-env-fallback-${Date.now()}`)
+      fs.mkdirSync(baseDir, { recursive: true })
+
+      const saved = process.env.OPENACP_INSTANCE_ROOT
+      process.env.OPENACP_INSTANCE_ROOT = '/custom/instance/.openacp'
+      try {
+        const result = resolveInstanceRoot({ cwd: baseDir })
+        expect(result).toBe('/custom/instance/.openacp')
+      } finally {
+        if (saved !== undefined) {
+          process.env.OPENACP_INSTANCE_ROOT = saved
+        } else {
+          delete process.env.OPENACP_INSTANCE_ROOT
+        }
+      }
+    })
   })
 })

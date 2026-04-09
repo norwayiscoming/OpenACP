@@ -78,8 +78,10 @@ export async function startServer(opts?: StartServerOptions) {
     if (existingPid !== null && existingPid !== process.pid) {
       try {
         process.kill(existingPid, 0)
+        // Exit 0 (success) so KeepAlive: SuccessfulExit=false does NOT restart us.
+        // "Another instance is running" is not an error — we're simply not needed.
         console.error(`[startup] Another instance running (PID ${existingPid}), exiting`)
-        process.exit(1)
+        process.exit(0)
       } catch {
         console.error(`[startup] Stale PID file (PID ${existingPid} not running), overwriting`)
       }

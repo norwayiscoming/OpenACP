@@ -143,10 +143,8 @@ export async function runSetup(
             const cfg = JSON.parse(fs.readFileSync(path.join(e.root, 'config.json'), 'utf-8'));
             if (cfg.instanceName) name = cfg.instanceName;
           } catch {}
-          const isGlobalEntry = e.root === getGlobalRoot();
           const displayPath = e.root.replace(os.homedir(), '~');
-          const type = isGlobalEntry ? 'global' : 'local';
-          singleLabel = `${name} workspace (${type} — ${displayPath})`;
+          singleLabel = `${name} workspace (${displayPath})`;
         }
 
         const confirmMsg = singleLabel
@@ -173,10 +171,8 @@ export async function runSetup(
                   const cfg = JSON.parse(fs.readFileSync(path.join(e.root, 'config.json'), 'utf-8'));
                   if (cfg.instanceName) name = cfg.instanceName;
                 } catch {}
-                const isGlobalEntry = e.root === getGlobalRoot();
                 const displayPath = e.root.replace(os.homedir(), '~');
-                const type = isGlobalEntry ? 'global' : 'local';
-                return { value: e.root, label: `${name} workspace (${type} — ${displayPath})` };
+                return { value: e.root, label: `${name} workspace (${displayPath})` };
               }),
             });
             if (clack.isCancel(choice)) return false;

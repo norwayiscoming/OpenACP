@@ -24,34 +24,35 @@
 
 **Core Instance (Task 1):**
 - `src/core/instance/instance-context.ts` — Remove `isGlobal`, update resolve algorithm, shared paths
+- `src/core/instance/instance-copy.ts` — Stop copying `workspace.baseDir`, skip shared dirs
 
 **Config (Task 2):**
 - `src/core/config/config.ts` — Remove `workspace.baseDir`, update `resolveWorkspace()`
 - `src/core/config/config-registry.ts` — Remove `workspace.baseDir` entry
 - `src/core/config/config-editor.ts` — Remove workspace edit function
 
-**Agent System (Task 3):**
+**Agent System + Core Orchestrator (Task 3):**
 - `src/core/agents/agent-catalog.ts` — Remove global fallback store
 - `src/core/agents/agent-store.ts` — Remove default path fallback
-
-**Core Orchestrator (Task 4):**
-- `src/core/core.ts` — Remove hardcoded `~/.openacp` fallbacks
+- `src/core/core.ts` — Remove hardcoded `~/.openacp` fallbacks, require ctx
 - `src/main.ts` — Replace global fallback with CWD detection + error
-- `src/cli/post-upgrade.ts` — Fix SettingsManager path
+- `src/cli/post-upgrade.ts` — Fix SettingsManager path and AgentStore path
 
-**CLI Entry + Daemon (Task 5):**
+**CLI Entry + Daemon (Task 4):**
 - `src/cli.ts` — Remove `--global`, deprecate `--workspace`
 - `src/cli/daemon.ts` — Remove `DEFAULT_ROOT`
 - `src/cli/instance-prompt.ts` — Remove auto-select, remove global fallback
 
-**CLI Commands (Task 6):**
+**CLI Commands (Task 5):**
 - `src/cli/commands/start.ts`, `stop.ts`, `default.ts`, `restart.ts`, `attach.ts`, `install.ts`, `uninstall.ts`, `plugins.ts`, `reset.ts`, `setup.ts`, `instances.ts` — Remove fallbacks
 
-**Setup Wizard (Task 7):**
-- `src/core/setup/wizard.ts` — Remove workspace step, remove `isGlobal`
+**Setup Wizard (Task 6):**
+- `src/core/setup/wizard.ts` — Remove workspace step, remove `isGlobal`, fix `runReconfigure()`
 - `src/core/setup/helpers.ts` — Remove workspace display
+- `src/core/setup/types.ts` — Remove "workspace" from `ONBOARD_SECTION_OPTIONS`
+- `src/core/setup/setup-workspace.ts` — Delete file (moved here from Task 2)
 
-**Plugins + Docs (Task 8):**
+**Plugins + Docs (Task 7):**
 - `src/plugins/telegram/commands/new-session.ts`, `resume.ts`, `index.ts` — Replace `baseDir` refs
 - `src/plugins/file-service/index.ts` — Remove fallback
 - `src/plugins/api-server/routes/plugins.ts` — Remove fallback
@@ -59,10 +60,10 @@
 - `src/core/assistant/prompt-constants.ts`, `sections/config.ts` — Remove baseDir refs
 - `src/data/product-guide.ts` — Update docs
 
-**Migration (Task 9):**
+**Migration (Task 8):**
 - `src/core/instance/migration.ts` — New file
 
-**Tests (Task 10):**
+**Tests (Task 9):**
 - 17 test files — see task details
 
 ---
@@ -207,7 +208,13 @@ export async function resolveRunningInstance(cwd: string): Promise<string | null
 }
 ```
 
-- [ ] **Step 5: Update tests**
+- [ ] **Step 5: Update `instance-copy.ts` — strip `baseDir`, skip shared dirs**
+
+In `src/core/instance/instance-copy.ts`, in the config copying section where fields are stripped:
+- Add `delete config.workspace?.baseDir` to strip the old field from copied configs
+- The copy of `agents/` and `bin/` directories is now harmless (new instances won't have them locally), but for cleanliness, add a comment noting they are shared at `~/.openacp/`
+
+- [ ] **Step 6: Update tests**
 
 Update `src/core/instance/__tests__/instance-context.test.ts`:
 - Remove all `isGlobal` assertions from `createInstanceContext` tests
@@ -352,24 +359,18 @@ In `src/core/config/config-registry.ts`, delete lines 50-57:
 
 In `src/core/config/config-editor.ts`, remove the `editWorkspace` function (lines 248-265) and remove "workspace" from the section picker options. Replace references to `editWorkspace` with nothing (remove the case from the section handler).
 
-- [ ] **Step 5: Delete `src/core/setup/setup-workspace.ts`**
-
-```bash
-git rm src/core/setup/setup-workspace.ts
-```
-
-- [ ] **Step 6: Rewrite resolve-workspace tests**
+- [ ] **Step 5: Rewrite resolve-workspace tests**
 
 Rewrite `src/core/config/__tests__/resolve-workspace.test.ts` to test deriving workspace from configPath instead of `config.workspace.baseDir`. The test setup creates a temp dir with `.openacp/config.json` and verifies `resolveWorkspace()` returns the parent dir.
 
 Rewrite `src/__tests__/config-workspace.test.ts` similarly.
 
-- [ ] **Step 7: Run tests**
+- [ ] **Step 6: Run tests**
 
 Run: `pnpm test -- --run src/core/config/__tests__/ src/__tests__/config-workspace`
 Expected: All pass
 
-- [ ] **Step 8: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
 git add -A
@@ -378,11 +379,16 @@ git commit -m "refactor(config): remove workspace.baseDir, derive workspace from
 
 ---
 
-## Task 3: Agent System — Remove Global Fallback
+## Task 3: Agent System + Core Orchestrator + Server Startup
+
+These are merged into one task because making `AgentStore` and `AgentCatalog` constructors strict requires updating all their consumers (`core.ts`, `post-upgrade.ts`) in the same commit to avoid compile failures.
 
 **Files:**
 - Modify: `src/core/agents/agent-catalog.ts`
 - Modify: `src/core/agents/agent-store.ts`
+- Modify: `src/core/core.ts`
+- Modify: `src/main.ts`
+- Modify: `src/cli/post-upgrade.ts`
 - Modify: `src/cli/commands/setup.ts` (write agents.json)
 
 - [ ] **Step 1: Remove global fallback from AgentCatalog**
@@ -500,23 +506,7 @@ if (!fs.existsSync(agentsJsonPath)) {
 Run: `pnpm test -- --run src/core/agents/`
 Expected: All pass (some tests may need mock updates for required filePath param)
 
-- [ ] **Step 5: Commit**
-
-```bash
-git add src/core/agents/ src/cli/commands/setup.ts
-git commit -m "refactor(agents): remove global fallback store, require explicit paths"
-```
-
----
-
-## Task 4: Core Orchestrator + Server Startup
-
-**Files:**
-- Modify: `src/core/core.ts`
-- Modify: `src/main.ts`
-- Modify: `src/cli/post-upgrade.ts`
-
-- [ ] **Step 1: Remove hardcoded fallbacks in core.ts**
+- [ ] **Step 5: Remove hardcoded fallbacks in core.ts**
 
 In `src/core/core.ts`:
 
@@ -576,7 +566,7 @@ instanceRoot: ctx?.root,
 instanceRoot: ctx.root,
 ```
 
-- [ ] **Step 2: Update `startServer()` in main.ts — CWD detection + error**
+- [ ] **Step 6: Update `startServer()` in main.ts — CWD detection + error**
 
 Replace lines 32-39 in `src/main.ts`:
 
@@ -622,7 +612,7 @@ export async function startServer(opts?: StartServerOptions) {
   const ctx = opts.instanceContext!
 ```
 
-- [ ] **Step 3: Fix post-upgrade.ts — pass pluginsData path**
+- [ ] **Step 7: Fix post-upgrade.ts — pass pluginsData path**
 
 In `src/main.ts`, update the `runPostUpgradeChecks` call (line 116) to pass instance context:
 ```typescript
@@ -653,21 +643,21 @@ const store = new AgentStore();
 const store = new AgentStore(ctx?.paths.agents ?? path.join(os.homedir(), '.openacp', 'agents.json'));
 ```
 
-- [ ] **Step 4: Run tests**
+- [ ] **Step 8: Run tests**
 
-Run: `pnpm test -- --run src/core/__tests__/core-orchestrator`
-Expected: Pass (may need mock updates for required ctx)
+Run: `pnpm test -- --run src/core/agents/ src/core/__tests__/core-orchestrator`
+Expected: Pass (may need mock updates for required ctx and filePath params)
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 9: Commit**
 
 ```bash
-git add src/core/core.ts src/main.ts src/cli/post-upgrade.ts
-git commit -m "refactor(core): require InstanceContext, remove global fallbacks from core and startup"
+git add src/core/agents/ src/core/core.ts src/main.ts src/cli/post-upgrade.ts src/cli/commands/setup.ts
+git commit -m "refactor(agents,core): remove global fallback store, require InstanceContext and explicit paths"
 ```
 
 ---
 
-## Task 5: CLI Entry + Daemon + Instance Prompt
+## Task 4: CLI Entry + Daemon + Instance Prompt
 
 **Files:**
 - Modify: `src/cli.ts`
@@ -756,6 +746,13 @@ export function clearRunning(root: string): void { ... }
 export function shouldAutoStart(root: string): boolean { ... }
 ```
 
+**IMPORTANT:** Also update functions that use `getPidPath()` as a default parameter value. These will break because `getPidPath` now requires `root`:
+- `startDaemon(pidPath: string = getPidPath(), ...)` → make `pidPath` required
+- `stopDaemon(pidPath: string = getPidPath(), ...)` → make `pidPath` required
+- Any other function using `getPidPath()` as default — search for `= getPidPath()` in daemon.ts
+
+All callers of `startDaemon` and `stopDaemon` in CLI commands already pass explicit `pidPath` via `getPidPath(root)`, so making the params required is safe.
+
 - [ ] **Step 3: Update instance-prompt.ts — remove auto-select, remove global fallback**
 
 In `src/cli/instance-prompt.ts`:
@@ -818,7 +815,7 @@ git commit -m "refactor(cli): remove --global flag, remove DEFAULT_ROOT, always 
 
 ---
 
-## Task 6: CLI Commands — Remove Fallbacks
+## Task 5: CLI Commands — Remove Fallbacks
 
 **Files:**
 - Modify: `src/cli/commands/start.ts`, `stop.ts`, `default.ts`, `restart.ts`, `attach.ts`, `install.ts`, `uninstall.ts`, `plugins.ts`, `reset.ts`, `setup.ts`, `instances.ts`
@@ -910,11 +907,13 @@ git commit -m "refactor(cli-commands): remove all ~/.openacp fallbacks and globa
 
 ---
 
-## Task 7: Setup Wizard — Remove Workspace Step
+## Task 6: Setup Wizard — Remove Workspace Step
 
 **Files:**
 - Modify: `src/core/setup/wizard.ts`
 - Modify: `src/core/setup/helpers.ts`
+- Modify: `src/core/setup/types.ts`
+- Delete: `src/core/setup/setup-workspace.ts`
 
 - [ ] **Step 1: Remove workspace step from wizard**
 
@@ -970,7 +969,43 @@ const projectDir = path.dirname(instanceRoot)
 protectLocalInstance(projectDir)
 ```
 
-- [ ] **Step 2: Remove workspace line from helpers.ts**
+- [ ] **Step 2: Fix `runReconfigure()` — remove workspace section**
+
+In `src/core/setup/wizard.ts`, in the `runReconfigure()` function (around line 588-594), remove the workspace case:
+```typescript
+// DELETE this entire block:
+if (choice === "workspace") {
+  const { baseDir } = await setupWorkspace({
+    existing: config.workspace.baseDir,
+  });
+  await configManager.save({ workspace: { baseDir } });
+  config = configManager.get();
+}
+```
+
+- [ ] **Step 3: Remove "workspace" from ONBOARD_SECTION_OPTIONS**
+
+In `src/core/setup/types.ts`, remove the workspace entry from `ONBOARD_SECTION_OPTIONS` array:
+```typescript
+// DELETE:
+{ value: "workspace", label: "Workspace", hint: "Base directory" },
+```
+
+Also remove `"workspace"` from the `OnboardSection` type union if it exists.
+
+- [ ] **Step 4: Delete `src/core/setup/setup-workspace.ts` and remove its import**
+
+```bash
+git rm src/core/setup/setup-workspace.ts
+```
+
+Remove the import from `wizard.ts`:
+```typescript
+// DELETE:
+import { setupWorkspace } from "./setup-workspace.js";
+```
+
+- [ ] **Step 5: Remove workspace line from helpers.ts**
 
 In `src/core/setup/helpers.ts`, remove the line displaying workspace:
 ```typescript
@@ -978,27 +1013,27 @@ In `src/core/setup/helpers.ts`, remove the line displaying workspace:
 lines.push(`Workspace: ${config.workspace.baseDir}`);
 ```
 
-- [ ] **Step 3: Update setup integration tests**
+- [ ] **Step 6: Update setup integration tests**
 
 Update `src/__tests__/setup-integration.test.ts`:
 - Remove workspace prompt step from test flow
 - Remove `workspace.baseDir` assertion
 
-- [ ] **Step 4: Run tests**
+- [ ] **Step 7: Run tests**
 
 Run: `pnpm test -- --run src/core/setup/ src/__tests__/setup-integration`
 Expected: Pass
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 8: Commit**
 
 ```bash
 git add src/core/setup/ src/__tests__/setup-integration.test.ts
-git commit -m "refactor(setup): remove workspace step, remove isGlobal logic from wizard"
+git commit -m "refactor(setup): remove workspace step, remove isGlobal, fix runReconfigure, delete setup-workspace.ts"
 ```
 
 ---
 
-## Task 8: Plugins + Docs — Replace baseDir References
+## Task 7: Plugins + Docs — Replace baseDir References
 
 **Files:**
 - Modify: `src/plugins/telegram/commands/new-session.ts`
@@ -1153,7 +1188,7 @@ git commit -m "refactor(plugins,docs): replace workspace.baseDir with derived wo
 
 ---
 
-## Task 9: Migration — Auto-Migrate Global Instance
+## Task 8: Migration — Auto-Migrate Global Instance
 
 **Files:**
 - Create: `src/core/instance/migration.ts`
@@ -1167,6 +1202,7 @@ Create `src/core/instance/migration.ts`:
 import fs from 'node:fs'
 import path from 'node:path'
 import os from 'node:os'
+import { randomUUID } from 'node:crypto'
 import { getGlobalRoot } from './instance-context.js'
 import { InstanceRegistry } from './instance-registry.js'
 
@@ -1175,7 +1211,7 @@ import { InstanceRegistry } from './instance-registry.js'
  * Called once on first CLI invocation after upgrade.
  * Returns the new instance root if migration happened, null otherwise.
  */
-export function migrateGlobalInstance(): string | null {
+export async function migrateGlobalInstance(): Promise<string | null> {
   const globalRoot = getGlobalRoot()
   const globalConfig = path.join(globalRoot, 'config.json')
 
@@ -1268,7 +1304,6 @@ export function migrateGlobalInstance(): string | null {
       registry.remove(oldEntry.id)
       registry.register(oldEntry.id, targetRoot)
     } else {
-      const { randomUUID } = await import('node:crypto')
       registry.register(randomUUID(), targetRoot)
     }
     await registry.save()
@@ -1327,7 +1362,7 @@ git commit -m "feat(migration): auto-migrate global instance to workspace direct
 
 ---
 
-## Task 10: Update Remaining Tests
+## Task 9: Update Remaining Tests
 
 **Files:** All test files listed in the spec.
 
@@ -1391,7 +1426,7 @@ git commit -m "test: update all tests for unified instance model"
 
 ---
 
-## Task 11: Final Verification
+## Task 10: Final Verification
 
 - [ ] **Step 1: Build**
 

@@ -5,6 +5,7 @@ vi.mock('../../daemon.js', () => ({
   startDaemon: vi.fn().mockReturnValue({ pid: 12345 }),
   stopDaemon: vi.fn().mockResolvedValue({ stopped: true, pid: 12345 }),
   getPidPath: vi.fn().mockReturnValue('/tmp/test.pid'),
+  isProcessRunning: vi.fn().mockReturnValue(false),
   markRunning: vi.fn(),
 }))
 

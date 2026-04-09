@@ -33,20 +33,33 @@ Requires an existing config — run 'openacp' first to set up.
     return
   }
   await checkAndPromptUpdate()
-  const { startDaemon, getPidPath } = await import('../daemon.js')
+  const { startDaemon, getPidPath, isProcessRunning } = await import('../daemon.js')
   const { ConfigManager } = await import('../../core/config/config.js')
   const cm = new ConfigManager(path.join(root, 'config.json'))
   if (await cm.exists()) {
     await cm.load()
     const config = cm.get()
-    const result = startDaemon(getPidPath(root), config.logging.logDir, root)
+    const pidPath = getPidPath(root)
+    if (isProcessRunning(pidPath)) {
+      if (json) jsonError(ErrorCodes.DAEMON_NOT_RUNNING, 'Daemon is already running. Use "openacp restart" to restart it.')
+      console.error('OpenACP daemon is already running. Use "openacp restart" to restart it.')
+      process.exit(1)
+    }
+    const result = startDaemon(pidPath, config.logging.logDir, root)
     if ('error' in result) {
       if (json) jsonError(ErrorCodes.DAEMON_NOT_RUNNING, result.error)
       console.error(result.error)
       process.exit(1)
     }
+    // Install autostart before JSON output (jsonSuccess exits)
+    const instanceId = resolveInstanceId(root)
+    try {
+      const { installAutoStart } = await import('../autostart.js')
+      const autoResult = installAutoStart(config.logging.logDir, root, instanceId)
+      if (!autoResult.success) console.warn(`Warning: auto-start not enabled: ${autoResult.error}`)
+    } catch (e) { console.warn(`Warning: auto-start not enabled: ${(e as Error).message}`) }
+
     if (json) {
-      const instanceId = resolveInstanceId(root)
       // Wait for the daemon to write api.port (up to 5 seconds)
       const { waitForPortFile } = await import('../api-client.js')
       const port = await waitForPortFile(path.join(root, 'api.port')) ?? 21420
@@ -59,14 +72,6 @@ Requires an existing config — run 'openacp' first to set up.
         port,
       })
     }
-    // Install/refresh autostart so daemon survives reboot
-    try {
-      const { installAutoStart } = await import('../autostart.js')
-      const instanceId = resolveInstanceId(root)
-      const autoResult = installAutoStart(config.logging.logDir, root, instanceId)
-      if (!autoResult.success) console.warn(`Warning: auto-start not enabled: ${autoResult.error}`)
-    } catch (e) { console.warn(`Warning: auto-start not enabled: ${(e as Error).message}`) }
-
     printInstanceHint(root)
     console.log(`OpenACP daemon started (PID ${result.pid})`)
   } else {

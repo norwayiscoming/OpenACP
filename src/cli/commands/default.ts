@@ -71,8 +71,15 @@ export async function cmdDefault(command: string | undefined, instanceRoot?: str
       console.error(result.error)
       process.exit(1)
     }
+    // Install autostart before JSON output (jsonSuccess exits)
+    const instanceId = resolveInstanceId(root)
+    try {
+      const { installAutoStart } = await import('../autostart.js')
+      const autoResult = installAutoStart(config.logging.logDir, root, instanceId)
+      if (!autoResult.success) console.warn(`Warning: auto-start not enabled: ${autoResult.error}`)
+    } catch (e) { console.warn(`Warning: auto-start not enabled: ${(e as Error).message}`) }
+
     if (json) {
-      const instanceId = resolveInstanceId(root)
       // Wait for the daemon to write api.port (up to 5 seconds)
       const { waitForPortFile } = await import('../api-client.js')
       const port = await waitForPortFile(path.join(root, 'api.port')) ?? 21420
@@ -85,13 +92,6 @@ export async function cmdDefault(command: string | undefined, instanceRoot?: str
         port,
       })
     }
-    // Install/refresh autostart so daemon survives reboot
-    try {
-      const { installAutoStart } = await import('../autostart.js')
-      const instanceId = resolveInstanceId(root)
-      const autoResult = installAutoStart(config.logging.logDir, root, instanceId)
-      if (!autoResult.success) console.warn(`Warning: auto-start not enabled: ${autoResult.error}`)
-    } catch (e) { console.warn(`Warning: auto-start not enabled: ${(e as Error).message}`) }
 
     printInstanceHint(root)
     console.log(`OpenACP daemon started (PID ${result.pid})`)

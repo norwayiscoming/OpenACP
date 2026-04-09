@@ -33,6 +33,13 @@ vi.mock('../../api-client.js', () => ({
   apiCall: vi.fn(),
 }))
 
+vi.mock('../../autostart.js', () => ({
+  installAutoStart: vi.fn().mockReturnValue({ success: true }),
+  uninstallAutoStart: vi.fn().mockReturnValue({ success: true }),
+  isAutoStartInstalled: vi.fn().mockReturnValue(false),
+  isAutoStartSupported: vi.fn().mockReturnValue(false),
+}))
+
 describe('stop --json', () => {
   afterEach(() => { vi.restoreAllMocks() })
 

@@ -46,16 +46,7 @@ Requires an existing config — run 'openacp' first to set up.
       process.exit(1)
     }
     if (json) {
-      // Resolve instanceId from registry if available
-      let instanceId: string = path.basename(root)
-      try {
-        const { getGlobalRoot } = await import('../../core/instance/instance-context.js')
-        const { InstanceRegistry } = await import('../../core/instance/instance-registry.js')
-        const reg = new InstanceRegistry(path.join(getGlobalRoot(), 'instances.json'))
-        reg.load()
-        const entry = reg.getByRoot(root)
-        if (entry) instanceId = entry.id
-      } catch {}
+      const instanceId = resolveInstanceId(root)
       // Wait for the daemon to write api.port (up to 5 seconds)
       const { waitForPortFile } = await import('../api-client.js')
       const port = await waitForPortFile(path.join(root, 'api.port')) ?? 21420

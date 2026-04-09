@@ -72,14 +72,7 @@ export async function cmdDefault(command: string | undefined, instanceRoot?: str
       process.exit(1)
     }
     if (json) {
-      // Resolve instanceId from registry if available
-      let instanceId: string = path.basename(root)
-      try {
-        const reg = new InstanceRegistry(path.join(getGlobalRoot(), 'instances.json'))
-        reg.load()
-        const entry = reg.getByRoot(root)
-        if (entry) instanceId = entry.id
-      } catch {}
+      const instanceId = resolveInstanceId(root)
       // Wait for the daemon to write api.port (up to 5 seconds)
       const { waitForPortFile } = await import('../api-client.js')
       const port = await waitForPortFile(path.join(root, 'api.port')) ?? 21420
@@ -119,7 +112,8 @@ export async function cmdDefault(command: string | undefined, instanceRoot?: str
   })
 
   if (json) {
-    // For foreground mode, output JSON before starting the server (port not yet known)
+    // For foreground mode, JSON is output before startServer() so the actual bound port
+    // is not yet known. Callers should poll api.port for the real value after startup.
     const port = 21420
     jsonSuccess({
       pid: process.pid,

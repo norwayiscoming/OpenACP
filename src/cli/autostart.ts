@@ -178,8 +178,7 @@ export function uninstallAutoStart(instanceId: string): { success: boolean; erro
       const plistPath = getLaunchdPlistPath(instanceId)
       if (fs.existsSync(plistPath)) {
         const uid = process.getuid!()
-        const label = getLaunchdLabel(instanceId)
-        try { execFileSync('launchctl', ['bootout', `gui/${uid}`, label], { stdio: 'pipe' }) } catch { /* already unloaded */ }
+        try { execFileSync('launchctl', ['bootout', `gui/${uid}`, plistPath], { stdio: 'pipe' }) } catch { /* already unloaded */ }
         fs.unlinkSync(plistPath)
         log.info({ instanceId }, 'LaunchAgent removed')
       }

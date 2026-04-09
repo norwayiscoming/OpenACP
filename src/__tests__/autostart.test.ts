@@ -202,7 +202,12 @@ describe('autostart', () => {
       const content = fs.readFileSync(plistPath, 'utf-8')
       expect(content).toContain(`com.openacp.daemon.${instanceId}`)
       expect(content).toContain(instanceRoot)
-      expect(execFileSync).toHaveBeenCalledWith('launchctl', expect.arrayContaining(['bootstrap']), expect.any(Object))
+      // bootstrap must use: ['bootstrap', 'gui/<uid>', plistPath]
+      expect(execFileSync).toHaveBeenCalledWith(
+        'launchctl',
+        expect.arrayContaining(['bootstrap', plistPath]),
+        expect.any(Object),
+      )
     })
 
     it('returns error on unsupported platform', async () => {
@@ -239,7 +244,12 @@ describe('autostart', () => {
 
       expect(result.success).toBe(true)
       expect(fs.existsSync(plistPath)).toBe(false)
-      expect(execFileSync).toHaveBeenCalledWith('launchctl', expect.arrayContaining(['bootout']), expect.any(Object))
+      // bootout must use plist path form: ['bootout', 'gui/<uid>', plistPath]
+      expect(execFileSync).toHaveBeenCalledWith(
+        'launchctl',
+        expect.arrayContaining(['bootout', plistPath]),
+        expect.any(Object),
+      )
     })
 
     it('succeeds silently when plist does not exist on darwin', async () => {

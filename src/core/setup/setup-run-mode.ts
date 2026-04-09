@@ -73,19 +73,12 @@ export async function setupRunMode(opts?: {
       if (result.stopped) {
         console.log(ok(`Daemon stopped (was PID ${result.pid})`));
       }
-    } catch {
-      // Daemon may not be running
-    } finally {
-      unmuteLogger();
-    }
-    muteLogger();
-    try {
       const { uninstallAutoStart } = await import('../../cli/autostart.js');
       const { resolveInstanceId } = await import('../../cli/resolve-instance-id.js');
       const instanceId = opts?.instanceRoot ? resolveInstanceId(opts.instanceRoot) : 'default';
       uninstallAutoStart(instanceId);
     } catch {
-      // ignore
+      // Daemon may not be running or autostart may not be installed
     } finally {
       unmuteLogger();
     }

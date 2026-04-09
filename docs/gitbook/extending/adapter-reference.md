@@ -36,7 +36,7 @@ constructor(core: TCore, config: ChannelConfig)
 Both values are stored as public/protected properties:
 
 - `this.core` — the `OpenACPCore` instance (typed by generic `TCore`)
-- `this.config` — the raw config block for this adapter from `~/.openacp/config.json`
+- `this.config` — the raw config block for this adapter from `<instance-root>/config.json`
 
 ---
 

@@ -6,12 +6,12 @@ The OpenACP daemon exposes a local HTTP API used by the CLI and the web dashboar
 
 **Auth:** Two-tier authentication:
 
-1. **Secret token** — from `~/.openacp/api-secret` (full admin access)
+1. **Secret token** — from `<instance-root>/api-secret` (full admin access)
 2. **JWT access token** — scoped, revokable tokens issued by the auth system
 
 ```bash
 # Using secret token
-TOKEN=$(cat ~/.openacp/api-secret)
+TOKEN=$(cat ~/openacp-workspace/.openacp/api-secret)
 curl -H "Authorization: Bearer $TOKEN" http://localhost:21420/api/sessions
 
 # Using JWT token
@@ -191,7 +191,7 @@ Creates a new session.
 }
 ```
 
-`agent` defaults to `defaultAgent` from config. `workspace` defaults to `workspace.baseDir`.
+`agent` defaults to `defaultAgent` from config. `workspace` defaults to the instance workspace directory (parent of `.openacp/`).
 
 **Response**
 ```json

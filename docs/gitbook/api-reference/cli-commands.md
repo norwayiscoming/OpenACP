@@ -263,7 +263,7 @@ openacp api new [agent] [workspace]
 openacp api new [agent] --workspace <path>
 ```
 
-Both `agent` and `workspace` are optional. Uses `defaultAgent` and `workspace.baseDir` from config if omitted.
+Both `agent` and `workspace` are optional. Uses `defaultAgent` from config if omitted. `workspace` defaults to the current working directory.
 
 ```bash
 openacp api new
@@ -433,7 +433,7 @@ openacp doctor [--dry-run] [--json]
 
 ## install
 
-Installs a plugin from npm into `~/.openacp/plugins/`. Supports built-in plugins, community npm packages, and pinning a specific version with `@version` syntax.
+Installs a plugin from npm into `<instance-root>/plugins/`. Supports built-in plugins, community npm packages, and pinning a specific version with `@version` syntax.
 
 **Usage**
 ```
@@ -486,7 +486,7 @@ Tails the daemon log file (last 50 lines, then follows new output). Equivalent t
 openacp logs
 ```
 
-Log directory is configured via `logging.logDir` (default: `~/.openacp/logs/`).
+Log directory is configured via `logging.logDir` (default: `<instance-root>/logs/`).
 
 ---
 
@@ -559,7 +559,7 @@ openacp plugin add @openacp/adapter-discord --json
 { "plugin": "@openacp/adapter-discord", "version": "1.0.0", "installed": true }
 ```
 
-Community plugins are installed via `npm install` into `~/.openacp/plugins/node_modules/`. The plugin's `install()` hook is called if defined.
+Community plugins are installed via `npm install` into `<instance-root>/plugins/node_modules/`. The plugin's `install()` hook is called if defined.
 
 ---
 
@@ -642,7 +642,7 @@ See [App Connectivity](../features/app-connectivity.md) for the full guide.
 
 ## plugins
 
-Lists all plugins installed in `~/.openacp/plugins/`.
+Lists all plugins installed in the current instance's `plugins/` directory.
 
 **Usage**
 ```
@@ -662,7 +662,7 @@ openacp plugins [--json]
 
 ## reset
 
-Deletes all OpenACP data (`~/.openacp`) and allows starting fresh. This is destructive — config, plugins, and agent data are removed. The daemon must be stopped first.
+Deletes the current instance data and allows starting fresh. This is destructive — config, plugins, and session data for the instance are removed. The daemon must be stopped first.
 
 **Usage**
 ```
@@ -695,36 +695,123 @@ openacp restart --daemon --json
 
 **JSON output** (`data` shape):
 ```json
-{ "pid": 12345, "instanceId": "global", "dir": "/Users/alice/.openacp" }
+{ "pid": 12345, "instanceId": "my-instance", "dir": "/Users/alice/openacp-workspace/.openacp" }
 ```
 
 ---
 
-## start
+## setup
 
-Starts OpenACP. Requires an existing config (run `openacp` first to set up).
+Writes a minimal `config.json` to an instance root. Used for non-interactive setup (e.g., scripted deployments and the desktop app onboarding flow).
 
 **Usage**
 ```
-openacp start [options]
+openacp setup --agent <name> [--dir <path>] [--run-mode daemon|foreground] [--json]
 ```
 
 **Options**
 
 | Flag | Description |
 |---|---|
-| `--foreground` | Force foreground mode regardless of config |
-| `--daemon` | Force daemon mode regardless of config |
-| `--local` | Use local `.openacp/` instance in the current directory |
-| `--global` | Use the global `~/.openacp/` instance |
-| `--dir <path>` | Use a specific instance directory |
-| `--name <id>` | Give the instance a name |
-| `--from <source>` | Clone settings from an existing instance |
-| `--json` | Output result as JSON |
+| `--agent <name>` | Required. Agent name(s) to configure. Comma-separated for multiple. |
+| `--dir <path>` | Workspace directory. Defaults to auto-detected or current directory. |
+| `--run-mode` | `daemon` (default) or `foreground`. |
+| `--json` | Output result as JSON. |
+
+**Examples**
+```bash
+openacp setup --agent claude
+openacp setup --agent claude --dir ~/my-project --run-mode daemon
+openacp setup --agent claude --dir ~/my-project --json
+```
 
 **JSON output** (`data` shape):
 ```json
-{ "pid": 12345, "instanceId": "global", "dir": "/Users/alice/.openacp" }
+{ "configPath": "/Users/alice/my-project/.openacp/config.json" }
+```
+
+---
+
+## instances
+
+Manages registered OpenACP instances in the shared instance registry (`~/.openacp/instances.json`).
+
+**Usage**
+```
+openacp instances [subcommand] [options]
+```
+
+### instances list
+
+Lists all instances registered in the global registry with their ID, name, directory, and running status.
+
+```
+openacp instances list [--json]
+```
+
+```bash
+openacp instances list
+openacp instances list --json
+```
+
+**JSON output** (`data` shape):
+```json
+[{ "id": "main", "name": "my-instance", "directory": "/Users/alice/openacp-workspace", "root": "/Users/alice/openacp-workspace/.openacp", "status": "running", "port": 21420 }]
+```
+
+### instances create
+
+Creates or registers an instance at the specified workspace directory.
+
+- If `<workspace>/.openacp/` already exists but is not registered, it is registered.
+- Otherwise a new instance root is created with a minimal config.
+
+```
+openacp instances create --dir <path> [--from <source>] [--name <id>] [--agent <name>] [--no-interactive] [--json]
+```
+
+| Flag | Description |
+|---|---|
+| `--dir <path>` | Required. Workspace directory for the instance. |
+| `--from <path>` | Copy config from an existing instance workspace. |
+| `--name <id>` | Instance ID to register under. |
+| `--agent <name>` | Default agent name (used in non-interactive mode). |
+| `--no-interactive` | Skip interactive prompts; write a minimal config immediately. |
+| `--json` | Output result as JSON. |
+
+```bash
+openacp instances create --dir ~/work-project
+openacp instances create --dir ~/work-project --from ~/openacp-workspace
+openacp instances create --dir ~/work-project --agent claude --no-interactive --json
+```
+
+**JSON output** (`data` shape):
+```json
+{ "id": "work", "name": "work-project", "directory": "/Users/alice/work-project", "root": "/Users/alice/work-project/.openacp", "status": "stopped", "port": null }
+```
+
+---
+
+## start
+
+Starts OpenACP as a background daemon. Requires an existing instance config — run `openacp` first to set up, or use `openacp setup` for non-interactive setup.
+
+**Usage**
+```
+openacp start [--local | --dir <path>] [--json]
+```
+
+**Options**
+
+| Flag | Description |
+|---|---|
+| `--local` | Use `.openacp/` instance in the current directory. |
+| `--dir <path>` | Use a specific workspace directory. |
+| `--json` | Output result as JSON. |
+
+**JSON output** (`data` shape):
+```json
+{ "pid": 12345, "instanceId": "main", "name": "my-instance", "directory": "/Users/alice/openacp-workspace", "dir": "/Users/alice/openacp-workspace/.openacp", "port": 21420 }
 ```
 
 ---
@@ -746,12 +833,12 @@ openacp status [--all] [--id <id>] [--json]
 
 **JSON output** (`data` shape — all instances):
 ```json
-{ "instances": [{ "id": "global", "name": "my-instance", "status": "running", "pid": 12345, "dir": "/Users/alice/.openacp", "mode": "daemon", "channels": ["telegram"], "apiPort": 21420, "tunnelPort": null }] }
+{ "instances": [{ "id": "main", "name": "my-instance", "status": "running", "pid": 12345, "dir": "/Users/alice/openacp-workspace/.openacp", "mode": "daemon", "channels": ["telegram"], "apiPort": 21420, "tunnelPort": null }] }
 ```
 
 **JSON output** (`data` shape — single instance with `--id`):
 ```json
-{ "id": "global", "name": "my-instance", "status": "running", "pid": 12345, "dir": "/Users/alice/.openacp", "mode": "daemon", "channels": ["telegram"], "apiPort": 21420, "tunnelPort": null }
+{ "id": "main", "name": "my-instance", "status": "running", "pid": 12345, "dir": "/Users/alice/openacp-workspace/.openacp", "mode": "daemon", "channels": ["telegram"], "apiPort": 21420, "tunnelPort": null }
 ```
 
 ---
@@ -912,7 +999,7 @@ If a daemon is already running, `openacp` shows a rich status display with an in
 - **l** — tail logs
 - **q** — quit
 
-The startup display also shows which instance is active (global vs. local) and prints hints when a local instance is available but the global is being used.
+The startup display shows which instance is active and its directory path.
 
 `openacp --foreground` forces foreground mode regardless of config.
 

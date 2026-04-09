@@ -2,7 +2,7 @@
 
 Everything you need to run OpenACP on your own infrastructure.
 
-OpenACP is designed to be self-hosted: you own the process, the config, and the data. There are no cloud accounts required beyond the messaging platform bots you configure. All state lives in `~/.openacp/`.
+OpenACP is designed to be self-hosted: you own the process, the config, and the data. There are no cloud accounts required beyond the messaging platform bots you configure. Each instance stores its state in `<workspace>/.openacp/`. Shared data (agent binaries, instance registry) lives in `~/.openacp/`.
 
 ## In this section
 

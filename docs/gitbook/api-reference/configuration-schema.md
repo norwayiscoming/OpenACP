@@ -1,6 +1,6 @@
 # Configuration Schema
 
-Config is stored at `~/.openacp/config.json`. The file is created with defaults on first run. All fields support backward-compatible migrations; old configs load without errors.
+Config is stored at `<workspace>/.openacp/config.json` (e.g. `~/openacp-workspace/.openacp/config.json`). The file is created with defaults on first run. All fields support backward-compatible migrations; old configs load without errors.
 
 Edit interactively with `openacp config`, or set individual values with `openacp config set <path> <value>`.
 
@@ -100,7 +100,9 @@ Map of named agent configurations. Each key is an agent name used in `defaultAge
 
 | Field | Type | Default | Description |
 |---|---|---|---|
-| `workspace.baseDir` | string | `"~/openacp-workspace"` | Base directory for agent working directories. `~` is expanded. Named workspaces are created as subdirectories. |
+| `workspace.allowExternalWorkspaces` | boolean | `true` | Whether sessions can use working directories outside the workspace root |
+
+The workspace base directory is derived automatically from the instance root parent — it is no longer a config field. The directory containing `.openacp/` is the workspace.
 
 ---
 
@@ -119,7 +121,7 @@ Map of named agent configurations. Each key is an agent name used in `defaultAge
 | Field | Type | Default | Description |
 |---|---|---|---|
 | `logging.level` | `"silent"` \| `"debug"` \| `"info"` \| `"warn"` \| `"error"` \| `"fatal"` | `"info"` | Log verbosity level |
-| `logging.logDir` | string | `"~/.openacp/logs"` | Directory for log files |
+| `logging.logDir` | string | `"<instance-root>/logs"` | Directory for log files |
 | `logging.maxFileSize` | string \| number | `"10m"` | Maximum size per log file before rotation |
 | `logging.maxFiles` | number | `7` | Number of rotated log files to retain |
 | `logging.sessionLogRetentionDays` | number | `30` | Days to retain per-session log files |

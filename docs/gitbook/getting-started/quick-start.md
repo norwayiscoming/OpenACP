@@ -39,8 +39,7 @@ The first time you run `openacp`, it detects there's no config and launches an i
 2. **Enter your bot token** — paste the token you created above
 3. **Validate the token** — confirms it can reach the platform API
 4. **Detect agents** — scans your system for installed ACP-compatible agents
-5. **Set your workspace** — the directory your agents will have access to
-6. **Choose run mode** — foreground (for testing) or daemon (runs in background)
+5. **Choose run mode** — foreground (for testing) or daemon (runs in background)
 
 Most prompts have sensible defaults — just press Enter to accept them.
 
@@ -104,7 +103,7 @@ For the full list, see [Chat Commands](../using-openacp/chat-commands.md).
 
 When you ran `openacp start`, OpenACP:
 
-1. Loaded your config from `~/.openacp/config.json`
+1. Loaded your config from `~/openacp-workspace/.openacp/config.json`
 2. Connected your bot to the chat platform
 3. Started listening for messages
 
@@ -118,7 +117,7 @@ When you sent `/new`, OpenACP:
 
 ## Your data directory
 
-Everything OpenACP stores lives in `~/.openacp/`:
+OpenACP stores instance data in `<workspace>/.openacp/` (default: `~/openacp-workspace/.openacp/`):
 
 | Path | What's in it |
 |---|---|
@@ -128,6 +127,9 @@ Everything OpenACP stores lives in `~/.openacp/`:
 | `logs/` | Application logs |
 | `files/` | Files shared through the chat |
 | `plugins/` | Installed plugins |
+| `history/` | Per-session conversation history |
+
+Shared data (agent binaries, instance registry) is kept in `~/.openacp/` and is used across all instances.
 
 To reconfigure at any time:
 

@@ -46,7 +46,7 @@ The REST API uses a two-tier authentication system:
 
 ### Secret token (master key)
 
-The API secret is stored in `<instance-root>/api-secret` (default: `~/.openacp/api-secret`). This file is created automatically on first start with `0600` permissions. The token is a 64-character hex string generated with `crypto.randomBytes(32)`.
+The API secret is stored in `<instance-root>/api-secret` (e.g. `~/openacp-workspace/.openacp/api-secret`). This file is created automatically on first start with `0600` permissions. The token is a 64-character hex string generated with `crypto.randomBytes(32)`.
 
 The secret token provides full administrative access. Use it for:
 
@@ -60,7 +60,7 @@ Authorization: Bearer <contents of api-secret>
 At startup, if the file permissions are more permissive than `0600`, a warning is logged:
 
 ```
-API secret file has insecure permissions (should be 0600). Run: chmod 600 ~/.openacp/api-secret
+API secret file has insecure permissions (should be 0600). Run: chmod 600 <instance-root>/api-secret
 ```
 
 ### JWT access tokens
@@ -118,13 +118,13 @@ If an agent is configured to run without permission prompts (agent-side configur
 
 1. **Always set `allowedUserIds`** unless your bot is already in a fully private, access-controlled group. Even a private Telegram group can have its invite link shared accidentally.
 
-2. **Keep `api-secret` at `0600`**. The CLI warns you if it is not. Run `chmod 600 ~/.openacp/api-secret` if needed.
+2. **Keep `api-secret` at `0600`**. The CLI warns you if it is not. Run `chmod 600 <instance-root>/api-secret` if needed.
 
 3. **Do not change `api.host` to `0.0.0.0`** unless you have a specific need and have locked down port `21420` with firewall rules. Use tunnels for remote access instead.
 
 4. **Review `maxConcurrentSessions`** if you share the bot with multiple users. A session per user is reasonable; 20 concurrent ACP agent subprocesses can be resource-intensive.
 
-5. **Rotate the API secret** by deleting `~/.openacp/api-secret` and restarting the daemon. A new token is generated automatically. All existing JWT tokens issued from the old secret become invalid.
+5. **Rotate the API secret** by deleting `<instance-root>/api-secret` and restarting the daemon. A new token is generated automatically. All existing JWT tokens issued from the old secret become invalid.
 
 6. **Use daemon mode with autostart** for persistent deployments so the server does not silently go offline after a reboot.
 

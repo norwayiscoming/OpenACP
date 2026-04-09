@@ -28,8 +28,8 @@ Each check produces one or more results with a status of `pass`, `warn`, or `fai
 | **Agents** | Each configured agent's binary exists on PATH; flags a missing default agent as a failure |
 | **Telegram** | Bot token is set, the bot can reach the Telegram API, and the configured chat ID resolves to a supergroup with forum topics enabled |
 | **Discord** | Bot token and guild ID are set, the bot can connect and access the configured guild |
-| **Storage** | `~/.openacp/` directory exists and is writable; `sessions.json` is valid; log directory exists and is writable |
-| **Workspace** | The configured `workspace.baseDir` exists and is readable |
+| **Storage** | Instance root exists and is writable; `sessions.json` is valid; log directory exists and is writable |
+| **Workspace** | The instance workspace directory (parent of `.openacp/`) exists and is readable |
 | **Plugins** | Plugins directory exists; each installed plugin can be loaded without errors |
 | **Daemon** | PID file is valid and the process is alive; API port file is valid; API port is in use by OpenACP (not another process) |
 | **Tunnel** | Tunnel is enabled; configured provider is recognized; `cloudflared` binary is present (for Cloudflare provider); tunnel port is in valid range |

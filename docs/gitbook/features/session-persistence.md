@@ -21,7 +21,7 @@ You can continue sending messages to an existing session topic after a restart. 
 
 Old session records are cleaned up automatically. By default, sessions that have not been active for **30 days** are removed. Active sessions are never cleaned up regardless of age.
 
-You can configure the retention period in `~/.openacp/config.json`:
+You can configure the retention period in the instance `config.json`:
 
 ```json
 {
@@ -35,7 +35,7 @@ You can configure the retention period in `~/.openacp/config.json`:
 
 ## Technical details
 
-Session records are stored in `~/.openacp/sessions.json`. Each record stores:
+Session records are stored in `<instance-root>/sessions.json`. Each record stores:
 
 | Field | Description |
 |-------|-------------|

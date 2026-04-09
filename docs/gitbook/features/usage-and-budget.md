@@ -2,7 +2,7 @@
 
 ## Token tracking
 
-Every time an agent completes a prompt, OpenACP records a usage entry containing the session ID, timestamp, number of tokens consumed, and cost in USD (if the agent reports it). These records are stored in `~/.openacp/usage.json`.
+Every time an agent completes a prompt, OpenACP records a usage entry containing the session ID, timestamp, number of tokens consumed, and cost in USD (if the agent reports it). These records are stored in `<instance-root>/usage.json`.
 
 You can query usage summaries for different time periods:
 
@@ -19,7 +19,7 @@ Each summary includes total tokens, total cost, number of distinct sessions, and
 
 ## Monthly budget
 
-Set a spending limit in `~/.openacp/config.json`:
+Set a spending limit in the instance `config.json`:
 
 ```json
 {
@@ -74,4 +74,4 @@ To configure retention:
 
 ## Technical details
 
-Usage data is stored in `~/.openacp/usage.json`. Writes are batched to avoid excessive disk I/O. The file is saved on process exit to prevent data loss. If the file is corrupt on startup, OpenACP saves a backup and starts fresh.
+Usage data is stored in `<instance-root>/usage.json`. Writes are batched to avoid excessive disk I/O. The file is saved on process exit to prevent data loss. If the file is corrupt on startup, OpenACP saves a backup and starts fresh.

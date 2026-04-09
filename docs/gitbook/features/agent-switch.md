@@ -81,7 +81,7 @@ With labels disabled, the history is injected as-is without any prefixes.
 |---|---|---|---|
 | `agentSwitch.labelHistory` | boolean | `true` | Prefix assistant messages in injected history with the agent name |
 
-Configure via `~/.openacp/config.json` or the `/settings` command.
+Configure via `<instance-root>/config.json` or the `/settings` command.
 
 ---
 

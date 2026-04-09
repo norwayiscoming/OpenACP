@@ -84,7 +84,7 @@ For full details see [Agent Switch](../features/agent-switch.md).
 
 ## Default agent
 
-The default agent is used when you create a session without specifying one. Configure it in `~/.openacp/config.json`:
+The default agent is used when you create a session without specifying one. Configure it in `<instance-root>/config.json` (e.g. `~/openacp-workspace/.openacp/config.json`):
 
 ```json
 {

@@ -24,7 +24,7 @@ All overrides are applied before Zod schema validation, so the final config is a
 | `OPENACP_TUNNEL_PROVIDER` | `tunnel.provider` | string | Tunnel provider (`cloudflare`, `ngrok`, `bore`, `tailscale`) |
 | `OPENACP_SPEECH_STT_PROVIDER` | `speech.stt.provider` | string | Active speech-to-text provider name |
 | `OPENACP_SPEECH_GROQ_API_KEY` | `speech.stt.providers.groq.apiKey` | string | API key for the Groq STT provider |
-| `OPENACP_CONFIG_PATH` | — | string | Override the config file path (default: `~/.openacp/config.json`) |
+| `OPENACP_CONFIG_PATH` | — | string | Override the config file path (default: `<instance-root>/config.json`) |
 | `OPENACP_INSTANCE_ROOT` | — | string | Set the instance root directory. Overrides auto-detection and CLI flags. See [Multi-Instance](../features/multi-instance.md). |
 
 ## Plugin-Level Environment Variables

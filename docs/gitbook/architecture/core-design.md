@@ -249,19 +249,18 @@ Each handler has a 5-second timeout. Timeout or error skips the handler, passes 
 
 ## ConfigManager
 
-Zod-validated configuration from `~/.openacp/config.json`. After the plugin refactor, config.json contains **core settings only**:
+Zod-validated configuration from `<instance-root>/config.json` (e.g. `~/openacp-workspace/.openacp/config.json`). After the plugin refactor, config.json contains **core settings only**:
 
 ```json
 {
   "defaultAgent": "claude-code",
-  "workspace": { "baseDir": "~/openacp-workspace" },
   "security": { "allowedUserIds": ["123"], "maxConcurrentSessions": 3 },
   "logging": { "level": "info" },
   "runMode": "foreground"
 }
 ```
 
-Plugin-specific settings live in per-plugin `settings.json` files under `~/.openacp/plugins/@scope/name/settings.json`, managed by the SettingsManager.
+Plugin-specific settings live in per-plugin `settings.json` files under `<instance-root>/plugins/data/@scope/name/settings.json`, managed by the SettingsManager.
 
 ---
 

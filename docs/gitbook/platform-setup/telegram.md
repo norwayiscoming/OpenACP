@@ -97,7 +97,7 @@ Replace `<YOUR_TOKEN>` with your bot token. Send a message in the group first, t
 
 ## Step 5: Configure OpenACP
 
-Edit `~/.openacp/config.json` and fill in the Telegram section (see the [full configuration reference](../self-hosting/configuration.md) for all available options):
+Edit `<workspace>/.openacp/config.json` (e.g. `~/openacp-workspace/.openacp/config.json`) and fill in the Telegram section (see the [full configuration reference](../self-hosting/configuration.md) for all available options):
 
 ```json
 {
@@ -219,7 +219,7 @@ Environment variables take precedence over values in `config.json`.
 **Bot is not responding**
 - Confirm the bot is added to the group and is an administrator.
 - Verify `enabled: true` in the config.
-- Check `~/.openacp/logs/` for error messages.
+- Check `<instance-root>/logs/` for error messages.
 
 **"Chat must be a group" error**
 - Make sure you are using a group (not a channel). Channels are not supported.

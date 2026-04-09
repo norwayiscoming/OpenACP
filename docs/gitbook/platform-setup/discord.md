@@ -114,7 +114,7 @@ This step is optional — OpenACP will create and manage the channel automatical
 
 ## Step 7: Configure OpenACP
 
-Edit `~/.openacp/config.json` and fill in the Discord section (see the [full configuration reference](../self-hosting/configuration.md) for all available options):
+Edit `<workspace>/.openacp/config.json` (e.g. `~/openacp-workspace/.openacp/config.json`) and fill in the Discord section (see the [full configuration reference](../self-hosting/configuration.md) for all available options):
 
 ```json
 {

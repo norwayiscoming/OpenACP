@@ -40,7 +40,7 @@ If you haven't finished initial setup, see the [Discord Setup guide](../platform
 
 **Solution:**
 1. Ensure the bot has **Manage Threads** and **Send Messages in Threads** permissions in the forum channel.
-2. Delete the `forumChannelId` value from `~/.openacp/config.json` so OpenACP recreates the forum channel on next startup.
+2. Delete the `forumChannelId` value from `<instance-root>/config.json` so OpenACP recreates the forum channel on next startup.
 3. If using a pre-existing forum channel, make sure it is a **Forum** type channel, not a regular text channel.
 
 ---
@@ -53,7 +53,7 @@ If you haven't finished initial setup, see the [Discord Setup guide](../platform
 
 **Solution:**
 1. Run `openacp doctor` — it calls `GET /users/@me` with your token and reports `401 Unauthorized` if the token is invalid.
-2. If the token has been regenerated, update it in `~/.openacp/config.json` (or the `DISCORD_BOT_TOKEN` environment variable) and restart.
+2. If the token has been regenerated, update it in `<instance-root>/config.json` (or the `DISCORD_BOT_TOKEN` environment variable) and restart.
 3. Check for `[DiscordAdapter] Initialization failed` in the logs for the specific error.
 
 ---

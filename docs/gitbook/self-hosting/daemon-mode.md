@@ -31,7 +31,7 @@ When `runMode` is `foreground`, this runs the server in the current process.
 
 Reads the PID file and sends `SIGTERM`. Polls every 100 ms for up to 5 seconds waiting for the process to exit. If the process does not exit within 5 seconds, `SIGKILL` is sent. The PID file is removed after a successful stop.
 
-Calling `stop` also removes the running marker file (`~/.openacp/running`), which suppresses autostart on the next boot.
+Calling `stop` also removes the running marker file (`<instance-root>/running`), which suppresses autostart on the next boot.
 
 ### `openacp restart`
 
@@ -43,7 +43,7 @@ Checks whether the PID in the PID file is alive (using `kill -0`). Cleans up sta
 
 ### `openacp logs`
 
-Tails `~/.openacp/logs/openacp.log`. In daemon mode this is where all server output goes.
+Tails `<instance-root>/logs/openacp.log`. In daemon mode this is where all server output goes.
 
 ### `openacp attach`
 
@@ -63,7 +63,7 @@ When you run `openacp` (no arguments) and a daemon is already running, instead o
 | `l` | Tail the log file |
 | `q` | Quit |
 
-The display also shows which instance is active (global vs. local) and suggests the local instance when one is available but the global is being used.
+The display shows which instance is active and its directory path.
 
 You can force a specific mode on startup:
 
@@ -74,12 +74,14 @@ openacp start --daemon        # force daemon regardless of config
 
 ## File Locations
 
+All runtime files live inside the instance root (`<workspace>/.openacp/`):
+
 | File | Path | Purpose |
 |---|---|---|
-| PID file | `~/.openacp/openacp.pid` | Process ID of the running daemon |
-| Log file | `~/.openacp/logs/openacp.log` | Daemon stdout/stderr and application logs |
-| Running marker | `~/.openacp/running` | Written on start, removed on stop; used to decide whether to autostart on boot |
-| Port file | `~/.openacp/api.port` | Current API port (written by the server on startup) |
+| PID file | `<instance-root>/openacp.pid` | Process ID of the running daemon |
+| Log file | `<instance-root>/logs/openacp.log` | Daemon stdout/stderr and application logs |
+| Running marker | `<instance-root>/running` | Written on start, removed on stop; used to decide whether to autostart on boot |
+| Port file | `<instance-root>/api.port` | Current API port (written by the server on startup) |
 
 ## Autostart on Boot
 
@@ -93,7 +95,7 @@ On macOS, autostart uses a user-level `launchd` plist:
 ~/Library/LaunchAgents/com.openacp.daemon.plist
 ```
 
-When autostart is enabled, the plist is written and loaded with `launchctl load`. The daemon is configured with `RunAtLoad: true` and `KeepAlive` set to restart on non-zero exit. Log output goes to `~/.openacp/logs/openacp.log`.
+When autostart is enabled, the plist is written and loaded with `launchctl load`. The daemon is configured with `RunAtLoad: true` and `KeepAlive` set to restart on non-zero exit. Log output goes to `<instance-root>/logs/openacp.log`.
 
 To enable autostart from the CLI:
 

@@ -12,7 +12,7 @@ This lets you continue work naturally. The agent knows the history without you h
 
 When you resume a session, OpenACP collects conversation history from your previous sessions — what you asked, what the agent did, and which files were changed. This history is formatted as a summary and injected into the new session so the agent has full context.
 
-OpenACP automatically records conversation history for every session. It captures your prompts, the agent's responses, tool calls, file edits, and permission decisions. History is stored locally in `~/.openacp/history/`, one file per session.
+OpenACP automatically records conversation history for every session. It captures your prompts, the agent's responses, tool calls, file edits, and permission decisions. History is stored locally in `<instance-root>/history/`, one file per session.
 
 When multiple past sessions are relevant, history is merged chronologically. OpenACP automatically adjusts the level of detail based on how many sessions are included — recent sessions get full detail, older ones get shorter summaries. If the combined history is too large, the oldest sessions are trimmed first.
 
@@ -29,7 +29,7 @@ Under the hood, the `ContextManager` maintains a list of registered context prov
 - **HistoryProvider** — records conversation history directly within OpenACP via middleware hooks (`agent:beforePrompt`, `agent:afterEvent`, `permission:afterResolve`).
 - **EntireProvider** — reads conversation history from Entire.io git checkpoints.
 
-Results are cached on disk at `~/.openacp/cache/entire/` so that repeated requests for the same query do not re-read and re-parse transcript files. Providers are pluggable — plugins can register custom context providers.
+Results are cached on disk at `<instance-root>/cache/entire/` so that repeated requests for the same query do not re-read and re-parse transcript files. Providers are pluggable — plugins can register custom context providers.
 
 ---
 

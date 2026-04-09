@@ -8,10 +8,10 @@ Run `openacp doctor` first — it checks whether each configured agent command e
 
 **Symptoms:** OpenACP logs show `Default agent "..." not found in agents config` and no sessions start.
 
-**Cause:** The `defaultAgent` field in `~/.openacp/config.json` references an agent name that is not defined under the `agents` map, or was mistyped.
+**Cause:** The `defaultAgent` field in `<instance-root>/config.json` references an agent name that is not defined under the `agents` map, or was mistyped.
 
 **Solution:**
-1. Open `~/.openacp/config.json` and verify that `defaultAgent` matches a key under `agents` exactly (case-sensitive).
+1. Open `<instance-root>/config.json` (e.g. `~/openacp-workspace/.openacp/config.json`) and verify that `defaultAgent` matches a key under `agents` exactly (case-sensitive).
 2. Run `openacp doctor` — it reports `Default agent "X" not found in agents config` with the offending name.
 3. Run `openacp agents list` to see all available agents and their registry IDs.
 
@@ -91,7 +91,7 @@ After installing, run `openacp doctor` to confirm the command is found. Then res
 **Cause:** OpenACP spawns the agent as a subprocess with a clean environment (`process.env` plus any `env` overrides in config). Environment variables set only in interactive shell sessions (e.g., in `.zshrc` but not `.zprofile`) may not be inherited.
 
 **Solution:**
-1. Add required environment variables (API keys, etc.) explicitly to the agent's `env` block in `~/.openacp/config.json`:
+1. Add required environment variables (API keys, etc.) explicitly to the agent's `env` block in `<instance-root>/config.json` (e.g. `~/openacp-workspace/.openacp/config.json`):
    ```json
    "agents": {
      "my-agent": {

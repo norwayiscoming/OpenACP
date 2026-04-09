@@ -1,4 +1,5 @@
 import * as path from 'node:path';
+import fs from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import { jsonSuccess, jsonError, muteForJson, ErrorCodes } from '../output.js'
 import { getGlobalRoot } from '../../core/instance/instance-context.js'
@@ -8,6 +9,13 @@ import { initInstanceFiles } from '../../core/instance/instance-init.js'
 function parseFlag(args: string[], flag: string): string | undefined {
   const idx = args.indexOf(flag);
   return idx !== -1 ? args[idx + 1] : undefined;
+}
+
+function readConfigField(instanceRoot: string, field: string): string | null {
+  try {
+    const raw = JSON.parse(fs.readFileSync(path.join(instanceRoot, 'config.json'), 'utf-8'))
+    return typeof raw[field] === 'string' ? raw[field] : null
+  } catch { return null }
 }
 
 export async function cmdSetup(args: string[], instanceRoot: string): Promise<void> {
@@ -31,24 +39,41 @@ export async function cmdSetup(args: string[], instanceRoot: string): Promise<vo
 
   const agents = agentRaw.split(',').map(a => a.trim());
 
-  // Write config.json (merged), agents.json, and plugins.json via shared init logic
-  initInstanceFiles(instanceRoot, { agents, runMode, mergeExisting: true })
-
-  // Register this instance in the global registry if not already present.
-  // This ensures `openacp instances list` and the interactive instance picker
-  // can discover instances created via `openacp setup` directly.
+  // Resolve or create UUID (idempotent — existing registration is preserved)
   const registryPath = path.join(getGlobalRoot(), 'instances.json')
   const registry = new InstanceRegistry(registryPath)
   registry.load()
-  if (!registry.getByRoot(instanceRoot)) {
-    registry.register(randomUUID(), instanceRoot)
+
+  let id: string
+  const existing = registry.getByRoot(instanceRoot)
+  if (existing) {
+    id = existing.id
+  } else {
+    id = randomUUID()
+    registry.register(id, instanceRoot)
     registry.save()
   }
 
-  const configPath = path.join(instanceRoot, 'config.json');
+  // Write instance files with id — config.json now carries the UUID
+  initInstanceFiles(instanceRoot, { agents, runMode, mergeExisting: true, id })
+
+  // Default instanceName to the workspace directory basename if not already set
+  const name = readConfigField(instanceRoot, 'instanceName')
+             ?? path.basename(path.dirname(instanceRoot))
+
+  // Persist the default name if it wasn't set
+  if (!readConfigField(instanceRoot, 'instanceName')) {
+    const configPath = path.join(instanceRoot, 'config.json')
+    try {
+      const raw = JSON.parse(fs.readFileSync(configPath, 'utf-8'))
+      raw.instanceName = name
+      fs.writeFileSync(configPath, JSON.stringify(raw, null, 2))
+    } catch { /* best-effort */ }
+  }
+
   if (json) {
-    jsonSuccess({ configPath });
+    jsonSuccess({ id, name, directory: path.dirname(instanceRoot), configPath: path.join(instanceRoot, 'config.json') })
   } else {
-    console.log(`\n  \x1b[32m✓ Setup complete.\x1b[0m Config written to ${configPath}\n`);
+    console.log(`\n  \x1b[32m✓ Setup complete.\x1b[0m Config written to ${path.join(instanceRoot, 'config.json')}\n`)
   }
 }

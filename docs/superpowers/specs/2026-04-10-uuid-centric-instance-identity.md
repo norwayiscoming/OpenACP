@@ -12,6 +12,8 @@ keyed by ID. Any code that needs the UUID for a given instance root must look it
 - `resolveInstanceId` reads `instances.json`, falls back to sanitized directory name
 - `cmdSetup` registers a UUID in `instances.json` but never writes it to `config.json`
 - `initInstanceFiles` has no `id` parameter — UUID is invisible to the instance files
+- The interactive wizard generates a UUID at line 456 but writes config at line 439 (before UUID
+  generation) — so `id` is never included in the config written by the wizard
 
 This creates two concrete bugs:
 
@@ -78,9 +80,9 @@ export const ConfigSchema = z.object({
 
 **File:** `src/core/config/config-migrations.ts`
 
-`MigrationContext` already has `configDir` (the directory containing `config.json`, which is
-`instanceRoot`). The migration reads `instances.json` with plain `fs` to stay synchronous
-(no dynamic imports, ESM-compatible):
+`MigrationContext` already has `configDir` (the directory containing `config.json`, which equals
+`instanceRoot`). `ConfigManager.load()` already passes `{ configDir: path.dirname(this.configPath) }`
+to `applyMigrations`. The migration reads `instances.json` with plain `fs` (synchronous, ESM-compatible):
 
 ```typescript
 {
@@ -89,10 +91,9 @@ export const ConfigSchema = z.object({
     if (raw.id) return false           // already has id, skip
     if (!ctx?.configDir) return false  // no context, can't look up
 
-    // instanceRoot = configDir (config.json lives at instanceRoot/config.json)
+    // ctx.configDir === instanceRoot (config.json lives at instanceRoot/config.json)
     const instanceRoot = ctx.configDir
 
-    // Look up UUID from instances.json using plain fs (synchronous, no imports)
     try {
       const registryPath = path.join(os.homedir(), '.openacp', 'instances.json')
       const data = JSON.parse(fs.readFileSync(registryPath, 'utf-8'))
@@ -112,15 +113,17 @@ export const ConfigSchema = z.object({
 }
 ```
 
-The migration file needs `import fs from 'node:fs'`, `import path from 'node:path'`, and
-`import os from 'node:os'` added at the top (project is ESM-only — no `require`).
+Add `import fs from 'node:fs'`, `import path from 'node:path'`, `import os from 'node:os'`
+at the top of the migration file (already available in config.ts, but migrations file needs them).
 
 ### 4. `cmdSetup` — pass UUID into `initInstanceFiles`, return in JSON
 
 **File:** `src/cli/commands/setup.ts`
 
+Reorder: registry check/register BEFORE `initInstanceFiles` so the UUID can be passed in:
+
 ```typescript
-// Get or create UUID (idempotent — existing registration is preserved)
+// Resolve or create UUID (idempotent — existing registration is preserved)
 const registryPath = path.join(getGlobalRoot(), 'instances.json')
 const registry = new InstanceRegistry(registryPath)
 registry.load()
@@ -135,26 +138,36 @@ if (existing) {
   registry.save()
 }
 
-// Write files with id so config.json carries the UUID
+// Write instance files with id — config.json now carries the UUID
 initInstanceFiles(instanceRoot, { agents, runMode, mergeExisting: true, id })
 
-// Read instance name from config (may have been set by user previously)
-const name = readConfigField(instanceRoot, 'instanceName') ?? null
+// Default instanceName to the workspace directory basename if not already set
+const name = readConfigField(instanceRoot, 'instanceName')
+           ?? path.basename(path.dirname(instanceRoot))
 
-const configPath = path.join(instanceRoot, 'config.json')
+// Persist the default name if it wasn't set
+if (!readConfigField(instanceRoot, 'instanceName')) {
+  const configPath = path.join(instanceRoot, 'config.json')
+  try {
+    const raw = JSON.parse(fs.readFileSync(configPath, 'utf-8'))
+    raw.instanceName = name
+    fs.writeFileSync(configPath, JSON.stringify(raw, null, 2))
+  } catch { /* best-effort */ }
+}
+
 if (json) {
-  jsonSuccess({ id, name, directory: path.dirname(instanceRoot), configPath })
+  jsonSuccess({ id, name, directory: path.dirname(instanceRoot), configPath: path.join(instanceRoot, 'config.json') })
 } else {
-  console.log(`\n  \x1b[32m✓ Setup complete.\x1b[0m Config written to ${configPath}\n`)
+  console.log(`\n  \x1b[32m✓ Setup complete.\x1b[0m Config written to ${path.join(instanceRoot, 'config.json')}\n`)
 }
 ```
 
-Helper `readConfigField(instanceRoot, field)`:
+Helper (can be inline or a small private function):
 ```typescript
 function readConfigField(instanceRoot: string, field: string): string | null {
   try {
     const raw = JSON.parse(fs.readFileSync(path.join(instanceRoot, 'config.json'), 'utf-8'))
-    return (raw[field] as string) ?? null
+    return typeof raw[field] === 'string' ? raw[field] : null
   } catch { return null }
 }
 ```
@@ -163,32 +176,24 @@ function readConfigField(instanceRoot: string, field: string): string | null {
 
 **File:** `src/cli/commands/instances.ts`
 
-**Change 1: "already registered" case** — return existing entry instead of erroring when `--json`:
+**Change 1: "already registered" case** — return existing entry (idempotent), and also write
+`id` to config.json in case it was created before this change:
 
 ```typescript
-// Before:
 if (existing) {
-  if (json) jsonError(ErrorCodes.UNKNOWN_ERROR, `Instance already exists at ${resolvedDir} (id: ${existing.id})`)
-  console.error(`Error: Instance already exists...`)
-  process.exit(1)
-}
-
-// After:
-if (existing) {
-  // Idempotent in JSON mode — return the existing registration
+  // Ensure config.json has the id (idempotent write — mergeExisting preserves other fields)
+  initInstanceFiles(instanceRoot, { mergeExisting: true, id: existing.id })
   if (!json) console.warn(`Warning: Instance already registered at ${resolvedDir} (id: ${existing.id})`)
   await outputInstance(json, { id: existing.id, root: instanceRoot })
   return
 }
 ```
 
-**Change 2: ".openacp exists but not registered" case** — pass UUID to `initInstanceFiles` so
-config.json gets the `id` written:
+**Change 2: ".openacp exists but not registered" case** — pass UUID to `initInstanceFiles`:
 
 ```typescript
-// .openacp exists but not registered — register it
 const id = randomUUID()
-initInstanceFiles(instanceRoot, { mergeExisting: true, id })  // ← write id to config
+initInstanceFiles(instanceRoot, { mergeExisting: true, id })
 registry.register(id, instanceRoot)
 registry.save()
 await outputInstance(json, { id, root: instanceRoot })
@@ -198,7 +203,13 @@ await outputInstance(json, { id, root: instanceRoot })
 
 ```typescript
 const id = randomUUID()
-initInstanceFiles(instanceRoot, { agents, instanceName: name, id })  // ← write id to config
+// --from case: after copyInstance, write new id (copyInstance strips id — see section 7)
+if (rawFrom) {
+  // ... existing copyInstance call ...
+  initInstanceFiles(instanceRoot, { mergeExisting: true, id })  // write new id over copied source id
+} else {
+  initInstanceFiles(instanceRoot, { agents, instanceName: name, id })
+}
 registry.register(id, instanceRoot)
 registry.save()
 await outputInstance(json, { id, root: instanceRoot })
@@ -207,6 +218,8 @@ await outputInstance(json, { id, root: instanceRoot })
 ### 6. `resolveInstanceId` — read config.json first
 
 **File:** `src/cli/resolve-instance-id.ts`
+
+Add `import fs from 'node:fs'` (path is already imported):
 
 ```typescript
 export function resolveInstanceId(instanceRoot: string): string {
@@ -230,33 +243,91 @@ export function resolveInstanceId(instanceRoot: string): string {
 }
 ```
 
+### 7. `copyInstance` — delete `id` from copied config
+
+**File:** `src/core/instance/instance-copy.ts`
+
+`copyInstance` currently deletes `instanceName` but not `id`. If a source instance has `id` in
+config.json, the copy would inherit the same UUID — two instances with the same id. Fix: delete
+`id` alongside other instance-specific fields:
+
+```typescript
+// Remove instance-specific fields
+delete config.instanceName
+delete config.id              // ← add: each instance needs its own UUID
+if (config.workspace) delete config.workspace.baseDir
+```
+
+After this change, the copy has no `id`. The caller (`cmdInstancesCreate --from` case or wizard)
+must write a new `id` via `initInstanceFiles({ mergeExisting: true, id: newUUID })` after copy.
+
+### 8. Interactive wizard — include `id` in written config
+
+**File:** `src/core/setup/wizard.ts`
+
+Currently: UUID generated at line 456, config written at line 439 (before UUID generation).
+
+Fix: generate UUID before writing config, include in config object:
+
+```typescript
+// Generate UUID before writing config (move registry check up)
+const existingEntry = instanceRegistry.getByRoot(instanceRoot)
+const instanceId = existingEntry?.id ?? randomUUID()
+
+const config = {
+  id: instanceId,          // ← include in written config
+  instanceName,
+  defaultAgent,
+  // ... rest unchanged
+}
+
+await configManager.writeNew(config)
+
+// Register in registry (now after config write, UUID already decided above)
+if (!existingEntry) {
+  instanceRegistry.register(instanceId, instanceRoot)
+  await instanceRegistry.save()
+}
+```
+
 ---
 
 ## Files Changed
 
 | File | Change |
 |---|---|
-| `src/core/instance/instance-init.ts` | Add `id` to `InitInstanceOptions`; write `id` into config.json |
+| `src/core/instance/instance-init.ts` | Add `id` to `InitInstanceOptions`; write `id` into config.json (preserve existing) |
+| `src/core/instance/instance-copy.ts` | Delete `id` from copied config (instance-specific field) |
 | `src/core/config/config.ts` | Add `id: z.string().optional()` to `ConfigSchema` |
-| `src/core/config/config-migrations.ts` | Add `add-instance-id` migration |
-| `src/cli/resolve-instance-id.ts` | Read from config.json first, registry as fallback |
-| `src/cli/commands/setup.ts` | Pass `id` to `initInstanceFiles`; return `{ id, name, directory, configPath }` in JSON |
-| `src/cli/commands/instances.ts` | Idempotent on "already registered" in JSON mode; pass `id` to `initInstanceFiles` in all create paths |
+| `src/core/config/config-migrations.ts` | Add `add-instance-id` migration; add `fs`, `path`, `os` imports |
+| `src/cli/resolve-instance-id.ts` | Read from config.json first, registry as fallback; add `fs` import |
+| `src/cli/commands/setup.ts` | Reorder: registry before `initInstanceFiles`; pass `id`; default `instanceName`; return `{ id, name, directory, configPath }` |
+| `src/cli/commands/instances.ts` | Idempotent on "already registered" (warn + return existing, write id to config); pass `id` to `initInstanceFiles` in all create paths; write new `id` after `--from` copy |
+| `src/core/setup/wizard.ts` | Generate UUID before writing config; include `id` in config object |
 
 ## No Changes Required
 
 - `InstanceRegistry` — still the discovery index, no structural change
 - `createInstanceContext` — already receives `id` as parameter, no change
-- `main.ts` — already reads UUID from registry when creating context, will benefit from migration
-- Wizard setup flow in `src/core/setup/` — `initInstanceFiles` is called without `id` currently;
-  the wizard flow goes through `startServer()` which reads from registry. After migration, config
-  will have `id`. No immediate change needed (migration handles it).
+- `main.ts` — already reads UUID from registry when creating context; migration handles old instances
+
+## Edge Cases
+
+- **Existing instances without `id` in config** → migration `add-instance-id` handles on next server
+  start. `cmdInstancesCreate` also writes `id` to config in the "already registered" case.
+- **Copy instance (`--from`, wizard copy)** → `copyInstance` strips `id`; caller writes new UUID
+  via `initInstanceFiles` after copy. Two instances will never share the same `id`.
+- **Registry and config out of sync** → `resolveInstanceId` reads config.json first (most reliable).
+  If config has `id` but registry doesn't, the `id` is still trusted. Registry is just for discovery.
 
 ## Testing
 
 - `initInstanceFiles` with `id` option writes `id` to config.json
 - `initInstanceFiles` with `mergeExisting: true` and existing `id` preserves the existing value
-- `cmdSetup --json` output includes `{ id, name, directory, configPath }`
-- `cmdInstancesCreate --json` on already-registered instance returns `jsonSuccess` with existing UUID (not error)
+- `copyInstance` does NOT copy `id` — destination config has no `id` field after copy
+- `cmdSetup --json` output includes `{ id, name, directory, configPath }` with non-null `name`
+- `cmdInstancesCreate --json` on already-registered instance returns `jsonSuccess` (not error)
+- `cmdInstancesCreate --from` creates destination with a new UUID (not source UUID)
 - `resolveInstanceId` reads from config.json when `id` is present
-- Migration `add-instance-id` writes `id` from registry into old configs that lack it
+- Migration `add-instance-id` writes `id` from registry into configs that lack it
+- Wizard-created instances have `id` in config.json immediately after setup

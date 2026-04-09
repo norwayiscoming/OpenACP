@@ -417,7 +417,12 @@ export async function runSetup(
       sessionTimeoutMinutes: 60,
     };
 
+    // Resolve or create UUID before writing config — id must be in config.json from the start
+    const existingEntry = instanceRegistry.getByRoot(instanceRoot);
+    const instanceId = existingEntry?.id ?? randomUUID();
+
     const config: Config = {
+      id: instanceId,
       instanceName,
       defaultAgent,
       workspace: { allowExternalWorkspaces: true, security: { allowedPaths: [], envWhitelist: [] } },
@@ -450,11 +455,9 @@ export async function runSetup(
       await pluginRegistry.save();
     }
 
-    // Register instance in the global registry (skip if this root is already registered)
-    const existingEntry = instanceRegistry.getByRoot(instanceRoot);
+    // Register instance in the global registry (now after config write; UUID already decided above)
     if (!existingEntry) {
-      const id = randomUUID();
-      instanceRegistry.register(id, instanceRoot);
+      instanceRegistry.register(instanceId, instanceRoot);
       await instanceRegistry.save();
     }
 

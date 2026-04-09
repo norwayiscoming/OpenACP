@@ -10,6 +10,8 @@ import fs from 'node:fs'
 import path from 'node:path'
 
 export interface InitInstanceOptions {
+  /** UUID for this instance, written to config.json. Once set, never overwritten. */
+  id?: string
   /** Agent names to register in agents.json. First entry becomes defaultAgent. */
   agents?: string[]
   /** Instance display name written to config.json as instanceName. */
@@ -73,6 +75,10 @@ function writeConfig(instanceRoot: string, opts: InitInstanceOptions): void {
     runMode: opts.runMode ?? existing['runMode'] ?? 'daemon',
     autoStart: existing['autoStart'] ?? false,
   }
+
+  // id is written once at creation — preserve existing id, never overwrite it
+  const id = (existing['id'] as string | undefined) ?? opts.id
+  if (id) config['id'] = id
 
   if (opts.agents && opts.agents.length > 0) {
     config['defaultAgent'] = opts.agents[0]

@@ -1,6 +1,5 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import * as os from "node:os";
 import { AgentStore } from "./agent-store.js";
 import { installAgent, uninstallAgent, resolveDistribution } from "./agent-installer.js";
 import { getAgentAlias, checkDependencies } from "./agent-dependencies.js";
@@ -28,27 +27,18 @@ interface RegistryCache {
 
 export class AgentCatalog {
   private store: AgentStore;
-  private globalStore: AgentStore | null = null;
   private registryAgents: RegistryAgent[] = [];
   private cachePath: string;
   private agentsDir: string | undefined;
 
-  constructor(store?: AgentStore, cachePath?: string, agentsDir?: string) {
-    this.store = store ?? new AgentStore();
-    this.cachePath = cachePath ?? path.join(os.homedir(), ".openacp", "registry-cache.json");
+  constructor(store: AgentStore, cachePath: string, agentsDir?: string) {
+    this.store = store;
+    this.cachePath = cachePath;
     this.agentsDir = agentsDir;
-
-    // If the instance store is NOT the global one, load global as fallback
-    const globalPath = path.join(os.homedir(), ".openacp", "agents.json");
-    const storePath = this.store.filePath;
-    if (path.resolve(storePath) !== path.resolve(globalPath)) {
-      this.globalStore = new AgentStore(globalPath);
-    }
   }
 
   load(): void {
     this.store.load();
-    this.globalStore?.load();
     this.loadRegistryFromCacheOrSnapshot();
     this.enrichInstalledFromRegistry();
   }
@@ -96,19 +86,18 @@ export class AgentCatalog {
     return this.registryAgents.find((a) => getAgentAlias(a.id) === keyOrId);
   }
 
-  // --- Installed (instance-first, global-fallback) ---
+  // --- Installed ---
 
   getInstalled(): InstalledAgent[] {
-    const merged = { ...this.globalStore?.getInstalled(), ...this.store.getInstalled() };
-    return Object.values(merged);
+    return Object.values(this.store.getInstalled());
   }
 
   getInstalledEntries(): Record<string, InstalledAgent> {
-    return { ...this.globalStore?.getInstalled(), ...this.store.getInstalled() };
+    return this.store.getInstalled();
   }
 
   getInstalledAgent(key: string): InstalledAgent | undefined {
-    return this.store.getAgent(key) ?? this.globalStore?.getAgent(key);
+    return this.store.getAgent(key);
   }
 
   // --- Discovery ---
@@ -214,16 +203,13 @@ export class AgentCatalog {
       await uninstallAgent(key, this.store);
       return { ok: true };
     }
-    if (this.globalStore?.getAgent(key)) {
-      return { ok: false, error: `"${key}" is installed globally. Uninstall it from the global instance instead.` };
-    }
     return { ok: false, error: `"${key}" is not installed.` };
   }
 
   // --- Resolution (for AgentManager) ---
 
   resolve(key: string): AgentDefinition | undefined {
-    const agent = this.store.getAgent(key) ?? this.globalStore?.getAgent(key);
+    const agent = this.store.getAgent(key);
     if (!agent) return undefined;
     return {
       name: key,

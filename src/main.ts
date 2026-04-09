@@ -30,12 +30,34 @@ export interface StartServerOptions {
 }
 
 export async function startServer(opts?: StartServerOptions) {
-  const globalRoot = getGlobalRoot()
   if (!opts?.instanceContext) {
+    const { resolveInstanceRoot } = await import('./core/instance/instance-context.js')
+    const root = process.env.OPENACP_INSTANCE_ROOT
+      ?? resolveInstanceRoot({ cwd: process.cwd() })
+
+    if (!root) {
+      console.error(`
+  \x1b[31m✗\x1b[0m No OpenACP instance found.
+
+  startServer() requires an instance context. Options:
+
+    1. cd into a workspace directory:
+       cd ~/openacp-workspace && node dist/main.js
+
+    2. Set OPENACP_INSTANCE_ROOT:
+       OPENACP_INSTANCE_ROOT=~/openacp-workspace/.openacp node dist/main.js
+
+    3. Use the CLI (recommended):
+       openacp start --dir ~/openacp-workspace
+`)
+      process.exit(1)
+    }
+
+    const globalRoot = getGlobalRoot()
     const reg = new InstanceRegistry(path.join(globalRoot, 'instances.json'))
     reg.load()
-    const entry = reg.getByRoot(globalRoot)
-    opts = { ...opts, instanceContext: createInstanceContext({ id: entry?.id ?? randomUUID(), root: globalRoot }) }
+    const entry = reg.getByRoot(root)
+    opts = { ...opts, instanceContext: createInstanceContext({ id: entry?.id ?? randomUUID(), root }) }
   }
   const ctx = opts.instanceContext!
 
@@ -113,7 +135,7 @@ export async function startServer(opts?: StartServerOptions) {
   // Post-upgrade dependency check (blocking — must complete before server start)
   try {
     const { runPostUpgradeChecks } = await import('./cli/post-upgrade.js')
-    await runPostUpgradeChecks(config)
+    await runPostUpgradeChecks(config, ctx)
   } catch (err) {
     log.warn({ err }, 'Post-upgrade check failed')
   }

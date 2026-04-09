@@ -1,9 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import * as fs from "node:fs";
 import { AgentCatalog } from "../agent-catalog.js";
+import { AgentStore } from "../agent-store.js";
 
 vi.mock("node:fs");
-vi.mock("node:os", () => ({ default: { homedir: () => "/home/testuser" }, homedir: () => "/home/testuser" }));
 
 describe("AgentCatalog", () => {
   let catalog: AgentCatalog;
@@ -11,7 +11,8 @@ describe("AgentCatalog", () => {
   beforeEach(() => {
     vi.mocked(fs.existsSync).mockReturnValue(false);
     vi.mocked(fs.mkdirSync).mockReturnValue(undefined as any);
-    catalog = new AgentCatalog();
+    const store = new AgentStore("/tmp/test/.openacp/agents.json");
+    catalog = new AgentCatalog(store, "/tmp/test/.openacp/registry-cache.json");
   });
 
   afterEach(() => { vi.restoreAllMocks(); });

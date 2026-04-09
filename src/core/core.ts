@@ -1,5 +1,4 @@
 import path from "node:path";
-import os from "node:os";
 import { nanoid } from "nanoid";
 import type { SettingsManager } from "./plugin/settings-manager.js";
 import { ConfigManager } from "./config/config.js";
@@ -53,7 +52,7 @@ export class OpenACPCore {
   sessionFactory: SessionFactory;
   readonly lifecycleManager: LifecycleManager;
   private agentSwitchHandler: AgentSwitchHandler;
-  public readonly instanceContext?: InstanceContext;
+  public readonly instanceContext: InstanceContext;
   readonly menuRegistry = new MenuRegistry();
   readonly assistantRegistry = new AssistantRegistry();
   assistantManager!: AssistantManager;
@@ -90,19 +89,19 @@ export class OpenACPCore {
     return this.lifecycleManager.settingsManager;
   }
 
-  constructor(configManager: ConfigManager, ctx?: InstanceContext) {
+  constructor(configManager: ConfigManager, ctx: InstanceContext) {
     this.configManager = configManager;
     this.instanceContext = ctx;
     const config = configManager.get();
     this.agentCatalog = new AgentCatalog(
-      ctx ? new AgentStore(ctx.paths.agents) : undefined,
-      ctx?.paths.registryCache,
-      ctx?.paths.agentsDir,
+      new AgentStore(ctx.paths.agents),
+      ctx.paths.registryCache,
+      ctx.paths.agentsDir,
     );
     this.agentCatalog.load();
 
     this.agentManager = new AgentManager(this.agentCatalog);
-    const storePath = ctx?.paths.sessions ?? path.join(os.homedir(), ".openacp", "sessions.json");
+    const storePath = ctx.paths.sessions;
     this.sessionStore = new JsonFileSessionStore(
       storePath,
       config.sessionStore.ttlDays,
@@ -119,7 +118,7 @@ export class OpenACPCore {
       this.sessionManager,
       () => this.speechService,
       this.eventBus,
-      ctx?.root,
+      ctx.root,
     );
 
     // Initialize plugin lifecycle manager (before setting middlewareChain on factory)
@@ -131,8 +130,8 @@ export class OpenACPCore {
       sessions: this.sessionManager,
       config: this.configManager,
       core: this,
-      storagePath: ctx?.paths.pluginsData ?? path.join(os.homedir(), ".openacp", "plugins", "data"),
-      instanceRoot: ctx?.root,
+      storagePath: ctx.paths.pluginsData,
+      instanceRoot: ctx.root,
       log: createChildLogger({ module: "plugin" }),
     });
 
@@ -209,9 +208,7 @@ export class OpenACPCore {
     registerCoreMenuItems(this.menuRegistry);
 
     // Set instance root for assistant CLI guidelines
-    if (ctx?.root) {
-      this.assistantRegistry.setInstanceRoot(path.dirname(ctx.root));
-    }
+    this.assistantRegistry.setInstanceRoot(path.dirname(ctx.root));
 
     // Register core assistant sections
     this.assistantRegistry.register(createSessionsSection(this));

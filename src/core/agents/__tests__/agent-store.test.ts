@@ -3,15 +3,13 @@ import * as fs from "node:fs";
 import { AgentStore } from "../agent-store.js";
 
 vi.mock("node:fs");
-vi.mock("node:os", () => ({ default: { homedir: () => "/home/testuser" }, homedir: () => "/home/testuser" }));
-
 describe("AgentStore", () => {
   let store: AgentStore;
 
   beforeEach(() => {
     vi.mocked(fs.existsSync).mockReturnValue(false);
     vi.mocked(fs.mkdirSync).mockReturnValue(undefined as any);
-    store = new AgentStore();
+    store = new AgentStore("/home/testuser/.openacp/agents.json");
   });
 
   afterEach(() => { vi.restoreAllMocks(); });

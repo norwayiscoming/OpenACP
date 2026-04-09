@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { OpenACPCore } from "../core.js";
 import type { IChannelAdapter } from "../channel.js";
 import type { IncomingMessage } from "../types.js";
+import type { InstanceContext } from "../instance/instance-context.js";
 import { SecurityGuard } from "../../plugins/security/security-guard.js";
 import { NotificationManager } from "../../plugins/notifications/notification.js";
 
@@ -102,6 +103,32 @@ function mockConfigManager(config?: any) {
   } as any;
 }
 
+function mockInstanceContext(): InstanceContext {
+  const root = "/tmp/test-instance/.openacp";
+  return {
+    id: "test-instance-id",
+    root,
+    paths: {
+      config: `${root}/config.json`,
+      sessions: `${root}/sessions.json`,
+      agents: `${root}/agents.json`,
+      registryCache: `${root}/registry-cache.json`,
+      plugins: `${root}/plugins`,
+      pluginsData: `${root}/plugins/data`,
+      pluginRegistry: `${root}/plugins/registry.json`,
+      logs: `${root}/logs`,
+      pid: `${root}/openacp.pid`,
+      running: `${root}/running`,
+      apiPort: `${root}/api-port`,
+      apiSecret: `${root}/api-secret`,
+      bin: `${root}/bin`,
+      cache: `${root}/cache`,
+      tunnels: `${root}/tunnels`,
+      agentsDir: `${root}/agents`,
+    },
+  };
+}
+
 function mockAdapter(): IChannelAdapter {
   return {
     name: 'test',
@@ -150,7 +177,7 @@ describe("OpenACPCore", () => {
   let adapter: IChannelAdapter;
 
   beforeEach(() => {
-    core = new OpenACPCore(mockConfigManager());
+    core = new OpenACPCore(mockConfigManager(), mockInstanceContext());
     registerMockServices(core);
     adapter = mockAdapter();
     core.registerAdapter("telegram", adapter);
@@ -214,7 +241,7 @@ describe("OpenACPCore", () => {
           tts: { provider: null, providers: {} },
         },
       });
-      const secureCore = new OpenACPCore(config);
+      const secureCore = new OpenACPCore(config, mockInstanceContext());
       registerMockServices(secureCore, config);
       secureCore.registerAdapter("telegram", adapter);
 
@@ -264,7 +291,7 @@ describe("OpenACPCore", () => {
           tts: { provider: null, providers: {} },
         },
       });
-      const secureCore = new OpenACPCore(config);
+      const secureCore = new OpenACPCore(config, mockInstanceContext());
       registerMockServices(secureCore, config);
       secureCore.registerAdapter("telegram", adapter);
 
@@ -335,7 +362,7 @@ describe("OpenACPCore", () => {
   describe("lazy service getters", () => {
     it("throws descriptive error when service not registered", () => {
       // Create a fresh core with no services registered (no plugins booted)
-      const bareCore = new OpenACPCore(mockConfigManager());
+      const bareCore = new OpenACPCore(mockConfigManager(), mockInstanceContext());
       expect(() => bareCore.securityGuard).toThrow(/security.*not registered/i);
       expect(() => bareCore.notificationManager).toThrow(/notifications.*not registered/i);
       expect(() => bareCore.fileService).toThrow(/file-service.*not registered/i);

@@ -66,6 +66,26 @@ export async function cmdSetup(args: string[], instanceRoot: string): Promise<vo
   fs.mkdirSync(instanceRoot, { recursive: true });
   fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
 
+  const agentsJsonPath = path.join(instanceRoot, 'agents.json');
+  if (!fs.existsSync(agentsJsonPath)) {
+    const agents = agentRaw.split(',').map(a => a.trim());
+    const installed: Record<string, unknown> = {};
+    for (const agentName of agents) {
+      installed[agentName] = {
+        registryId: null,
+        name: agentName.charAt(0).toUpperCase() + agentName.slice(1),
+        version: 'unknown',
+        distribution: 'custom',
+        command: agentName,
+        args: [],
+        env: {},
+        installedAt: new Date().toISOString(),
+        binaryPath: null,
+      };
+    }
+    fs.writeFileSync(agentsJsonPath, JSON.stringify({ version: 1, installed }, null, 2));
+  }
+
   if (json) {
     jsonSuccess({ configPath });
   } else {

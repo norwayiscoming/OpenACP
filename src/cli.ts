@@ -32,6 +32,7 @@ import {
   cmdAttach,
   cmdRemote,
   cmdSetup,
+  cmdAutostart,
 } from './cli/commands/index.js'
 import { resolveInstanceRoot } from './core/instance/instance-context.js'
 
@@ -167,6 +168,7 @@ async function main() {
     'attach': (r) => cmdAttach(args, r),
     'remote': (r) => cmdRemote(args, r),
     'setup': (r) => cmdSetup(args, r),
+    'autostart': (r) => cmdAutostart(args, r),
   }
 
   const handler = command ? instanceCommands[command] : undefined

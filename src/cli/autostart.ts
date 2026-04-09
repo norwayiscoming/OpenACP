@@ -32,8 +32,14 @@ export function escapeSystemdValue(str: string): string {
   return `"${escaped}"`
 }
 
-export function generateLaunchdPlist(nodePath: string, cliPath: string, logDir: string): string {
+export function generateLaunchdPlist(nodePath: string, cliPath: string, logDir: string, instanceRoot?: string): string {
   const logFile = path.join(logDir, 'openacp.log')
+  const envBlock = instanceRoot ? `
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>OPENACP_INSTANCE_ROOT</key>
+    <string>${escapeXml(instanceRoot)}</string>
+  </dict>` : ''
   return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -45,7 +51,7 @@ export function generateLaunchdPlist(nodePath: string, cliPath: string, logDir: 
     <string>${escapeXml(nodePath)}</string>
     <string>${escapeXml(cliPath)}</string>
     <string>--daemon-child</string>
-  </array>
+  </array>${envBlock}
   <key>RunAtLoad</key>
   <true/>
   <key>KeepAlive</key>
@@ -75,7 +81,7 @@ WantedBy=default.target
 `
 }
 
-export function installAutoStart(logDir: string): { success: boolean; error?: string } {
+export function installAutoStart(logDir: string, instanceRoot?: string): { success: boolean; error?: string } {
   if (!isAutoStartSupported()) {
     return { success: false, error: 'Auto-start not supported on this platform' }
   }
@@ -88,7 +94,7 @@ export function installAutoStart(logDir: string): { success: boolean; error?: st
 
   try {
     if (process.platform === 'darwin') {
-      const plist = generateLaunchdPlist(nodePath, cliPath, resolvedLogDir)
+      const plist = generateLaunchdPlist(nodePath, cliPath, resolvedLogDir, instanceRoot)
       const dir = path.dirname(LAUNCHD_PLIST_PATH)
       fs.mkdirSync(dir, { recursive: true })
       fs.writeFileSync(LAUNCHD_PLIST_PATH, plist)

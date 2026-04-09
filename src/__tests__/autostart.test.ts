@@ -61,6 +61,21 @@ describe('autostart', () => {
       expect(plist).not.toContain('~')
     })
 
+    it('includes OPENACP_INSTANCE_ROOT in EnvironmentVariables when instanceRoot provided', async () => {
+      const { generateLaunchdPlist } = await import('../cli/autostart.js')
+      const plist = generateLaunchdPlist('/usr/bin/node', '/usr/bin/openacp', '/logs', '/Users/test/workspace/.openacp')
+      expect(plist).toContain('<key>EnvironmentVariables</key>')
+      expect(plist).toContain('<key>OPENACP_INSTANCE_ROOT</key>')
+      expect(plist).toContain('<string>/Users/test/workspace/.openacp</string>')
+    })
+
+    it('omits EnvironmentVariables block when instanceRoot not provided', async () => {
+      const { generateLaunchdPlist } = await import('../cli/autostart.js')
+      const plist = generateLaunchdPlist('/usr/bin/node', '/usr/bin/openacp', '/logs')
+      expect(plist).not.toContain('EnvironmentVariables')
+      expect(plist).not.toContain('OPENACP_INSTANCE_ROOT')
+    })
+
     it('escapes special characters in paths', async () => {
       const { generateLaunchdPlist } = await import('../cli/autostart.js')
       const plist = generateLaunchdPlist('/usr/bin/no<de', '/path/"cli".js', '/logs/a&b')
@@ -68,6 +83,12 @@ describe('autostart', () => {
       expect(plist).toContain('<string>/path/&quot;cli&quot;.js</string>')
       expect(plist).toContain('<string>/logs/a&amp;b/openacp.log</string>')
       expect(plist).not.toContain('<de')
+    })
+
+    it('escapes special characters in instanceRoot', async () => {
+      const { generateLaunchdPlist } = await import('../cli/autostart.js')
+      const plist = generateLaunchdPlist('/usr/bin/node', '/usr/bin/openacp', '/logs', '/path/with&special/root')
+      expect(plist).toContain('<string>/path/with&amp;special/root</string>')
     })
   })
 

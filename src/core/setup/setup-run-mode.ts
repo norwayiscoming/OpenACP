@@ -49,7 +49,7 @@ export async function setupRunMode(opts?: {
     if (autoStart) {
       muteLogger();
       const logDir = opts?.instanceRoot ? `${opts.instanceRoot}/logs` : expandHome('~/.openacp/logs');
-      const result = installAutoStart(logDir);
+      const result = installAutoStart(logDir, opts?.instanceRoot);
       unmuteLogger();
       if (result.success) {
         console.log(ok('Auto-start on boot enabled'));

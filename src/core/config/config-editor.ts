@@ -362,7 +362,7 @@ async function editLogging(config: Config, updates: ConfigUpdates): Promise<void
 
 // --- Edit: Run Mode ---
 
-async function editRunMode(config: Config, updates: ConfigUpdates): Promise<void> {
+async function editRunMode(config: Config, updates: ConfigUpdates, instanceRoot?: string): Promise<void> {
   const currentMode = config.runMode ?? 'foreground'
   const currentAutoStart = config.autoStart ?? false
   const autoStartInstalled = isAutoStartInstalled()
@@ -408,7 +408,7 @@ async function editRunMode(config: Config, updates: ConfigUpdates): Promise<void
     if (choice === 'daemon') {
       updates.runMode = 'daemon'
       const logDir = (config.logging?.logDir) ?? '~/.openacp/logs'
-      const result = installAutoStart(expandHome(logDir))
+      const result = installAutoStart(expandHome(logDir), instanceRoot)
       if (result.success) {
         updates.autoStart = true
         console.log(ok('Switched to daemon mode with auto-start'))
@@ -440,7 +440,7 @@ async function editRunMode(config: Config, updates: ConfigUpdates): Promise<void
         }
       } else {
         const logDir = (config.logging?.logDir) ?? '~/.openacp/logs'
-        const result = installAutoStart(expandHome(logDir))
+        const result = installAutoStart(expandHome(logDir), instanceRoot)
         updates.autoStart = result.success
         if (result.success) {
           console.log(ok('Auto-start enabled'))
@@ -717,7 +717,7 @@ export async function runConfigEditor(
       else if (choice === 'agent') await editAgent(config, sectionUpdates)
       else if (choice === 'security') await editSecurity(config, sectionUpdates, settingsManager)
       else if (choice === 'logging') await editLogging(config, sectionUpdates)
-      else if (choice === 'runMode') await editRunMode(config, sectionUpdates)
+      else if (choice === 'runMode') await editRunMode(config, sectionUpdates, instanceRoot)
       else if (choice === 'api') await editApi(config, sectionUpdates, settingsManager)
       else if (choice === 'tunnel') await editTunnel(config, sectionUpdates, settingsManager)
 

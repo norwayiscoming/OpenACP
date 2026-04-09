@@ -2,6 +2,7 @@ import { checkAndPromptUpdate } from '../version.js'
 import { wantsHelp } from './helpers.js'
 import { isJsonMode, jsonSuccess, jsonError, muteForJson, ErrorCodes } from '../output.js'
 import { printInstanceHint } from '../instance-hint.js'
+import { resolveInstanceId } from '../resolve-instance-id.js'
 import path from 'node:path'
 import fs from 'node:fs'
 
@@ -74,6 +75,14 @@ Requires an existing config — run 'openacp' first to set up.
         port,
       })
     }
+    // Install/refresh autostart so daemon survives reboot
+    try {
+      const { installAutoStart } = await import('../autostart.js')
+      const instanceId = resolveInstanceId(root)
+      const autoResult = installAutoStart(config.logging.logDir, root, instanceId)
+      if (!autoResult.success) console.warn(`Warning: auto-start not enabled: ${autoResult.error}`)
+    } catch { /* non-fatal */ }
+
     printInstanceHint(root)
     console.log(`OpenACP daemon started (PID ${result.pid})`)
   } else {

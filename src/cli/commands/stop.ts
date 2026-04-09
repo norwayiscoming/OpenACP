@@ -1,5 +1,6 @@
 import { wantsHelp } from './helpers.js'
 import { isJsonMode, jsonSuccess, jsonError, muteForJson, ErrorCodes } from '../output.js'
+import { resolveInstanceId } from '../resolve-instance-id.js'
 export async function cmdStop(args: string[] = [], instanceRoot?: string): Promise<void> {
   const json = isJsonMode(args)
   if (json) await muteForJson()
@@ -23,6 +24,12 @@ Sends a stop signal to the running OpenACP daemon process.
   const { stopDaemon, getPidPath } = await import('../daemon.js')
   const result = await stopDaemon(getPidPath(root), root)
   if (result.stopped) {
+    // Remove autostart so daemon stays stopped after reboot
+    try {
+      const { uninstallAutoStart } = await import('../autostart.js')
+      uninstallAutoStart(resolveInstanceId(root))
+    } catch { /* non-fatal */ }
+
     if (json) jsonSuccess({ stopped: true, pid: result.pid })
     console.log(`OpenACP daemon stopped (was PID ${result.pid})`)
   } else {

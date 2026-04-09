@@ -19,13 +19,15 @@ export async function cmdAutostart(args: string[] = [], instanceRoot?: string): 
   }
 
   const { installAutoStart, uninstallAutoStart, isAutoStartInstalled, isAutoStartSupported } = await import('../autostart.js')
+  const { resolveInstanceId } = await import('../resolve-instance-id.js')
+  const instanceId = resolveInstanceId(instanceRoot!)
 
   if (subcommand === 'status') {
     if (!isAutoStartSupported()) {
       console.log('Auto-start is not supported on this platform.')
       return
     }
-    const installed = isAutoStartInstalled()
+    const installed = isAutoStartInstalled(instanceId)
     console.log(`Auto-start: ${installed ? '\x1b[32minstalled\x1b[0m' : '\x1b[33mnot installed\x1b[0m'}`)
     return
   }
@@ -37,7 +39,7 @@ export async function cmdAutostart(args: string[] = [], instanceRoot?: string): 
     }
     const root = instanceRoot!
     const logDir = `${root}/logs`
-    const result = installAutoStart(logDir, root)
+    const result = installAutoStart(logDir, root, instanceId)
     if (result.success) {
       console.log('\x1b[32m✓\x1b[0m Auto-start installed.')
     } else {
@@ -48,7 +50,7 @@ export async function cmdAutostart(args: string[] = [], instanceRoot?: string): 
   }
 
   if (subcommand === 'uninstall') {
-    const result = uninstallAutoStart()
+    const result = uninstallAutoStart(instanceId)
     if (result.success) {
       console.log('\x1b[32m✓\x1b[0m Auto-start uninstalled.')
     } else {

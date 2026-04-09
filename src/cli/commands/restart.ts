@@ -1,6 +1,7 @@
 import { wantsHelp } from './helpers.js'
 import { isJsonMode, jsonSuccess, jsonError, muteForJson, ErrorCodes } from '../output.js'
 import { printInstanceHint } from '../instance-hint.js'
+import { resolveInstanceId } from '../resolve-instance-id.js'
 import path from 'node:path'
 import { createInstanceContext, getGlobalRoot } from '../../core/instance/instance-context.js'
 import { InstanceRegistry } from '../../core/instance/instance-registry.js'
@@ -90,6 +91,14 @@ Stops the running daemon (if any) and starts a new one.
       console.error(result.error)
       process.exit(1)
     }
+    // Reinstall autostart to refresh node path (e.g. after nvm version change)
+    try {
+      const { installAutoStart } = await import('../autostart.js')
+      const instanceId = resolveInstanceId(root)
+      const autoResult = installAutoStart(config.logging.logDir, root, instanceId)
+      if (!autoResult.success) console.warn(`Warning: auto-start not refreshed: ${autoResult.error}`)
+    } catch { /* non-fatal */ }
+
     if (json) jsonSuccess({ pid: result.pid, instanceId: path.basename(root), dir: root })
     printInstanceHint(root)
     console.log(`OpenACP daemon started (PID ${result.pid})`)

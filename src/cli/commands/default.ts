@@ -7,6 +7,7 @@ import { InstanceRegistry } from '../../core/instance/instance-registry.js'
 import { randomUUID } from 'node:crypto'
 import { printInstanceHint } from '../instance-hint.js'
 import { isJsonMode, jsonSuccess, jsonError, muteForJson, ErrorCodes } from '../output.js'
+import { resolveInstanceId } from '../resolve-instance-id.js'
 
 export async function cmdDefault(command: string | undefined, instanceRoot?: string): Promise<void> {
   const args = command ? [command] : []
@@ -97,6 +98,14 @@ export async function cmdDefault(command: string | undefined, instanceRoot?: str
         port,
       })
     }
+    // Install/refresh autostart so daemon survives reboot
+    try {
+      const { installAutoStart } = await import('../autostart.js')
+      const instanceId = resolveInstanceId(root)
+      const autoResult = installAutoStart(config.logging.logDir, root, instanceId)
+      if (!autoResult.success) console.warn(`Warning: auto-start not enabled: ${autoResult.error}`)
+    } catch { /* non-fatal */ }
+
     printInstanceHint(root)
     console.log(`OpenACP daemon started (PID ${result.pid})`)
     return

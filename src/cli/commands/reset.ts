@@ -36,7 +36,8 @@ start fresh with the setup wizard. The daemon must be stopped first.
   }
 
   const { uninstallAutoStart } = await import('../autostart.js')
-  uninstallAutoStart()
+  const { resolveInstanceId } = await import('../resolve-instance-id.js')
+  uninstallAutoStart(resolveInstanceId(root))
 
   const fs = await import('node:fs')
   fs.rmSync(root, { recursive: true, force: true })

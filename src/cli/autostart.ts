@@ -6,9 +6,25 @@ import { createChildLogger } from '../core/utils/log.js'
 
 const log = createChildLogger({ module: 'autostart' })
 
-const LAUNCHD_LABEL = 'com.openacp.daemon'
-const LAUNCHD_PLIST_PATH = path.join(os.homedir(), 'Library', 'LaunchAgents', `${LAUNCHD_LABEL}.plist`)
-const SYSTEMD_SERVICE_PATH = path.join(os.homedir(), '.config', 'systemd', 'user', 'openacp.service')
+// Legacy paths — no instanceId, used for migration only
+const LEGACY_LAUNCHD_PLIST_PATH = path.join(os.homedir(), 'Library', 'LaunchAgents', 'com.openacp.daemon.plist')
+const LEGACY_SYSTEMD_SERVICE_PATH = path.join(os.homedir(), '.config', 'systemd', 'user', 'openacp.service')
+
+function getLaunchdLabel(instanceId: string): string {
+  return `com.openacp.daemon.${instanceId}`
+}
+
+function getLaunchdPlistPath(instanceId: string): string {
+  return path.join(os.homedir(), 'Library', 'LaunchAgents', `${getLaunchdLabel(instanceId)}.plist`)
+}
+
+function getSystemdServiceName(instanceId: string): string {
+  return `openacp-${instanceId}`
+}
+
+function getSystemdServicePath(instanceId: string): string {
+  return path.join(os.homedir(), '.config', 'systemd', 'user', `${getSystemdServiceName(instanceId)}.service`)
+}
 
 export function isAutoStartSupported(): boolean {
   return process.platform === 'darwin' || process.platform === 'linux'
@@ -32,26 +48,26 @@ export function escapeSystemdValue(str: string): string {
   return `"${escaped}"`
 }
 
-export function generateLaunchdPlist(nodePath: string, cliPath: string, logDir: string, instanceRoot?: string): string {
+export function generateLaunchdPlist(nodePath: string, cliPath: string, logDir: string, instanceRoot: string, instanceId: string): string {
+  const label = getLaunchdLabel(instanceId)
   const logFile = path.join(logDir, 'openacp.log')
-  const envBlock = instanceRoot ? `
-  <key>EnvironmentVariables</key>
-  <dict>
-    <key>OPENACP_INSTANCE_ROOT</key>
-    <string>${escapeXml(instanceRoot)}</string>
-  </dict>` : ''
   return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
   <key>Label</key>
-  <string>${LAUNCHD_LABEL}</string>
+  <string>${label}</string>
   <key>ProgramArguments</key>
   <array>
     <string>${escapeXml(nodePath)}</string>
     <string>${escapeXml(cliPath)}</string>
     <string>--daemon-child</string>
-  </array>${envBlock}
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>OPENACP_INSTANCE_ROOT</key>
+    <string>${escapeXml(instanceRoot)}</string>
+  </dict>
   <key>RunAtLoad</key>
   <true/>
   <key>KeepAlive</key>
@@ -68,20 +84,38 @@ export function generateLaunchdPlist(nodePath: string, cliPath: string, logDir: 
 `
 }
 
-export function generateSystemdUnit(nodePath: string, cliPath: string): string {
+export function generateSystemdUnit(nodePath: string, cliPath: string, instanceRoot: string, instanceId: string): string {
+  const serviceName = getSystemdServiceName(instanceId)
   return `[Unit]
-Description=OpenACP Daemon
+Description=OpenACP Daemon (${instanceId})
 
 [Service]
 ExecStart=${escapeSystemdValue(nodePath)} ${escapeSystemdValue(cliPath)} --daemon-child
+Environment=OPENACP_INSTANCE_ROOT=${escapeSystemdValue(instanceRoot)}
 Restart=on-failure
 
 [Install]
 WantedBy=default.target
+# Service name: ${serviceName}
 `
 }
 
-export function installAutoStart(logDir: string, instanceRoot?: string): { success: boolean; error?: string } {
+/** Remove legacy single-instance plist/service if it exists (one-time migration). */
+function migrateLegacy(): void {
+  if (process.platform === 'darwin' && fs.existsSync(LEGACY_LAUNCHD_PLIST_PATH)) {
+    try { execFileSync('launchctl', ['unload', LEGACY_LAUNCHD_PLIST_PATH], { stdio: 'pipe' }) } catch { /* already unloaded */ }
+    try { fs.unlinkSync(LEGACY_LAUNCHD_PLIST_PATH) } catch { /* already gone */ }
+    log.info('Removed legacy single-instance LaunchAgent')
+  }
+  if (process.platform === 'linux' && fs.existsSync(LEGACY_SYSTEMD_SERVICE_PATH)) {
+    try { execFileSync('systemctl', ['--user', 'disable', 'openacp'], { stdio: 'pipe' }) } catch { /* ignore */ }
+    try { fs.unlinkSync(LEGACY_SYSTEMD_SERVICE_PATH) } catch { /* already gone */ }
+    try { execFileSync('systemctl', ['--user', 'daemon-reload'], { stdio: 'pipe' }) } catch { /* ignore */ }
+    log.info('Removed legacy single-instance systemd service')
+  }
+}
+
+export function installAutoStart(logDir: string, instanceRoot: string, instanceId: string): { success: boolean; error?: string } {
   if (!isAutoStartSupported()) {
     return { success: false, error: 'Auto-start not supported on this platform' }
   }
@@ -93,24 +127,31 @@ export function installAutoStart(logDir: string, instanceRoot?: string): { succe
     : logDir
 
   try {
+    migrateLegacy()
+
     if (process.platform === 'darwin') {
-      const plist = generateLaunchdPlist(nodePath, cliPath, resolvedLogDir, instanceRoot)
-      const dir = path.dirname(LAUNCHD_PLIST_PATH)
+      const plistPath = getLaunchdPlistPath(instanceId)
+      const plist = generateLaunchdPlist(nodePath, cliPath, resolvedLogDir, instanceRoot, instanceId)
+      const dir = path.dirname(plistPath)
       fs.mkdirSync(dir, { recursive: true })
-      fs.writeFileSync(LAUNCHD_PLIST_PATH, plist)
-      execFileSync('launchctl', ['load', LAUNCHD_PLIST_PATH], { stdio: 'pipe' })
-      log.info('LaunchAgent installed')
+      fs.writeFileSync(plistPath, plist)
+      // Unload first in case it's already loaded (e.g. restart scenario)
+      try { execFileSync('launchctl', ['unload', plistPath], { stdio: 'pipe' }) } catch { /* not yet loaded */ }
+      execFileSync('launchctl', ['load', plistPath], { stdio: 'pipe' })
+      log.info({ instanceId }, 'LaunchAgent installed')
       return { success: true }
     }
 
     if (process.platform === 'linux') {
-      const unit = generateSystemdUnit(nodePath, cliPath)
-      const dir = path.dirname(SYSTEMD_SERVICE_PATH)
+      const servicePath = getSystemdServicePath(instanceId)
+      const serviceName = getSystemdServiceName(instanceId)
+      const unit = generateSystemdUnit(nodePath, cliPath, instanceRoot, instanceId)
+      const dir = path.dirname(servicePath)
       fs.mkdirSync(dir, { recursive: true })
-      fs.writeFileSync(SYSTEMD_SERVICE_PATH, unit)
+      fs.writeFileSync(servicePath, unit)
       execFileSync('systemctl', ['--user', 'daemon-reload'], { stdio: 'pipe' })
-      execFileSync('systemctl', ['--user', 'enable', 'openacp'], { stdio: 'pipe' })
-      log.info('systemd user service installed')
+      execFileSync('systemctl', ['--user', 'enable', serviceName], { stdio: 'pipe' })
+      log.info({ instanceId }, 'systemd user service installed')
       return { success: true }
     }
 
@@ -122,35 +163,30 @@ export function installAutoStart(logDir: string, instanceRoot?: string): { succe
   }
 }
 
-export function uninstallAutoStart(): { success: boolean; error?: string } {
+export function uninstallAutoStart(instanceId: string): { success: boolean; error?: string } {
   if (!isAutoStartSupported()) {
     return { success: false, error: 'Auto-start not supported on this platform' }
   }
 
   try {
     if (process.platform === 'darwin') {
-      if (fs.existsSync(LAUNCHD_PLIST_PATH)) {
-        try {
-          execFileSync('launchctl', ['unload', LAUNCHD_PLIST_PATH], { stdio: 'pipe' })
-        } catch {
-          // may already be unloaded
-        }
-        fs.unlinkSync(LAUNCHD_PLIST_PATH)
-        log.info('LaunchAgent removed')
+      const plistPath = getLaunchdPlistPath(instanceId)
+      if (fs.existsSync(plistPath)) {
+        try { execFileSync('launchctl', ['unload', plistPath], { stdio: 'pipe' }) } catch { /* already unloaded */ }
+        fs.unlinkSync(plistPath)
+        log.info({ instanceId }, 'LaunchAgent removed')
       }
       return { success: true }
     }
 
     if (process.platform === 'linux') {
-      if (fs.existsSync(SYSTEMD_SERVICE_PATH)) {
-        try {
-          execFileSync('systemctl', ['--user', 'disable', 'openacp'], { stdio: 'pipe' })
-        } catch {
-          // may already be disabled
-        }
-        fs.unlinkSync(SYSTEMD_SERVICE_PATH)
+      const servicePath = getSystemdServicePath(instanceId)
+      const serviceName = getSystemdServiceName(instanceId)
+      if (fs.existsSync(servicePath)) {
+        try { execFileSync('systemctl', ['--user', 'disable', serviceName], { stdio: 'pipe' }) } catch { /* already disabled */ }
+        fs.unlinkSync(servicePath)
         execFileSync('systemctl', ['--user', 'daemon-reload'], { stdio: 'pipe' })
-        log.info('systemd user service removed')
+        log.info({ instanceId }, 'systemd user service removed')
       }
       return { success: true }
     }
@@ -163,12 +199,12 @@ export function uninstallAutoStart(): { success: boolean; error?: string } {
   }
 }
 
-export function isAutoStartInstalled(): boolean {
+export function isAutoStartInstalled(instanceId: string): boolean {
   if (process.platform === 'darwin') {
-    return fs.existsSync(LAUNCHD_PLIST_PATH)
+    return fs.existsSync(getLaunchdPlistPath(instanceId))
   }
   if (process.platform === 'linux') {
-    return fs.existsSync(SYSTEMD_SERVICE_PATH)
+    return fs.existsSync(getSystemdServicePath(instanceId))
   }
   return false
 }

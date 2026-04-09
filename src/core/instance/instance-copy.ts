@@ -18,6 +18,7 @@ export async function copyInstance(src: string, dst: string, opts: CopyOptions):
     const config = JSON.parse(fs.readFileSync(configSrc, 'utf-8'))
     // Remove instance-specific fields
     delete config.instanceName
+    delete config.id              // each copy gets its own UUID via initInstanceFiles
     if (config.workspace) delete config.workspace.baseDir
     // Remove migrated plugin sections — plugins read from settings.json now.
     // Leaving these would cause lifecycle-manager fallback to leak unfiltered settings.

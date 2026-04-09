@@ -144,23 +144,22 @@ async function ensureDiscordPlugin(): Promise<any | null> {
   }
 }
 
-async function editDiscord(_config: Config, _updates: ConfigUpdates): Promise<void> {
+async function editDiscord(_config: Config, _updates: ConfigUpdates, settingsManager?: SettingsManager, instanceRoot?: string): Promise<void> {
   const pluginModule = await ensureDiscordPlugin()
   if (!pluginModule) return
 
   const plugin = pluginModule.default
   if (plugin?.configure) {
-    const { SettingsManager } = await import('../plugin/settings-manager.js')
+    if (!settingsManager || !instanceRoot) {
+      console.log(warn('Cannot configure Discord — instance context not available.'))
+      return
+    }
     const { createInstallContext } = await import('../plugin/install-context.js')
-    const { getGlobalRoot } = await import('../instance/instance-context.js')
-    const root = getGlobalRoot()
-    const basePath = path.join(root, 'plugins', 'data')
-    const settingsManager = new SettingsManager(basePath)
     const ctx = createInstallContext({
       pluginName: plugin.name,
       settingsManager,
-      basePath,
-      instanceRoot: root,
+      basePath: settingsManager.getBasePath(),
+      instanceRoot,
     })
     await plugin.configure(ctx)
   } else {
@@ -170,7 +169,7 @@ async function editDiscord(_config: Config, _updates: ConfigUpdates): Promise<vo
 
 // --- Edit: Channels (parent menu) ---
 
-async function editChannels(config: Config, updates: ConfigUpdates, settingsManager?: SettingsManager): Promise<void> {
+async function editChannels(config: Config, updates: ConfigUpdates, settingsManager?: SettingsManager, instanceRoot?: string): Promise<void> {
   // channels migrated out of config.json — read from plugin settings only
   let tgConfigured = false
   let dcConfigured = false
@@ -201,7 +200,7 @@ async function editChannels(config: Config, updates: ConfigUpdates, settingsMana
     if (choice === 'back') break
 
     if (choice === 'telegram') await editTelegram(config, updates, settingsManager)
-    if (choice === 'discord') await editDiscord(config, updates)
+    if (choice === 'discord') await editDiscord(config, updates, settingsManager, instanceRoot)
   }
 }
 
@@ -678,6 +677,9 @@ export async function runConfigEditor(
   const config = configManager.get()
   const updates: ConfigUpdates = {}
 
+  // Derive instance root from config path: /x/y/.openacp/config.json → /x/y/.openacp
+  const instanceRoot = path.dirname(configManager.getConfigPath())
+
   console.log(`\n${c.cyan}${c.bold}OpenACP Config Editor${c.reset}`)
   console.log(dim(`Config: ${configManager.getConfigPath()}`))
   console.log('')
@@ -711,7 +713,7 @@ export async function runConfigEditor(
 
       const sectionUpdates: ConfigUpdates = {}
 
-      if (choice === 'channels') await editChannels(config, sectionUpdates, settingsManager)
+      if (choice === 'channels') await editChannels(config, sectionUpdates, settingsManager, instanceRoot)
       else if (choice === 'agent') await editAgent(config, sectionUpdates)
       else if (choice === 'security') await editSecurity(config, sectionUpdates, settingsManager)
       else if (choice === 'logging') await editLogging(config, sectionUpdates)

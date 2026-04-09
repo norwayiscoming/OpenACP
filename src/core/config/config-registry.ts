@@ -1,7 +1,4 @@
-import * as fs from "node:fs";
-import * as path from "node:path";
 import type { Config } from "./config.js";
-import { getGlobalRoot } from "../instance/instance-context.js";
 
 export interface ConfigFieldDef {
   path: string;
@@ -20,20 +17,10 @@ export const CONFIG_REGISTRY: ConfigFieldDef[] = [
     group: "agent",
     type: "select",
     options: (config) => {
-      // Primary: agents defined in config
-      const configAgents = Object.keys((config as Record<string, unknown> & { agents?: Record<string, unknown> }).agents ?? {});
-      if (configAgents.length > 0) return configAgents;
-      // Fallback: read from agents.json (legacy/installed catalog)
-      try {
-        const agentsPath = path.join(getGlobalRoot(), "agents.json");
-        if (fs.existsSync(agentsPath)) {
-          const data = JSON.parse(fs.readFileSync(agentsPath, "utf-8"));
-          return Object.keys(data.installed ?? {});
-        }
-      } catch {
-        /* fallback */
-      }
-      return [];
+      // Return the current default agent as an option
+      // Full agent list is managed by AgentCatalog at runtime, not config registry
+      const current = config.defaultAgent;
+      return current ? [current] : [];
     },
     scope: "safe",
     hotReload: true,

@@ -32,8 +32,9 @@ describe('cmdSetup', () => {
     expect(config.autoStart).toBe(false);
   });
 
-  it('treats --workspace as deprecated alias for --dir', async () => {
-    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  it('ignores unknown flags like --workspace (handled upstream in cli.ts)', async () => {
+    // --workspace deprecation is now handled in cli.ts before cmdSetup is called.
+    // cmdSetup receives the resolved instanceRoot and ignores --workspace in args.
     const { cmdSetup } = await import('../setup.js');
     await cmdSetup(
       ['--workspace', '/tmp/my-workspace', '--agent', 'claude-code', '--run-mode', 'daemon'],
@@ -44,8 +45,6 @@ describe('cmdSetup', () => {
     const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
     expect(config.workspace).toBeUndefined();
     expect(config.defaultAgent).toBe('claude-code');
-    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('--workspace is deprecated'));
-    warnSpy.mockRestore();
   });
 
   it('uses first agent when comma-separated agents passed', async () => {
@@ -69,14 +68,6 @@ describe('cmdSetup', () => {
     const data = expectValidJsonSuccess(result.stdout);
     expect(data).toHaveProperty('configPath');
     expect((data.configPath as string)).toContain('config.json');
-  });
-
-  it('exits with code 1 when --dir is missing', async () => {
-    const exitSpy = vi.spyOn(process, 'exit').mockImplementation((() => { throw new Error('process.exit called'); }) as any);
-
-    const { cmdSetup } = await import('../setup.js');
-    await expect(cmdSetup(['--agent', 'claude-code'], tmpDir)).rejects.toThrow('process.exit called');
-    expect(exitSpy).toHaveBeenCalledWith(1);
   });
 
   it('exits with code 1 when --agent is missing', async () => {

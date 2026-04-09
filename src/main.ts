@@ -490,7 +490,14 @@ export async function startServer(opts?: StartServerOptions) {
     }
 
     const apiSvc = core.lifecycleManager.serviceRegistry.get<import('./plugins/api-server/service.js').ApiServerService>('api-server')
-    const apiPort = apiSvc ? apiSvc.getPort() : 21420
+    let apiPort = apiSvc ? apiSvc.getPort() : 21420
+    if (apiSvc && apiPort === 0) {
+      // Race condition: the api-server's async SYSTEM_READY handler (which calls server.start())
+      // may not have completed yet if all adapters started synchronously (e.g. SSE-only).
+      // The port file is written after the server binds — poll it for up to 3 seconds.
+      const { waitForPortFile } = await import('./cli/api-client.js')
+      apiPort = await waitForPortFile(ctx.paths.apiPort, 3000) ?? 21420
+    }
     if (apiSvc) ok(`API server on port ${apiPort}`)
 
     // Links as plain text — easily copyable

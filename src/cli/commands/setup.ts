@@ -8,23 +8,9 @@ function parseFlag(args: string[], flag: string): string | undefined {
 }
 
 export async function cmdSetup(args: string[], instanceRoot: string): Promise<void> {
-  let dir = parseFlag(args, '--dir');
-  const workspace = parseFlag(args, '--workspace');
   const agentRaw = parseFlag(args, '--agent');
   const json = args.includes('--json');
   if (json) await muteForJson()
-
-  // --workspace is deprecated in favor of --dir
-  if (workspace && !dir) {
-    if (!json) console.warn('  Warning: --workspace is deprecated, use --dir instead');
-    dir = workspace;
-  }
-
-  if (!dir) {
-    if (json) jsonError(ErrorCodes.MISSING_ARGUMENT, '--dir is required')
-    console.error('  Error: --dir <path> is required');
-    process.exit(1);
-  }
 
   if (!agentRaw) {
     if (json) jsonError(ErrorCodes.MISSING_ARGUMENT, '--agent is required')

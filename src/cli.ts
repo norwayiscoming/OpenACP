@@ -91,6 +91,16 @@ if (migrated && !resolvedInstanceRoot) {
   resolvedInstanceRoot = migrated
 }
 
+// --workspace is a deprecated alias for --dir, specific to the setup command.
+// It cannot be extracted globally (conflicts with `api` command's --workspace).
+if (command === 'setup' && !resolvedInstanceRoot) {
+  const wsIdx = args.indexOf('--workspace')
+  if (wsIdx !== -1 && args[wsIdx + 1]) {
+    if (!args.includes('--json')) console.warn('Warning: --workspace is deprecated. Use --dir instead.')
+    resolvedInstanceRoot = resolveInstanceRoot({ dir: args[wsIdx + 1], cwd: process.cwd() })
+  }
+}
+
 // Commands that don't need an instance root
 const noInstanceCommands: Record<string, () => Promise<void>> = {
   '--help': async () => printHelp(),

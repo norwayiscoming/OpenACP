@@ -1,7 +1,6 @@
 import type { OpenACPPlugin, InstallContext } from '../../core/plugin/types.js'
 import { FileService } from './file-service.js'
 import path from 'node:path'
-import os from 'node:os'
 
 function createFileServicePlugin(): OpenACPPlugin {
   return {
@@ -13,7 +12,7 @@ function createFileServicePlugin(): OpenACPPlugin {
 
     async install(ctx: InstallContext) {
       const { settings, terminal } = ctx
-      const defaultFilesDir = path.join(ctx.instanceRoot ?? path.join(os.homedir(), '.openacp'), 'files')
+      const defaultFilesDir = path.join(ctx.instanceRoot, 'files')
 
       // Save defaults
       await settings.setAll({
@@ -25,7 +24,7 @@ function createFileServicePlugin(): OpenACPPlugin {
     async configure(ctx: InstallContext) {
       const { terminal, settings } = ctx
       const current = await settings.getAll()
-      const defaultFilesDir = path.join(ctx.instanceRoot ?? path.join(os.homedir(), '.openacp'), 'files')
+      const defaultFilesDir = path.join(ctx.instanceRoot, 'files')
 
       const val = await terminal.text({
         message: 'File storage directory:',

@@ -60,7 +60,7 @@ export function setupAllCallbacks(
       core,
       chatId,
       agentKey,
-      core.configManager.get().workspace.baseDir,
+      core.configManager.resolveWorkspace(),
     );
   });
 

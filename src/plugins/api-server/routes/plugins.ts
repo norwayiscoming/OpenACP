@@ -1,5 +1,4 @@
 import path from 'node:path'
-import os from 'node:os'
 import type { FastifyInstance } from 'fastify'
 import type { RouteDeps } from './types.js'
 import { requireScopes } from '../middleware/auth.js'
@@ -96,9 +95,7 @@ export async function pluginRoutes(
       } else {
         // npm / local — dynamic import
         const { importFromDir } = await import('../../../core/plugin/plugin-installer.js')
-        const instanceRoot =
-          lifecycleManager.instanceRoot ??
-          path.join(os.homedir(), '.openacp')
+        const instanceRoot = lifecycleManager.instanceRoot!
         const pluginsDir = path.join(instanceRoot, 'plugins')
         try {
           const mod = await importFromDir(name, pluginsDir)

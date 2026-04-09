@@ -320,7 +320,7 @@ Config file: \`~/.openacp/config.json\`
 - Agent list is fetched from the ACP Registry CDN and cached locally (24h)
 
 ### Workspace
-- **workspace.baseDir** — Base directory for project folders (default: \`~/openacp-workspace\`)
+- Workspace directory is the parent of \`.openacp/\` (where you ran \`openacp\` setup)
 
 ### Security
 - **security.allowedUserIds** — Restrict who can use the bot (empty = everyone)

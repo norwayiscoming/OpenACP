@@ -2,18 +2,13 @@ import { describe, it, expect, vi } from "vitest";
 import { createConfigSection } from "../config.js";
 
 function makeCore(opts: {
-  workspaceBaseDir?: string
+  workspace?: string
   legacySpeechProvider?: string | null
   speechService?: { isSTTAvailable(): boolean } | null
 }) {
   return {
     configManager: {
-      get: vi.fn().mockReturnValue({
-        workspace: { baseDir: opts.workspaceBaseDir ?? "~/" },
-        speech: opts.legacySpeechProvider
-          ? { stt: { provider: opts.legacySpeechProvider } }
-          : undefined,
-      }),
+      resolveWorkspace: vi.fn().mockReturnValue(opts.workspace ?? "/home/user/workspace"),
     },
     lifecycleManager: opts.speechService !== undefined
       ? { serviceRegistry: { get: vi.fn().mockReturnValue(opts.speechService) } }

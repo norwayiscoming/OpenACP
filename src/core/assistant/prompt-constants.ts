@@ -42,7 +42,7 @@ Examples:
 ${baseCmd} api status
 ${baseCmd} api new claude-code ~/my-project --channel <current_channel>
 ${baseCmd} api cancel <id>
-${baseCmd} config set workspace.baseDir ~/code
+${baseCmd} config set logging.level debug
 ${baseCmd} agents install gemini
 \`\`\`
 

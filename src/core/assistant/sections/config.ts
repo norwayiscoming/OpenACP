@@ -1,7 +1,7 @@
 import type { AssistantSection } from '../assistant-registry.js'
 
 export function createConfigSection(core: {
-  configManager: { get(): { workspace: { baseDir: string } } }
+  configManager: { resolveWorkspace(): string }
   lifecycleManager?: { serviceRegistry: { get<T>(name: string): T | undefined } }
 }): AssistantSection {
   return {
@@ -9,11 +9,11 @@ export function createConfigSection(core: {
     title: 'Configuration',
     priority: 30,
     buildContext: () => {
-      const config = core.configManager.get()
+      const workspace = core.configManager.resolveWorkspace()
       const speechSvc = core.lifecycleManager?.serviceRegistry.get<{ isSTTAvailable(): boolean }>('speech')
       const sttActive = speechSvc ? speechSvc.isSTTAvailable() : false
       return (
-        `Workspace base: ${config.workspace.baseDir}\n` +
+        `Workspace base: ${workspace}\n` +
         `STT: ${sttActive ? 'configured ✅' : 'Not configured'}`
       )
     },

@@ -333,13 +333,10 @@ async function showWorkspacePicker(ctx: Context, core: OpenACPCore, chatId: numb
   const recentWorkspaces = [...new Set(records.map((r) => r.workingDir).filter(Boolean))]
     .slice(0, 5)
 
-  const config = core.configManager.get()
-  const baseDir = config.workspace.baseDir
+  const resolvedBaseDir = core.configManager.resolveWorkspace()
 
-  // Resolve baseDir for comparison (config may have ~, records have absolute paths)
-  const resolvedBaseDir = core.configManager.resolveWorkspace(baseDir)
-  // Ensure baseDir is always an option
-  const hasBaseDir = recentWorkspaces.some(ws => ws === baseDir || ws === resolvedBaseDir)
+  // Ensure workspace base is always an option
+  const hasBaseDir = recentWorkspaces.some(ws => ws === resolvedBaseDir)
   const workspaces = hasBaseDir
     ? recentWorkspaces
     : [resolvedBaseDir, ...recentWorkspaces].slice(0, 5)

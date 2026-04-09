@@ -208,10 +208,8 @@ export async function handleResume(
 
   const { query } = parsed;
 
-  // Use default workspace baseDir
-  const config = core.configManager.get();
-  const baseDir = config.workspace.baseDir;
-  const resolved = core.configManager.resolveWorkspace(baseDir);
+  // Use default workspace directory (derived from instance root)
+  const resolved = core.configManager.resolveWorkspace();
   await executeResume(ctx, core, chatId, query, resolved, onControlMessage);
 }
 

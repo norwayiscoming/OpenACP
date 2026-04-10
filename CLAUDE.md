@@ -161,6 +161,8 @@ const delay = Math.pow(2, attempt) * 100;
 
 Keep comments concise. A good comment fits on 1–3 lines and removes ambiguity, not adds it.
 
+**Language:** All comments must be written in English — no exceptions.
+
 ## Testing Conventions
 
 ### General Principles

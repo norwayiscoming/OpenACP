@@ -110,7 +110,7 @@ export async function runSetup(
     const globalRoot = getGlobalRoot();
     const registryPath = path.join(globalRoot, 'instances.json');
     const instanceRegistry = new InstanceRegistry(registryPath);
-    await instanceRegistry.load();
+    instanceRegistry.load();
 
     let didCopy = false;
 

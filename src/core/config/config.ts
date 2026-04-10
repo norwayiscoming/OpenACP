@@ -9,6 +9,7 @@ import { createChildLogger } from "../utils/log.js";
 import type { SettingsManager } from "../plugin/settings-manager.js";
 const log = createChildLogger({ module: "config" });
 
+/** Log rotation and verbosity settings. */
 const LoggingSchema = z
   .object({
     level: z
@@ -21,12 +22,28 @@ const LoggingSchema = z
   })
   .default({});
 
+/** Runtime logging configuration. Controls per-module log levels and output destinations. */
 export type LoggingConfig = z.infer<typeof LoggingSchema>;
 
+/**
+ * Zod schema for the global OpenACP config file (`~/.openacp/config.json`).
+ *
+ * Every field uses `.default()` or `.optional()` so that config files from older
+ * versions — which lack newly added fields — still pass validation without error.
+ * This is critical for backward compatibility: users should never have to manually
+ * edit their config after upgrading.
+ *
+ * Plugin-specific settings live separately in per-plugin settings files
+ * (`~/.openacp/plugins/<name>/settings.json`), not here. This schema only
+ * covers global, cross-cutting concerns.
+ */
 export const ConfigSchema = z.object({
-  id: z.string().optional(),             // instance UUID, written once at creation time
+  /** Instance UUID, written once at creation time. */
+  id: z.string().optional(),
   instanceName: z.string().optional(),
   defaultAgent: z.string(),
+
+  // --- Workspace security & path resolution ---
   workspace: z
     .object({
       allowExternalWorkspaces: z.boolean().default(true),
@@ -38,14 +55,22 @@ export const ConfigSchema = z.object({
         .default({}),
     })
     .default({}),
+
+  // --- Logging ---
   logging: LoggingSchema,
+
+  // --- Process lifecycle ---
   runMode: z.enum(["foreground", "daemon"]).default("foreground"),
   autoStart: z.boolean().default(false),
+
+  // --- Session persistence ---
   sessionStore: z
     .object({
       ttlDays: z.number().default(30),
     })
     .default({}),
+
+  // --- Installed integration tracking (e.g. plugins installed via CLI) ---
   integrations: z
     .record(
       z.string(),
@@ -55,14 +80,20 @@ export const ConfigSchema = z.object({
       }),
     )
     .default({}),
+
+  // --- Agent output verbosity control ---
   outputMode: z.enum(["low", "medium", "high"]).default("medium").optional(),
+
+  // --- Multi-agent switching behavior ---
   agentSwitch: z.object({
     labelHistory: z.boolean().default(true),
   }).default({}),
 });
 
+/** Validated config object used throughout the codebase. Always obtained via `ConfigManager.get()` to ensure it's up-to-date. */
 export type Config = z.infer<typeof ConfigSchema>;
 
+/** Expands a leading `~` to the user's home directory. Returns the path unchanged if no `~` prefix. */
 export function expandHome(p: string): string {
   if (p.startsWith("~")) {
     return path.join(os.homedir(), p.slice(1));
@@ -75,6 +106,13 @@ const DEFAULT_CONFIG = {
   sessionStore: { ttlDays: 30 },
 };
 
+/**
+ * Manages loading, validating, and persisting the global config file.
+ *
+ * The load cycle is: read JSON -> apply migrations -> apply env overrides -> validate with Zod.
+ * Emits `config:changed` events when individual fields are updated, enabling
+ * hot-reload for fields marked as `hotReload` in the config registry.
+ */
 export class ConfigManager extends EventEmitter {
   private config!: Config;
   private configPath: string;
@@ -85,12 +123,17 @@ export class ConfigManager extends EventEmitter {
       process.env.OPENACP_CONFIG_PATH || configPath || expandHome("~/.openacp/config.json");
   }
 
+  /**
+   * Loads config from disk through the full validation pipeline:
+   * 1. Create default config if missing (first run)
+   * 2. Apply migrations for older config formats
+   * 3. Apply environment variable overrides
+   * 4. Validate against Zod schema — exits on failure
+   */
   async load(): Promise<void> {
-    // 1. Ensure directory exists
     const dir = path.dirname(this.configPath);
     fs.mkdirSync(dir, { recursive: true });
 
-    // 2. If config file doesn't exist, create default
     if (!fs.existsSync(this.configPath)) {
       fs.writeFileSync(
         this.configPath,
@@ -103,19 +146,16 @@ export class ConfigManager extends EventEmitter {
       process.exit(1);
     }
 
-    // 3. Read and parse
     const raw = JSON.parse(fs.readFileSync(this.configPath, "utf-8"));
 
-    // 3.5. Auto-migrate config
+    // Auto-migrate before validation — transforms old config shapes to current schema
     const { changed: configUpdated } = applyMigrations(raw, undefined, { configDir: path.dirname(this.configPath) });
     if (configUpdated) {
       fs.writeFileSync(this.configPath, JSON.stringify(raw, null, 2));
     }
 
-    // 4. Apply env var overrides
     this.applyEnvOverrides(raw);
 
-    // 5. Validate with Zod
     const result = ConfigSchema.safeParse(raw);
     if (!result.success) {
       log.error("Config validation failed");
@@ -130,16 +170,23 @@ export class ConfigManager extends EventEmitter {
     this.config = result.data;
   }
 
+  /** Returns a deep clone of the current config to prevent external mutation. */
   get(): Config {
     return structuredClone(this.config);
   }
 
+  /**
+   * Merges partial updates into the config file using atomic write (write tmp + rename).
+   *
+   * Validates the merged result before writing. If `changePath` is provided,
+   * emits a `config:changed` event with old and new values for that path,
+   * enabling hot-reload without restart.
+   */
   async save(
     updates: Record<string, unknown>,
     changePath?: string,
   ): Promise<void> {
     const oldConfig = this.config ? structuredClone(this.config) : undefined;
-    // Read current file, merge updates
     const raw = JSON.parse(fs.readFileSync(this.configPath, "utf-8"));
     this.deepMerge(raw, updates);
     // Validate BEFORE writing to disk
@@ -148,11 +195,11 @@ export class ConfigManager extends EventEmitter {
       log.error({ errors: result.error.issues }, "Config validation failed, not saving");
       return;
     }
+    // Atomic write: tmp file + rename prevents corruption if process crashes mid-write
     const tmpPath = this.configPath + `.tmp.${randomBytes(4).toString('hex')}`;
     fs.writeFileSync(tmpPath, JSON.stringify(raw, null, 2), "utf-8");
     fs.renameSync(tmpPath, this.configPath);
     this.config = result.data;
-    // Emit change event if path provided
     if (changePath) {
       const { getConfigValue } = await import("./config-registry.js");
       const value = getConfigValue(this.config, changePath);
@@ -164,9 +211,12 @@ export class ConfigManager extends EventEmitter {
   }
 
   /**
-   * Set a single config value by dot-path (e.g. "logging.level").
-   * Builds the nested update object, validates, and saves.
-   * Throws if the path contains blocked keys or the value fails Zod validation.
+   * Convenience wrapper for updating a single deeply-nested config field
+   * without constructing the full update object manually.
+   *
+   * Accepts a dot-path (e.g. "logging.level") and builds the nested
+   * update object internally before delegating to `save()`.
+   * Throws if the path contains prototype-pollution keys.
    */
   async setPath(dotPath: string, value: unknown): Promise<void> {
     const BLOCKED_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
@@ -187,6 +237,13 @@ export class ConfigManager extends EventEmitter {
     await this.save(updates, dotPath);
   }
 
+  /**
+   * Resolves a workspace path from user input.
+   *
+   * Supports three forms: no input (returns base dir), absolute/tilde paths
+   * (validated against allowExternalWorkspaces), and named workspaces
+   * (alphanumeric subdirectories under the base).
+   */
   resolveWorkspace(input?: string): string {
     // configPath = /x/y/.openacp/config.json → workspace = /x/y/
     const workspaceBase = path.dirname(path.dirname(this.configPath));
@@ -230,20 +287,29 @@ export class ConfigManager extends EventEmitter {
     return namedPath;
   }
 
+  /** Checks whether the config file exists on disk. Wraps synchronous `fs.existsSync` behind an async interface for consistency with the rest of the ConfigManager API. */
   async exists(): Promise<boolean> {
     return fs.existsSync(this.configPath);
   }
 
+  /** Returns the resolved path to the config JSON file. */
   getConfigPath(): string {
     return this.configPath;
   }
 
+  /** Writes a complete config object to disk, creating the directory if needed. Used during initial setup. */
   async writeNew(config: Config): Promise<void> {
     const dir = path.dirname(this.configPath);
     fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(this.configPath, JSON.stringify(config, null, 2));
   }
 
+  /**
+   * Applies `OPENACP_*` environment variables as overrides to per-plugin settings.
+   *
+   * This lets users configure plugin values (bot tokens, ports, etc.) via env vars
+   * without editing settings files — useful for Docker, CI, and headless setups.
+   */
   async applyEnvToPluginSettings(settingsManager: SettingsManager): Promise<void> {
     const pluginOverrides: Array<{
       envVar: string;
@@ -277,6 +343,7 @@ export class ConfigManager extends EventEmitter {
     }
   }
 
+  /** Applies env var overrides to the raw config object before Zod validation. */
   private applyEnvOverrides(raw: Record<string, unknown>): void {
     const overrides: [string, string[]][] = [
       ["OPENACP_DEFAULT_AGENT", ["defaultAgent"]],
@@ -312,10 +379,12 @@ export class ConfigManager extends EventEmitter {
     }
   }
 
+  /** Recursively merges source into target, skipping prototype-pollution keys. */
   private deepMerge(
     target: Record<string, unknown>,
     source: Record<string, unknown>,
   ): void {
+    // Prototype pollution guard — these keys must never be set via user input
     const DANGEROUS_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
     for (const key of Object.keys(source)) {
       if (DANGEROUS_KEYS.has(key)) continue;

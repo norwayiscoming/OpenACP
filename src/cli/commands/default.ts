@@ -8,6 +8,18 @@ import { printInstanceHint } from '../instance-hint.js'
 import { isJsonMode, jsonSuccess, jsonError, muteForJson, ErrorCodes } from '../output.js'
 import { resolveInstanceId } from '../resolve-instance-id.js'
 
+/**
+ * The default command — runs when no recognized subcommand is given.
+ *
+ * Behavior:
+ * - If no config exists: runs the setup wizard, then starts the server.
+ * - If config exists and runMode is 'daemon': starts the daemon. If daemon is already
+ *   running, shows an interactive menu (restart, stop, logs, etc.).
+ * - If config exists and runMode is 'foreground' (or --foreground flag): starts the
+ *   server in-process and blocks until shutdown.
+ *
+ * Also handles unknown command detection (typos) before reaching this path.
+ */
 export async function cmdDefault(command: string | undefined, instanceRoot?: string): Promise<void> {
   const args = command ? [command] : []
   const json = isJsonMode(args)
@@ -128,6 +140,10 @@ export async function cmdDefault(command: string | undefined, instanceRoot?: str
   await startServer({ instanceContext: ctx })
 }
 
+/**
+ * Show an interactive menu when the user runs `openacp` and the daemon is already running.
+ * Falls back to a plain text suggestion on non-TTY (scripts, CI).
+ */
 async function showAlreadyRunningMenu(root: string): Promise<void> {
   const { formatInstanceStatus } = await import('./status.js')
 

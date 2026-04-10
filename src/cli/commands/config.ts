@@ -3,6 +3,17 @@ import { readApiPort, apiCall } from '../api-client.js'
 import { wantsHelp, buildNestedUpdateFromPath } from './helpers.js'
 import { isJsonMode, jsonSuccess, jsonError, muteForJson, ErrorCodes } from '../output.js'
 
+/**
+ * `openacp config` — View and edit the instance configuration.
+ *
+ * Subcommands:
+ * - (bare): opens the interactive TUI config editor
+ * - set <key> <value>: non-interactive path-value update
+ *
+ * When the daemon is running, config set uses the live API (PATCH /api/config)
+ * so changes take effect without restart where possible. When stopped, edits
+ * config.json directly.
+ */
 export async function cmdConfig(args: string[] = [], instanceRoot?: string): Promise<void> {
   const subCmd = args[0] // 'set' or undefined
 

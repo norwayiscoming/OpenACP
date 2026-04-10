@@ -1,5 +1,14 @@
 import type { TemplateParams } from './package-json.js'
 
+/**
+ * Generate the main plugin source file (src/index.ts).
+ *
+ * Produces a fully annotated OpenACPPlugin object with all lifecycle hooks stubbed out
+ * (setup, teardown, install, configure, migrate, uninstall). Each hook includes
+ * commented examples showing how to register services, commands, and event listeners.
+ *
+ * The generated file is the primary editing surface for plugin authors.
+ */
 export function generatePluginSource(params: TemplateParams): string {
   const dirName = params.pluginName.replace(/^@[^/]+\//, '')
   const escapedDescription = (params.description || '').replace(/'/g, "\\'")

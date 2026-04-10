@@ -5,6 +5,15 @@ import os from 'node:os'
 import qrcode from 'qrcode-terminal'
 import { isJsonMode, jsonSuccess, jsonError, muteForJson, ErrorCodes } from '../output.js'
 
+/**
+ * `openacp remote` — Generate a one-time access code for remote login.
+ *
+ * Creates a short-lived auth code via the daemon's /api/v1/auth/codes endpoint,
+ * then outputs local and tunnel URLs with a QR code for quick scanning on mobile.
+ * The code is single-use and expires after 30 minutes (enforced server-side).
+ *
+ * Requires a running daemon with the API server enabled.
+ */
 export async function cmdRemote(args: string[], instanceRoot?: string): Promise<void> {
   const json = isJsonMode(args)
   if (json) await muteForJson()

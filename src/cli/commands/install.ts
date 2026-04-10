@@ -4,6 +4,12 @@ import * as path from 'node:path'
 import { wantsHelp } from './helpers.js'
 import { isJsonMode, jsonSuccess, jsonError, muteForJson, ErrorCodes } from '../output.js'
 
+/**
+ * `openacp install` — Install an adapter plugin from npm into the instance's plugins directory.
+ *
+ * Initializes the plugins directory and its package.json if they don't exist, then
+ * delegates to `npm install` to fetch and install the package.
+ */
 export async function cmdInstall(args: string[], instanceRoot?: string): Promise<void> {
   const json = isJsonMode(args)
   if (json) await muteForJson()

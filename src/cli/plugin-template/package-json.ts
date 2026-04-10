@@ -1,11 +1,20 @@
+/** Parameters collected from the user and used across all template generators. */
 export interface TemplateParams {
   pluginName: string
   description: string
   author: string
   license: string
+  /** Current CLI version — used to pin the openacp engine constraint and SDK version. */
   cliVersion: string
 }
 
+/**
+ * Generate package.json for a new plugin.
+ *
+ * The `engines.openacp` field declares the minimum OpenACP CLI version required.
+ * The `peerDependencies` entry on `@openacp/cli` is what npm uses for compatibility
+ * warnings. Plugin SDK is a devDependency (types only, not bundled).
+ */
 export function generatePackageJson(params: TemplateParams): string {
   const packageJson = {
     name: params.pluginName,

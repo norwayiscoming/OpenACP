@@ -4,6 +4,11 @@ import * as path from 'node:path'
 import { wantsHelp } from './helpers.js'
 import { isJsonMode, jsonSuccess, jsonError, muteForJson, ErrorCodes } from '../output.js'
 
+/**
+ * `openacp uninstall` — Remove an adapter plugin from the instance's plugins directory.
+ *
+ * Delegates to `npm uninstall` to remove the package from the plugins directory.
+ */
 export async function cmdUninstall(args: string[], instanceRoot?: string): Promise<void> {
   const json = isJsonMode(args)
   if (json) await muteForJson()

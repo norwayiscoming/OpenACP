@@ -1,6 +1,10 @@
 import { wantsHelp } from './helpers.js'
 import { isJsonMode, jsonSuccess, jsonError, muteForJson, ErrorCodes } from '../output.js'
 
+/**
+ * `openacp plugins` — List all installed plugins.
+ * Short alias for `openacp plugin list`.
+ */
 export async function cmdPlugins(args: string[] = [], instanceRoot?: string): Promise<void> {
   const json = isJsonMode(args)
   if (json) await muteForJson()
@@ -248,6 +252,8 @@ async function installPlugin(input: string, instanceRoot?: string, json = false)
   const root = instanceRoot!
 
   // Parse input: "translator", "translator@1.2.0", "@lucas/pkg@2.0.0"
+  // Scoped packages require special handling because the first '@' is the scope prefix,
+  // not a version separator — the version '@' comes after the package name.
   let pkgName: string
   let pkgVersion: string | undefined
 

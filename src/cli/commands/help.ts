@@ -1,3 +1,8 @@
+/**
+ * Prints the full CLI help text to stdout, covering all commands, flags, and usage examples.
+ *
+ * Called when the user runs `openacp --help` or `openacp -h` with no subcommand.
+ */
 export function printHelp(): void {
   console.log(`
 \x1b[1mOpenACP\x1b[0m — Self-hosted bridge for AI coding agents

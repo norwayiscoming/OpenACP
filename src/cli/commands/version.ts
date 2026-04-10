@@ -1,5 +1,6 @@
 import { isJsonMode, jsonSuccess, muteForJson } from '../output.js'
 
+/** `openacp --version` / `openacp -v` — Print the current CLI version. */
 export async function cmdVersion(args: string[] = []): Promise<void> {
   const json = isJsonMode(args)
   if (json) await muteForJson()

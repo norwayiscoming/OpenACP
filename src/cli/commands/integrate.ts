@@ -1,5 +1,11 @@
 import { wantsHelp } from './helpers.js'
 
+/**
+ * `openacp integrate` — Install or remove agent handoff/tunnel integrations.
+ *
+ * Iterates all items in the agent's AgentIntegration and installs or uninstalls each.
+ * Uses suggestMatch for typo hints when the agent name isn't found.
+ */
 export async function cmdIntegrate(args: string[]): Promise<void> {
   if (wantsHelp(args)) {
     console.log(`

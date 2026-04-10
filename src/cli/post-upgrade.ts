@@ -6,9 +6,17 @@ import type { InstanceContext } from "../core/instance/instance-context.js";
 const log = createChildLogger({ module: "post-upgrade" });
 
 /**
- * Post-upgrade dependency check — runs on every start.
- * Centralized source of truth for all binary dependency management.
- * Silent if everything is OK.
+ * Run dependency and integration health checks after each start.
+ *
+ * Checks are best-effort: each section is wrapped in a try/catch so a failure in
+ * one check never blocks the daemon from starting. All checks are read-only unless
+ * auto-install is triggered (e.g., cloudflared, jq). Silent when everything is OK.
+ *
+ * Checks performed:
+ * 1. Tunnel provider binary (cloudflared auto-install, or warn for others)
+ * 2. Claude CLI integration + jq (warns if handoff is installed but jq is missing)
+ * 3. unzip (needed for binary agent distribution installs)
+ * 4. uvx (needed for Python-based agents via uv)
  */
 export async function runPostUpgradeChecks(config: Config, ctx?: InstanceContext): Promise<void> {
   // 1. Tunnel provider binary — read from plugin settings (tunnel migrated out of config.json)

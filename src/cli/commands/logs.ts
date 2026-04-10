@@ -1,5 +1,11 @@
 import { wantsHelp } from './helpers.js'
 
+/**
+ * `openacp logs` — Tail the daemon log file.
+ *
+ * Reads the log directory from config (falls back to <root>/logs if config is missing),
+ * then spawns `tail -f` to stream the last 50 lines and follow new output.
+ */
 export async function cmdLogs(args: string[] = [], instanceRoot?: string): Promise<void> {
   if (wantsHelp(args)) {
     console.log(`

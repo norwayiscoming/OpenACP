@@ -1,5 +1,12 @@
 import * as path from 'node:path'
 
+/**
+ * `openacp onboard` — Re-run the configuration wizard.
+ *
+ * If the instance already has a config, runs `runReconfigure` (update existing settings).
+ * Otherwise runs the full `runSetup` with skipRunMode=true (preserves the current
+ * run mode rather than prompting again).
+ */
 export async function cmdOnboard(instanceRoot?: string): Promise<void> {
   const { ConfigManager } = await import('../../core/config/config.js')
   const { SettingsManager } = await import('../../core/plugin/settings-manager.js')

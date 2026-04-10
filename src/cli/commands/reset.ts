@@ -1,5 +1,11 @@
 import { wantsHelp } from './helpers.js'
 
+/**
+ * `openacp reset` — Destructively delete all instance data and restart fresh.
+ *
+ * Requires the daemon to be stopped first. Prompts for confirmation before deletion.
+ * Also removes the autostart service so the deleted instance doesn't get restarted.
+ */
 export async function cmdReset(args: string[] = [], instanceRoot?: string): Promise<void> {
   if (wantsHelp(args)) {
     console.log(`

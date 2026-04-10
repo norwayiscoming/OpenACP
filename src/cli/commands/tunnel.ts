@@ -1,6 +1,14 @@
 import { readApiPort, apiCall } from '../api-client.js'
 import { isJsonMode, jsonSuccess, jsonError, muteForJson, ErrorCodes } from '../output.js'
 
+/**
+ * `openacp tunnel` — Manage port-forwarding tunnels via the running daemon.
+ *
+ * All operations go through the daemon's REST API; the daemon manages the actual
+ * tunnel process (cloudflared, ngrok, etc.). Requires a running daemon.
+ *
+ * Subcommands: add, list, stop, stop-all
+ */
 export async function cmdTunnel(args: string[], instanceRoot?: string): Promise<void> {
   const json = isJsonMode(args)
   if (json) await muteForJson()

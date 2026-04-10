@@ -4,6 +4,11 @@ import * as path from 'node:path'
 import * as os from 'node:os'
 import { createChildLogger } from '../core/utils/log.js'
 
+// Autostart integrates with the OS process supervisor so the daemon restarts after login.
+// macOS uses launchd (LaunchAgents), Linux uses systemd user units.
+// Each instance gets its own service, identified by instanceId, so multiple instances
+// can coexist without conflicting plist/unit names.
+
 const log = createChildLogger({ module: 'autostart' })
 
 // Legacy paths — no instanceId, used for migration only
@@ -26,10 +31,15 @@ function getSystemdServicePath(instanceId: string): string {
   return path.join(os.homedir(), '.config', 'systemd', 'user', `${getSystemdServiceName(instanceId)}.service`)
 }
 
+/** Returns true if the current platform supports auto-start management. */
 export function isAutoStartSupported(): boolean {
   return process.platform === 'darwin' || process.platform === 'linux'
 }
 
+/**
+ * Escape a string for safe embedding in an XML plist value.
+ * launchd plists are XML — unescaped special chars cause parse failures.
+ */
 export function escapeXml(str: string): string {
   return str
     .replace(/&/g, '&amp;')
@@ -39,6 +49,10 @@ export function escapeXml(str: string): string {
     .replace(/'/g, '&apos;')
 }
 
+/**
+ * Escape a string for safe use as a quoted value in a systemd unit file.
+ * Systemd uses its own escaping rules: backslash, quotes, `$` (env expand), and `%` (specifiers).
+ */
 export function escapeSystemdValue(str: string): string {
   const escaped = str
     .replace(/\\/g, '\\\\')
@@ -48,6 +62,13 @@ export function escapeSystemdValue(str: string): string {
   return `"${escaped}"`
 }
 
+/**
+ * Generate a launchd plist for the given instance.
+ *
+ * The plist starts the daemon via `node <cli> --daemon-child`, with OPENACP_INSTANCE_ROOT
+ * set so the child knows which instance to load. KeepAlive.SuccessfulExit=false means
+ * launchd restarts on crash but not on clean exit (e.g. `openacp stop`).
+ */
 export function generateLaunchdPlist(nodePath: string, cliPath: string, logDir: string, instanceRoot: string, instanceId: string): string {
   const label = getLaunchdLabel(instanceId)
   const logFile = path.join(logDir, 'openacp.log')
@@ -84,6 +105,13 @@ export function generateLaunchdPlist(nodePath: string, cliPath: string, logDir: 
 `
 }
 
+/**
+ * Generate a systemd user unit for the given instance.
+ *
+ * `Restart=on-failure` mirrors launchd's KeepAlive.SuccessfulExit=false behavior —
+ * the daemon is restarted on crash but not after a clean SIGTERM from `openacp stop`.
+ * Uses `WantedBy=default.target` so it activates on user login (not system boot).
+ */
 export function generateSystemdUnit(nodePath: string, cliPath: string, instanceRoot: string, instanceId: string): string {
   const serviceName = getSystemdServiceName(instanceId)
   return `[Unit]
@@ -118,6 +146,13 @@ function migrateLegacy(): void {
   }
 }
 
+/**
+ * Register the daemon as a login-time service for the given instance.
+ *
+ * macOS: writes a LaunchAgent plist and bootstraps it into the user's GUI session.
+ * Linux: writes a systemd user unit, reloads the daemon, and enables the service.
+ * Runs `migrateLegacy()` first to remove the old single-instance service if present.
+ */
 export function installAutoStart(logDir: string, instanceRoot: string, instanceId: string): { success: boolean; error?: string } {
   if (!isAutoStartSupported()) {
     return { success: false, error: 'Auto-start not supported on this platform' }
@@ -168,6 +203,10 @@ export function installAutoStart(logDir: string, instanceRoot: string, instanceI
   }
 }
 
+/**
+ * Remove the login-time service registration for the given instance.
+ * No-op if the service is not installed.
+ */
 export function uninstallAutoStart(instanceId: string): { success: boolean; error?: string } {
   if (!isAutoStartSupported()) {
     return { success: false, error: 'Auto-start not supported on this platform' }
@@ -205,6 +244,7 @@ export function uninstallAutoStart(instanceId: string): { success: boolean; erro
   }
 }
 
+/** Returns true if the login-time service is currently registered for this instance. */
 export function isAutoStartInstalled(instanceId: string): boolean {
   if (process.platform === 'darwin') {
     return fs.existsSync(getLaunchdPlistPath(instanceId))

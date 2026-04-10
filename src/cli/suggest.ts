@@ -1,5 +1,16 @@
 import { distance } from "fastest-levenshtein";
 
+/**
+ * Find the closest matching candidate for a mistyped user input.
+ *
+ * Matching priority:
+ * 1. Prefix match — favors shortest candidate starting with the input.
+ * 2. Substring match — input appears anywhere in the candidate (min 3 chars).
+ * 3. Levenshtein distance — allows up to maxDistance edits; short candidates
+ *    (≤3 chars) are stricter (max 1 edit) to avoid spurious suggestions.
+ *
+ * Returns undefined if there is no close match, or if the input is an exact match.
+ */
 export function suggestMatch(
   input: string,
   candidates: string[],

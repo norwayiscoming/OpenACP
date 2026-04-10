@@ -4,6 +4,8 @@ import { existsSync, readFileSync } from 'node:fs'
 
 const NPM_PACKAGE = '@openacp/cli'
 
+// Walk up from the current module's directory to find package.json.
+// Necessary because the compiled output lives in dist/ but package.json is at the root.
 function findPackageJson(): string | null {
   let dir = dirname(fileURLToPath(import.meta.url))
   for (let i = 0; i < 5; i++) {
@@ -16,6 +18,10 @@ function findPackageJson(): string | null {
   return null
 }
 
+/**
+ * Return the installed CLI version from package.json.
+ * Returns '0.0.0-dev' when running from source (no package.json found or parseable).
+ */
 export function getCurrentVersion(): string {
   try {
     const pkgPath = findPackageJson()
@@ -27,6 +33,11 @@ export function getCurrentVersion(): string {
   }
 }
 
+/**
+ * Fetch the latest published version from the npm registry.
+ * Returns null on any error (network failure, rate limit, etc.) — callers treat null as "unknown".
+ * Timeout is 5 seconds to avoid blocking the CLI on slow connections.
+ */
 export async function getLatestVersion(): Promise<string | null> {
   try {
     const res = await fetch(`https://registry.npmjs.org/${NPM_PACKAGE}/latest`, {
@@ -40,6 +51,10 @@ export async function getLatestVersion(): Promise<string | null> {
   }
 }
 
+/**
+ * Numerically compare two semver strings (major.minor.patch).
+ * Returns -1 if current < latest, 0 if equal, 1 if current > latest.
+ */
 export function compareVersions(current: string, latest: string): -1 | 0 | 1 {
   const a = current.split('.').map(Number)
   const b = latest.split('.').map(Number)
@@ -50,6 +65,10 @@ export function compareVersions(current: string, latest: string): -1 | 0 | 1 {
   return 0
 }
 
+/**
+ * Run `npm install -g @openacp/cli@latest` as a child process.
+ * Forwards signals to the child so Ctrl+C during update cancels cleanly.
+ */
 export async function runUpdate(): Promise<boolean> {
   const { spawn } = await import('node:child_process')
   return new Promise((resolve) => {
@@ -71,6 +90,13 @@ export async function runUpdate(): Promise<boolean> {
   })
 }
 
+/**
+ * Check for a newer CLI version and interactively offer to update before continuing.
+ *
+ * Skipped in dev mode, CI, non-TTY environments, and when OPENACP_SKIP_UPDATE_CHECK is set.
+ * After a successful update the process exits with 0 — the user must re-run their command
+ * against the newly installed binary.
+ */
 export async function checkAndPromptUpdate(): Promise<void> {
   if (process.env.OPENACP_DEV_LOOP || process.env.OPENACP_SKIP_UPDATE_CHECK || !process.stdin.isTTY) return
 

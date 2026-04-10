@@ -5,6 +5,13 @@ import { printInstanceHint } from '../instance-hint.js'
 import { resolveInstanceId } from '../resolve-instance-id.js'
 import path from 'node:path'
 
+/**
+ * `openacp start` — Start the daemon in the background.
+ *
+ * Forks a detached child process via startDaemon(), installs the login-time autostart
+ * service, then returns immediately. In JSON mode, waits for the daemon to write api.port
+ * before outputting the result so callers get the actual bound port.
+ */
 export async function cmdStart(args: string[] = [], instanceRoot?: string): Promise<void> {
   const json = isJsonMode(args)
   if (json) await muteForJson()
@@ -52,6 +59,8 @@ Requires an existing config — run 'openacp' first to set up.
       process.exit(1)
     }
     // Install autostart before JSON output (jsonSuccess exits)
+    // instanceId is resolved here so installAutoStart can use it for per-instance
+    // service naming — each workspace gets its own launchd/systemd service entry.
     const instanceId = resolveInstanceId(root)
     try {
       const { installAutoStart } = await import('../autostart.js')

@@ -1,6 +1,13 @@
 import { wantsHelp } from './helpers.js'
 import { isJsonMode, jsonSuccess, muteForJson } from '../output.js'
 
+/**
+ * `openacp doctor` — Run system diagnostics and optionally fix issues.
+ *
+ * In dry-run mode (or with --json), checks are reported but no fixes are applied.
+ * In interactive mode, fixable issues prompt the user before applying.
+ * Exits with code 1 if any check fails.
+ */
 export async function cmdDoctor(args: string[], instanceRoot?: string): Promise<void> {
   const json = isJsonMode(args)
   if (json) await muteForJson()

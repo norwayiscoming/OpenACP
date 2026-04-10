@@ -1,6 +1,13 @@
 import { wantsHelp } from './helpers.js'
 import { isJsonMode, jsonSuccess, jsonError, muteForJson, ErrorCodes } from '../output.js'
 import { resolveInstanceId } from '../resolve-instance-id.js'
+
+/**
+ * `openacp stop` — Stop the running daemon.
+ *
+ * Sends SIGTERM and waits for the process to exit. Also uninstalls the autostart
+ * service so the daemon stays stopped after the next login/reboot.
+ */
 export async function cmdStop(args: string[] = [], instanceRoot?: string): Promise<void> {
   const json = isJsonMode(args)
   if (json) await muteForJson()

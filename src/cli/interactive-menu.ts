@@ -1,23 +1,30 @@
+/** A single option in the interactive menu. */
 export interface MenuOption {
+  /** Single character key the user presses to select this option. */
   key: string
   label: string
   action: () => Promise<void> | void
 }
 
+// Strip ANSI escape codes to compute the visual width of a string for column alignment.
 function stripAnsi(str: string): string {
   return str.replace(/\x1b\[[0-9;]*m/g, '')
 }
 
 /**
- * Show an interactive single-keypress menu (TTY only).
- * Returns true if a menu was shown, false if non-TTY.
+ * Display a single-keypress menu on TTY and wait for the user to choose an option.
+ *
+ * Uses raw mode (`setRawMode(true)`) to read individual keystrokes without requiring Enter.
+ * Options are displayed in two columns for compact layout. Ctrl+C exits the process.
+ * Returns true if a menu was shown and an option was selected, false if non-TTY (allows
+ * callers to fall back to a plain text hint for piped/scripted contexts).
  */
 export function showInteractiveMenu(options: MenuOption[]): Promise<boolean> {
   if (!process.stdin.isTTY || !process.stdout.isTTY) {
     return Promise.resolve(false)
   }
 
-  // Print options in two columns
+  // Print options in two columns: first half on the left, second half on the right
   const half = Math.ceil(options.length / 2)
   for (let i = 0; i < half; i++) {
     const left = options[i]!
@@ -41,7 +48,7 @@ export function showInteractiveMenu(options: MenuOption[]): Promise<boolean> {
     const onData = async (buf: Buffer) => {
       const ch = buf.toString().toLowerCase()
 
-      // Handle Ctrl+C
+      // Handle Ctrl+C — restore terminal state before exiting
       if (ch === '\x03') {
         cleanup()
         process.exit(0)

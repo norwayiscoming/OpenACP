@@ -67,6 +67,17 @@ function printApiHelp(): void {
 `)
 }
 
+/**
+ * `openacp api` — Interact with the running daemon via its REST API.
+ *
+ * All subcommands require a running daemon. Reads the port from api.port and
+ * sends authenticated HTTP requests. Removes stale port files on connection
+ * failure so subsequent checks correctly report the daemon as offline.
+ *
+ * Subcommands: status, session, new, send, cancel, bypass, session-config,
+ *              topics, delete-topic, cleanup, health, agents, adapters,
+ *              tunnel, config, config set, notify, restart, version
+ */
 export async function cmdApi(args: string[], instanceRoot?: string): Promise<void> {
   const subCmd = args[0]
 
@@ -839,6 +850,9 @@ Shows the version of the currently running daemon process.
   } catch (err) {
     // jsonSuccess/jsonError call process.exit which may throw in certain environments
     if (err instanceof Error && err.message.startsWith('process.exit')) throw err
+    // Node.js wraps low-level TCP errors from fetch() as TypeError with a cause.code —
+    // ECONNREFUSED means the port file exists but nothing is listening on that port (stale).
+    // Remove the port file so the next `openacp start` doesn't refuse to launch.
     if (err instanceof TypeError && (err.cause as Record<string, unknown> | undefined)?.code === 'ECONNREFUSED') {
       if (json) jsonError(ErrorCodes.API_ERROR, 'OpenACP is not running (stale port file)')
       console.error('OpenACP is not running (stale port file)')

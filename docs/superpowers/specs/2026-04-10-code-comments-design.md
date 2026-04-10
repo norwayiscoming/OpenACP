@@ -30,7 +30,7 @@ Follows `CLAUDE.md` conventions exactly:
 
 ## Execution Order (Sequential)
 
-Tasks run strictly in order — each agent reads the previously commented modules before starting its own, ensuring consistent terminology and correct understanding of cross-module relationships.
+Tasks run strictly in order (15 total) — each agent reads the previously commented modules before starting its own, ensuring consistent terminology and correct understanding of cross-module relationships.
 
 ### Task 1 — core/utils + core/types + core/events (Opus)
 Files:
@@ -81,21 +81,7 @@ Files:
 
 **Why third:** The plugin system is the infrastructure backbone — lifecycle ordering, service discovery, middleware hooks, and PluginContext are referenced by every plugin. Getting these right is critical before commenting anything that uses them.
 
-### Task 4 — core/sessions (Opus)
-Files:
-- `src/core/sessions/session.ts`
-- `src/core/sessions/session-manager.ts`
-- `src/core/sessions/session-store.ts`
-- `src/core/sessions/session-factory.ts`
-- `src/core/sessions/session-bridge.ts`
-- `src/core/sessions/prompt-queue.ts`
-- `src/core/sessions/permission-gate.ts`
-- `src/core/sessions/turn-context.ts`
-- `src/core/sessions/terminal-manager.ts`
-
-**Why fourth:** Sessions are the central runtime abstraction — they wrap AgentInstance, manage prompt queues, gate permissions, and bridge events to adapters. This is the heart of the system's runtime behavior.
-
-### Task 5 — core/agents (Opus)
+### Task 4 — core/agents (Opus)
 Files:
 - `src/core/agents/agent-instance.ts`
 - `src/core/agents/agent-manager.ts`
@@ -108,7 +94,21 @@ Files:
 - `src/core/agents/auth-handler.ts`
 - `src/core/agents/mcp-manager.ts`
 
-**Why fifth:** AgentInstance is the ACP subprocess client — the most complex single file in the codebase. It implements the full ACP Client interface, handles streaming, converts protocol events to internal types, and manages subprocess lifecycle.
+**Why fourth:** AgentInstance is the ACP subprocess client — the most complex single file in the codebase. It implements the full ACP Client interface, handles streaming, converts protocol events to internal types, and manages subprocess lifecycle. Sessions wrap AgentInstance, so agents must be understood first.
+
+### Task 5 — core/sessions (Opus)
+Files:
+- `src/core/sessions/session.ts`
+- `src/core/sessions/session-manager.ts`
+- `src/core/sessions/session-store.ts`
+- `src/core/sessions/session-factory.ts`
+- `src/core/sessions/session-bridge.ts`
+- `src/core/sessions/prompt-queue.ts`
+- `src/core/sessions/permission-gate.ts`
+- `src/core/sessions/turn-context.ts`
+- `src/core/sessions/terminal-manager.ts`
+
+**Why fifth:** Sessions are the central runtime abstraction — they wrap AgentInstance (Task 4), manage prompt queues, gate permissions, and bridge events to adapters. Must come after agents so the agent has full context about what Session wraps and orchestrates.
 
 ### Task 6 — core/adapter-primitives (Opus)
 Files:
@@ -150,7 +150,7 @@ Files:
 
 **Why seventh:** `core.ts` is the top-level orchestrator — it registers adapters, routes messages, creates sessions, and wires agent events to adapters. This is the "glue" that connects all previous modules.
 
-### Task 8 — core supporting modules (Opus)
+### Task 8 — core/assistant + core/instance (Opus)
 Files:
 - `src/core/assistant/assistant-manager.ts`
 - `src/core/assistant/assistant-registry.ts`
@@ -166,6 +166,11 @@ Files:
 - `src/core/instance/instance-init.ts`
 - `src/core/instance/instance-registry.ts`
 - `src/core/instance/migration.ts`
+
+**Focus areas:** Assistant system prompt construction (how sections are composed), instance identity and discovery across multiple running instances, instance migration between versions.
+
+### Task 9 — core/setup + core/doctor + core/security (Opus)
+Files:
 - `src/core/setup/wizard.ts`
 - `src/core/setup/setup-agents.ts`
 - `src/core/setup/setup-channels.ts`
@@ -188,23 +193,25 @@ Files:
 - `src/core/security/path-guard.ts`
 - `src/core/security/sanitize-html.ts`
 
-### Task 9 — plugins/telegram (Sonnet)
+**Focus areas:** First-run wizard flow and step sequencing, doctor check architecture and result aggregation, path/env security constraints and why they exist.
+
+### Task 10 — plugins/telegram (Sonnet)
 Files: all files in `src/plugins/telegram/`
 
 **Focus areas:** Topic-per-session model, callback routing (`p:` vs `c/` prefix), permission button flow, streaming + draft management, grammY middleware chain, Telegram-specific rendering.
 
-### Task 10 — plugins/api-server (Sonnet)
+### Task 11 — plugins/api-server (Sonnet)
 Files: all files in `src/plugins/api-server/`
 
 **Focus areas:** JWT auth flow, SSE event streaming, REST route organization, role-based access, static file serving for app.
 
-### Task 11 — plugins/context + plugins/tunnel (Sonnet)
+### Task 12 — plugins/context + plugins/tunnel (Sonnet)
 Files: all files in `src/plugins/context/` and `src/plugins/tunnel/`
 
 **Focus areas (context):** Conversation history recording, context injection before prompts, checkpoint-based recovery.
 **Focus areas (tunnel):** Provider abstraction, keepalive strategy, viewer routes for file/diff display.
 
-### Task 12 — remaining plugins (Sonnet)
+### Task 13 — remaining plugins (Sonnet)
 Files:
 - `src/plugins/security/`
 - `src/plugins/speech/`
@@ -214,17 +221,18 @@ Files:
 - `src/plugins/core-plugins.ts`
 - `src/plugins/index.ts`
 
-### Task 13 — src/cli/ (Sonnet)
+### Task 14 — src/cli/ (Sonnet)
 Files: all files in `src/cli/` including commands/, plugin-template/, daemon, autostart, etc.
 
 **Focus areas:** Daemon management, CLI command routing, interactive menu, plugin scaffolding templates.
 
-### Task 14 — Entry points (Sonnet)
+### Task 15 — Entry points (Sonnet)
 Files:
 - `src/main.ts`
 - `src/index.ts`
 - `src/cli.ts`
 - `src/testing.ts`
+- `src/data/product-guide.ts`
 
 ---
 

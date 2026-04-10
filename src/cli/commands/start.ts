@@ -2,8 +2,8 @@ import { checkAndPromptUpdate } from '../version.js'
 import { wantsHelp } from './helpers.js'
 import { isJsonMode, jsonSuccess, jsonError, muteForJson, ErrorCodes } from '../output.js'
 import { printInstanceHint } from '../instance-hint.js'
+import { resolveInstanceId } from '../resolve-instance-id.js'
 import path from 'node:path'
-import fs from 'node:fs'
 
 export async function cmdStart(args: string[] = [], instanceRoot?: string): Promise<void> {
   const json = isJsonMode(args)
@@ -33,38 +33,36 @@ Requires an existing config — run 'openacp' first to set up.
     return
   }
   await checkAndPromptUpdate()
-  const { startDaemon, getPidPath } = await import('../daemon.js')
+  const { startDaemon, getPidPath, isProcessRunning } = await import('../daemon.js')
   const { ConfigManager } = await import('../../core/config/config.js')
   const cm = new ConfigManager(path.join(root, 'config.json'))
   if (await cm.exists()) {
     await cm.load()
     const config = cm.get()
-    const result = startDaemon(getPidPath(root), config.logging.logDir, root)
+    const pidPath = getPidPath(root)
+    if (isProcessRunning(pidPath)) {
+      if (json) jsonError(ErrorCodes.DAEMON_NOT_RUNNING, 'Daemon is already running. Use "openacp restart" to restart it.')
+      console.error('OpenACP daemon is already running. Use "openacp restart" to restart it.')
+      process.exit(1)
+    }
+    const result = startDaemon(pidPath, config.logging.logDir, root)
     if ('error' in result) {
       if (json) jsonError(ErrorCodes.DAEMON_NOT_RUNNING, result.error)
       console.error(result.error)
       process.exit(1)
     }
+    // Install autostart before JSON output (jsonSuccess exits)
+    const instanceId = resolveInstanceId(root)
+    try {
+      const { installAutoStart } = await import('../autostart.js')
+      const autoResult = installAutoStart(config.logging.logDir, root, instanceId)
+      if (!autoResult.success) console.warn(`Warning: auto-start not enabled: ${autoResult.error}`)
+    } catch (e) { console.warn(`Warning: auto-start not enabled: ${(e as Error).message}`) }
+
     if (json) {
-      // Resolve instanceId from registry if available
-      let instanceId: string = path.basename(root)
-      try {
-        const { getGlobalRoot } = await import('../../core/instance/instance-context.js')
-        const { InstanceRegistry } = await import('../../core/instance/instance-registry.js')
-        const reg = new InstanceRegistry(path.join(getGlobalRoot(), 'instances.json'))
-        reg.load()
-        const entry = reg.getByRoot(root)
-        if (entry) instanceId = entry.id
-      } catch {}
-      // Try to read actual port from api.port file written by the server after startup
-      let port: number | null = null
-      try {
-        const portStr = fs.readFileSync(path.join(root, 'api.port'), 'utf-8').trim()
-        port = parseInt(portStr) || null
-      } catch {
-        // Fall back to configured port
-        port = 21420
-      }
+      // Wait for the daemon to write api.port (up to 5 seconds)
+      const { waitForPortFile } = await import('../api-client.js')
+      const port = await waitForPortFile(path.join(root, 'api.port')) ?? 21420
       jsonSuccess({
         pid: result.pid,
         instanceId,

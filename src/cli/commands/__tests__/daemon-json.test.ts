@@ -5,6 +5,7 @@ vi.mock('../../daemon.js', () => ({
   startDaemon: vi.fn().mockReturnValue({ pid: 12345 }),
   stopDaemon: vi.fn().mockResolvedValue({ stopped: true, pid: 12345 }),
   getPidPath: vi.fn().mockReturnValue('/tmp/test.pid'),
+  isProcessRunning: vi.fn().mockReturnValue(false),
   markRunning: vi.fn(),
 }))
 
@@ -23,6 +24,21 @@ vi.mock('../../version.js', () => ({
 
 vi.mock('../../instance-hint.js', () => ({
   printInstanceHint: vi.fn(),
+}))
+
+vi.mock('../../api-client.js', () => ({
+  waitForPortFile: vi.fn().mockResolvedValue(21420),
+  readApiPort: vi.fn().mockReturnValue(null),
+  readApiSecret: vi.fn().mockReturnValue(null),
+  removeStalePortFile: vi.fn(),
+  apiCall: vi.fn(),
+}))
+
+vi.mock('../../autostart.js', () => ({
+  installAutoStart: vi.fn().mockReturnValue({ success: true }),
+  uninstallAutoStart: vi.fn().mockReturnValue({ success: true }),
+  isAutoStartInstalled: vi.fn().mockReturnValue(false),
+  isAutoStartSupported: vi.fn().mockReturnValue(false),
 }))
 
 describe('stop --json', () => {

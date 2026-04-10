@@ -258,12 +258,25 @@ export class AgentCatalog {
         updated = true;
       }
 
-      // Enrich distribution from "custom" to actual type
+      // Enrich distribution from "custom" to actual type.
+      // Also fix command/args — agents.json created by `openacp setup` uses the
+      // agent name as the command placeholder rather than the real ACP binary.
+      // Binary agents can't be enriched here (the archive hasn't been downloaded),
+      // so we only fix npx/uvx which need no download.
       if (agent.distribution === "custom") {
         const dist = resolveDistribution(regAgent);
         if (dist) {
           agent.distribution = dist.type;
-          updated = true;
+          if (dist.type === "npx") {
+            agent.command = "npx";
+            agent.args = [stripNpmVersion(dist.package), ...dist.args];
+            updated = true;
+          } else if (dist.type === "uvx") {
+            agent.command = "uvx";
+            agent.args = [stripPythonVersion(dist.package), ...dist.args];
+            updated = true;
+          }
+          // binary: skip — binary must be downloaded via `openacp agents install`
         }
       }
 
@@ -328,4 +341,37 @@ export class AgentCatalog {
       log.warn("Failed to load bundled registry snapshot");
     }
   }
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+/**
+ * Strip pinned npm version so npx always resolves to latest.
+ * Mirrors the logic in agent-installer.ts `stripPackageVersion`.
+ * e.g. "@agentclientprotocol/claude-agent-acp@0.26.0" → "@agentclientprotocol/claude-agent-acp"
+ *      "cline@2.9.0" → "cline"
+ *      "@scope/pkg" → "@scope/pkg"
+ */
+function stripNpmVersion(pkg: string): string {
+  if (pkg.startsWith("@")) {
+    const slashIdx = pkg.indexOf("/");
+    if (slashIdx === -1) return pkg;
+    const versionAt = pkg.indexOf("@", slashIdx + 1);
+    return versionAt === -1 ? pkg : pkg.slice(0, versionAt);
+  }
+  const at = pkg.indexOf("@");
+  return at === -1 ? pkg : pkg.slice(0, at);
+}
+
+/**
+ * Strip pinned Python version so uvx always resolves to latest.
+ * Mirrors the logic in agent-installer.ts `stripPythonPackageVersion`.
+ * e.g. "fast-agent-acp==0.6.6" → "fast-agent-acp"
+ *      "minion-code@0.1.44" → "minion-code"
+ */
+function stripPythonVersion(pkg: string): string {
+  const pyMatch = pkg.match(/^([^=@><!]+)/);
+  if (pyMatch && pkg.includes("==")) return pyMatch[1]!;
+  const at = pkg.indexOf("@");
+  return at === -1 ? pkg : pkg.slice(0, at);
 }

@@ -50,7 +50,7 @@ The Assistant runs `openacp api ...` commands silently and presents results as n
 
 ## Configuration
 
-The Assistant uses the `defaultAgent` from your config. No special configuration is needed. If you want to change which agent powers the Assistant, update `defaultAgent` in `~/.openacp/config.json`:
+The Assistant uses the `defaultAgent` from your config. No special configuration is needed. If you want to change which agent powers the Assistant, update `defaultAgent` in `<instance-root>/config.json`:
 
 ```json
 {

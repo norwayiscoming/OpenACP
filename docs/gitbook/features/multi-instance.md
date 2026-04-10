@@ -2,90 +2,130 @@
 
 ## What are workspaces?
 
-When you first set up OpenACP, everything lives in one place: your bot tokens, agent settings, session history, and logs. This is your **main workspace** — it works great for most people.
+A **workspace** is a directory on your machine that contains an OpenACP instance. Every instance lives inside its workspace as `<workspace>/.openacp/`. The workspace directory is also what AI agents use as their working root.
 
-But sometimes you need separate environments. Maybe you want:
+Workspaces let you run completely independent OpenACP setups on the same machine. Each workspace has its own settings, sessions, and data — they do not interfere with each other.
+
+You might want multiple workspaces when you need:
 
 - A **work** setup with one Telegram group and budget limits, and a **personal** setup with a different group and no limits.
 - A **project-specific** setup that uses a different default agent or different permissions.
 - A **testing** setup where you try out new plugins without breaking your main bot.
 
-Workspaces let you run completely independent OpenACP setups on the same machine. Each workspace has its own settings, sessions, and data — they do not interfere with each other.
+---
+
+## Directory structure
+
+Each workspace follows this layout:
+
+```
+<workspace>/
+  .openacp/           ← instance data (config, sessions, plugins, logs, etc.)
+  ...                 ← your project files (agents work here)
+```
+
+A lightweight shared store at `~/.openacp/` holds data shared across all instances (agent binaries, the instance registry, CLI tools). It is **not** an instance itself.
+
+```
+~/.openacp/
+  instances.json      ← registry: maps instance ID → workspace path
+  agents/             ← shared agent binaries
+  bin/                ← shared CLI tools
+  cache/              ← ACP Registry cache
+```
 
 ---
 
-## Your main workspace
+## Creating your first workspace
 
-By default, OpenACP stores everything in a hidden folder called `~/.openacp/`. This is your main (global) workspace. When you run `openacp start` or any other command, this is the workspace that gets used.
+Run `openacp` (no arguments) from the directory you want to use as your workspace. If no instance is found, the setup wizard launches:
 
-You do not need to do anything special to use the main workspace. It is set up automatically the first time you run OpenACP.
+```bash
+cd ~/openacp-workspace
+openacp
+```
+
+The wizard creates `~/openacp-workspace/.openacp/`, writes your config, and registers the instance.
+
+You can also use the non-interactive setup command:
+
+```bash
+openacp setup --dir ~/my-project --agent claude
+```
 
 ---
 
-## Creating a project workspace
+## Creating additional workspaces
 
-If you want a separate workspace for a specific project, navigate to that project's folder and create a local workspace:
-
-```bash
-cd ~/my-project
-openacp start --local
-```
-
-OpenACP creates a `.openacp/` folder inside your project directory and launches the setup wizard. From now on, whenever you run `openacp` from inside `~/my-project`, it automatically uses this project workspace instead of the main one.
-
-You can also copy settings from your main workspace so you do not have to set up everything from scratch:
+Navigate to the new workspace directory and run the setup wizard:
 
 ```bash
-cd ~/my-project
-openacp start --local --from ~/.openacp
+cd ~/work-project
+openacp
 ```
 
-This copies your existing settings but asks you to confirm sensitive values like bot tokens (since a different Telegram group or Discord server might be needed).
+Or non-interactively:
+
+```bash
+openacp setup --dir ~/work-project --agent claude
+```
+
+You can copy structure from an existing instance so you don't have to reinstall plugins and agents from scratch:
+
+```bash
+openacp instances create --dir ~/work-project --from ~/openacp-workspace
+```
+
+This copies your installed plugins, plugin packages, and agent definitions — but **not** credentials or sensitive settings (bot tokens, API keys, channel IDs). After cloning, run `openacp config` or `openacp onboard` in the new workspace to enter your credentials for the new instance.
 
 ---
 
 ## Switching between workspaces
 
-OpenACP automatically picks the right workspace based on where you run the command:
+OpenACP automatically resolves the active instance based on where you run the command:
 
-- **Inside a project folder** with `.openacp/` — uses the project workspace.
-- **Anywhere else** — uses your main workspace.
+- **Inside a workspace directory** (or any subdirectory) with `.openacp/config.json` → uses that instance automatically.
+- **Anywhere else** → prompts you to select from registered instances.
 
-If you want to be explicit:
+To be explicit about which instance to use:
 
 ```bash
-openacp start --local    # force the project workspace (current folder)
-openacp start --global   # force the main workspace
+openacp start --dir ~/my-project           # use instance at ~/my-project
+openacp start --local                      # use instance in the current directory
+```
+
+After resolution, the CLI prints a hint so you always know which instance is active:
+
+```
+Using: my-project (~/my-project/.openacp)
 ```
 
 ---
 
-## Seeing all your workspaces
-
-To check which workspaces exist and whether they are running:
+## Listing all instances
 
 ```bash
-openacp status --all
+openacp instances list
 ```
 
-This shows every workspace with its name, location, and whether a bot is currently running.
+This shows every registered instance with its name, directory, and running status.
 
 ---
 
 ## How workspaces stay separate
 
-Each workspace runs independently:
+Each instance runs independently:
 
-- **Separate settings** — each workspace has its own `config.json`. Changing the agent in one workspace does not affect the other.
-- **Separate sessions** — conversations in the work workspace are not visible in the personal workspace.
-- **Separate bots** — each workspace can connect to a different Telegram group or Discord server, or even use different bot tokens entirely.
-- **Separate ports** — if both workspaces are running simultaneously, they automatically use different network ports so there are no conflicts.
+- **Separate settings** — each instance has its own `config.json`. Changing the agent in one instance does not affect the other.
+- **Separate sessions** — conversations in one instance are not visible in another.
+- **Separate bots** — each instance can connect to a different Telegram group or Discord server, or use different bot tokens.
+- **Separate ports** — if multiple instances are running simultaneously, they use different network ports automatically.
 
 ---
 
 ## When do you need multiple workspaces?
 
-Most users only need the main workspace. Consider adding a project workspace when:
+Most users only need one workspace. Consider adding another when:
 
 - You want a **completely different bot configuration** for a project (different group, different agents, different budget).
 - You are **developing or testing plugins** and do not want to risk your main setup.

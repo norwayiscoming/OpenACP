@@ -24,6 +24,7 @@ const LoggingSchema = z
 export type LoggingConfig = z.infer<typeof LoggingSchema>;
 
 export const ConfigSchema = z.object({
+  id: z.string().optional(),             // instance UUID, written once at creation time
   instanceName: z.string().optional(),
   defaultAgent: z.string(),
   workspace: z

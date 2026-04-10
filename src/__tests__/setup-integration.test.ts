@@ -30,7 +30,7 @@ vi.mock('node:child_process', () => ({
 }))
 
 // Mock autostart module
-vi.mock('../core/autostart.js', () => ({
+vi.mock('../cli/autostart.js', () => ({
   isAutoStartSupported: vi.fn(() => false),
   installAutoStart: vi.fn(() => ({ success: true })),
 }))

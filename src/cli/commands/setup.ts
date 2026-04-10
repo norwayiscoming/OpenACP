@@ -1,30 +1,26 @@
-import * as fs from 'node:fs';
 import * as path from 'node:path';
+import fs from 'node:fs'
 import { jsonSuccess, jsonError, muteForJson, ErrorCodes } from '../output.js'
+import { getGlobalRoot } from '../../core/instance/instance-context.js'
+import { InstanceRegistry, readIdFromConfig } from '../../core/instance/instance-registry.js'
+import { initInstanceFiles } from '../../core/instance/instance-init.js'
 
 function parseFlag(args: string[], flag: string): string | undefined {
   const idx = args.indexOf(flag);
   return idx !== -1 ? args[idx + 1] : undefined;
 }
 
+function readConfigField(instanceRoot: string, field: string): string | null {
+  try {
+    const raw = JSON.parse(fs.readFileSync(path.join(instanceRoot, 'config.json'), 'utf-8'))
+    return typeof raw[field] === 'string' ? raw[field] : null
+  } catch { return null }
+}
+
 export async function cmdSetup(args: string[], instanceRoot: string): Promise<void> {
-  let dir = parseFlag(args, '--dir');
-  const workspace = parseFlag(args, '--workspace');
   const agentRaw = parseFlag(args, '--agent');
   const json = args.includes('--json');
   if (json) await muteForJson()
-
-  // --workspace is deprecated in favor of --dir
-  if (workspace && !dir) {
-    if (!json) console.warn('  Warning: --workspace is deprecated, use --dir instead');
-    dir = workspace;
-  }
-
-  if (!dir) {
-    if (json) jsonError(ErrorCodes.MISSING_ARGUMENT, '--dir is required')
-    console.error('  Error: --dir <path> is required');
-    process.exit(1);
-  }
 
   if (!agentRaw) {
     if (json) jsonError(ErrorCodes.MISSING_ARGUMENT, '--agent is required')
@@ -40,61 +36,40 @@ export async function cmdSetup(args: string[], instanceRoot: string): Promise<vo
   }
   const runMode = rawRunMode as 'daemon' | 'foreground';
 
-  const defaultAgent = agentRaw.split(',')[0]!.trim();
+  const agents = agentRaw.split(',').map(a => a.trim());
 
-  const configPath = path.join(instanceRoot, 'config.json');
+  const registryPath = path.join(getGlobalRoot(), 'instances.json')
+  const registry = new InstanceRegistry(registryPath)
+  registry.load()
 
-  // Read existing config if present so we don't overwrite unrelated fields
-  let existing: Record<string, unknown> = {};
-  if (fs.existsSync(configPath)) {
-    try {
-      existing = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
-    } catch {
-      // Ignore parse errors — overwrite with fresh config
-    }
+  // Resolve id: config.json is source of truth. Reconciles any mismatch with registry.
+  const { id, registryUpdated } = registry.resolveId(instanceRoot)
+
+  // Write instance files with id — config.json now carries the UUID.
+  // Save registry after init so a crash during init doesn't leave a stale entry.
+  initInstanceFiles(instanceRoot, { agents, runMode, mergeExisting: true, id })
+
+  if (registryUpdated) {
+    registry.save()
   }
 
-  // Preserve existing channels; always ensure the SSE adapter is enabled
-  const existingChannels = (existing['channels'] as Record<string, unknown>) ?? {};
-  const channels = {
-    ...existingChannels,
-    sse: { ...(existingChannels['sse'] as Record<string, unknown> ?? {}), enabled: true },
-  };
+  // Default instanceName to the workspace directory basename if not already set
+  const name = readConfigField(instanceRoot, 'instanceName')
+             ?? path.basename(path.dirname(instanceRoot))
 
-  const config = {
-    ...existing,
-    channels,
-    defaultAgent,
-    runMode,
-    autoStart: false,
-  };
-
-  fs.mkdirSync(instanceRoot, { recursive: true });
-  fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
-
-  const agentsJsonPath = path.join(instanceRoot, 'agents.json');
-  if (!fs.existsSync(agentsJsonPath)) {
-    const agents = agentRaw.split(',').map(a => a.trim());
-    const installed: Record<string, unknown> = {};
-    for (const agentName of agents) {
-      installed[agentName] = {
-        registryId: null,
-        name: agentName.charAt(0).toUpperCase() + agentName.slice(1),
-        version: 'unknown',
-        distribution: 'custom',
-        command: agentName,
-        args: [],
-        env: {},
-        installedAt: new Date().toISOString(),
-        binaryPath: null,
-      };
-    }
-    fs.writeFileSync(agentsJsonPath, JSON.stringify({ version: 1, installed }, null, 2));
+  // Persist the default name if it wasn't set
+  if (!readConfigField(instanceRoot, 'instanceName')) {
+    const configPath = path.join(instanceRoot, 'config.json')
+    try {
+      const raw = JSON.parse(fs.readFileSync(configPath, 'utf-8'))
+      raw.instanceName = name
+      fs.writeFileSync(configPath, JSON.stringify(raw, null, 2))
+    } catch { /* best-effort */ }
   }
 
   if (json) {
-    jsonSuccess({ configPath });
+    jsonSuccess({ id, name, directory: path.dirname(instanceRoot), configPath: path.join(instanceRoot, 'config.json') })
   } else {
-    console.log(`\n  \x1b[32m✓ Setup complete.\x1b[0m Config written to ${configPath}\n`);
+    console.log(`\n  \x1b[32m✓ Setup complete.\x1b[0m Config written to ${path.join(instanceRoot, 'config.json')}\n`)
   }
 }

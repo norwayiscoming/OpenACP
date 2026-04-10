@@ -32,6 +32,7 @@ import {
   cmdAttach,
   cmdRemote,
   cmdSetup,
+  cmdAutostart,
 } from './cli/commands/index.js'
 import { resolveInstanceRoot } from './core/instance/instance-context.js'
 
@@ -88,6 +89,16 @@ const { migrateGlobalInstance } = await import('./core/instance/migration.js')
 const migrated = await migrateGlobalInstance()
 if (migrated && !resolvedInstanceRoot) {
   resolvedInstanceRoot = migrated
+}
+
+// --workspace is a deprecated alias for --dir, specific to the setup command.
+// It cannot be extracted globally (conflicts with `api` command's --workspace).
+if (command === 'setup' && !resolvedInstanceRoot) {
+  const wsIdx = args.indexOf('--workspace')
+  if (wsIdx !== -1 && args[wsIdx + 1]) {
+    if (!args.includes('--json')) console.warn('Warning: --workspace is deprecated. Use --dir instead.')
+    resolvedInstanceRoot = resolveInstanceRoot({ dir: args[wsIdx + 1], cwd: process.cwd() })
+  }
 }
 
 // Commands that don't need an instance root
@@ -167,6 +178,7 @@ async function main() {
     'attach': (r) => cmdAttach(args, r),
     'remote': (r) => cmdRemote(args, r),
     'setup': (r) => cmdSetup(args, r),
+    'autostart': (r) => cmdAutostart(args, r),
   }
 
   const handler = command ? instanceCommands[command] : undefined

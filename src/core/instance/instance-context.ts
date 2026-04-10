@@ -105,10 +105,16 @@ export function resolveInstanceRoot(opts: ResolveOpts): string | null {
     if (dir === home) break
   }
 
-  // 5. Check OPENACP_INSTANCE_ROOT env
+  // 5. Home directory fallback: check ~/openacp-workspace/.openacp/config.json
+  if (path.resolve(cwd) === path.resolve(home)) {
+    const defaultWs = path.join(home, 'openacp-workspace', '.openacp')
+    if (fs.existsSync(path.join(defaultWs, 'config.json'))) return defaultWs
+  }
+
+  // 6. Check OPENACP_INSTANCE_ROOT env
   if (process.env.OPENACP_INSTANCE_ROOT) return process.env.OPENACP_INSTANCE_ROOT
 
-  // 6. return null
+  // 7. return null
   return null
 }
 

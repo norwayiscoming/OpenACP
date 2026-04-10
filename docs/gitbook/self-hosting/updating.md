@@ -39,14 +39,15 @@ pnpm build
 
 ## Backward Compatibility Guarantee
 
-OpenACP guarantees that existing `~/.openacp/config.json` files, session data, and stored state continue to work after any minor or patch upgrade without manual intervention.
+OpenACP guarantees that existing config files, session data, and stored state continue to work after any minor or patch upgrade without manual intervention.
 
 Specific commitments:
 
 - **Config schema**: New fields always have `.default()` or `.optional()` in the Zod schema. An older config file will never fail validation after an upgrade.
 - **CLI commands and flags**: Existing commands and flags are never removed or renamed in a minor/patch release. Deprecated commands are kept operational with a warning until the next major version.
 - **Plugin API**: Plugin-facing interfaces maintain backward compatibility within a major version.
-- **Data files**: All files under `~/.openacp/` (sessions, topics, state) are handled defensively — unknown fields are preserved and old formats are migrated automatically.
+- **Data files**: All instance files (sessions, topics, state) are handled defensively — unknown fields are preserved and old formats are migrated automatically.
+- **Instance migration**: If an existing global instance is detected at `~/.openacp/` on first run after upgrade, it is automatically migrated to `~/openacp-workspace/.openacp/`. No manual action required.
 
 ## Automatic Config Migrations
 
@@ -56,7 +57,9 @@ Current migrations (run in order):
 
 1. **`add-tunnel-section`** — Adds the `tunnel` block with Cloudflare defaults if the key is absent.
 2. **`fix-agent-commands`** — Renames legacy agent command values to their current names.
-3. **`migrate-agents-to-store`** — Moves agent definitions from `config.json` into the separate `~/.openacp/agents.json` store introduced in a later release.
+3. **`migrate-agents-to-store`** — Moves agent definitions from `config.json` into the separate `<instance-root>/agents.json` store introduced in a later release.
+
+In addition, a one-time **global instance migration** runs at CLI startup. If a legacy `~/.openacp/config.json` is detected, it is automatically moved to `~/openacp-workspace/.openacp/` and registered in the instance registry.
 
 Migrations are idempotent: running them multiple times has no effect.
 
@@ -68,9 +71,9 @@ After upgrading, start OpenACP normally:
 openacp start
 ```
 
-If there are any issues with the config (e.g., a field that could not be migrated), the process prints the validation errors and exits with a non-zero code. Review the output and correct the config file at `~/.openacp/config.json`.
+If there are any issues with the config (e.g., a field that could not be migrated), the process prints the validation errors and exits with a non-zero code. Review the output and correct the config file at `<instance-root>/config.json`.
 
-For plugin adapters installed under `~/.openacp/plugins/`, re-install them after a major upgrade to ensure API compatibility:
+For plugin adapters installed under `<instance-root>/plugins/`, re-install them after a major upgrade to ensure API compatibility:
 
 ```bash
 openacp install @openacp/adapter-discord

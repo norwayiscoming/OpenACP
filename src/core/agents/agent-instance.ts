@@ -381,10 +381,11 @@ export class AgentInstance extends TypedEmitter<AgentInstanceEvents> {
     );
 
     const resolvedMcp = AgentInstance.mcpManager.resolve(mcpServers);
-    const response = await instance.connection.newSession({
-      cwd: workingDirectory,
-      mcpServers: resolvedMcp as any,
-    });
+    const response = await withAgentTimeout(
+      instance.connection.newSession({ cwd: workingDirectory, mcpServers: resolvedMcp as any }),
+      agentDef.name,
+      'newSession',
+    );
 
     log.info(response, 'newSession response');
     instance.sessionId = response.sessionId;
@@ -425,11 +426,11 @@ export class AgentInstance extends TypedEmitter<AgentInstanceEvents> {
     try {
       if (instance.agentCapabilities?.loadSession) {
         // Agent supports session/load — preferred over unstable session/resume
-        const response = await instance.connection.loadSession({
-          sessionId: agentSessionId,
-          cwd: workingDirectory,
-          mcpServers: resolvedMcp as any,
-        });
+        const response = await withAgentTimeout(
+          instance.connection.loadSession({ sessionId: agentSessionId, cwd: workingDirectory, mcpServers: resolvedMcp as any }),
+          agentDef.name,
+          'loadSession',
+        );
         instance.sessionId = agentSessionId;
         instance.initialSessionResponse = response;
         instance.debugTracer = createDebugTracer(agentSessionId, workingDirectory);
@@ -442,10 +443,11 @@ export class AgentInstance extends TypedEmitter<AgentInstanceEvents> {
           "Agent load complete",
         );
       } else {
-        const response = await instance.connection.unstable_resumeSession({
-          sessionId: agentSessionId,
-          cwd: workingDirectory,
-        });
+        const response = await withAgentTimeout(
+          instance.connection.unstable_resumeSession({ sessionId: agentSessionId, cwd: workingDirectory }),
+          agentDef.name,
+          'resumeSession',
+        );
         instance.sessionId = response.sessionId;
         instance.initialSessionResponse = response;
         instance.debugTracer = createDebugTracer(response.sessionId, workingDirectory);
@@ -463,10 +465,11 @@ export class AgentInstance extends TypedEmitter<AgentInstanceEvents> {
         { err, agentSessionId },
         "Resume failed, falling back to new session",
       );
-      const response = await instance.connection.newSession({
-        cwd: workingDirectory,
-        mcpServers: resolvedMcp as any,
-      });
+      const response = await withAgentTimeout(
+        instance.connection.newSession({ cwd: workingDirectory, mcpServers: resolvedMcp as any }),
+        agentDef.name,
+        'newSession (fallback)',
+      );
       instance.sessionId = response.sessionId;
       instance.initialSessionResponse = response;
       instance.debugTracer = createDebugTracer(response.sessionId, workingDirectory);
@@ -892,4 +895,29 @@ export class AgentInstance extends TypedEmitter<AgentInstanceEvents> {
       }
     });
   }
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+const AGENT_INIT_TIMEOUT_MS = 30_000;
+
+/**
+ * Wraps an ACP handshake call (newSession / loadSession / resumeSession) with
+ * a timeout so a non-responsive agent process fails fast instead of hanging
+ * the HTTP request and blocking a server thread indefinitely.
+ */
+function withAgentTimeout<T>(promise: Promise<T>, agentName: string, op: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error(
+        `Agent "${agentName}" did not respond to ${op} within ${AGENT_INIT_TIMEOUT_MS / 1000}s. ` +
+        `The agent process may have hung during initialization.`
+      ));
+    }, AGENT_INIT_TIMEOUT_MS);
+
+    promise.then(
+      (val) => { clearTimeout(timer); resolve(val); },
+      (err) => { clearTimeout(timer); reject(err); },
+    );
+  });
 }

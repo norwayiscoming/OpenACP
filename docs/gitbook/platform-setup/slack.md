@@ -136,7 +136,7 @@ Permission buttons (Allow / Deny) and the `/outputmode` command both require int
 
 ## Step 8: Configure OpenACP
 
-Edit `~/.openacp/config.json` and add the Slack section (see the [full configuration reference](../self-hosting/configuration.md) for all available options):
+Edit `<workspace>/.openacp/config.json` (e.g. `~/openacp-workspace/.openacp/config.json`) and add the Slack section (see the [full configuration reference](../self-hosting/configuration.md) for all available options):
 
 ```json
 {
@@ -285,7 +285,7 @@ The Slack adapter supports voice interactions — record audio clips and optiona
 Record an audio clip using Slack's built-in microphone button. OpenACP transcribes it using [Groq Whisper](https://console.groq.com/) (free tier: ~8 hours/day) and sends the transcribed text to the agent.
 
 1. Get a free Groq API key at [console.groq.com](https://console.groq.com/).
-2. Add this to `~/.openacp/config.json`:
+2. Add this to `<instance-root>/config.json`:
 
 ```json
 {
@@ -317,7 +317,7 @@ After restarting OpenACP, send an audio clip in a session channel. A transcripti
 
 TTS uses Microsoft Edge TTS (free, no API key required). The agent's reply is synthesized into audio and uploaded as a playable file in the session channel.
 
-Add this to `~/.openacp/config.json`:
+Add this to `<instance-root>/config.json`:
 
 ```json
 {

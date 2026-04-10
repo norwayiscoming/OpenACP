@@ -15,9 +15,12 @@ vi.mock('../../core/instance/instance-registry.js', () => ({
   })),
 }))
 
+vi.mock('node:crypto', () => ({
+  randomUUID: vi.fn().mockReturnValue('00000000-0000-0000-0000-000000000001'),
+}))
+
 vi.mock('../../core/instance/instance-context.js', () => ({
   getGlobalRoot: vi.fn().mockReturnValue('/Users/user/.openacp'),
-  generateSlug: vi.fn().mockImplementation((name: string) => name.toLowerCase().replace(/[^a-z0-9-]/g, '-')),
 }))
 
 vi.mock('node:fs')
@@ -108,34 +111,40 @@ describe('cmdInstancesCreate', () => {
     mockError.mockRestore()
   })
 
-  it('errors when .openacp already exists and is registered', async () => {
+  it('returns existing instance idempotently when .openacp exists and is registered', async () => {
     vi.mocked(fs.existsSync).mockReturnValue(true)
+    const existingId = 'existing-uuid-001'
     const mockRegistry = {
       load: vi.fn(),
       list: vi.fn().mockReturnValue([]),
-      getByRoot: vi.fn().mockReturnValue({ id: 'existing', root: '/path/.openacp' }),
+      getByRoot: vi.fn().mockReturnValue({ id: existingId, root: '/path/.openacp' }),
+      register: vi.fn(),
+      save: vi.fn(),
+      // resolveId returns existing id, registry not updated (already consistent)
+      resolveId: vi.fn().mockReturnValue({ id: existingId, registryUpdated: false }),
     }
     vi.mocked(InstanceRegistry).mockImplementation(function() { return mockRegistry } as any)
-
-    const mockExit = vi.spyOn(process, 'exit').mockImplementation((() => { throw new Error('exit') }) as any)
-    const mockError = vi.spyOn(console, 'error').mockImplementation(() => {})
-    await expect(cmdInstancesCreate(['--dir', '/path'])).rejects.toThrow('exit')
-    expect(mockError).toHaveBeenCalledWith(expect.stringContaining('existing'))
-    mockExit.mockRestore()
-    mockError.mockRestore()
+    vi.mocked(readInstanceInfo).mockReturnValue({ name: 'My Project', pid: null, apiPort: null, tunnelPort: null, runMode: null, channels: [] })
+    const mockLog = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    await cmdInstancesCreate(['--dir', '/path', '--no-interactive'])
+    expect(mockRegistry.resolveId).toHaveBeenCalledWith('/path/.openacp')
+    expect(mockRegistry.save).not.toHaveBeenCalled()  // registryUpdated = false
+    expect(readInstanceInfo).toHaveBeenCalledWith('/path/.openacp')
+    mockLog.mockRestore()
   })
 
   it('registers .openacp that exists but is not in registry', async () => {
-    // .openacp exists but registry has no entry for it
+    // .openacp exists but registry has no entry — resolveId generates a fresh UUID and registers it
     vi.mocked(fs.existsSync).mockReturnValue(true)
-    vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({ instanceName: 'My Project' }))
+    const freshId = 'fresh-uuid-abc-123'
     const mockRegistry = {
       load: vi.fn(),
       list: vi.fn().mockReturnValue([]),
       getByRoot: vi.fn().mockReturnValue(undefined),
-      uniqueId: vi.fn().mockReturnValue('my-project'),
       register: vi.fn(),
       save: vi.fn(),
+      // resolveId handles registration internally and signals the caller via registryUpdated
+      resolveId: vi.fn().mockReturnValue({ id: freshId, registryUpdated: true }),
     }
     vi.mocked(InstanceRegistry).mockImplementation(function() { return mockRegistry } as any)
     vi.mocked(readInstanceInfo).mockReturnValue({
@@ -143,10 +152,10 @@ describe('cmdInstancesCreate', () => {
       tunnelPort: null, runMode: null, channels: [],
     })
 
-    const mockLog = vi.spyOn(console, 'log').mockImplementation(() => {})
+    const mockLog = vi.spyOn(console, 'warn').mockImplementation(() => {})
     await cmdInstancesCreate(['--dir', '/Users/user/my-project'])
-    expect(mockRegistry.register).toHaveBeenCalledWith('my-project', '/Users/user/my-project/.openacp')
-    expect(mockRegistry.save).toHaveBeenCalled()
+    expect(mockRegistry.resolveId).toHaveBeenCalledWith('/Users/user/my-project/.openacp')
+    expect(mockRegistry.save).toHaveBeenCalled()  // registryUpdated = true
     mockLog.mockRestore()
   })
 
@@ -159,7 +168,6 @@ describe('cmdInstancesCreate', () => {
       load: vi.fn(),
       list: vi.fn().mockReturnValue([]),
       getByRoot: vi.fn().mockReturnValue(undefined),
-      uniqueId: vi.fn().mockReturnValue('my-instance'),
       register: vi.fn(),
       save: vi.fn(),
     }
@@ -190,8 +198,11 @@ describe('cmdInstancesCreate', () => {
     )
     expect(pluginsWriteCall).toBeDefined()
 
-    // registered in registry
-    expect(mockRegistry.register).toHaveBeenCalledWith('my-instance', '/Users/user/new-instance/.openacp')
+    // ID must be a UUID, not a slug
+    expect(mockRegistry.register).toHaveBeenCalledWith(
+      expect.stringMatching(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/),
+      '/Users/user/new-instance/.openacp'
+    )
     expect(mockRegistry.save).toHaveBeenCalled()
 
     mockLog.mockRestore()

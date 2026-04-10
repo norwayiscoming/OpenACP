@@ -186,7 +186,8 @@ export function formatInstanceStatus(root: string): { info: InstanceInfo; lines:
   const info = readInstanceInfo(root)
   if (!info.pid) return null
 
-  const displayPath = root.replace(os.homedir(), '~')
+  const workspaceDir = path.dirname(root)
+  const displayPath = workspaceDir.replace(os.homedir(), '~')
 
   const lines: string[] = []
   lines.push(`  PID:       ${info.pid}`)

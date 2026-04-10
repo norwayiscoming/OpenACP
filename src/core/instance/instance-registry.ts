@@ -1,5 +1,6 @@
 import fs from 'node:fs'
 import path from 'node:path'
+import { randomUUID } from 'node:crypto'
 
 export interface InstanceRegistryEntry {
   id: string
@@ -78,4 +79,44 @@ export class InstanceRegistry {
     while (this.data.instances[`${baseId}-${n}`]) n++
     return `${baseId}-${n}`
   }
+
+  /**
+   * Resolve the authoritative id for an instance root.
+   *
+   * config.json is the source of truth. If the registry entry disagrees with
+   * config.json, the registry is updated to match. If neither exists, a fresh
+   * UUID is generated and registered (but NOT written to config.json — the
+   * caller must call initInstanceFiles to persist it).
+   *
+   * Returns the resolved id and whether the registry was mutated (so callers
+   * can decide whether to persist with save()).
+   */
+  resolveId(instanceRoot: string): { id: string; registryUpdated: boolean } {
+    const configId = readIdFromConfig(instanceRoot)
+    const entry = this.getByRoot(instanceRoot)
+
+    // Mismatch: registry disagrees with config.json — trust config.json
+    if (entry && configId && entry.id !== configId) {
+      this.remove(entry.id)
+      this.register(configId, instanceRoot)
+      return { id: configId, registryUpdated: true }
+    }
+
+    const id = configId ?? entry?.id ?? randomUUID()
+
+    if (!this.getByRoot(instanceRoot)) {
+      this.register(id, instanceRoot)
+      return { id, registryUpdated: true }
+    }
+
+    return { id, registryUpdated: false }
+  }
+}
+
+/** Read the `id` field from an instance's config.json. Returns null if missing or invalid. */
+export function readIdFromConfig(instanceRoot: string): string | null {
+  try {
+    const raw = JSON.parse(fs.readFileSync(path.join(instanceRoot, 'config.json'), 'utf-8'))
+    return typeof raw.id === 'string' && raw.id ? raw.id : null
+  } catch { return null }
 }

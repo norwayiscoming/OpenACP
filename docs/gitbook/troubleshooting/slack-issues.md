@@ -15,7 +15,7 @@ If you haven't finished initial setup, see the [Slack Setup guide](../platform-s
 2. **Bot Token**: Settings → **OAuth & Permissions** → copy the `xoxb-…` token.
 3. **App-Level Token**: Settings → **Basic Information** → **App-Level Tokens** → generate one with the `connections:write` scope. It starts with `xapp-`.
 4. **Signing Secret**: Settings → **Basic Information** → **App Credentials** → Signing Secret.
-5. Add all three to `~/.openacp/config.json` under `channels.slack`.
+5. Add all three to `<instance-root>/config.json` under `channels.slack`.
 
 ---
 
@@ -117,4 +117,4 @@ If the download returns an HTML login page instead of binary audio, the `files:r
 **Solution:**
 1. Add the required scope: **OAuth & Permissions → Bot Token Scopes → `channels:manage`** (or `groups:write` for private).
 2. Reinstall the app after adding scopes.
-3. If duplicate channels have accumulated, delete the extras in Slack and clear `startupChannelId` from `~/.openacp/config.json`. OpenACP will create one clean channel on next startup and save its ID for reuse.
+3. If duplicate channels have accumulated, delete the extras in Slack and clear `startupChannelId` from `<instance-root>/config.json`. OpenACP will create one clean channel on next startup and save its ID for reuse.

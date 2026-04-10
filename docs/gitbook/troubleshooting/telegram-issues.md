@@ -14,7 +14,7 @@ If you haven't finished initial setup, see the [Telegram Setup guide](../platfor
 
 **Solution:**
 1. Open your Telegram group → **Edit → Administrators** → add your bot and enable at minimum "Manage Topics".
-2. Confirm the chat ID in `~/.openacp/config.json` matches the group. The ID of a group is negative (e.g., `-1001234567890`).
+2. Confirm the chat ID in `<instance-root>/config.json` matches the group. The ID of a group is negative (e.g., `-1001234567890`).
 3. Restart OpenACP after making changes.
 
 ---
@@ -95,7 +95,7 @@ If you haven't finished initial setup, see the [Telegram Setup guide](../platfor
 **Cause:** Either the concurrent session limit has been reached, or your user ID is not in `allowedUserIds`.
 
 **Solution:**
-1. Check `security.maxConcurrentSessions` in `~/.openacp/config.json` — the default is low. Increase it if needed.
+1. Check `security.maxConcurrentSessions` in `<instance-root>/config.json` — the default is low. Increase it if needed.
 2. Check `security.allowedUserIds` — if the array is non-empty, only listed user IDs can create sessions. Find your Telegram user ID with `@userinfobot` and add it.
 
 ---

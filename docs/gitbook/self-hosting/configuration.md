@@ -2,13 +2,13 @@
 
 ## Config File Location
 
-All configuration lives in a single JSON file:
+Each instance has its own configuration file:
 
 ```
-~/.openacp/config.json
+<workspace>/.openacp/config.json
 ```
 
-The path can be overridden with the `OPENACP_CONFIG_PATH` environment variable. The file is created automatically on first run with safe defaults.
+For example, the default instance lives at `~/openacp-workspace/.openacp/config.json`. The path can be overridden with the `OPENACP_CONFIG_PATH` environment variable. The file is created automatically on first run with safe defaults.
 
 ## Interactive Editor
 
@@ -32,7 +32,6 @@ This runs `runReconfigure()`, which loads your existing config, shows a summary,
 
 - **Channels** — Add, modify, disable, or delete channel configurations. For each configured channel you can choose to modify settings, disable the bot without losing credentials, or permanently delete the channel config.
 - **Agents** — Select which installed agent to use as the default.
-- **Workspace** — Change the base directory where agent working directories are created.
 - **Run Mode** — Switch between foreground and daemon mode, and toggle autostart on boot.
 - **Integrations** — Configure optional integrations (e.g., Claude CLI).
 
@@ -43,10 +42,10 @@ For the machine-readable schema with all field types and defaults, see the [Conf
 With the microkernel plugin architecture, plugin-specific settings (Telegram botToken, speech providers, tunnel config, etc.) are now stored in per-plugin settings files:
 
 ```
-~/.openacp/plugins/<plugin-name>/settings.json
+<instance-root>/plugins/data/<plugin-name>/settings.json
 ```
 
-The core `config.json` only contains: `defaultAgent`, `workspace`, `security`, `logging`, `runMode`, `autoStart`, and `sessionStore`.
+The core `config.json` only contains: `defaultAgent`, `security`, `logging`, `runMode`, `autoStart`, and `sessionStore`.
 
 Fields like `channels`, `tunnel`, `speech`, and `usage` in `config.json` are **legacy (auto-migrated)** — they are automatically migrated to their respective plugin `settings.json` files on startup. Existing configurations continue to work without manual changes.
 
@@ -116,16 +115,6 @@ Named map of ACP-compatible agent binaries. Each entry describes how to spawn th
 
 The agent key used when a new session is created. Must exist in `agents`.
 
-### `workspace`
-
-```json
-"workspace": {
-  "baseDir": "~/openacp-workspace"
-}
-```
-
-Base directory for agent working directories. Named workspaces are subdirectories under this path. The `~` prefix is expanded to the home directory.
-
 ### `security`
 
 ```json
@@ -149,7 +138,7 @@ See [Security](security.md) for details.
 ```json
 "logging": {
   "level": "info",
-  "logDir": "~/.openacp/logs",
+  "logDir": "<instance-root>/logs",
   "maxFileSize": "10m",
   "maxFiles": 7,
   "sessionLogRetentionDays": 30
@@ -294,6 +283,6 @@ Automatic migrations run at startup before validation. Current migrations:
 
 - `add-tunnel-section` — Adds the `tunnel` block if absent (pre-0.3 configs).
 - `fix-agent-commands` — Renames legacy agent command names to their current equivalents.
-- `migrate-agents-to-store` — Moves agent definitions from `config.json` into the separate `~/.openacp/agents.json` store.
+- `migrate-agents-to-store` — Moves agent definitions from `config.json` into the separate `<instance-root>/agents.json` store.
 
 Migrations mutate the raw JSON in place and write it back to disk if any change was made. No action is required from you.

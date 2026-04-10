@@ -14,7 +14,7 @@ Yes. OpenACP supports multiple channel adapters simultaneously. You can enable T
 
 ### Is my data private? Does OpenACP send data anywhere?
 
-OpenACP itself does not collect or transmit any telemetry. All data stays on your machine in `~/.openacp/`. Your messages are sent directly from your machine to the AI agent (e.g., Claude, Codex) via the agent's own API. Review each agent's privacy policy independently — OpenACP is just the bridge.
+OpenACP itself does not collect or transmit any telemetry. All data stays on your machine in the instance directory (`<workspace>/.openacp/`). Your messages are sent directly from your machine to the AI agent (e.g., Claude, Codex) via the agent's own API. Review each agent's privacy policy independently — OpenACP is just the bridge.
 
 ---
 
@@ -32,7 +32,7 @@ Yes. Telegram is the default adapter used in the quick-start guide, but it is no
 
 ### How many concurrent sessions can I run?
 
-This is controlled by `security.maxConcurrentSessions` in `~/.openacp/config.json`. The default is intentionally low to prevent resource exhaustion. Each session spawns one agent subprocess — increase the limit carefully based on available RAM and CPU.
+This is controlled by `security.maxConcurrentSessions` in the instance `config.json`. The default is intentionally low to prevent resource exhaustion. Each session spawns one agent subprocess — increase the limit carefully based on available RAM and CPU.
 
 ```json
 "security": {
@@ -50,11 +50,12 @@ OpenACP works with any agent that implements the ACP protocol. If your agent use
 
 ### How do I back up my sessions and configuration?
 
-All persistent state is stored in `~/.openacp/`:
+All persistent state is stored in the instance directory (`<workspace>/.openacp/`):
 - `config.json` — your full configuration
-- `sessions/` — session metadata and history
+- `sessions.json` — session metadata
+- `history/` — conversation history
 
-Back up the entire `~/.openacp/` directory. To restore on a new machine, copy it back and reinstall OpenACP (`npm install -g @openacp/cli`).
+Back up the entire `<workspace>/.openacp/` directory (e.g. `~/openacp-workspace/.openacp/`). To restore on a new machine, copy it back, reinstall OpenACP (`npm install -g @openacp/cli`), and register the instance with `openacp instances create --dir <workspace>`.
 
 ---
 
@@ -84,7 +85,7 @@ ps aux | grep claude   # or codex, gemini, etc.
 kill <pid>
 ```
 
-On next startup, OpenACP will create fresh sessions. If a session record in `~/.openacp/sessions/` references an agent session that no longer exists, OpenACP will fall back to starting a new agent session automatically rather than crashing.
+On next startup, OpenACP will create fresh sessions. If a session record in `<instance-root>/sessions.json` references an agent session that no longer exists, OpenACP will fall back to starting a new agent session automatically rather than crashing.
 
 ---
 

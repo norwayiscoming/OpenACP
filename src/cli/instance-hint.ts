@@ -1,9 +1,12 @@
 import os from 'node:os'
+import path from 'node:path'
 
 /**
- * Print which instance root is being used.
+ * Print which workspace is being used.
+ * `root` is the .openacp/ path — display the parent (workspace dir).
  */
 export function printInstanceHint(root: string): void {
-  const displayPath = root.replace(os.homedir(), '~')
+  const workspaceDir = path.dirname(root)
+  const displayPath = workspaceDir.replace(os.homedir(), '~')
   console.log(`  Workspace: ${displayPath}`)
 }

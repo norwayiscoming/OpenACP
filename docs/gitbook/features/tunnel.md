@@ -36,7 +36,7 @@ Uses `tailscale funnel` to expose a port over your Tailscale network. Requires T
 
 ## Configuration
 
-Add a `tunnel` block to `~/.openacp/config.json` (see [Configuration](../self-hosting/configuration.md) for the full `tunnel` config reference):
+Add a `tunnel` block to `<instance-root>/config.json` (see [Configuration](../self-hosting/configuration.md) for the full `tunnel` config reference):
 
 ```json
 {

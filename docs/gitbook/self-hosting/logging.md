@@ -20,7 +20,7 @@ The default level is `info`.
 ```json
 "logging": {
   "level": "info",
-  "logDir": "~/.openacp/logs",
+  "logDir": "<instance-root>/logs",
   "maxFileSize": "10m",
   "maxFiles": 7,
   "sessionLogRetentionDays": 30
@@ -30,19 +30,19 @@ The default level is `info`.
 | Field | Type | Default | Description |
 |---|---|---|---|
 | `level` | string | `"info"` | Minimum level to emit |
-| `logDir` | string | `"~/.openacp/logs"` | Directory for log files. `~` is expanded to the home directory. |
+| `logDir` | string | `"<instance-root>/logs"` | Directory for log files. Defaults to the `logs/` subdirectory of the instance root. |
 | `maxFileSize` | string \| number | `"10m"` | Maximum size per log file before rotation. Accepts bytes or suffixes: `k`, `m`, `g`. |
 | `maxFiles` | number | `7` | Number of rotated log files to keep. |
 | `sessionLogRetentionDays` | number | `30` | Per-session log files older than this are deleted at startup. |
 
-Change these values via `openacp config` (Logging section) or by editing `~/.openacp/config.json` directly.
+Change these values via `openacp config` (Logging section) or by editing `<instance-root>/config.json` directly.
 
 ## Log Files
 
 The main log file is:
 
 ```
-~/.openacp/logs/openacp.log
+<instance-root>/logs/openacp.log
 ```
 
 This file receives all log output from the running process, including the daemon's stdout and stderr when in daemon mode. It is rotated using `pino-roll` when it reaches `maxFileSize`. Up to `maxFiles` rotated files are retained.
@@ -56,7 +56,7 @@ openacp logs
 Or directly:
 
 ```bash
-tail -f ~/.openacp/logs/openacp.log
+tail -f ~/openacp-workspace/.openacp/logs/openacp.log
 ```
 
 ## Per-Session Logs
@@ -64,12 +64,12 @@ tail -f ~/.openacp/logs/openacp.log
 Each session gets its own log file under:
 
 ```
-~/.openacp/logs/sessions/<sessionId>.log
+<instance-root>/logs/sessions/<sessionId>.log
 ```
 
 Session log entries are written simultaneously to the session file and to the main `openacp.log` (with the `sessionId` field present on every record). This lets you review a single session's history in isolation without filtering the combined log.
 
-Session log files are cleaned up automatically at startup. Any file in `~/.openacp/logs/sessions/` whose last modification time is older than `sessionLogRetentionDays` days is deleted.
+Session log files are cleaned up automatically at startup. Any file in `<instance-root>/logs/sessions/` whose last modification time is older than `sessionLogRetentionDays` days is deleted.
 
 ## Debug Mode
 

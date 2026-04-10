@@ -16,7 +16,13 @@ export async function promptForInstance(opts: {
   const globalRoot = getGlobalRoot()
   const globalConfigExists = fs.existsSync(path.join(globalRoot, 'config.json'))
   const cwd = process.cwd()
-  const localRoot = path.join(cwd, '.openacp')
+  const isHomeDir = path.resolve(cwd) === path.resolve(os.homedir())
+
+  // If CWD is home dir, redirect to ~/openacp-workspace (home dir conflicts with shared store)
+  const defaultWorkspace = path.join(os.homedir(), 'openacp-workspace')
+  const createRoot = isHomeDir
+    ? path.join(defaultWorkspace, '.openacp')
+    : path.join(cwd, '.openacp')
 
   // Walk up from CWD to find nearest parent .openacp/
   const detectedParent = findParentInstance(cwd, globalRoot)
@@ -30,7 +36,15 @@ export async function promptForInstance(opts: {
   // Nothing exists anywhere — no global config, no detected parent
   if (!globalConfigExists && !detectedParent) {
     if (instances.length === 0) {
-      if (opts.allowCreate) return localRoot
+      if (opts.allowCreate) {
+        if (isHomeDir) {
+          fs.mkdirSync(defaultWorkspace, { recursive: true })
+          console.log(`\n  Home directory cannot be used as workspace.`)
+          console.log(`  Created \x1b[1m~/openacp-workspace\x1b[0m as default workspace.\n`)
+          console.log(`  \x1b[2mTip: cd ~/openacp-workspace\x1b[0m\n`)
+        }
+        return createRoot
+      }
       console.error('No OpenACP instances found. Run `openacp` in your workspace directory to set up.')
       process.exit(1)
     }
@@ -56,7 +70,8 @@ export async function promptForInstance(opts: {
         const parsed = JSON.parse(raw)
         if (parsed.instanceName) name = parsed.instanceName
       } catch { /* use id */ }
-      const displayPath = e.root.replace(os.homedir(), '~')
+      const workspaceDir = path.dirname(e.root)
+      const displayPath = workspaceDir.replace(os.homedir(), '~')
       return { value: e.root, label: `${name} (${displayPath})` }
     })
 
@@ -68,8 +83,17 @@ export async function promptForInstance(opts: {
       const parsed = JSON.parse(raw)
       if (parsed.instanceName) name = parsed.instanceName
     } catch { /* use dir name */ }
-    const displayPath = detectedParent.replace(os.homedir(), '~')
+    const workspaceDir = path.dirname(detectedParent)
+    const displayPath = workspaceDir.replace(os.homedir(), '~')
     instanceOptions.unshift({ value: detectedParent, label: `${name} (${displayPath})` })
+  }
+
+  // Operational commands (not allowCreate): auto-select if only 1 instance
+  if (!opts.allowCreate && instanceOptions.length === 1) {
+    const selected = instanceOptions[0]!
+    const displayPath = selected.value.replace(os.homedir(), '~')
+    console.log(`  \x1b[2m▸ Using: ${selected.label}\x1b[0m`)
+    return selected.value
   }
 
   // Build prompt options
@@ -79,8 +103,11 @@ export async function promptForInstance(opts: {
   }))
 
   if (opts.allowCreate) {
-    const localDisplay = localRoot.replace(os.homedir(), '~')
-    options.push({ value: localRoot, label: `New local workspace (${localDisplay})` })
+    const createDisplay = createRoot.replace(os.homedir(), '~')
+    const createLabel = isHomeDir
+      ? `New workspace (~/openacp-workspace)`
+      : `New local workspace (${createDisplay})`
+    options.push({ value: createRoot, label: createLabel })
   }
 
   const clack = await import('@clack/prompts')
@@ -93,8 +120,13 @@ export async function promptForInstance(opts: {
     process.exit(0)
   }
 
-  if (choice === localRoot) {
-    console.log(`\x1b[2mTip: next time use \`openacp --local\`\x1b[0m`)
+  if (choice === createRoot) {
+    if (isHomeDir) {
+      fs.mkdirSync(defaultWorkspace, { recursive: true })
+      console.log(`\n  \x1b[2mTip: cd ~/openacp-workspace\x1b[0m`)
+    } else {
+      console.log(`\x1b[2mTip: next time use \`openacp --local\`\x1b[0m`)
+    }
   }
 
   return choice as string

@@ -175,6 +175,84 @@ describe('resolveInstanceRoot', () => {
       }
     })
 
+    it('home dir fallback: returns ~/openacp-workspace/.openacp when config exists', () => {
+      const home = os.homedir()
+      const wsDir = path.join(home, 'openacp-workspace', '.openacp')
+      const configPath = path.join(wsDir, 'config.json')
+      const wsExisted = fs.existsSync(configPath)
+
+      // Ensure the workspace config exists for this test
+      if (!wsExisted) {
+        fs.mkdirSync(wsDir, { recursive: true })
+        fs.writeFileSync(configPath, '{}')
+      }
+
+      const saved = process.env.OPENACP_INSTANCE_ROOT
+      delete process.env.OPENACP_INSTANCE_ROOT
+      try {
+        const result = resolveInstanceRoot({ cwd: home })
+        expect(result).toBe(wsDir)
+      } finally {
+        if (saved !== undefined) process.env.OPENACP_INSTANCE_ROOT = saved
+        else delete process.env.OPENACP_INSTANCE_ROOT
+        // Clean up only if we created it
+        if (!wsExisted) {
+          fs.rmSync(configPath)
+          // Only remove dirs if we created them (they may have pre-existed)
+          try { fs.rmdirSync(wsDir) } catch {}
+        }
+      }
+    })
+
+    it('home dir fallback: returns null when ~/openacp-workspace/.openacp/config.json does not exist', () => {
+      const home = os.homedir()
+      const wsConfigPath = path.join(home, 'openacp-workspace', '.openacp', 'config.json')
+
+      // Only run the core assertion if the file genuinely doesn't exist
+      // (otherwise this test would be a false positive)
+      const saved = process.env.OPENACP_INSTANCE_ROOT
+      delete process.env.OPENACP_INSTANCE_ROOT
+      try {
+        if (!fs.existsSync(wsConfigPath)) {
+          const result = resolveInstanceRoot({ cwd: home })
+          expect(result).toBeNull()
+        } else {
+          // If the file does exist in the real environment, create a temp home to test
+          baseDir = path.join(tmpdir(), `test-home-fallback-${Date.now()}`)
+          fs.mkdirSync(baseDir, { recursive: true })
+          // Mock homedir to our temp dir
+          const origHomedir = os.homedir
+          os.homedir = () => baseDir
+          try {
+            const result = resolveInstanceRoot({ cwd: baseDir })
+            expect(result).toBeNull()
+          } finally {
+            os.homedir = origHomedir
+          }
+        }
+      } finally {
+        if (saved !== undefined) process.env.OPENACP_INSTANCE_ROOT = saved
+        else delete process.env.OPENACP_INSTANCE_ROOT
+      }
+    })
+
+    it('home dir fallback: does NOT check ~/openacp-workspace when CWD is not home dir', () => {
+      baseDir = path.join(tmpdir(), `test-not-home-${Date.now()}`)
+      fs.mkdirSync(baseDir, { recursive: true })
+
+      const saved = process.env.OPENACP_INSTANCE_ROOT
+      delete process.env.OPENACP_INSTANCE_ROOT
+      try {
+        // Even if ~/openacp-workspace/.openacp/config.json exists, it should
+        // not be returned when CWD is not the home directory
+        const result = resolveInstanceRoot({ cwd: baseDir })
+        expect(result).toBeNull()
+      } finally {
+        if (saved !== undefined) process.env.OPENACP_INSTANCE_ROOT = saved
+        else delete process.env.OPENACP_INSTANCE_ROOT
+      }
+    })
+
     it('falls back to OPENACP_INSTANCE_ROOT env when walk-up finds nothing', () => {
       baseDir = path.join(tmpdir(), `test-env-fallback-${Date.now()}`)
       fs.mkdirSync(baseDir, { recursive: true })

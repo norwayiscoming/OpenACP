@@ -49,7 +49,7 @@ src/
   index.ts            Public API exports (for use as a library)
 
   core/               The heart of OpenACP
-    config.ts         Zod-validated config loader (~/.openacp/config.json)
+    config.ts         Zod-validated config loader (<instance-root>/config.json)
     core.ts           OpenACPCore — the main orchestrator
     session.ts        Session lifecycle, prompt queue, auto-naming
     agent-instance.ts ACP subprocess client — spawns and talks to agents

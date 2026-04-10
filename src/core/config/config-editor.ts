@@ -29,6 +29,7 @@ async function input(opts: { message: string; default?: string; validate?: (val:
   return result as string
 }
 import { installAutoStart, uninstallAutoStart, isAutoStartInstalled, isAutoStartSupported } from '../../cli/autostart.js'
+import { resolveInstanceId } from '../../cli/resolve-instance-id.js'
 import { expandHome } from './config.js'
 
 // ANSI color helpers
@@ -362,10 +363,11 @@ async function editLogging(config: Config, updates: ConfigUpdates): Promise<void
 
 // --- Edit: Run Mode ---
 
-async function editRunMode(config: Config, updates: ConfigUpdates): Promise<void> {
+async function editRunMode(config: Config, updates: ConfigUpdates, instanceRoot?: string): Promise<void> {
   const currentMode = config.runMode ?? 'foreground'
   const currentAutoStart = config.autoStart ?? false
-  const autoStartInstalled = isAutoStartInstalled()
+  const instanceId = instanceRoot ? resolveInstanceId(instanceRoot) : 'default'
+  const autoStartInstalled = isAutoStartInstalled(instanceId)
   const autoStartSupported = isAutoStartSupported()
 
   console.log(header('Run Mode'))
@@ -408,7 +410,7 @@ async function editRunMode(config: Config, updates: ConfigUpdates): Promise<void
     if (choice === 'daemon') {
       updates.runMode = 'daemon'
       const logDir = (config.logging?.logDir) ?? '~/.openacp/logs'
-      const result = installAutoStart(expandHome(logDir))
+      const result = installAutoStart(expandHome(logDir), instanceRoot!, instanceId)
       if (result.success) {
         updates.autoStart = true
         console.log(ok('Switched to daemon mode with auto-start'))
@@ -420,7 +422,7 @@ async function editRunMode(config: Config, updates: ConfigUpdates): Promise<void
     if (choice === 'foreground') {
       updates.runMode = 'foreground'
       updates.autoStart = false
-      uninstallAutoStart()
+      uninstallAutoStart(instanceId)
       console.log(ok('Switched to foreground mode'))
     }
 
@@ -431,7 +433,7 @@ async function editRunMode(config: Config, updates: ConfigUpdates): Promise<void
       })()
 
       if (autoStartCurrent) {
-        const result = uninstallAutoStart()
+        const result = uninstallAutoStart(instanceId)
         updates.autoStart = false
         if (result.success) {
           console.log(ok('Auto-start disabled'))
@@ -440,7 +442,7 @@ async function editRunMode(config: Config, updates: ConfigUpdates): Promise<void
         }
       } else {
         const logDir = (config.logging?.logDir) ?? '~/.openacp/logs'
-        const result = installAutoStart(expandHome(logDir))
+        const result = installAutoStart(expandHome(logDir), instanceRoot!, instanceId)
         updates.autoStart = result.success
         if (result.success) {
           console.log(ok('Auto-start enabled'))
@@ -717,7 +719,7 @@ export async function runConfigEditor(
       else if (choice === 'agent') await editAgent(config, sectionUpdates)
       else if (choice === 'security') await editSecurity(config, sectionUpdates, settingsManager)
       else if (choice === 'logging') await editLogging(config, sectionUpdates)
-      else if (choice === 'runMode') await editRunMode(config, sectionUpdates)
+      else if (choice === 'runMode') await editRunMode(config, sectionUpdates, instanceRoot)
       else if (choice === 'api') await editApi(config, sectionUpdates, settingsManager)
       else if (choice === 'tunnel') await editTunnel(config, sectionUpdates, settingsManager)
 

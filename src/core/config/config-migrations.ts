@@ -1,3 +1,6 @@
+import fs from "node:fs";
+import path from "node:path";
+import os from "node:os";
 import { createChildLogger } from "../utils/log.js";
 const log = createChildLogger({ module: "config-migrations" });
 
@@ -29,6 +32,34 @@ export const migrations: Migration[] = [
       delete raw.displayVerbosity;
       log.info("Removed legacy displayVerbosity key from config");
       return true;
+    },
+  },
+  {
+    name: "add-instance-id",
+    apply(raw, ctx) {
+      if (raw.id) return false; // already has id, skip
+      if (!ctx?.configDir) return false; // no context, can't look up
+
+      // ctx.configDir === instanceRoot (config.json lives at instanceRoot/config.json)
+      const instanceRoot = ctx.configDir;
+
+      try {
+        const registryPath = path.join(os.homedir(), ".openacp", "instances.json");
+        const data = JSON.parse(fs.readFileSync(registryPath, "utf-8"));
+        const instances = data?.instances ?? {};
+        const entry = Object.values(instances).find(
+          (e: any) => e.root === instanceRoot,
+        ) as { id?: string } | undefined;
+        if (entry?.id) {
+          raw.id = entry.id;
+          log.info({ instanceRoot }, "Migrated: added id to config from registry");
+          return true;
+        }
+      } catch {
+        /* best-effort — registry may not exist on fresh installs */
+      }
+
+      return false;
     },
   },
 ];

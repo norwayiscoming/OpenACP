@@ -10,7 +10,7 @@ vi.mock('@clack/prompts', () => ({
 }))
 
 // Mock autostart
-vi.mock('../core/autostart.js', () => ({
+vi.mock('../cli/autostart.js', () => ({
   installAutoStart: vi.fn(() => ({ success: true })),
   uninstallAutoStart: vi.fn(() => ({ success: true })),
   isAutoStartInstalled: vi.fn(() => false),

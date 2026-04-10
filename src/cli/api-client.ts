@@ -1,5 +1,6 @@
 import * as fs from 'node:fs'
 import * as path from 'node:path'
+import { setTimeout as sleep } from 'node:timers/promises'
 
 function defaultPortFile(root: string): string {
   return path.join(root, 'api.port')
@@ -7,6 +8,24 @@ function defaultPortFile(root: string): string {
 
 function defaultSecretFile(root: string): string {
   return path.join(root, 'api-secret')
+}
+
+/**
+ * Poll the api.port file until it appears (daemon has bound its port) or timeout.
+ * Returns the port number, or null if the daemon did not start within timeoutMs.
+ */
+export async function waitForPortFile(
+  portFilePath: string,
+  timeoutMs = 5000,
+  intervalMs = 100,
+): Promise<number | null> {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    const port = readApiPort(portFilePath)
+    if (port !== null) return port
+    await sleep(intervalMs)
+  }
+  return readApiPort(portFilePath)
 }
 
 export function readApiPort(portFilePath?: string, instanceRoot?: string): number | null {

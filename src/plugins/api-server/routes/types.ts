@@ -14,6 +14,8 @@ export interface RouteDeps {
   topicManager?: TopicManager;
   startedAt: number;
   getVersion: () => string;
+  /** Unique ID of this instance — included in health response for instance verification. */
+  instanceId: string;
   commandRegistry?: CommandRegistry;
   /** Auth pre-handler for routes registered without global auth (e.g. system routes). */
   authPreHandler?: preHandlerHookHandler;

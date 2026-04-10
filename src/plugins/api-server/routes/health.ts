@@ -18,9 +18,12 @@ export async function systemRoutes(
   // Sensitive details (memory, adapters, session counts) are omitted intentionally:
   // the tunnel exposes this endpoint to the internet, so leaking internal topology
   // or session counts would aid reconnaissance.
+  // instanceId is included so callers (e.g. `instances list`) can verify this response
+  // belongs to the expected instance and not an unrelated process on the same port.
   app.get('/health', async () => {
     return {
       status: 'ok',
+      instanceId: deps.instanceId,
       uptime: Date.now() - deps.startedAt,
       version: deps.getVersion(),
     };

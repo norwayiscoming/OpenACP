@@ -230,11 +230,21 @@ function createApiServerPlugin(): OpenACPPlugin {
       // Build auth pre-handler for route-level auth on unauthenticated route groups
       const routeAuthPreHandler = createAuthPreHandler(() => secret, () => jwtSecret, tokenStore)
 
+      // Resolve instance ID from registry — used in health response for instance verification
+      const { InstanceRegistry } = await import('../../core/instance/instance-registry.js')
+      const { getGlobalRoot } = await import('../../core/instance/instance-context.js')
+      const globalRoot = getGlobalRoot()
+      const instanceReg = new InstanceRegistry(path.join(globalRoot, 'instances.json'))
+      instanceReg.load()
+      const instanceEntry = instanceReg.getByRoot(instanceRoot)
+      const workspaceId = instanceEntry?.id ?? 'main'
+
       const deps: RouteDeps = {
         core,
         topicManager,
         startedAt,
         getVersion,
+        instanceId: workspaceId,
         commandRegistry,
         authPreHandler: routeAuthPreHandler,
         contextManager,
@@ -252,15 +262,6 @@ function createApiServerPlugin(): OpenACPPlugin {
       server.registerPlugin('/api/v1/commands', async (app) => commandRoutes(app, deps))
       server.registerPlugin('/api/v1/auth', async (app) => authRoutes(app, { tokenStore, getJwtSecret: () => jwtSecret }))
       server.registerPlugin('/api/v1/plugins', async (app) => pluginRoutes(app, deps))
-
-      // Workspace info route (authenticated)
-      const { InstanceRegistry } = await import('../../core/instance/instance-registry.js')
-      const { getGlobalRoot } = await import('../../core/instance/instance-context.js')
-      const globalRoot = getGlobalRoot()
-      const instanceReg = new InstanceRegistry(path.join(globalRoot, 'instances.json'))
-      instanceReg.load()
-      const instanceEntry = instanceReg.getByRoot(instanceRoot)
-      const workspaceId = instanceEntry?.id ?? 'main'
       const appConfig = core.configManager.get()
       const workspaceName = (appConfig as Record<string, unknown>).instanceName as string ?? 'Main'
       const workspaceDir = path.dirname(instanceRoot)

@@ -23,17 +23,45 @@ export async function buildInstanceListEntries(): Promise<InstanceListEntry[]> {
   const registryPath = path.join(getGlobalRoot(), 'instances.json')
   const registry = new InstanceRegistry(registryPath)
   registry.load()
-  return registry.list().map(entry => {
+  const entries = registry.list()
+  return Promise.all(entries.map(async entry => {
     const info = readInstanceInfo(entry.root)
+    const status = info.pid
+      ? 'running'
+      // PID check failed but API port exists — do a real-time HTTP health check
+      // to catch processes that are alive but have no valid PID file (e.g. stale/missing PID file after restart)
+      : (info.apiPort && await isApiResponding(info.apiPort, entry.id) ? 'running' : 'stopped')
     return {
       id: entry.id,
       name: info.name,
       directory: path.dirname(entry.root),
       root: entry.root,
-      status: (info.pid ? 'running' : 'stopped') as 'running' | 'stopped',
+      status: status as 'running' | 'stopped',
       port: info.apiPort,
     }
-  })
+  }))
+}
+
+/**
+ * Checks if the OpenACP API server on the given port belongs to the expected instance.
+ *
+ * Verifies instanceId in the response to guard against a different process occupying the port.
+ * Used as a fallback when the PID file is missing or stale.
+ */
+async function isApiResponding(port: number, expectedInstanceId: string): Promise<boolean> {
+  try {
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), 2000)
+    const res = await fetch(`http://127.0.0.1:${port}/api/v1/system/health`, {
+      signal: controller.signal,
+    })
+    clearTimeout(timeout)
+    if (!res.ok) return false
+    const body = await res.json() as { instanceId?: string }
+    return body.instanceId === expectedInstanceId
+  } catch {
+    return false
+  }
 }
 
 export async function cmdInstances(args: string[] = [], parentFlags?: { dir?: string; from?: string; name?: string }): Promise<void> {

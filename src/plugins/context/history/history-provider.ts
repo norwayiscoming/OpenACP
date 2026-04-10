@@ -26,6 +26,16 @@ const EMPTY_RESULT: ContextResult = {
   timeRange: { start: "", end: "" },
 };
 
+/**
+ * Context provider backed by the local HistoryStore (recorded by HistoryRecorder).
+ *
+ * Always available (does not require git or external tools).
+ * Supports `type: "session"` (exact match) and `type: "latest"` (N most recent).
+ * Branch/commit/PR queries are unsupported — the EntireProvider handles those.
+ *
+ * Context detail is auto-downgraded from "full" → "balanced" → "compact" and
+ * oldest sessions are dropped if the result would exceed `maxTokens`.
+ */
 export class HistoryProvider implements ContextProvider {
   readonly name = "local";
 

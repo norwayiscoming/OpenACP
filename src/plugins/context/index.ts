@@ -8,6 +8,15 @@ import { HistoryRecorder } from './history/history-recorder.js'
 import { HistoryStore } from './history/history-store.js'
 import { Hook } from '../../core/events.js'
 
+/**
+ * Context plugin — records conversation history and injects it into agent prompts.
+ *
+ * Setup wires up five middleware hooks that together keep a rolling history of every
+ * session on disk and prepend it to the next agent prompt via `agent:beforePrompt`.
+ * Two providers are registered in priority order:
+ *   1. HistoryProvider (local) — always available, covers live/recent sessions
+ *   2. EntireProvider — available when the repo has the Entire checkpoint branch
+ */
 const contextPlugin: OpenACPPlugin = {
   name: '@openacp/context',
   version: '1.0.0',

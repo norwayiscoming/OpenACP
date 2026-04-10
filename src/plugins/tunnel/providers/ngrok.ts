@@ -6,6 +6,14 @@ const log = createChildLogger({ module: 'ngrok-tunnel' })
 
 const SIGKILL_TIMEOUT_MS = 5_000
 
+/**
+ * Tunnel provider using ngrok (https://ngrok.com).
+ *
+ * Requires ngrok to be installed and an auth token configured via `options.authtoken`.
+ * Auth token is passed via the `NGROK_AUTHTOKEN` environment variable (not CLI args)
+ * to avoid leaking it in `ps aux` output. Supports v2 (*.ngrok.io) and v3
+ * (*.ngrok-free.app, *.ngrok.app) URL formats.
+ */
 export class NgrokTunnelProvider implements TunnelProvider {
   private child: ChildProcess | null = null
   private publicUrl = ''

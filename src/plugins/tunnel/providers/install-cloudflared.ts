@@ -1,5 +1,9 @@
 import { ensureBinary, type BinarySpec } from '../../../core/utils/install-binary.js'
 
+// cloudflared is not available on all systems via a package manager, and
+// users of the OpenACP managed tunnel provider don't need to install it themselves.
+// We download the official prebuilt binary from GitHub Releases on first use
+// and cache it in the plugin's bin directory.
 export const CLOUDFLARED_SPEC: BinarySpec = {
   name: 'cloudflared',
   githubBaseUrl: 'https://github.com/cloudflare/cloudflared/releases/latest/download',
@@ -19,6 +23,10 @@ export const CLOUDFLARED_SPEC: BinarySpec = {
   isArchive: (url) => url.endsWith('.tgz'),
 }
 
+/**
+ * Ensure the cloudflared binary is available, downloading it if needed.
+ * Returns the path to the binary.
+ */
 export async function ensureCloudflared(): Promise<string> {
   return ensureBinary(CLOUDFLARED_SPEC)
 }

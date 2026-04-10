@@ -1,11 +1,22 @@
 import type { Attachment } from "../../../core/types.js";
 
+/**
+ * Root structure persisted to disk for one session.
+ * `version` allows future schema migrations without breaking existing files.
+ */
 export interface SessionHistory {
   version: 1;
   sessionId: string;
   turns: Turn[];
 }
 
+/**
+ * One complete user→assistant exchange within a session.
+ *
+ * User turns carry `content` + optional `attachments`.
+ * Assistant turns carry `steps` (the sequence of actions the agent took)
+ * plus optional `usage` (token/cost accounting) and `stopReason`.
+ */
 export interface Turn {
   index: number;
   role: "user" | "assistant";

@@ -23,6 +23,13 @@ function getMonacoLang(lang?: string): string {
   return MONACO_LANGUAGE[lang] || 'plaintext'
 }
 
+/**
+ * Render a Monaco diff editor HTML page for the given diff entry.
+ *
+ * Uses the `diff` library to count add/delete lines for the stats badge.
+ * Old and new content are JSON-serialised with `</script>` escaped before injection.
+ * Supports side-by-side and inline diff views, plus light/dark theme toggle.
+ */
 export function renderDiffViewer(entry: ViewerEntry): string {
   const fileName = entry.filePath || 'untitled'
   const lang = getMonacoLang(entry.language)
@@ -34,7 +41,7 @@ export function renderDiffViewer(entry: ViewerEntry): string {
   const adds = (patch.match(/^\+[^+]/gm) || []).length
   const dels = (patch.match(/^-[^-]/gm) || []).length
 
-  // Escape </script> in content
+  // Escape </script> in content to prevent premature tag closure
   const safeOld = JSON.stringify(oldContent).replace(/<\//g, '<\\/')
   const safeNew = JSON.stringify(newContent).replace(/<\//g, '<\\/')
 

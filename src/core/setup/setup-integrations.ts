@@ -2,6 +2,11 @@ import * as clack from "@clack/prompts";
 import { getIntegration } from "../../cli/integrate.js";
 import { guardCancel } from "./helpers.js";
 
+/**
+ * Offers to install the Claude CLI integration, which enables
+ * `/openacp:handoff` in the terminal for session transfer between
+ * Claude Code and OpenACP.
+ */
 export async function setupIntegrations(): Promise<void> {
   const integration = getIntegration("claude");
   const isInstalled = integration?.items[0]?.isInstalled() ?? false;

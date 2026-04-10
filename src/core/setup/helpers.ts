@@ -1,8 +1,13 @@
+/**
+ * Shared prompt helpers, formatters, and validation utilities used
+ * across all setup wizard steps.
+ */
+
 import * as clack from "@clack/prompts";
 import type { Config } from "../config/config.js";
 import type { SettingsManager } from "../plugin/settings-manager.js";
 
-// --- ANSI colors ---
+// --- ANSI color constants for CLI output formatting ---
 
 export const c = {
   reset: "\x1b[0m",
@@ -15,14 +20,24 @@ export const c = {
   white: "\x1b[37m",
 };
 
+/** Format a success message with a green checkmark prefix. */
 export const ok = (msg: string) =>
   `${c.green}${c.bold}✓${c.reset} ${c.green}${msg}${c.reset}`;
+/** Format a warning message with a yellow triangle prefix. */
 export const warn = (msg: string) => `${c.yellow}⚠ ${msg}${c.reset}`;
+/** Format an error message with a red X prefix. */
 export const fail = (msg: string) => `${c.red}✗ ${msg}${c.reset}`;
+/** Format a wizard step header showing progress (e.g. "[2/5] Channels"). */
 export const step = (n: number, total: number, title: string) =>
   `\n${c.cyan}${c.bold}[${n}/${total}]${c.reset} ${c.bold}${title}${c.reset}\n`;
 export const dim = (msg: string) => `${c.dim}${msg}${c.reset}`;
 
+/**
+ * Unwraps a clack prompt result, exiting the process if the user cancelled.
+ *
+ * clack prompts return `symbol` on Ctrl+C — this guard centralizes that
+ * check so each step doesn't need its own cancellation handling.
+ */
 export function guardCancel<T>(value: T | symbol): T {
   if (clack.isCancel(value)) {
     clack.cancel("Setup cancelled.");
@@ -53,6 +68,7 @@ const BANNER = `
    ╚═════╝ ╚═╝     ╚══════╝╚═╝  ╚═══╝╚═╝  ╚═╝ ╚═════╝╚═╝
 `;
 
+/** Prints the ASCII art banner with gradient coloring and version number. */
 export async function printStartBanner(): Promise<void> {
   let version = "0.0.0";
   try {
@@ -67,6 +83,10 @@ export async function printStartBanner(): Promise<void> {
 
 // --- Config summary ---
 
+/**
+ * Builds a human-readable summary of the current config for display
+ * in the reconfigure wizard's "Current configuration" note.
+ */
 export async function summarizeConfig(config: Config, settingsManager?: SettingsManager): Promise<string> {
   const lines: string[] = [];
 

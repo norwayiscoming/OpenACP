@@ -1,3 +1,8 @@
+/**
+ * Agent setup step — detects installed agents, offers additional installs
+ * from the agent registry, and lets the user pick a default agent.
+ */
+
 import { execFileSync } from "node:child_process";
 import * as clack from "@clack/prompts";
 import { commandExists } from "../agents/agent-dependencies.js";
@@ -10,6 +15,10 @@ const KNOWN_AGENTS: Array<{ name: string; commands: string[] }> = [
   { name: "codex", commands: ["codex"] },
 ];
 
+/**
+ * Scans PATH and local node_modules for known agent commands.
+ * Returns the first available command for each agent (priority order).
+ */
 export async function detectAgents(): Promise<
   Array<{ name: string; command: string }>
 > {
@@ -30,6 +39,7 @@ export async function detectAgents(): Promise<
   return found;
 }
 
+/** Checks whether a command is available in the system PATH. */
 export async function validateAgentCommand(command: string): Promise<boolean> {
   try {
     execFileSync("which", [command], { stdio: "pipe" });
@@ -39,6 +49,15 @@ export async function validateAgentCommand(command: string): Promise<boolean> {
   }
 }
 
+/**
+ * Runs the agent installation and selection step of the setup wizard.
+ *
+ * Ensures Claude Agent is always available (bundled fallback), refreshes the
+ * agent registry, offers installation of additional agents, and prompts for
+ * a default agent when multiple are installed.
+ *
+ * @returns The key of the selected default agent (e.g. "claude")
+ */
 export async function setupAgents(instanceRoot?: string): Promise<{
   defaultAgent: string;
 }> {

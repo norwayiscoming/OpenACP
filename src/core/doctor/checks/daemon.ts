@@ -1,7 +1,13 @@
+/**
+ * Doctor check: Daemon — verifies daemon process state, PID file validity,
+ * and API port availability. Stale PID files are auto-fixable.
+ */
+
 import * as fs from "node:fs";
 import * as net from "node:net";
 import type { DoctorCheck, CheckResult } from "../types.js";
 
+/** Sends signal 0 to check if a process exists without killing it. */
 function isProcessAlive(pid: number): boolean {
   try {
     process.kill(pid, 0);
@@ -11,6 +17,7 @@ function isProcessAlive(pid: number): boolean {
   }
 }
 
+/** Attempts to bind the port — if binding fails, the port is in use. */
 function checkPortInUse(port: number): Promise<boolean> {
   return new Promise((resolve) => {
     const server = net.createServer();

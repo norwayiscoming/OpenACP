@@ -1,26 +1,61 @@
+/**
+ * PathGuard — filesystem access control for agent subprocesses.
+ *
+ * Agents run with the user's filesystem permissions but should NOT access:
+ *   - Files outside the workspace directory (prevents system-wide reads/writes)
+ *   - Sensitive files within the workspace (env files, keys, credentials)
+ *   - The .openacp/ directory itself (contains bot tokens and API keys)
+ *
+ * The guard uses a deny-by-default approach: paths must be within the cwd
+ * or explicitly allowlisted, AND must not match any deny pattern. Deny
+ * patterns use .gitignore syntax via the `ignore` library.
+ *
+ * Used by AgentInstance when processing file read/write tool calls from agents.
+ */
+
 import fs from "node:fs";
 import path from "node:path";
 import ignore, { type Ignore } from "ignore";
 
+/**
+ * Default deny patterns for sensitive files that agents must never access.
+ * Uses .gitignore-style glob syntax.
+ */
 const DEFAULT_DENY_PATTERNS = [
+  // Environment files — contain API keys, database URLs, etc.
   ".env",
   ".env.*",
+  // Cryptographic keys
   "*.key",
   "*.pem",
+  // SSH and cloud credentials
   ".ssh/",
   ".aws/",
+  // OpenACP workspace — contains bot tokens and secrets
   ".openacp/",
+  // Generic credential/secret files
   "**/credentials*",
   "**/secrets*",
   "**/*.secret",
 ];
 
+/** Configuration for PathGuard's access control rules. */
 export interface PathGuardOptions {
+  /** Workspace root — files must be within this directory (or allowedPaths). */
   cwd: string;
+  /** Additional paths allowed outside cwd (e.g. file-service upload dir). */
   allowedPaths: string[];
+  /** Additional deny patterns (merged with DEFAULT_DENY_PATTERNS). */
   ignorePatterns: string[];
 }
 
+/**
+ * Enforces path restrictions on agent file operations.
+ *
+ * Validates that a target path is within the workspace boundary and does
+ * not match any deny pattern. Resolves symlinks to prevent traversal attacks
+ * (e.g. symlink pointing outside the workspace).
+ */
 export class PathGuard {
   private readonly cwd: string;
   private readonly allowedPaths: string[];
@@ -47,6 +82,20 @@ export class PathGuard {
     }
   }
 
+  /**
+   * Checks whether an agent is allowed to access the given path.
+   *
+   * Validation order:
+   *   1. Write to .openacpignore is always blocked (prevents agents from weakening their own restrictions)
+   *   2. Path must be within cwd or an explicitly allowlisted path
+   *   3. If within cwd but not allowlisted, path must not match any deny pattern
+   *
+   * @param targetPath - The path the agent is attempting to access.
+   * @param operation - The operation type. Write operations are subject to stricter
+   *   restrictions than reads — specifically, writing to `.openacpignore` is blocked
+   *   (to prevent agents from weakening their own restrictions), while reading it is allowed.
+   * @returns `{ allowed: true }` or `{ allowed: false, reason: "..." }`
+   */
   validatePath(
     targetPath: string,
     operation: "read" | "write",
@@ -97,6 +146,7 @@ export class PathGuard {
     return { allowed: true, reason: "" };
   }
 
+  /** Adds an additional allowed path at runtime (e.g. for file-service uploads). */
   addAllowedPath(p: string): void {
     try {
       this.allowedPaths.push(fs.realpathSync(path.resolve(p)));
@@ -105,6 +155,10 @@ export class PathGuard {
     }
   }
 
+  /**
+   * Loads additional deny patterns from .openacpignore in the workspace root.
+   * Follows .gitignore syntax — blank lines and lines starting with # are skipped.
+   */
   static loadIgnoreFile(cwd: string): string[] {
     const ignorePath = path.join(cwd, ".openacpignore");
     try {

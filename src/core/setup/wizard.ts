@@ -23,6 +23,10 @@ import { protectLocalInstance } from "./git-protect.js";
 
 // ─── Registry discovery ───
 
+/**
+ * Fetches verified community adapter plugins from the OpenACP registry.
+ * Returns an empty array on network failure so setup can proceed without registry access.
+ */
 async function fetchCommunityAdapters(): Promise<CommunityAdapterOption[]> {
   try {
     const client = new RegistryClient()
@@ -42,6 +46,10 @@ async function fetchCommunityAdapters(): Promise<CommunityAdapterOption[]> {
 
 // ─── Desktop App detection ───
 
+/**
+ * Checks whether the OpenACP Desktop App is installed by probing
+ * platform-specific install locations. Used to show status during setup.
+ */
 function checkDesktopAppInstalled(): boolean {
   // TODO: replace with exact app bundle / executable path once the Desktop App ships
   const candidates: string[] = [];
@@ -66,6 +74,23 @@ function checkDesktopAppInstalled(): boolean {
 
 // ─── First-run setup ───
 
+/**
+ * Runs the interactive first-run setup wizard.
+ *
+ * The wizard flows through these steps in order:
+ *   1. Instance naming
+ *   2. Copy-from existing workspace (optional — reuses credentials/settings)
+ *   3. Channel selection and configuration (Telegram, Desktop App, plugins)
+ *   4. Agent installation and default agent selection
+ *   5. Integration setup (Claude CLI session transfer)
+ *   6. Run mode selection (foreground vs daemon)
+ *
+ * On completion, writes config.json, registers the instance in the global
+ * registry, and adds .openacp/ to .gitignore. The wizard is NOT resumable —
+ * if cancelled partway, it must be restarted from scratch.
+ *
+ * @returns `true` if setup completed successfully, `false` if cancelled or failed
+ */
 export async function runSetup(
   configManager: ConfigManager,
   opts?: {
@@ -73,8 +98,10 @@ export async function runSetup(
     settingsManager?: SettingsManager
     pluginRegistry?: PluginRegistry
     instanceName?: string
-    from?: string       // path to copy from (parent dir, not .openacp)
-    instanceRoot?: string  // the .openacp dir being set up
+    /** Path to copy from (parent dir, not .openacp) */
+    from?: string
+    /** The .openacp dir being set up */
+    instanceRoot?: string
   },
 ): Promise<boolean> {
   await printStartBanner();
@@ -515,8 +542,16 @@ async function registerBuiltinPlugins(
 
 // ─── Inheritable keys for copy flow ───
 
+/**
+ * Returns the set of plugin settings keys that are safe to copy between workspaces.
+ *
+ * Only non-secret, structural settings are included. Secrets (tokens, API keys)
+ * are NOT inherited — each workspace must configure its own credentials.
+ *
+ * This map covers built-in plugins only. Community plugins declare their own
+ * inheritable keys in their plugin definition and handle copying themselves.
+ */
 function buildInheritableKeysMap(): Record<string, string[]> {
-  // Hardcoded for built-in plugins — community plugins declare their own
   return {
     '@openacp/tunnel': ['provider', 'maxUserTunnels', 'auth'],
     '@openacp/api-server': ['host'],
@@ -547,6 +582,13 @@ async function selectSection(hasSelection: boolean): Promise<ReconfigureSection>
   ) as ReconfigureSection;
 }
 
+/**
+ * Runs the reconfigure wizard for an existing OpenACP installation.
+ *
+ * Unlike `runSetup`, this presents a section-picker menu and lets users
+ * modify individual sections (channels, agents, run mode, integrations)
+ * in any order. The loop continues until the user selects "Continue".
+ */
 export async function runReconfigure(configManager: ConfigManager, settingsManager?: SettingsManager): Promise<void> {
   await printStartBanner();
   clack.intro("OpenACP — Reconfigure");

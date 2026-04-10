@@ -1,3 +1,8 @@
+/**
+ * Doctor check: Workspace — verifies the workspace directory (parent of
+ * .openacp/) exists and is writable. A missing workspace is auto-fixable.
+ */
+
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { DoctorCheck, CheckResult } from "../types.js";

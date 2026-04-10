@@ -1,14 +1,21 @@
+/**
+ * Doctor check: Agents — verifies configured agents are installed and
+ * their commands are accessible via PATH or local node_modules/.bin.
+ * Missing the default agent is a "fail"; missing optional agents are "warn".
+ */
+
 import { execFileSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { DoctorCheck, CheckResult } from "../types.js";
 
+/** Checks PATH first, then walks up the directory tree looking for node_modules/.bin. */
 function commandExists(cmd: string): boolean {
   try {
     execFileSync("which", [cmd], { stdio: "pipe" });
     return true;
   } catch {
-    // not in PATH
+    // not in PATH — fall through to node_modules check
   }
   let dir = process.cwd();
   while (true) {

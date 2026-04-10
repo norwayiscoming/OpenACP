@@ -63,9 +63,57 @@ export class PluginStorageImpl implements PluginStorage {
     return Object.keys(this.readKv())
   }
 
+  async keys(prefix?: string): Promise<string[]> {
+    const all = Object.keys(this.readKv())
+    return prefix ? all.filter((k) => k.startsWith(prefix)) : all
+  }
+
+  async clear(): Promise<void> {
+    this.writeChain = this.writeChain.then(() => {
+      this.writeKv({})
+    })
+    return this.writeChain
+  }
+
   /** Returns the plugin's data directory, creating it lazily on first access. */
   getDataDir(): string {
     fs.mkdirSync(this.dataDir, { recursive: true })
     return this.dataDir
+  }
+
+  /**
+   * Creates a namespaced storage instance scoped to a session.
+   * Keys are prefixed with `session:{sessionId}:` to isolate session data
+   * from global plugin storage in the same backing file.
+   */
+  forSession(sessionId: string): PluginStorage {
+    const prefix = `session:${sessionId}:`
+    // Proxy that transparently prepends the session prefix to all key operations
+    return {
+      get: <T>(key: string) => this.get<T>(`${prefix}${key}`),
+      set: <T>(key: string, value: T) => this.set(`${prefix}${key}`, value),
+      delete: (key: string) => this.delete(`${prefix}${key}`),
+      list: async () => {
+        const all = await this.keys(prefix)
+        return all.map((k) => k.slice(prefix.length))
+      },
+      keys: async (p?: string) => {
+        const full = p ? `${prefix}${p}` : prefix
+        const all = await this.keys(full)
+        return all.map((k) => k.slice(prefix.length))
+      },
+      clear: async () => {
+        this.writeChain = this.writeChain.then(() => {
+          const data = this.readKv()
+          for (const key of Object.keys(data)) {
+            if (key.startsWith(prefix)) delete data[key]
+          }
+          this.writeKv(data)
+        })
+        return this.writeChain
+      },
+      getDataDir: () => this.getDataDir(),
+      forSession: (nestedId: string) => this.forSession(`${sessionId}:${nestedId}`),
+    }
   }
 }

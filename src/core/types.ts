@@ -4,6 +4,20 @@ import type { TurnRouting } from "./sessions/turn-context.js";
 export type { TurnRouting };
 
 /**
+ * Per-turn context bag threaded through all turn-lifecycle middleware hooks.
+ *
+ * Core fills in `turnId`; plugins attach arbitrary keys at any hook and read
+ * them at subsequent hooks in the same turn. The object is mutable by design —
+ * plugins collaborating through meta should use namespaced keys to avoid clashes
+ * (e.g., `meta['workspace.sender']` not `meta.sender`).
+ */
+export interface TurnMeta {
+  /** The turn's unique ID — same value passed to session.enqueuePrompt(). */
+  turnId: string
+  [key: string]: unknown
+}
+
+/**
  * A file attachment sent to or received from an agent.
  *
  * Agents receive attachments as content blocks in their prompt input.

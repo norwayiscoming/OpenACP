@@ -10,6 +10,7 @@ import type {
   UsageRecord,
 } from '../types.js'
 import type { IChannelAdapter } from '../channel.js'
+import type { TurnMeta } from '../types.js'
 
 /** Re-export IChannelAdapter for plugin authors */
 export type { IChannelAdapter }
@@ -41,6 +42,8 @@ export type PluginPermission =
   | 'storage:write'
   /** Direct access to OpenACPCore internals (sessions, config, eventBus) */
   | 'kernel:access'
+  /** Read-only session metadata without kernel:access */
+  | 'sessions:read'
 
 /**
  * The runtime plugin instance — the object a plugin module default-exports.
@@ -103,8 +106,14 @@ export interface PluginStorage {
   set<T>(key: string, value: T): Promise<void>
   delete(key: string): Promise<void>
   list(): Promise<string[]>
+  /** Returns keys matching the given prefix, or all keys if prefix is omitted. */
+  keys(prefix?: string): Promise<string[]>
+  /** Deletes all keys in this storage scope. */
+  clear(): Promise<void>
   /** Returns the plugin's dedicated data directory, creating it if needed */
   getDataDir(): string
+  /** Returns a storage instance scoped to the given session. Auto-isolated from global storage. */
+  forSession(sessionId: string): PluginStorage
 }
 
 // ─── Settings API (per-plugin settings.json) ───
@@ -399,6 +408,32 @@ export interface PluginContext {
    */
   sendMessage(sessionId: string, content: OutgoingMessage): Promise<void>
 
+  /**
+   * Define a custom hook that other plugins can register middleware on.
+   * The hook name is automatically prefixed with `plugin:{pluginName}:`.
+   */
+  defineHook(name: string): void
+
+  /**
+   * Fire a custom hook through the middleware chain.
+   * Name is auto-prefixed: `emitHook('foo', p)` fires `plugin:{pluginName}:foo`.
+   * Returns the final payload (possibly modified by middleware), or null if blocked.
+   */
+  emitHook<T extends Record<string, unknown>>(name: string, payload: T): Promise<T | null>
+
+  /**
+   * Read-only session metadata. Requires `sessions:read` permission.
+   * Returns undefined if the session does not exist.
+   */
+  getSessionInfo(sessionId: string): Promise<{
+    id: string
+    status: import('../types.js').SessionStatus
+    name?: string
+    promptCount: number
+    channelId: string
+    agentName: string
+  } | undefined>
+
   // === Tier 3 — Kernel access (requires 'kernel:access') ===
   /** Direct access to SessionManager. Requires 'kernel:access'. */
   sessions: SessionManager
@@ -436,6 +471,8 @@ export interface MiddlewarePayloadMap {
     userId: string
     text: string
     attachments?: Attachment[]
+    /** Per-turn context bag. Undefined for messages that bypass the normal handleMessage flow. */
+    meta?: TurnMeta
   }
   'message:outgoing': {
     sessionId: string
@@ -448,6 +485,8 @@ export interface MiddlewarePayloadMap {
     text: string
     attachments?: Attachment[]
     sourceAdapterId?: string
+    /** Per-turn context bag carried from message:incoming. */
+    meta?: TurnMeta
   }
   'agent:beforeEvent': {
     sessionId: string
@@ -464,11 +503,24 @@ export interface MiddlewarePayloadMap {
     sessionId: string
     promptText: string
     promptNumber: number
+    turnId: string
+    meta?: TurnMeta
   }
   'turn:end': {
     sessionId: string
     stopReason: StopReason
     durationMs: number
+    turnId: string
+    meta?: TurnMeta
+  }
+  /** Fires after the full turn response is assembled. Read-only, fire-and-forget. */
+  'agent:afterTurn': {
+    sessionId: string
+    turnId: string
+    /** Complete response text — all text chunks concatenated. Empty if agent produced no text. */
+    fullText: string
+    stopReason: StopReason
+    meta?: TurnMeta
   }
 
   // === File system ===

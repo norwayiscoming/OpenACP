@@ -51,6 +51,8 @@ export const Hook = {
   TURN_START: 'turn:start',
   /** Turn ended (always fires, even on error) — read-only, fire-and-forget. */
   TURN_END: 'turn:end',
+  /** After a turn completes — full assembled agent text, read-only, fire-and-forget. */
+  AGENT_AFTER_TURN: 'agent:afterTurn',
 
   // --- Session lifecycle ---
   /** Before a new session is created — modifiable, can block. */

@@ -112,9 +112,32 @@ export function createPluginContext(opts: CreatePluginContextOpts): PluginContex
       requirePermission(permissions, 'storage:read', 'storage.list')
       return storageImpl.list()
     },
+    async keys(prefix?: string): Promise<string[]> {
+      requirePermission(permissions, 'storage:read', 'storage.keys')
+      return storageImpl.keys(prefix)
+    },
+    async clear(): Promise<void> {
+      requirePermission(permissions, 'storage:write', 'storage.clear')
+      return storageImpl.clear()
+    },
     getDataDir(): string {
       requirePermission(permissions, 'storage:read', 'storage.getDataDir')
       return storageImpl.getDataDir()
+    },
+    forSession(sessionId: string): PluginStorage {
+      requirePermission(permissions, 'storage:read', 'storage.forSession')
+      // Return a permission-wrapped session-scoped storage
+      const scoped = storageImpl.forSession(sessionId)
+      return {
+        get: <T>(key: string) => { requirePermission(permissions, 'storage:read', 'storage.get'); return scoped.get<T>(key) },
+        set: <T>(key: string, value: T) => { requirePermission(permissions, 'storage:write', 'storage.set'); return scoped.set(key, value) },
+        delete: (key: string) => { requirePermission(permissions, 'storage:write', 'storage.delete'); return scoped.delete(key) },
+        list: () => { requirePermission(permissions, 'storage:read', 'storage.list'); return scoped.list() },
+        keys: (prefix?: string) => { requirePermission(permissions, 'storage:read', 'storage.keys'); return scoped.keys(prefix) },
+        clear: () => { requirePermission(permissions, 'storage:write', 'storage.clear'); return scoped.clear() },
+        getDataDir: () => { requirePermission(permissions, 'storage:read', 'storage.getDataDir'); return scoped.getDataDir() },
+        forSession: (nestedId: string) => storage.forSession(`${sessionId}:${nestedId}`),
+      }
     },
   }
 
@@ -174,6 +197,34 @@ export function createPluginContext(opts: CreatePluginContextOpts): PluginContex
       if (router) {
         await router.send(_sessionId, _content)
       }
+    },
+
+    defineHook(_name: string): void {
+      // MiddlewareChain creates hook entries lazily on first add(), so no pre-registration is needed.
+      // This method exists to let plugins declare intent — documentation/discoverability only.
+    },
+
+    async emitHook<T extends Record<string, unknown>>(name: string, payload: T): Promise<T | null> {
+      // Auto-prefix prevents hook name collisions between plugins.
+      const qualifiedName = `plugin:${pluginName}:${name}`
+      // Pass identity as core handler — plugin hooks have no core behavior, only middleware side effects.
+      return middlewareChain.execute(qualifiedName, payload, (p) => p) as Promise<T | null>
+    },
+
+    async getSessionInfo(sessionId: string) {
+      requirePermission(permissions, 'sessions:read', 'getSessionInfo()')
+      const sessionMgr = serviceRegistry.get<{
+        getSessionInfo(id: string): Promise<{
+          id: string
+          status: import('../types.js').SessionStatus
+          name?: string
+          promptCount: number
+          channelId: string
+          agentName: string
+        } | undefined>
+      }>('session-info')
+      if (!sessionMgr) return undefined
+      return sessionMgr.getSessionInfo(sessionId)
     },
 
     registerMenuItem(item: MenuItem): void {

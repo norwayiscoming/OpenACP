@@ -22,6 +22,7 @@ function decodeParam(value: string): string {
   }
 }
 
+/** Dependencies injected into the SSE route handlers. */
 export interface SSERouteDeps {
   core: OpenACPCore;
   connectionManager: ConnectionManager;
@@ -29,6 +30,12 @@ export interface SSERouteDeps {
   commandRegistry?: CommandRegistry;
 }
 
+/**
+ * Registers all SSE adapter routes on the given Fastify sub-app.
+ *
+ * Routes are mounted under `/api/v1/sse` by the plugin's `setup()` hook.
+ * All routes require authentication (scopes enforced per-route).
+ */
 export async function sseRoutes(app: FastifyInstance, deps: SSERouteDeps): Promise<void> {
   // GET /sessions/:sessionId/stream — SSE event stream
   app.get<{ Params: { sessionId: string } }>(
@@ -64,13 +71,15 @@ export async function sseRoutes(app: FastifyInstance, deps: SSERouteDeps): Promi
         'Content-Type': 'text/event-stream',
         'Cache-Control': 'no-cache',
         'Connection': 'keep-alive',
+        // Disable buffering in Nginx/Cloudflare so events arrive without delay
         'X-Accel-Buffering': 'no',
       });
 
       // Send connected event
       raw.write(serializeConnected(connection.id, sessionId));
 
-      // Replay missed events from buffer using Last-Event-ID header
+      // Replay missed events from buffer using Last-Event-ID header.
+      // Null result means the referenced event ID has been evicted — notify the client.
       const lastEventId = request.headers['last-event-id'] as string | undefined;
       if (lastEventId) {
         const missed = deps.eventBuffer.getSince(sessionId, lastEventId);
@@ -201,6 +210,7 @@ export async function sseRoutes(app: FastifyInstance, deps: SSERouteDeps): Promi
       }
 
       const body = ExecuteCommandBodySchema.parse(request.body);
+      // Normalize command strings: ensure they start with `/` for CommandRegistry lookup
       const commandString = body.command.startsWith('/') ? body.command : `/${body.command}`;
 
       const result = await deps.commandRegistry.execute(commandString, {

@@ -1,6 +1,13 @@
 import { TypedEmitter } from "./utils/typed-emitter.js";
 import type { AgentEvent, PermissionRequest, SessionStatus, UsageRecordEvent } from "./types.js";
 
+/**
+ * Event map for the global EventBus.
+ *
+ * Defines all cross-cutting events that flow between core, plugins, and adapters.
+ * Plugins subscribe via `eventBus.on(...)` without needing direct references
+ * to the components that emit these events.
+ */
 export interface EventBusEvents {
   "session:created": (data: {
     sessionId: string;
@@ -89,4 +96,12 @@ export interface EventBusEvents {
   }) => void;
 }
 
+/**
+ * Global event bus for cross-cutting communication.
+ *
+ * Decouples plugins from direct session/core references — plugins and adapters
+ * subscribe to bus events without knowing which component emits them. The core
+ * and sessions emit events here; plugins consume them for features like usage
+ * tracking, notifications, and UI updates.
+ */
 export class EventBus extends TypedEmitter<EventBusEvents> {}

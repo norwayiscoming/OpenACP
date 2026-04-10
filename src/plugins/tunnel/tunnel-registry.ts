@@ -13,8 +13,14 @@ import { OpenACPTunnelProvider } from './providers/openacp.js'
 const log = createChildLogger({ module: 'tunnel-registry' })
 
 export const MAX_RETRIES = 5
+// Exponential backoff base: 2s, 4s, 8s, 16s, 32s
 const BASE_RETRY_DELAY_MS = 2_000
 
+/**
+ * Represents a single running (or recently failed) tunnel.
+ * `type: "system"` is the main OpenACP tunnel; `type: "user"` are agent-created tunnels.
+ * `status` transitions: starting → active | failed. Failed entries may auto-retry.
+ */
 export interface TunnelEntry {
   port: number
   type: 'system' | 'user'
@@ -43,6 +49,19 @@ interface LiveEntry {
   retryTimer: ReturnType<typeof setTimeout> | null
 }
 
+/**
+ * Manages the lifecycle of all active tunnel processes.
+ *
+ * Responsibilities:
+ * - Spawn/stop tunnel provider subprocesses via the TunnelProvider interface
+ * - Exponential backoff retry (up to MAX_RETRIES) on crash or start failure
+ * - Keepalive polling for the system tunnel to detect silent drops
+ * - Persist user tunnel state to `tunnels.json` so they survive restarts
+ * - Enforce the per-user tunnel limit
+ *
+ * System tunnels (one per instance, pointing to the API server) are managed
+ * separately from user tunnels (agent-created, per-session).
+ */
 export class TunnelRegistry {
   private entries: Map<number, LiveEntry> = new Map()
   private saveTimeout: ReturnType<typeof setTimeout> | null = null
@@ -63,6 +82,13 @@ export class TunnelRegistry {
     this.storage = opts.storage ?? null
   }
 
+  /**
+   * Spawn a new tunnel process for the given port and register it.
+   *
+   * Persists the entry to `tunnels.json` once the tunnel reaches `active` status.
+   * Throws if the port is already in use by an active or starting tunnel, or if the
+   * user tunnel limit is reached.
+   */
   async add(port: number, opts: {
     type: 'system' | 'user'
     provider: string
@@ -218,6 +244,12 @@ export class TunnelRegistry {
     }
   }
 
+  /**
+   * Stop a user tunnel by port and remove it from the registry.
+   *
+   * Cancels any pending retry timer and waits for an in-progress spawn to settle
+   * before terminating the process. Throws if the port is a system tunnel.
+   */
   async stop(port: number): Promise<void> {
     const live = this.entries.get(port)
     if (!live) return
@@ -255,6 +287,7 @@ export class TunnelRegistry {
     return stopped
   }
 
+  /** Stop all user tunnels. Errors from individual stops are silently ignored. */
   async stopAllUser(): Promise<void> {
     const userEntries = this.list(false)
     for (const entry of userEntries) {
@@ -288,6 +321,12 @@ export class TunnelRegistry {
     this.entries.clear()
   }
 
+  /**
+   * Return all current tunnel entries.
+   *
+   * Pass `includeSystem = true` to include the system tunnel in the result;
+   * by default only user tunnels are returned.
+   */
   list(includeSystem = false): TunnelEntry[] {
     const entries = Array.from(this.entries.values()).map(l => l.entry)
     if (includeSystem) return entries
@@ -302,6 +341,10 @@ export class TunnelRegistry {
     return this.list(false).filter(e => e.sessionId === sessionId)
   }
 
+  /**
+   * Return the system tunnel entry, or null if it hasn't been registered yet
+   * (e.g. `TunnelService.start()` hasn't been called, or the tunnel failed to start).
+   */
   getSystemEntry(): TunnelEntry | null {
     for (const live of this.entries.values()) {
       if (live.entry.type === 'system') return live.entry
@@ -309,6 +352,13 @@ export class TunnelRegistry {
     return null
   }
 
+  /**
+   * Re-launch tunnels persisted from a previous run.
+   *
+   * Only user tunnels are restored — the system tunnel is registered separately by
+   * `TunnelService.start()`. `sessionId` is intentionally dropped: sessions do not
+   * survive a restart, so restored tunnels are session-less until an agent claims them.
+   */
   async restore(): Promise<void> {
     if (!fs.existsSync(this.registryPath)) return
 
@@ -316,7 +366,8 @@ export class TunnelRegistry {
       const raw = JSON.parse(fs.readFileSync(this.registryPath, 'utf-8')) as PersistedEntry[]
       log.info({ count: raw.length }, 'Restoring tunnels')
 
-      // Only restore user tunnels — system tunnel is registered separately by TunnelService.start()
+      // Only restore user tunnels — system tunnel is registered separately by TunnelService.start().
+      // sessionId is intentionally omitted on restore: sessions don't survive a restart.
       const userEntries = raw.filter(e => e.type === 'user')
       const results = await Promise.allSettled(
         userEntries.map(persisted =>
@@ -324,7 +375,6 @@ export class TunnelRegistry {
             type: persisted.type,
             provider: persisted.provider,
             label: persisted.label,
-            // sessionId intentionally omitted — sessions don't survive restart
           })
         )
       )
@@ -366,6 +416,8 @@ export class TunnelRegistry {
     }
   }
 
+  // Debounce disk writes — multiple tunnel state changes may occur in rapid succession
+  // (e.g. status update + URL assignment). Coalesce them into a single write after 2s.
   private scheduleSave(): void {
     if (this.saveTimeout) clearTimeout(this.saveTimeout)
     this.saveTimeout = setTimeout(() => this.save(), 2000)

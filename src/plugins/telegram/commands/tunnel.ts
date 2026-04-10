@@ -6,6 +6,12 @@ import { createChildLogger } from "../../../core/utils/log.js";
 
 const log = createChildLogger({ module: "telegram-cmd-tunnel" });
 
+/**
+ * Handle `/tunnel [port] [label]` or `/tunnel stop <port>`.
+ *
+ * Associates the tunnel with the current session (if in a session topic) so it
+ * appears in `/tunnels` session-scoped view.
+ */
 export async function handleTunnel(
   ctx: Context,
   core: OpenACPCore,
@@ -76,6 +82,11 @@ export async function handleTunnel(
   );
 }
 
+/**
+ * Handle `/tunnels` — list active tunnels with stop buttons.
+ * In a session topic, shows only tunnels owned by that session.
+ * In other topics (assistant, general), shows all tunnels.
+ */
 export async function handleTunnels(
   ctx: Context,
   core: OpenACPCore,

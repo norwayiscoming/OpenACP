@@ -9,6 +9,17 @@ const log = createChildLogger({ module: 'cloudflare-tunnel' })
 
 const SIGKILL_TIMEOUT_MS = 5_000
 
+/**
+ * Tunnel provider using Cloudflare quick tunnels (no account required).
+ *
+ * Runs `cloudflared tunnel --url http://localhost:<port>` and extracts the
+ * randomly assigned `*.trycloudflare.com` URL from stderr. The binary is
+ * located from PATH first, then from `binDir` (installed by post-upgrade step),
+ * and finally auto-downloaded as a last resort.
+ *
+ * Quick tunnels are rate-limited and assign a new random URL on each start.
+ * Prefer OpenACPTunnelProvider for a stable URL.
+ */
 export class CloudflareTunnelProvider implements TunnelProvider {
   private child: ChildProcess | null = null
   private publicUrl = ''

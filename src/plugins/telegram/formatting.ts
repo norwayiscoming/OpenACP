@@ -25,6 +25,10 @@ import {
 } from "../../core/adapter-primitives/message-formatter.js";
 import type { DisplayVerbosity } from "../../core/adapter-primitives/format-types.js";
 
+/**
+ * Escape characters that have special meaning in Telegram HTML parse mode.
+ * Must be applied to all user/agent-provided strings before embedding in HTML messages.
+ */
 export function escapeHtml(text: string | undefined | null): string {
   if (!text) return "";
   return text
@@ -33,6 +37,17 @@ export function escapeHtml(text: string | undefined | null): string {
     .replace(/>/g, "&gt;");
 }
 
+/**
+ * Convert Markdown to Telegram HTML parse mode.
+ *
+ * Telegram supports HTML rather than MarkdownV2 because MarkdownV2 requires
+ * escaping almost every punctuation character, which breaks real-world agent
+ * output (file paths, diffs, JSON, etc.). HTML mode only requires escaping
+ * `&`, `<`, and `>`, making it far more reliable for agent-generated content.
+ *
+ * Strategy: code blocks/inline code are extracted into placeholders first so
+ * that subsequent HTML escaping and markdown transformations don't corrupt them.
+ */
 export function markdownToTelegramHtml(md: string): string {
   // Step 1: Extract code blocks and inline code into placeholders
   const codeBlocks: string[] = [];
@@ -85,6 +100,10 @@ export function markdownToTelegramHtml(md: string): string {
   return text;
 }
 
+/**
+ * Render a tool call event as Telegram HTML.
+ * Higher verbosity levels show more input/output detail.
+ */
 export function formatToolCall(
   tool: ToolCallMeta,
   verbosity: DisplayVerbosity = "medium",
@@ -161,6 +180,10 @@ export function formatPlan(plan: {
   return `<b>Plan:</b>\n${lines.join("\n")}`;
 }
 
+/**
+ * Render token usage as a visual bar + percentage.
+ * Shows a warning emoji when context is ≥85% full to alert users before hitting limits.
+ */
 export function formatUsage(
   usage: { tokensUsed?: number; contextSize?: number; cost?: number },
   _verbosity: DisplayVerbosity = "medium",

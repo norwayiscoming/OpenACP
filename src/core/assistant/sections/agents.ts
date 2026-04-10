@@ -1,5 +1,12 @@
 import type { AssistantSection } from '../assistant-registry.js'
 
+/**
+ * Creates the "Agent Management" section for the assistant's system prompt.
+ *
+ * Injects a live snapshot of installed agents, the default agent, and how
+ * many more are available in the ACP Registry — so the assistant can answer
+ * questions about agents and help users install new ones.
+ */
 export function createAgentsSection(core: {
   agentCatalog: { getInstalledEntries(): Record<string, { name: string }>; getAvailable(): Array<{ installed: boolean }> }
   configManager: { get(): { defaultAgent: string } }

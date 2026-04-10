@@ -13,13 +13,26 @@ import { createTurnContext, type TurnContext } from "./turn-context.js";
 import { Hook, SessionEv } from "../events.js";
 const moduleLog = createChildLogger({ module: "session" });
 
-// TTS constants
+// TTS injection pattern: we append TTS_PROMPT_INSTRUCTION to the user's prompt so the
+// agent includes a [TTS]...[/TTS] block in its response. After the response completes,
+// we extract that block via TTS_BLOCK_REGEX and synthesize speech from it. The TTS block
+// is then stripped from the text shown to the user (via tts_strip event).
 export const TTS_PROMPT_INSTRUCTION = `\n\nAdditionally, include a [TTS]...[/TTS] block with a spoken-friendly summary of your response. Focus on key information, decisions the user needs to make, or actions required. The agent decides what to say and how long. Respond in the same language the user is using. This instruction applies to this message only.`;
 export const TTS_BLOCK_REGEX = /\[TTS\]([\s\S]*?)\[\/TTS\]/;
 export const TTS_MAX_LENGTH = 5000;
 export const TTS_TIMEOUT_MS = 30_000;
 
-// Valid state transitions: from → Set<to>
+// Session state machine — valid transitions: from → Set<to>
+//
+//   initializing → active (first prompt received)
+//                → error  (agent spawn failed)
+//   active       → error     (unrecoverable prompt failure)
+//                → finished  (agent signaled session_end)
+//                → cancelled (user cancelled the session)
+//   error        → active    (retry: user sends a new prompt)
+//                → cancelled (user gives up)
+//   cancelled    → active    (resume: user sends a new prompt)
+//   finished     → (terminal — no further transitions)
 const VALID_TRANSITIONS: Record<SessionStatus, Set<SessionStatus>> = {
   initializing: new Set(["active", "error"]),
   active: new Set(["error", "finished", "cancelled"]),
@@ -28,6 +41,7 @@ const VALID_TRANSITIONS: Record<SessionStatus, Set<SessionStatus>> = {
   finished: new Set(),
 };
 
+/** Events emitted by a Session instance — SessionBridge subscribes to relay them to adapters. */
 export interface SessionEvents {
   agent_event: (event: AgentEvent) => void;
   permission_request: (request: PermissionRequest) => void;
@@ -39,6 +53,17 @@ export interface SessionEvents {
   turn_started: (ctx: TurnContext) => void;
 }
 
+/**
+ * Manages a single conversation between a user and an AI agent.
+ *
+ * Wraps an AgentInstance with serial prompt queuing (via PromptQueue), permission
+ * gating (via PermissionGate), TTS/STT integration, auto-naming, and a state
+ * machine tracking the session lifecycle. SessionBridge subscribes to this
+ * emitter to forward agent output to channel adapters.
+ *
+ * A session can be attached to multiple adapters simultaneously (e.g., Telegram
+ * and SSE). The `threadIds` map tracks which thread each adapter uses.
+ */
 export class Session extends TypedEmitter<SessionEvents> {
   id: string;
   channelId: string;
@@ -55,6 +80,8 @@ export class Session extends TypedEmitter<SessionEvents> {
   workingDirectory: string;
   private _agentInstance!: AgentInstance;
   get agentInstance(): AgentInstance { return this._agentInstance; }
+  /** Setting agentInstance wires the agent→session event relay and commands buffer.
+   *  This happens both at construction and on agent switch (switchAgent). */
   set agentInstance(agent: AgentInstance) {
     this._agentInstance = agent;
     this.wireAgentRelay();
@@ -179,7 +206,7 @@ export class Session extends TypedEmitter<SessionEvents> {
     this.emit(SessionEv.SESSION_END, reason ?? "completed");
   }
 
-  /** Transition to cancelled — from active only (terminal session cancel) */
+  /** Transition to cancelled — from active or error (terminal session cancel) */
   markCancelled(): void {
     this.transition("cancelled");
   }
@@ -202,18 +229,21 @@ export class Session extends TypedEmitter<SessionEvents> {
     return this.queue.pending;
   }
 
+  /** Whether a prompt is currently being processed by the agent */
   get promptRunning(): boolean {
     return this.queue.isProcessing;
   }
 
   // --- Context Injection ---
 
+  /** Store context markdown to be prepended to the next prompt (used for session resume with history). */
   setContext(markdown: string): void {
     this.pendingContext = markdown;
   }
 
   // --- Voice Mode ---
 
+  /** Set TTS mode: "off" = disabled, "next" = one-shot (auto-resets after prompt), "on" = persistent. */
   setVoiceMode(mode: "off" | "next" | "on"): void {
     this.voiceMode = mode;
     this.log.info({ voiceMode: mode }, "TTS mode changed");
@@ -221,6 +251,13 @@ export class Session extends TypedEmitter<SessionEvents> {
 
   // --- Public API ---
 
+  /**
+   * Enqueue a user prompt for serial processing.
+   *
+   * Runs the prompt through agent:beforePrompt middleware (which can modify or block),
+   * then adds it to the PromptQueue. Returns a turnId that callers can use to correlate
+   * queued/processing events before the prompt actually runs.
+   */
   async enqueuePrompt(text: string, attachments?: Attachment[], routing?: TurnRouting, externalTurnId?: string): Promise<string> {
     // Use pre-generated turnId if provided (so callers can emit events before awaiting the queue)
     const turnId = externalTurnId ?? nanoid(8);
@@ -369,6 +406,10 @@ export class Session extends TypedEmitter<SessionEvents> {
     }
   }
 
+  /**
+   * Transcribe audio attachments to text if the agent doesn't support audio natively.
+   * Audio attachments are removed and their transcriptions are appended to the prompt text.
+   */
   private async maybeTranscribeAudio(
     text: string,
     attachments?: Attachment[],
@@ -427,6 +468,7 @@ export class Session extends TypedEmitter<SessionEvents> {
     };
   }
 
+  /** Extract [TTS] block from agent response, synthesize speech, and emit audio_content event. */
   private async processTTSResponse(responseText: string): Promise<void> {
     const match = TTS_BLOCK_REGEX.exec(responseText);
     if (!match?.[1]) {
@@ -467,7 +509,9 @@ export class Session extends TypedEmitter<SessionEvents> {
     }
   }
 
-  // NOTE: This injects a summary prompt into the agent's conversation history.
+  // Sends a special prompt to the agent to generate a short session title.
+  // The session emitter is paused (excluding non-agent_event emissions) so the naming
+  // prompt's output is intercepted by a capture handler instead of being forwarded to adapters.
   private async autoName(): Promise<void> {
     let title = "";
 
@@ -668,6 +712,7 @@ export class Session extends TypedEmitter<SessionEvents> {
     this.log.info({ from: this.agentSwitchHistory.at(-1)!.agentName, to: agentName }, "Agent switched");
   }
 
+  /** Tear down the session: reject pending permissions, clear queue, destroy agent subprocess. */
   async destroy(): Promise<void> {
     this.log.info("Session destroyed");
     // Reject any pending permission promise so callers don't hang

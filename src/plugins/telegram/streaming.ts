@@ -3,8 +3,22 @@ import { markdownToTelegramHtml, splitMessage } from './formatting.js'
 import type { SendQueue } from '../../core/adapter-primitives/primitives/send-queue.js'
 import type { DebugTracer } from '../../core/utils/debug-tracer.js'
 
+// Throttle interval for streaming edits: emit at most one edit every 5 seconds while
+// text chunks are arriving. This avoids hitting Telegram's per-message rate limit
+// (~1 edit/s) while still showing live progress for long-running agents.
 const FLUSH_INTERVAL = 5000
 
+/**
+ * In-flight streaming message for a single agent response.
+ *
+ * Text chunks arrive via `append()`. A debounced timer fires `flush()` every
+ * FLUSH_INTERVAL ms, sending the buffered content as either a new message (first
+ * flush) or an edit of the existing message. `finalize()` is called on
+ * `text_done` to push the complete, untruncated content.
+ *
+ * The edit-in-place approach keeps each agent turn as a single Telegram message
+ * rather than flooding the topic with many small messages.
+ */
 export class MessageDraft {
   private buffer: string = ''
   private messageId?: number
@@ -27,6 +41,7 @@ export class MessageDraft {
     this.tracer = tracer
   }
 
+  /** Append a text chunk to the buffer and schedule a throttled flush. */
   append(text: string): void {
     if (!text) return
     this.buffer += text
@@ -34,6 +49,7 @@ export class MessageDraft {
   }
 
   private scheduleFlush(): void {
+    // One timer at a time — let the current interval elapse before re-arming
     if (this.flushTimer) return
     this.flushTimer = setTimeout(() => {
       this.flushTimer = undefined
@@ -124,6 +140,16 @@ export class MessageDraft {
     }
   }
 
+  /**
+   * Flush the complete buffer as the final message for this turn.
+   *
+   * Cancels any pending debounce timer, waits for in-flight flushes to settle,
+   * then sends the full content. If the HTML exceeds 4096 bytes, the content is
+   * split at markdown boundaries to avoid breaking HTML tags mid-tag.
+   *
+   * Returns the Telegram message ID of the sent/edited message, or undefined
+   * if nothing was sent (empty buffer or all network calls failed).
+   */
   async finalize(): Promise<number | undefined> {
     this.tracer?.log("telegram", { action: "draft:finalize", sessionId: this.sessionId, bufferLen: this.buffer.length, msgId: this.messageId })
     if (this.flushTimer) {
@@ -228,10 +254,15 @@ export class MessageDraft {
     return this.messageId
   }
 
+  /** Returns the Telegram message ID for this draft, or undefined if not yet sent. */
   getMessageId(): number | undefined {
     return this.messageId
   }
 
+  /**
+   * Strip occurrences of `pattern` from the buffer and edit the message in-place.
+   * Used by the TTS plugin to remove [TTS]...[/TTS] blocks after audio is sent.
+   */
   async stripPattern(pattern: RegExp): Promise<void> {
     if (!this.messageId || !this.buffer) return
 

@@ -9,6 +9,13 @@ const AddTunnelBodySchema = z.object({
   sessionId: z.string().max(200).optional(),
 });
 
+/**
+ * Tunnel management routes under `/api/v1/tunnel`.
+ *
+ * Read operations (status, list) require `system:health` scope.
+ * Mutations (add, stop) require `system:admin` scope.
+ * All routes return 400 if the tunnel service is not enabled.
+ */
 export async function tunnelRoutes(
   app: FastifyInstance,
   deps: RouteDeps,

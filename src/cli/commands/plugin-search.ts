@@ -1,6 +1,10 @@
 import { RegistryClient } from '../../core/plugin/registry-client.js'
 import { isJsonMode, jsonSuccess, jsonError, muteForJson, ErrorCodes } from '../output.js'
 
+/**
+ * `openacp plugin search` — Search the OpenACP plugin registry.
+ * Queries the remote registry and displays matching plugins with install instructions.
+ */
 export async function cmdPluginSearch(args: string[]): Promise<void> {
   const json = isJsonMode(args)
   if (json) await muteForJson()

@@ -5,6 +5,7 @@ import { createChildLogger } from '../../core/utils/log.js'
 
 const log = createChildLogger({ module: 'topic-manager' })
 
+/** Flat view of a session record, enriched with its Telegram topic ID. */
 export interface TopicInfo {
   sessionId: string
   topicId: number | null
@@ -14,24 +15,35 @@ export interface TopicInfo {
   lastActiveAt: string
 }
 
+/** Result of a single-topic deletion operation. */
 export interface DeleteTopicResult {
   ok: boolean
+  /** True when deletion requires explicit confirmation (session is still active). */
   needsConfirmation?: boolean
   topicId?: number | null
   session?: { id: string; name: string | null; status: string }
   error?: string
 }
 
+/** Aggregate result for a bulk cleanup operation. */
 export interface CleanupResult {
   deleted: string[]
   failed: { sessionId: string; error: string }[]
 }
 
+// IDs for the two system-managed topics that must never be deleted by user-facing commands.
 interface SystemTopicIds {
   notificationTopicId: number | null
   assistantTopicId: number | null
 }
 
+/**
+ * High-level topic management for the Telegram adapter.
+ *
+ * Sits above the raw Telegram API (`topics.ts`) and adds session-level concerns:
+ * guarding system topics, requiring confirmation for active sessions, and
+ * coordinating with the SessionManager to remove session records after deletion.
+ */
 export class TopicManager {
   constructor(
     private sessionManager: SessionManager,
@@ -39,6 +51,10 @@ export class TopicManager {
     private systemTopicIds: SystemTopicIds,
   ) {}
 
+  /**
+   * List user-facing session topics, excluding system topics.
+   * Optionally filtered to specific status values.
+   */
   listTopics(filter?: { statuses?: string[] }): TopicInfo[] {
     const records = this.sessionManager.listRecords(filter)
     return records
@@ -54,6 +70,12 @@ export class TopicManager {
       }))
   }
 
+  /**
+   * Delete a session topic and its session record.
+   *
+   * Returns `needsConfirmation: true` when the session is still active and
+   * `options.confirmed` was not set — callers must ask the user before proceeding.
+   */
   async deleteTopic(sessionId: string, options?: { confirmed?: boolean }): Promise<DeleteTopicResult> {
     const records = this.sessionManager.listRecords()
     const record = records.find(r => r.sessionId === sessionId)
@@ -87,6 +109,10 @@ export class TopicManager {
     return { ok: true, topicId }
   }
 
+  /**
+   * Bulk-delete topics by status (default: finished, error, cancelled).
+   * Active/initializing sessions are cancelled before deletion to prevent orphaned processes.
+   */
   async cleanup(statuses?: string[]): Promise<CleanupResult> {
     const targetStatuses = statuses?.length ? statuses : ['finished', 'error', 'cancelled']
     const records = this.sessionManager.listRecords({ statuses: targetStatuses })

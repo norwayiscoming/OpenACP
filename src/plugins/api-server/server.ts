@@ -9,19 +9,41 @@ import { createAuthPreHandler } from './middleware/auth.js';
 export interface ApiServerOptions {
   port: number;
   host: string;
+  /** Returns the raw API secret used for full-admin Bearer auth. Fetched lazily so rotation is safe. */
   getSecret: () => string;
+  /** Returns the HMAC secret used to sign and verify JWTs. */
   getJwtSecret: () => string;
   tokenStore: import('./auth/token-store.js').TokenStore;
   logger?: boolean;
 }
 
+/**
+ * The handle returned by `createApiServer`.
+ *
+ * Route plugins are registered before `start()` is called; Fastify's plugin
+ * encapsulation keeps each prefix isolated with its own auth hooks.
+ */
 export interface ApiServerInstance {
   app: FastifyInstance;
+  /** Binds to the configured host/port, auto-incrementing if EADDRINUSE. */
   start(): Promise<{ port: number; host: string }>;
   stop(): Promise<void>;
+  /**
+   * Registers a Fastify plugin scoped to `prefix`.
+   *
+   * Auth is applied by default. Pass `{ auth: false }` only for public endpoints
+   * (e.g. `/api/v1/system` health, `/api/v1/auth/exchange`).
+   */
   registerPlugin(prefix: string, plugin: FastifyPluginAsync, opts?: { auth?: boolean }): void;
 }
 
+/**
+ * Creates and configures the Fastify HTTP server.
+ *
+ * Sets up in order: Zod validation, CORS, rate limiting, Swagger docs,
+ * backward-compat redirects (`/api/*` → `/api/v1/*`), and the global error handler.
+ * Route plugins are registered after this returns via `ApiServerInstance.registerPlugin`.
+ */
 export async function createApiServer(options: ApiServerOptions): Promise<ApiServerInstance> {
   const app = Fastify({ logger: options.logger ?? false, forceCloseConnections: true });
 
@@ -105,6 +127,8 @@ export async function createApiServer(options: ApiServerOptions): Promise<ApiSer
 
     registerPlugin(prefix: string, plugin: FastifyPluginAsync, opts?: { auth?: boolean }) {
       const wrappedPlugin: FastifyPluginAsync = async (pluginApp, pluginOpts) => {
+        // Fastify encapsulation means this hook only applies to routes in this scope,
+        // so unauthenticated prefixes (e.g. /exchange) don't accidentally inherit auth.
         if (opts?.auth !== false) {
           pluginApp.addHook('onRequest', authPreHandler);
         }

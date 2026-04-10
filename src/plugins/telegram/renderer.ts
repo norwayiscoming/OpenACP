@@ -14,6 +14,13 @@ import {
   formatUsage,
 } from "./formatting.js";
 
+/**
+ * Telegram-specific renderer for structured `OutgoingMessage` types.
+ *
+ * Produces HTML strings (Telegram parse_mode: 'HTML') for each message kind.
+ * Plain text rendering is not used because HTML mode handles agent output
+ * (code fences, diffs, etc.) more reliably than MarkdownV2.
+ */
 export class TelegramRenderer extends BaseRenderer {
   renderToolCall(
     content: OutgoingMessage,

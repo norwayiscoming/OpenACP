@@ -14,6 +14,7 @@ import { Hook, BusEvent, SessionEv } from "./events.js";
 
 const log = createChildLogger({ module: "agent-switch" });
 
+/** Dependencies injected from OpenACPCore to avoid circular imports. */
 export interface AgentSwitchDeps {
   sessionManager: SessionManager;
   agentManager: AgentManager;
@@ -27,11 +28,30 @@ export interface AgentSwitchDeps {
   getService: <T>(name: string) => T | undefined;
 }
 
+/**
+ * Coordinates the state transitions required when switching agents mid-session.
+ *
+ * Switching agents is a multi-step process with rollback support:
+ * 1. Run `agent:beforeSwitch` middleware (blocking — plugins can veto)
+ * 2. Determine whether to resume a previous agent session or spawn fresh
+ * 3. Disconnect all SessionBridges and clean up adapter state
+ * 4. Replace the agent instance on the session (with rollback on failure)
+ * 5. Reconnect all bridges to the new agent
+ * 6. Persist updated session record
+ * 7. Fire `agent:afterSwitch` middleware (non-blocking)
+ *
+ * A per-session lock prevents concurrent switches on the same session.
+ */
 export class AgentSwitchHandler {
+  /** Prevents concurrent switch operations on the same session */
   private switchingLocks = new Set<string>();
 
   constructor(private deps: AgentSwitchDeps) {}
 
+  /**
+   * Switch a session to a different agent. Returns whether the previous
+   * agent session was resumed or a new one was spawned.
+   */
   async switch(sessionId: string, toAgent: string): Promise<{ resumed: boolean }> {
     if (this.switchingLocks.has(sessionId)) {
       throw new Error('Switch already in progress');
@@ -64,7 +84,8 @@ export class AgentSwitchHandler {
     }, async (payload) => payload);
     if (middlewareChain && !result) throw new Error('Agent switch blocked by middleware');
 
-    // 2. Determine resume vs new
+    // 2. Determine resume vs new — if the agent was used before in this session
+    //    and supports resume, reconnect to its previous subprocess instead of spawning fresh
     const lastEntry = session.findLastSwitchEntry(toAgent);
     const caps = getAgentCapabilities(toAgent);
     const canResume = !!(lastEntry && caps.supportsResume);
@@ -105,7 +126,9 @@ export class AgentSwitchHandler {
 
     const fromAgentSessionId = session.agentSessionId;
 
-    // 4. Switch agent on session (with rollback on failure)
+    // 4. Switch agent on session (with rollback on failure).
+    //    switchAgent() replaces the session's agent instance atomically — if the
+    //    factory callback throws, the session state is unchanged.
     const fileService = this.deps.getService<import('../plugins/file-service/file-service.js').FileService>('file-service');
     const configAllowedPaths = configManager.get().workspace?.security?.allowedPaths ?? [];
     try {
@@ -122,6 +145,8 @@ export class AgentSwitchHandler {
           }
         }
 
+        // Fresh spawn: inject conversation history from the context service so the
+        // new agent has awareness of what was discussed with the previous agent
         const instance = await agentManager.spawn(toAgent, session.workingDirectory, configAllowedPaths);
         if (fileService) instance.addAllowedPath(fileService.baseDir);
         try {

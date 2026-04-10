@@ -48,6 +48,10 @@ function formatFieldLabel(field: ConfigFieldDef, value: unknown): string {
   return `${icon} ${field.displayName}: ${displayValue}`;
 }
 
+/**
+ * Handle `/settings` — display an inline keyboard of all safe config fields.
+ * Each button triggers a toggle, select, or delegated-to-assistant input flow.
+ */
 export async function handleSettings(ctx: Context, core: OpenACPCore): Promise<void> {
   const kb = await buildSettingsKeyboard(core);
   await ctx.reply(`<b>⚙️ Settings</b>\nTap to change:`, {
@@ -56,6 +60,17 @@ export async function handleSettings(ctx: Context, core: OpenACPCore): Promise<v
   });
 }
 
+/**
+ * Register all `s:` settings callback handlers.
+ *
+ * For string/number fields that need free-form input (`s:input:`), the
+ * handler delegates to the assistant session so the user can type a value
+ * conversationally rather than using a keyboard.
+ *
+ * STT provider selection (`s:pick:speech.stt.provider`) checks whether an
+ * API key is already configured; if not, it redirects to the assistant to
+ * collect the key before applying the change.
+ */
 export function setupSettingsCallbacks(
   bot: Bot,
   core: OpenACPCore,

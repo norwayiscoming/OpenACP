@@ -8,6 +8,10 @@ import { escapeHtml } from "../formatting.js";
 import { createChildLogger } from "../../../core/utils/log.js";
 const log = createChildLogger({ module: "telegram-cmd-admin" });
 
+/**
+ * Return true if the session currently has bypass permissions enabled.
+ * Checks both the ACP-level mode config and the client-side override flag.
+ */
 export function isBypassActive(session: Session): boolean {
   const modeOpt = session.getConfigByCategory("mode");
   return (modeOpt?.type === "select" && isPermissionBypass(String(modeOpt.currentValue)))
@@ -24,6 +28,13 @@ export function buildDangerousModeKeyboard(
   );
 }
 
+/**
+ * Register the `d:` callback handler for bypass permissions toggle buttons.
+ *
+ * When the session is live in memory, the toggle is applied via the command registry
+ * (/bypass_permissions) so it propagates through ACP. When the session is no longer
+ * in memory (e.g. after restart), the toggle falls back to a direct store patch.
+ */
 export function setupDangerousModeCallbacks(bot: Bot, core: OpenACPCore): void {
   bot.callbackQuery(/^d:/, async (ctx) => {
     const sessionId = ctx.callbackQuery.data.slice(2);
@@ -229,6 +240,11 @@ export function setupTTSCallbacks(bot: Bot, core: OpenACPCore): void {
   });
 }
 
+/**
+ * Handle `/text_to_speech [on|off]` — toggle TTS for the current session.
+ * Must be used inside a session topic. Without an argument, enables TTS for the
+ * next message only. Checks that a TTS provider is installed before enabling.
+ */
 export async function handleTTS(
   ctx: Context,
   core: OpenACPCore,
@@ -297,6 +313,14 @@ const OUTPUT_MODE_LABELS: Record<string, string> = {
   high: "🔍 High",
 };
 
+/**
+ * Handle `/outputmode [low|medium|high]` — set the adapter-level or session-level
+ * output verbosity.
+ *
+ * - No args: show current mode and usage
+ * - `low|medium|high`: set adapter default (persisted to config)
+ * - `session low|medium|high|reset`: override for the current session only
+ */
 export async function handleOutputMode(
   ctx: Context,
   core: OpenACPCore,
@@ -391,6 +415,10 @@ export function setupVerbosityCallbacks(bot: Bot, core: OpenACPCore): void {
   });
 }
 
+/**
+ * Handle `/update` — check npm for a newer version of `@openacp/cli`, install it,
+ * and trigger a process restart. Edits the status message in-place as each step completes.
+ */
 export async function handleUpdate(
   ctx: Context,
   core: OpenACPCore,
@@ -461,6 +489,10 @@ export async function handleUpdate(
   await core.requestRestart();
 }
 
+/**
+ * Handle `/restart` — confirm and trigger a process restart via `core.requestRestart()`.
+ * A short delay is added so Telegram can deliver the confirmation message before shutdown.
+ */
 export async function handleRestart(
   ctx: Context,
   core: OpenACPCore,

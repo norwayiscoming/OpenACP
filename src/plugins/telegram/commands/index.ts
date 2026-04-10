@@ -22,6 +22,13 @@ import { TELEGRAM_OVERRIDES } from './telegram-overrides.js'
 import { createChildLogger } from '../../../core/utils/log.js'
 const log = createChildLogger({ module: 'telegram-menu-callbacks' })
 
+/**
+ * Register all callback query handlers for the Telegram bot.
+ *
+ * Handler registration order is significant in grammY: more specific prefix
+ * handlers (ns:, ar:, ag:) must be registered before the broad `m:` dispatcher,
+ * otherwise the broad handler would consume callbacks intended for specific flows.
+ */
 export function setupAllCallbacks(
   bot: Bot,
   core: OpenACPCore,

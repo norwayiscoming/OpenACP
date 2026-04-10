@@ -40,6 +40,13 @@ function escapeHtml(text: string): string {
   return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
+/**
+ * Handle `/doctor` — run all system diagnostic checks and display the report.
+ *
+ * Sends an initial "running…" message, runs `DoctorEngine.runAll()`, then
+ * edits the message with the report. Pending fixes are stored per-message so
+ * the `m:doctor:fix:<index>` callbacks know which fixes to apply.
+ */
 export async function handleDoctor(ctx: Context): Promise<void> {
   const statusMsg = await ctx.reply("🩺 Running diagnostics...", { parse_mode: "HTML" });
 

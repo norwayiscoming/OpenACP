@@ -1,3 +1,19 @@
+/**
+ * Interactive CLI config editor (`openacp config`).
+ *
+ * Provides a menu-driven interface for editing global config and per-plugin
+ * settings. Operates in two modes:
+ * - **file mode**: collects all changes in a `updates` object as the user
+ *   navigates menus, then flushes the batch to config.json on exit. This
+ *   accumulate-then-flush approach avoids partial writes if the user cancels
+ *   midway through editing multiple fields.
+ * - **api mode**: sends each section's changes to the running daemon via REST
+ *   API immediately, enabling hot-reload without restart.
+ *
+ * Global settings (logging, runMode, defaultAgent) are stored in config.json.
+ * Plugin-specific settings (bot tokens, ports) are stored in per-plugin
+ * settings files via SettingsManager.
+ */
 import * as path from 'node:path'
 import * as clack from '@clack/prompts'
 import type { Config, ConfigManager } from './config.js'
@@ -669,6 +685,13 @@ async function editProviderOptions(
 
 // --- Main Config Editor ---
 
+/**
+ * Launches the interactive config editor.
+ *
+ * In `file` mode, changes accumulate and are written to disk on exit.
+ * In `api` mode, each section's changes are sent to the running daemon
+ * via the REST API, enabling hot-reload without restart.
+ */
 export async function runConfigEditor(
   configManager: ConfigManager,
   mode: 'file' | 'api' = 'file',
@@ -742,6 +765,7 @@ export async function runConfigEditor(
   }
 }
 
+/** Sends config updates to a running daemon via the REST API, one field path at a time. */
 async function sendConfigViaApi(port: number, updates: ConfigUpdates): Promise<void> {
   const { apiCall: call } = await import('../../cli/api-client.js')
 
@@ -761,6 +785,7 @@ async function sendConfigViaApi(port: number, updates: ConfigUpdates): Promise<v
   }
 }
 
+/** Flattens a nested object into dot-path/value pairs for the config PATCH API. */
 function flattenToPaths(obj: Record<string, unknown>, prefix = ''): Array<{ path: string; value: unknown }> {
   const result: Array<{ path: string; value: unknown }> = []
   for (const [key, val] of Object.entries(obj)) {

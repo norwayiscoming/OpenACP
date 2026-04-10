@@ -1,5 +1,12 @@
 import type { AssistantSection } from '../assistant-registry.js'
 
+/**
+ * Creates the "Session Management" section for the assistant's system prompt.
+ *
+ * Injects live session counts (active vs total) and instructions for creating
+ * new sessions. This is the highest-priority section (priority 10) because
+ * session management is the assistant's primary purpose.
+ */
 export function createSessionsSection(core: { sessionManager: { listRecords(): Array<{ status: string }> } }): AssistantSection {
   return {
     id: 'core:sessions',

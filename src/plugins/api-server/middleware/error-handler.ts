@@ -2,6 +2,7 @@ import type { FastifyError, FastifyReply, FastifyRequest } from 'fastify';
 import { ZodError } from 'zod';
 import { ConfigValidationError } from '../../../core/config/config-registry.js';
 
+/** Standard error envelope returned by all API error responses. */
 export interface ApiErrorResponse {
   error: {
     code: string;
@@ -11,6 +12,7 @@ export interface ApiErrorResponse {
   };
 }
 
+/** Thrown by route handlers when a requested resource does not exist (→ 404). */
 export class NotFoundError extends Error {
   constructor(
     public code: string,
@@ -21,6 +23,7 @@ export class NotFoundError extends Error {
   }
 }
 
+/** Thrown when the client sends a malformed or semantically invalid request (→ 400). */
 export class BadRequestError extends Error {
   constructor(
     public code: string,
@@ -31,6 +34,7 @@ export class BadRequestError extends Error {
   }
 }
 
+/** Thrown when a required backing service (e.g. file-service) is not loaded (→ 503). */
 export class ServiceUnavailableError extends Error {
   constructor(
     public code: string,
@@ -41,6 +45,7 @@ export class ServiceUnavailableError extends Error {
   }
 }
 
+/** Thrown by auth middleware and routes for authentication/authorization failures (→ 401 or 403). */
 export class AuthError extends Error {
   constructor(
     public code: string,
@@ -52,6 +57,11 @@ export class AuthError extends Error {
   }
 }
 
+/**
+ * Fastify global error handler that normalizes all thrown errors into the `ApiErrorResponse`
+ * envelope. Maps known error classes to their corresponding HTTP status codes and falls back
+ * to 500 for anything unrecognized.
+ */
 export function globalErrorHandler(
   error: FastifyError | Error,
   _request: FastifyRequest,

@@ -6,6 +6,15 @@ const log = createChildLogger({ module: 'bore-tunnel' })
 
 const SIGKILL_TIMEOUT_MS = 5_000
 
+/**
+ * Tunnel provider that uses the bore CLI (https://github.com/ekzhang/bore).
+ *
+ * bore must be installed separately (not auto-installed). Connects to `bore.pub`
+ * by default, or a custom server via `options.server`. Optionally accepts
+ * `options.port` (fixed remote port) and `options.secret` for server auth.
+ *
+ * URL is extracted from stdout: "listening at <host>:<port>".
+ */
 export class BoreTunnelProvider implements TunnelProvider {
   private child: ChildProcess | null = null
   private publicUrl = ''
@@ -49,6 +58,7 @@ export class BoreTunnelProvider implements TunnelProvider {
         return
       }
 
+      // Parse bore's "listening at <host>:<port>" line to extract the public URL
       const urlPattern = /listening at ([^\s]+):(\d+)/
 
       const onData = (data: Buffer) => {

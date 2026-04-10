@@ -5,6 +5,17 @@ import type { ApiServerService } from '../api-server/service.js'
 import { MAX_RETRIES } from './tunnel-registry.js'
 import { createViewerRoutes } from './viewer-routes.js'
 
+/**
+ * Tunnel plugin — exposes the local API server to the internet via a tunnel provider.
+ *
+ * Setup starts the system tunnel when the API server emits `api-server:started`,
+ * then registers viewer routes so agents can share file/diff/output content via
+ * public URLs. Also registers `/tunnel` and `/tunnels` chat commands for managing
+ * additional user-created tunnels.
+ *
+ * The `cloudflare` provider is auto-migrated to `openacp` on startup for users
+ * who configured it before the managed tunnel was introduced.
+ */
 function createTunnelPlugin(): OpenACPPlugin {
   let service: { stop(): Promise<void> } | null = null
 

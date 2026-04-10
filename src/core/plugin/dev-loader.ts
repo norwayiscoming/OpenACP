@@ -2,8 +2,17 @@ import fs from 'node:fs'
 import path from 'node:path'
 import type { OpenACPPlugin } from './types.js'
 
+/** Monotonic counter appended to import URLs to bust Node's ESM module cache on reload. */
 let loadCounter = 0
 
+/**
+ * Loads a plugin from a local directory path instead of npm.
+ *
+ * Used by `openacp dev --plugin <path>` for plugin development.
+ * Expects the plugin to be pre-built (dist/index.js must exist).
+ * Supports hot-reload by appending a cache-busting query string to the
+ * import URL — Node.js caches ESM modules by URL, so unique URLs force re-import.
+ */
 export class DevPluginLoader {
   private pluginPath: string
 
@@ -11,6 +20,10 @@ export class DevPluginLoader {
     this.pluginPath = path.resolve(pluginPath)
   }
 
+  /**
+   * Import the plugin's default export from dist/index.js.
+   * Each call uses a unique URL query to bypass Node's ESM cache.
+   */
   async load(): Promise<OpenACPPlugin> {
     const distIndex = path.join(this.pluginPath, 'dist', 'index.js')
     const srcIndex = path.join(this.pluginPath, 'src', 'index.ts')
@@ -37,10 +50,12 @@ export class DevPluginLoader {
     return plugin
   }
 
+  /** Returns the resolved absolute path to the plugin's root directory. */
   getPluginPath(): string {
     return this.pluginPath
   }
 
+  /** Returns the path to the plugin's dist directory. */
   getDistPath(): string {
     return path.join(this.pluginPath, 'dist')
   }

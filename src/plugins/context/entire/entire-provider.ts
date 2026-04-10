@@ -4,6 +4,18 @@ import { DEFAULT_MAX_TOKENS, TOKENS_PER_TURN_ESTIMATE } from "../context-provide
 import { CheckpointReader } from "./checkpoint-reader.js";
 import { parseJsonlToTurns, buildSessionMarkdown, mergeSessionsMarkdown, selectMode, estimateTokens, type SessionMarkdownInput } from "./conversation-builder.js";
 
+/**
+ * Context provider backed by Claude Code checkpoint data stored in the git repo.
+ *
+ * Only available when the repo has an `origin/entire/checkpoints/v1` branch,
+ * which is pushed by the Entire Claude Code extension. Supports all query types
+ * (branch, commit, PR, session, latest) by reading checkpoint metadata and
+ * reconstructing conversation turns from JSONL transcripts.
+ *
+ * Used as a lower-priority fallback after HistoryProvider: the live history
+ * recorder takes precedence for sessions still in memory, while this provider
+ * covers older sessions or cross-branch queries.
+ */
 export class EntireProvider implements ContextProvider {
   readonly name = "entire";
 
@@ -31,7 +43,8 @@ export class EntireProvider implements ContextProvider {
       return { markdown: "", tokenEstimate: 0, sessionCount: 0, totalTurns: 0, mode: "full", truncated: false, timeRange: { start: "", end: "" } };
     }
 
-    // Rebuild each session, cache parsed turns for potential re-render
+    // Parse all transcripts upfront so we know total turns before selecting mode.
+    // We may need to re-render with a different mode, so we keep the raw JSONL.
     const parsedSessions: { session: SessionInfo; jsonl: string; }[] = [];
     for (const sess of sessions) {
       const jsonl = reader.getTranscript(sess.transcriptPath);

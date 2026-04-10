@@ -1,6 +1,19 @@
 #!/usr/bin/env node
 
+// CLI entry point — resolves instance-level flags, then dispatches to subcommands.
+//
+// Flow:
+//   1. Global flags (--dir, --local, --from, --name) are stripped from argv before
+//      Commander sees them, so they work uniformly across all subcommands.
+//   2. Instance root is resolved from flags, CWD traversal, or env var.
+//   3. Global instance migration runs once (backward compat for pre-multi-instance setups).
+//   4. Commands that don't need an instance (update, adopt, instances, dev, -v, -h) run immediately.
+//   5. All other commands get the resolved instance root via a prompt if it wasn't auto-detected.
+
 import { setDefaultAutoSelectFamily } from "node:net";
+// Disable Happy Eyeballs (RFC 6555) — the dual-stack connection racing strategy that node:net
+// enables by default. It causes flaky behaviour in local/containerised environments where
+// IPv6 is advertised but not actually routable, leading to 300ms connection delays.
 setDefaultAutoSelectFamily(false);
 
 import path from 'node:path'
@@ -36,10 +49,20 @@ import {
 } from './cli/commands/index.js'
 import { resolveInstanceRoot } from './core/instance/instance-context.js'
 
+/**
+ * Global instance-targeting flags accepted by every CLI command.
+ *
+ * These are extracted from argv before Commander parses the command,
+ * so they are available uniformly without each subcommand declaring them.
+ */
 export interface InstanceFlags {
+  /** Use the instance in the current working directory (`.openacp/` in CWD). */
   local: boolean
+  /** Explicit path to the workspace directory (parent of `.openacp/`). */
   dir?: string
+  /** Clone a new instance from this source path. */
   from?: string
+  /** Human-readable label for the instance. */
   name?: string
 }
 
@@ -64,10 +87,21 @@ function extractInstanceFlags(args: string[]): { flags: InstanceFlags; remaining
 let resolvedInstanceRoot: string | null = null
 let instanceFlags: InstanceFlags = { local: false }
 
+/**
+ * Returns the instance root resolved during CLI startup.
+ *
+ * Available to subcommands that need the resolved path without re-resolving it.
+ * May be null if the command does not require an instance (e.g., `update`, `adopt`).
+ */
 export function getResolvedInstanceRoot(): string | null {
   return resolvedInstanceRoot
 }
 
+/**
+ * Returns the global instance-targeting flags parsed from argv.
+ *
+ * Useful for subcommands that need to inspect raw flags (e.g., to read `--name`).
+ */
 export function getInstanceFlags(): InstanceFlags {
   return instanceFlags
 }

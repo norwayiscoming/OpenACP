@@ -2,6 +2,12 @@ import fs from "node:fs";
 import path from "node:path";
 import type { SessionHistory } from "./types.js";
 
+/**
+ * Persists session history to disk as one JSON file per session.
+ *
+ * Files are stored as `<dir>/<sessionId>.json`. The path is validated to prevent
+ * directory traversal — session IDs that resolve outside `dir` are rejected.
+ */
 export class HistoryStore {
   constructor(private readonly dir: string) {}
 
@@ -50,6 +56,8 @@ export class HistoryStore {
   }
 
   private filePath(sessionId: string): string {
+    // Use basename to strip any path components from the session ID, then
+    // verify the resolved path stays within the store directory.
     const basename = path.basename(sessionId);
     const resolved = path.join(this.dir, `${basename}.json`);
     if (!resolved.startsWith(this.dir)) {

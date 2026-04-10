@@ -6,6 +6,14 @@ import { createChildLogger } from "../../../core/utils/log.js";
 
 const log = createChildLogger({ module: "telegram-cmd-switch" });
 
+/**
+ * Handle `/switch [agent]` — switch the agent for the current session.
+ *
+ * - No args: show inline keyboard of available agents.
+ * - With agent name: switch directly; if a prompt is in-flight, show a confirmation
+ *   prompt before interrupting it.
+ * - `/switch label on|off`: toggle whether the agent name is prefixed in session history.
+ */
 export async function handleSwitch(
   ctx: Context,
   core: OpenACPCore,
@@ -75,6 +83,10 @@ export async function handleSwitch(
   await executeSwitchAgent(ctx, core, session.id, raw);
 }
 
+/**
+ * Execute an agent switch for a session. Called by both the `/switch` command
+ * handler and the `swc:` confirmation callback (when a prompt was in-flight).
+ */
 export async function executeSwitchAgent(
   ctx: Context,
   core: OpenACPCore,

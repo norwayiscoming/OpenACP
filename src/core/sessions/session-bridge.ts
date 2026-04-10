@@ -15,6 +15,7 @@ import { Hook, BusEvent, SessionEv } from "../events.js";
 
 const log = createChildLogger({ module: "session-bridge" });
 
+/** Services required by SessionBridge for message transformation, persistence, and middleware. */
 export interface BridgeDeps {
   messageTransformer: MessageTransformer;
   notificationManager: NotificationManager;
@@ -24,6 +25,18 @@ export interface BridgeDeps {
   middlewareChain?: MiddlewareChain;
 }
 
+/**
+ * Connects a Session to a channel adapter, forwarding agent events to the adapter's
+ * stream interface and wiring up permission handling, lifecycle persistence, and middleware.
+ *
+ * Each adapter attached to a session gets its own bridge. The bridge subscribes to
+ * Session events (agent_event, permission_request, status_change, etc.) and translates
+ * them into adapter-specific calls (sendMessage, sendPermissionRequest, renameSessionThread).
+ *
+ * Multi-adapter routing: when a TurnContext is active, turn events (text, tool_call, etc.)
+ * are forwarded only to the adapter that originated the prompt. System events (commands_update,
+ * session_end, etc.) are always broadcast to all bridges.
+ */
 export class SessionBridge {
   private connected = false;
   private cleanupFns: Array<() => void> = [];
@@ -71,7 +84,10 @@ export class SessionBridge {
     }
   }
 
-  /** Determine if this bridge should forward the given event based on turn routing. */
+  /**
+   * Determine if this bridge should forward the given event based on turn routing.
+   * System events are always forwarded; turn events are routed only to the target adapter.
+   */
   shouldForward(event: AgentEvent): boolean {
     // System events → always forward to all bridges
     if (isSystemEvent(event)) return true;
@@ -90,6 +106,13 @@ export class SessionBridge {
     return this.adapterId === target;
   }
 
+  /**
+   * Subscribe to session events and start forwarding them to the adapter.
+   *
+   * Wires: agent events → adapter dispatch, permission UI, lifecycle persistence
+   * (status changes, naming, prompt count), and EventBus notifications.
+   * Also replays any commands or config options that arrived before the bridge connected.
+   */
   connect(): void {
     if (this.connected) return;
     this.connected = true;
@@ -203,6 +226,7 @@ export class SessionBridge {
     }
   }
 
+  /** Unsubscribe all session event listeners and clean up adapter state. */
   disconnect(): void {
     if (!this.connected) return;
     this.connected = false;

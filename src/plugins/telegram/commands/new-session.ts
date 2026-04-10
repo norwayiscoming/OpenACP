@@ -14,6 +14,14 @@ function botFromCtx(ctx: Context): Bot {
   return { api: ctx.api } as unknown as Bot;
 }
 
+/**
+ * Handle `/new [agent] [workspace]` — create a new session.
+ *
+ * - With both args: creates the session directly via `createSessionDirect`.
+ * - From the assistant topic without full args: delegates to the AI assistant
+ *   to guide the user through selecting an agent and workspace.
+ * - Otherwise: shows a usage hint.
+ */
 export async function handleNew(
   ctx: Context,
   core: OpenACPCore,
@@ -54,6 +62,16 @@ export async function handleNew(
   );
 }
 
+/**
+ * Create a session topic and start the agent immediately.
+ *
+ * Creates the forum topic first (before the session events fire) to ensure the
+ * thread ID is available when `session_thread_ready` fires. Sends a control
+ * message with session status and bypass/TTS buttons. Cleans up the orphaned
+ * topic if session creation fails.
+ *
+ * Returns the Telegram thread ID, or null on failure.
+ */
 export async function createSessionDirect(
   ctx: Context,
   core: OpenACPCore,
@@ -105,6 +123,11 @@ export async function createSessionDirect(
   }
 }
 
+/**
+ * Handle `/newchat` — start a fresh chat in a new topic, reusing the current
+ * session's agent and workspace. Resolves agent/workspace from the in-memory session
+ * first, falling back to the stored record for sessions not currently loaded.
+ */
 export async function handleNewChat(
   ctx: Context,
   core: OpenACPCore,
@@ -297,6 +320,10 @@ function shortenPath(ws: string): string {
   return home && ws.startsWith(home) ? '~' + ws.slice(home.length) : ws
 }
 
+/**
+ * Show the agent selection step of the multi-step new session wizard.
+ * If only one agent is installed, skip directly to workspace selection.
+ */
 export async function showAgentPicker(ctx: Context, core: OpenACPCore, chatId: number): Promise<void> {
   const catalog = core.agentCatalog
   const installed = catalog.getAvailable().filter((i) => i.installed)
@@ -366,6 +393,18 @@ async function showWorkspacePicker(ctx: Context, core: OpenACPCore, chatId: numb
   }
 }
 
+/**
+ * Register all callback handlers for the multi-step new session wizard.
+ *
+ * Wizard flow:
+ * 1. `ns:start` → agent picker
+ * 2. `ns:agent:<key>` → workspace picker
+ * 3. `ns:ws:<id>` → create session
+ * 4. `ns:custom:<key>` → force-reply prompt for custom path input
+ *
+ * Custom path replies are intercepted from the `message:text` middleware by
+ * checking against the `_forceReplyMap` before passing to the next handler.
+ */
 export function setupNewSessionCallbacks(
   bot: Bot,
   core: OpenACPCore,
@@ -462,6 +501,13 @@ export function setupNewSessionCallbacks(
   })
 }
 
+/**
+ * Create a new session programmatically (used by the API server and assistant).
+ *
+ * Creates the forum topic and sends the initial "Setting up..." message before
+ * calling `core.handleNewSession()`, so the threadId is ready when session events
+ * fire. Cleans up the orphaned topic on failure.
+ */
 export async function executeNewSession(
   bot: Bot,
   core: OpenACPCore,

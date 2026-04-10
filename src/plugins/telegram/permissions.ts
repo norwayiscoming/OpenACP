@@ -7,13 +7,22 @@ import { buildDeepLink } from './topics.js'
 import { createChildLogger } from '../../core/utils/log.js'
 const log = createChildLogger({ module: 'telegram-permissions' })
 
-// Stored pending permission callbacks: callbackKey → { sessionId, requestId, options }
+// In-memory map from short callback key → pending permission data.
+// Keys are 8-character nanoid strings to stay within Telegram's 64-byte callback_data limit.
 interface PendingPermission {
   sessionId: string
   requestId: string
   options: { id: string; isAllow: boolean }[]
 }
 
+/**
+ * Renders PermissionRequest objects as Telegram inline keyboard buttons and
+ * routes the user's approval/denial back to the PermissionGate.
+ *
+ * Each request is assigned a short callback key (`p:<key>:<optionId>`) to avoid
+ * Telegram's 64-byte limit on callback_data. The resolved option is passed to
+ * `session.permissionGate.resolve()` to unblock the waiting agent prompt.
+ */
 export class PermissionHandler {
   private pending: Map<string, PendingPermission> = new Map()
 
@@ -24,10 +33,18 @@ export class PermissionHandler {
     private sendNotification: (notification: NotificationMessage) => Promise<void>,
   ) {}
 
+  /**
+   * Send a permission request to the session's topic as an inline keyboard message,
+   * and fire a notification to the Notifications topic so the user is alerted.
+   *
+   * Each button encodes `p:<callbackKey>:<optionId>`. The callbackKey is a short
+   * nanoid that maps to the full pending state stored in-memory, avoiding the
+   * 64-byte Telegram callback_data limit.
+   */
   async sendPermissionRequest(session: Session, request: PermissionRequest): Promise<void> {
     const threadId = Number(session.threadId)
 
-    // Short callback key (Telegram 64-byte limit on callback_data)
+    // nanoid(8) = 8-char key; well within the 64-byte callback_data budget
     const callbackKey = nanoid(8)
     this.pending.set(callbackKey, {
       sessionId: session.id,
@@ -67,9 +84,16 @@ export class PermissionHandler {
     })
   }
 
+  /**
+   * Register the `p:` callback handler in the bot's middleware chain.
+   *
+   * Must be called during setup so grammY processes permission responses
+   * before other generic callback handlers.
+   */
   setupCallbackHandler(): void {
     this.bot.on('callback_query:data', async (ctx, next) => {
       const data = ctx.callbackQuery.data
+      // Only handle permission callbacks; pass everything else to the next handler
       if (!data.startsWith('p:')) return next()
 
       const parts = data.split(':')

@@ -5,6 +5,7 @@ import { createChildLogger } from '../utils/log.js'
 
 const log = createChildLogger({ module: 'assistant-manager' })
 
+/** Subset of OpenACPCore methods needed by AssistantManager, avoiding a circular import. */
 interface AssistantManagerCore {
   createSession(params: {
     channelId: string
@@ -23,6 +24,19 @@ interface AssistantManagerCore {
   sessionStore: SessionStore | null
 }
 
+/**
+ * Manages the OpenACP built-in assistant session.
+ *
+ * The assistant is a special session (marked with `isAssistant: true`) that
+ * can answer questions about the running OpenACP system — sessions, agents,
+ * config, etc. Unlike user-created sessions, it is created and managed by
+ * core, and its system prompt is dynamically composed from registry sections
+ * that inject live system state.
+ *
+ * One assistant session exists per channel. The system prompt is built at
+ * spawn time and deferred — it's prepended to the first user message rather
+ * than sent immediately, so the agent receives it alongside real context.
+ */
 export class AssistantManager {
   private sessions = new Map<string, Session>()
   private pendingSystemPrompts = new Map<string, string>()
@@ -32,6 +46,13 @@ export class AssistantManager {
     private registry: AssistantRegistry,
   ) {}
 
+  /**
+   * Returns the assistant session for a channel, creating one if needed.
+   *
+   * If a persisted assistant session exists in the store, it is reused
+   * (same session ID) to preserve conversation history. The system prompt
+   * is always rebuilt fresh and deferred until the first user message.
+   */
   async getOrSpawn(channelId: string, threadId: string): Promise<Session> {
     const existing = this.core.sessionStore?.findAssistant(channelId)
     const session = await this.core.createSession({
@@ -45,6 +66,8 @@ export class AssistantManager {
     })
     this.sessions.set(channelId, session)
 
+    // Build the system prompt now but don't send it yet — it will be
+    // prepended to the first real user message via consumePendingSystemPrompt()
     const systemPrompt = this.registry.buildSystemPrompt(channelId)
     this.pendingSystemPrompts.set(channelId, systemPrompt)
     log.info(
@@ -55,6 +78,7 @@ export class AssistantManager {
     return session
   }
 
+  /** Returns the active assistant session for a channel, or null if none exists. */
   get(channelId: string): Session | null {
     return this.sessions.get(channelId) ?? null
   }
@@ -69,6 +93,7 @@ export class AssistantManager {
     return prompt
   }
 
+  /** Checks whether a given session ID belongs to the built-in assistant. */
   isAssistant(sessionId: string): boolean {
     for (const s of this.sessions.values()) {
       if (s.id === sessionId) return true

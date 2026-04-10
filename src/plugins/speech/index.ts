@@ -6,6 +6,8 @@ import { SpeechService, GroqSTT } from './exports.js'
 import type { SpeechServiceConfig } from './exports.js'
 import { installNpmPlugin } from '../../core/plugin/plugin-installer.js'
 
+// TTS is provided by a separate optional plugin so the core speech plugin
+// doesn't bundle a large native dependency on every install.
 const EDGE_TTS_PLUGIN = '@openacp/msedge-tts-plugin'
 
 const speechPlugin: OpenACPPlugin = {
@@ -13,6 +15,7 @@ const speechPlugin: OpenACPPlugin = {
   version: '1.0.0',
   description: 'Text-to-speech and speech-to-text with pluggable providers',
   essential: false,
+  // file-service is needed to persist synthesized audio for adapters that send files
   optionalPluginDependencies: { '@openacp/file-service': '^1.0.0' },
   permissions: ['services:register', 'commands:register', 'kernel:access'],
   inheritableKeys: ['ttsProvider', 'ttsVoice'],
@@ -129,6 +132,7 @@ const speechPlugin: OpenACPPlugin = {
     const config = ctx.pluginConfig as Record<string, unknown>
     const groqApiKey = config.groqApiKey as string | undefined
 
+    // STT provider is determined solely by whether an API key is present
     const sttProvider = groqApiKey ? 'groq' : null
     const speechConfig: SpeechServiceConfig = {
       stt: {
@@ -201,6 +205,7 @@ const speechPlugin: OpenACPPlugin = {
             const mod = await installNpmPlugin(EDGE_TTS_PLUGIN, pluginsDir)
             const plugin = mod.default
             if (plugin && ctx.core) {
+              // Boot the newly installed plugin without restarting the process
               const lm = (ctx.core as OpenACPCore).lifecycleManager
               const registry = lm.registry
               if (registry) {

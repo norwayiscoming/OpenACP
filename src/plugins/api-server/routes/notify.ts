@@ -7,6 +7,13 @@ const NotifyBodySchema = z.object({
   message: z.string().min(1).max(4_000),
 });
 
+/**
+ * Notification broadcast route under `/api/v1/notify`.
+ *
+ * `POST /` sends a system notification to all connected adapters (Telegram, Slack, etc.)
+ * via the notification manager. Requires `sessions:write` scope.
+ * Used by CLI tools and external integrations to push custom alerts to the operator.
+ */
 export async function notifyRoutes(
   app: FastifyInstance,
   deps: RouteDeps,

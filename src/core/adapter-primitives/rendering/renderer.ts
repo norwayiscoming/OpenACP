@@ -15,25 +15,34 @@ import {
 } from "../message-formatter.js";
 import { progressBar, formatTokens } from "../format-utils.js";
 
+/**
+ * A rendered message ready for platform delivery.
+ * The `format` field tells the adapter how to interpret the body
+ * (e.g., pass as HTML to Telegram, or as plain text to SSE).
+ */
 export interface RenderedMessage<TComponents = unknown> {
   body: string;
   format: "html" | "markdown" | "plain" | "structured";
   attachments?: RenderedAttachment[];
+  /** Platform-specific UI components (e.g., Telegram inline keyboards). */
   components?: TComponents;
 }
 
+/** A rendered permission request with approve/deny action buttons. */
 export interface RenderedPermission<
   TComponents = unknown,
 > extends RenderedMessage<TComponents> {
   actions: RenderedAction[];
 }
 
+/** A single action button for permission requests. */
 export interface RenderedAction {
   id: string;
   label: string;
   isAllow?: boolean;
 }
 
+/** A file, image, or audio attachment to include with a rendered message. */
 export interface RenderedAttachment {
   type: "file" | "image" | "audio";
   data: Buffer | string;
@@ -41,6 +50,14 @@ export interface RenderedAttachment {
   filename?: string;
 }
 
+/**
+ * Rendering contract for platform-specific message formatting.
+ *
+ * Each adapter provides its own IRenderer implementation (e.g., TelegramRenderer
+ * outputs HTML, a CLI renderer might output ANSI). Required methods handle the
+ * core message types; optional methods handle less common types and fall back
+ * to no-ops if not implemented.
+ */
 export interface IRenderer {
   renderText(
     content: OutgoingMessage,
@@ -86,7 +103,11 @@ export interface IRenderer {
 }
 
 /**
- * BaseRenderer — plain text defaults. Extend for platform-specific rendering.
+ * Default renderer producing plain-text output for all message types.
+ *
+ * Platform-specific renderers (e.g., TelegramRenderer) extend this class
+ * and override methods to produce HTML, markdown, or structured output.
+ * Methods not overridden fall back to these plain-text defaults.
  */
 export class BaseRenderer implements IRenderer {
   renderText(content: OutgoingMessage): RenderedMessage {

@@ -1,5 +1,11 @@
 import type { AssistantSection } from '../assistant-registry.js'
 
+/**
+ * Creates the "System" section for the assistant's system prompt.
+ *
+ * Provides system-level commands (health check, restart, version) and
+ * instructs the assistant to always confirm before disruptive actions.
+ */
 export function createSystemSection(): AssistantSection {
   return {
     id: 'core:system',

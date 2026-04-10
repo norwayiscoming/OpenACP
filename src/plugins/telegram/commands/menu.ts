@@ -3,6 +3,11 @@ import { InlineKeyboard } from "grammy";
 import type { AgentCommand } from "../../../core/index.js";
 import type { MenuRegistry } from "../../../core/menu-registry.js";
 
+/**
+ * Build the main OpenACP menu keyboard from the MenuRegistry.
+ * Falls back to a hardcoded keyboard when the registry is not available.
+ * Items are grouped by their `group` property, with a row break between groups.
+ */
 export function buildMenuKeyboard(menuRegistry?: MenuRegistry): InlineKeyboard {
   if (!menuRegistry) {
     return new InlineKeyboard()

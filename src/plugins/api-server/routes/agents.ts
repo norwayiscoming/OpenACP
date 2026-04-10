@@ -5,6 +5,12 @@ import { NotFoundError } from '../middleware/error-handler.js';
 import { requireScopes } from '../middleware/auth.js';
 import { getAgentCapabilities } from '../../../core/agents/agent-registry.js';
 
+/**
+ * Agent catalog routes under `/api/v1/agents`.
+ *
+ * Routes: list all (`GET /`), reload from disk (`POST /reload`), get one (`GET /:name`).
+ * Requires `agents:read` for reads and `agents:write` for the reload mutation.
+ */
 export async function agentRoutes(
   app: FastifyInstance,
   deps: RouteDeps,

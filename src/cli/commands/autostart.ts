@@ -1,6 +1,14 @@
 import path from 'node:path'
 import { wantsHelp } from './helpers.js'
 
+/**
+ * `openacp autostart` — Manage OS-level auto-start for the daemon.
+ *
+ * Subcommands:
+ * - install: registers a LaunchAgent (macOS) or systemd user unit (Linux)
+ * - uninstall: removes the service registration
+ * - status: checks whether the service is currently installed
+ */
 export async function cmdAutostart(args: string[] = [], instanceRoot?: string): Promise<void> {
   const subcommand = args[0]
 

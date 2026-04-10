@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+// Zod schemas for session API requests. Security-relevant size limits are documented inline.
+
 export const ListSessionsQuerySchema = z.object({
   status: z.enum(['initializing', 'active', 'finished', 'cancelled', 'error']).optional(),
   agentName: z.string().max(200).optional(),

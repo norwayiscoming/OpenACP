@@ -2,6 +2,16 @@ import * as clack from "@clack/prompts";
 import { expandHome } from "../config/config.js";
 import { guardCancel, ok, warn, dim, step } from "./helpers.js";
 
+/**
+ * Prompts the user to choose between foreground and daemon run modes.
+ *
+ * Daemon mode installs an OS-level autostart entry (launchd on macOS,
+ * systemd on Linux). When switching from daemon to foreground, the
+ * running daemon is stopped and autostart is uninstalled.
+ *
+ * Daemon mode is not available on Windows — the function silently
+ * defaults to foreground in that case.
+ */
 export async function setupRunMode(opts?: {
   existing?: { runMode: string; autoStart: boolean };
   stepNum?: number;

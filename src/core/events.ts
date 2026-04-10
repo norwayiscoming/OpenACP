@@ -16,7 +16,14 @@ import type { SessionEvents } from './sessions/session.js';
 
 /**
  * Names for all middleware pipeline hooks.
- * Used with middlewareChain.execute(Hook.X, ...) and ctx.registerMiddleware(Hook.X, ...).
+ *
+ * Each hook is an intercept point in the request/event pipeline. Middleware
+ * registered on a hook can inspect, modify, or block the payload before it
+ * proceeds. "Read-only, fire-and-forget" hooks run after the fact and cannot
+ * block.
+ *
+ * Used with `middlewareChain.execute(Hook.X, ...)` and
+ * `ctx.registerMiddleware(Hook.X, ...)`.
  */
 export const Hook = {
   // --- Message flow ---
@@ -82,45 +89,72 @@ export type HookName = typeof Hook[keyof typeof Hook];
 
 /**
  * Names for all EventBus events.
- * Used with eventBus.emit(BusEvent.X, ...) and eventBus.on(BusEvent.X, ...).
- * Type-checked against EventBusEvents interface.
+ *
+ * EventBus is the global pub/sub bus for cross-cutting concerns — plugins
+ * subscribe to these events without needing direct references to sessions
+ * or adapters. Type-checked against the EventBusEvents interface.
+ *
+ * Used with `eventBus.emit(BusEvent.X, ...)` and `eventBus.on(BusEvent.X, ...)`.
  */
 export const BusEvent = {
   // --- Session lifecycle ---
+  /** Fired when a new session is created and ready. */
   SESSION_CREATED: 'session:created',
+  /** Fired when session metadata changes (status, name, overrides). */
   SESSION_UPDATED: 'session:updated',
+  /** Fired when a session record is deleted from the store. */
   SESSION_DELETED: 'session:deleted',
+  /** Fired when a session ends (agent finished or error). */
   SESSION_ENDED: 'session:ended',
+  /** Fired when a session receives its auto-generated name. */
   SESSION_NAMED: 'session:named',
+  /** Fired after a new session thread is created and bridge connected. */
   SESSION_THREAD_READY: 'session:threadReady',
+  /** Fired when an agent's config options change (adapters update control UIs). */
   SESSION_CONFIG_CHANGED: 'session:configChanged',
+  /** Fired during agent switch lifecycle (starting/succeeded/failed). */
   SESSION_AGENT_SWITCH: 'session:agentSwitch',
 
   // --- Agent ---
+  /** Fired for every agent event (text, tool_call, usage, etc.). */
   AGENT_EVENT: 'agent:event',
+  /** Fired when a prompt is sent to the agent. */
   AGENT_PROMPT: 'agent:prompt',
 
   // --- Permissions ---
+  /** Fired when the agent requests user permission (blocks until resolved). */
   PERMISSION_REQUEST: 'permission:request',
+  /** Fired after a permission request is resolved (approved or denied). */
   PERMISSION_RESOLVED: 'permission:resolved',
 
   // --- Message visibility ---
+  /** Fired when a user message is queued (for cross-adapter input visibility). */
   MESSAGE_QUEUED: 'message:queued',
+  /** Fired when a queued message starts processing. */
   MESSAGE_PROCESSING: 'message:processing',
 
   // --- System lifecycle ---
+  /** Fired after kernel (core + plugin infrastructure) has booted. */
   KERNEL_BOOTED: 'kernel:booted',
+  /** Fired when the system is fully ready (all adapters connected). */
   SYSTEM_READY: 'system:ready',
+  /** Fired during graceful shutdown. */
   SYSTEM_SHUTDOWN: 'system:shutdown',
+  /** Fired when all system commands are registered and available. */
   SYSTEM_COMMANDS_READY: 'system:commands-ready',
 
   // --- Plugin lifecycle ---
+  /** Fired when a plugin loads successfully. */
   PLUGIN_LOADED: 'plugin:loaded',
+  /** Fired when a plugin fails to load. */
   PLUGIN_FAILED: 'plugin:failed',
+  /** Fired when a plugin is disabled (e.g., missing config). */
   PLUGIN_DISABLED: 'plugin:disabled',
+  /** Fired when a plugin is unloaded during shutdown. */
   PLUGIN_UNLOADED: 'plugin:unloaded',
 
   // --- Usage ---
+  /** Fired when a token usage record is captured (consumed by usage plugin). */
   USAGE_RECORDED: 'usage:recorded',
 } as const satisfies Record<string, keyof EventBusEvents>;
 
@@ -132,17 +166,29 @@ export type BusEventName = typeof BusEvent[keyof typeof BusEvent];
 
 /**
  * Names for all Session TypedEmitter events.
- * Used with session.on(SessionEv.X, ...) and session.emit(SessionEv.X, ...).
- * Type-checked against SessionEvents interface.
+ *
+ * These are per-session events emitted by the Session instance itself.
+ * SessionBridge subscribes to these to relay agent output to adapters.
+ *
+ * Used with `session.on(SessionEv.X, ...)` and `session.emit(SessionEv.X, ...)`.
+ * Type-checked against the SessionEvents interface.
  */
 export const SessionEv = {
+  /** Agent produced an event (text, tool_call, etc.) during a turn. */
   AGENT_EVENT: 'agent_event',
+  /** Agent is requesting user permission — blocks until resolved. */
   PERMISSION_REQUEST: 'permission_request',
+  /** Session ended (agent finished, cancelled, or errored). */
   SESSION_END: 'session_end',
+  /** Session status changed (e.g., initializing → active). */
   STATUS_CHANGE: 'status_change',
+  /** Session received an auto-generated name from the first response. */
   NAMED: 'named',
+  /** An unrecoverable error occurred in the session. */
   ERROR: 'error',
+  /** The session's prompt count changed (used for UI counters). */
   PROMPT_COUNT_CHANGED: 'prompt_count_changed',
+  /** A new prompt turn started (provides TurnContext for middleware). */
   TURN_STARTED: 'turn_started',
 } as const satisfies Record<string, keyof SessionEvents>;
 

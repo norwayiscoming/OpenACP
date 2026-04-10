@@ -1,8 +1,12 @@
+/** Timing configuration for the thinking indicator lifecycle. */
 export interface ActivityConfig {
+  /** How often (ms) to refresh the typing indicator (e.g., re-send "typing..." action). */
   thinkingRefreshInterval: number
+  /** Maximum duration (ms) before auto-dismissing the indicator to avoid stale UI. */
   maxThinkingDuration: number
 }
 
+/** Platform-specific callbacks for showing/updating/removing typing indicators. */
 export interface ActivityCallbacks {
   sendThinkingIndicator(): Promise<void>
   updateThinkingIndicator(): Promise<void>
@@ -16,11 +20,20 @@ interface SessionState {
   dismissed: boolean
 }
 
+/**
+ * Manages typing/thinking indicators across sessions.
+ *
+ * When the agent starts processing, a typing indicator is shown. It is
+ * periodically refreshed (platforms like Telegram expire typing status after
+ * ~5 seconds) and auto-dismissed either when text output begins or when
+ * the max thinking duration is reached.
+ */
 export class ActivityTracker {
   private sessions = new Map<string, SessionState>()
 
   constructor(private config: ActivityConfig) {}
 
+  /** Shows the typing indicator and starts the periodic refresh timer. */
   onThinkingStart(sessionId: string, callbacks: ActivityCallbacks): void {
     this.cleanup(sessionId)
 
@@ -38,6 +51,7 @@ export class ActivityTracker {
     }, 0)
   }
 
+  /** Dismisses the typing indicator when the agent starts producing text output. */
   onTextStart(sessionId: string): void {
     const state = this.sessions.get(sessionId)
     if (!state || state.dismissed) return
@@ -46,10 +60,12 @@ export class ActivityTracker {
     state.callbacks.removeThinkingIndicator().catch(() => {})
   }
 
+  /** Cleans up the typing indicator when the session ends. */
   onSessionEnd(sessionId: string): void {
     this.cleanup(sessionId)
   }
 
+  /** Cleans up all sessions (e.g., during adapter shutdown). */
   destroy(): void {
     for (const [id] of this.sessions) {
       this.cleanup(id)

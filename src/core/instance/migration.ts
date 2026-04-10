@@ -6,9 +6,21 @@ import { getGlobalRoot } from './instance-context.js'
 import { InstanceRegistry } from './instance-registry.js'
 
 /**
- * Migrate a legacy global instance from ~/.openacp/ to <workspace>/.openacp/.
- * Called once on first CLI invocation after upgrade.
- * Returns the new instance root if migration happened, null otherwise.
+ * Migrates a legacy global instance from `~/.openacp/` to `<workspace>/.openacp/`.
+ *
+ * Early OpenACP versions stored instance data directly in `~/.openacp/`, mixing
+ * instance-specific files (config, sessions, plugins) with shared resources
+ * (registry cache, agent binaries). This migration separates them:
+ *
+ * - Instance files move to `<workspace>/.openacp/` (workspace from config, or
+ *   `~/openacp-workspace/` as default)
+ * - Shared resources stay in `~/.openacp/`
+ * - The instance registry is updated to point to the new location
+ * - `workspace.baseDir` is stripped from the migrated config (no longer needed
+ *   since the instance root is now inside the workspace itself)
+ *
+ * Called once on first CLI invocation after upgrade. Safe to call multiple times
+ * — returns null if no migration is needed.
  */
 export async function migrateGlobalInstance(): Promise<string | null> {
   const globalRoot = getGlobalRoot()
@@ -67,7 +79,8 @@ export async function migrateGlobalInstance(): Promise<string | null> {
     }
   }
 
-  // Move instance-specific cache (not registry-cache which stays shared)
+  // Move instance-specific cache entries but leave registry-cache.json in place —
+  // it's a shared resource used by all instances for agent registry lookups
   const srcCache = path.join(globalRoot, 'cache')
   const dstCache = path.join(targetRoot, 'cache')
   if (fs.existsSync(srcCache)) {

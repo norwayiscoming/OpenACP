@@ -18,6 +18,7 @@ const log = createChildLogger({ module: 'api-server' })
 
 let cachedVersion: string | undefined
 
+/** Reads the package.json version once and caches it for the lifetime of the process. */
 function getVersion(): string {
   if (cachedVersion) return cachedVersion
   try {
@@ -31,6 +32,14 @@ function getVersion(): string {
   return cachedVersion!
 }
 
+/**
+ * Loads a secret from disk, or generates a new one and persists it with mode 0600.
+ *
+ * Used for both the raw API secret and the JWT signing secret. The file is created
+ * with restrictive permissions on first run; subsequent starts re-use the existing value
+ * so secrets survive restarts. An SSH-style warning is logged if the file permissions
+ * are too open (group/other readable), which can happen if the user copied the file.
+ */
 function loadOrCreateSecret(secretFilePath: string): string {
   const dir = path.dirname(secretFilePath)
   fs.mkdirSync(dir, { recursive: true })
@@ -63,12 +72,19 @@ function loadOrCreateSecret(secretFilePath: string): string {
   return secret
 }
 
+/**
+ * Writes the actual listening port to `<instanceRoot>/api.port`.
+ *
+ * The CLI reads this file to locate the running server when the user runs
+ * `openacp` commands against a daemonized instance.
+ */
 function writePortFile(portFilePath: string, port: number): void {
   const dir = path.dirname(portFilePath)
   fs.mkdirSync(dir, { recursive: true })
   fs.writeFileSync(portFilePath, String(port))
 }
 
+/** Removes the port file on shutdown so stale files don't mislead CLI auto-discovery. */
 function removePortFile(portFilePath: string): void {
   try {
     fs.unlinkSync(portFilePath)
@@ -86,6 +102,19 @@ export interface ApiConfig {
 
 // ─── Plugin Definition ─────────────────────────────────────────────────────
 
+/**
+ * Creates the `@openacp/api-server` plugin.
+ *
+ * This plugin wires together:
+ * - A Fastify HTTP server with JWT auth, rate limiting, and Swagger docs
+ * - REST route groups for sessions, agents, config, system, auth, plugins, topics, tunnel, etc.
+ * - An SSE manager that relays EventBus events to connected App clients in real time
+ * - Static file serving for the bundled OpenACP App dashboard
+ * - An `api-server` service registered in ServiceRegistry for other plugins to extend
+ *
+ * Startup is deferred to the `SYSTEM_READY` event so all other plugins are fully
+ * booted before the server accepts connections.
+ */
 function createApiServerPlugin(): OpenACPPlugin {
   let server: ApiServerInstance | null = null
   let portFilePath = ''
@@ -274,9 +303,10 @@ function createApiServerPlugin(): OpenACPPlugin {
         })
       })
 
-      // Exchange endpoint — NO auth (code in body IS the credential)
-      // Fastify encapsulation makes dual registerPlugin on the same prefix safe —
-      // each registration gets its own scope with independent hooks.
+      // Exchange endpoint — NO auth. The one-time code in the request body IS the
+      // credential; adding Bearer auth here would require the caller to already have a
+      // token, defeating the purpose. Fastify encapsulation makes dual registerPlugin
+      // on the same prefix safe — each call creates an independent scope with its own hooks.
       server.registerPlugin('/api/v1/auth', async (app) => {
         const { ExchangeCodeBodySchema } = await import('./schemas/auth.js')
         const { signToken } = await import('./auth/jwt.js')

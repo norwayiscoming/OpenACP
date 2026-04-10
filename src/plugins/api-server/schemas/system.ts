@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+// Zod schemas for system health API responses.
+
 export const HealthResponseSchema = z.object({
   status: z.string(),
   timestamp: z.string(),

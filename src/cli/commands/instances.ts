@@ -10,15 +10,22 @@ import { isJsonMode, jsonSuccess, jsonError, muteForJson, ErrorCodes } from '../
 import { wantsHelp } from './helpers.js'
 
 
+/** Summary entry for a registered instance, used in list and JSON output. */
 export interface InstanceListEntry {
   id: string
   name: string | null
+  /** Parent directory of the .openacp/ folder (the workspace directory). */
   directory: string
+  /** Full path to the .openacp/ folder. */
   root: string
   status: 'running' | 'stopped'
   port: number | null
 }
 
+/**
+ * Build a summary list of all registered instances from the global registry.
+ * Reads live status (PID, API port) directly from each instance root.
+ */
 export async function buildInstanceListEntries(): Promise<InstanceListEntry[]> {
   const registryPath = path.join(getGlobalRoot(), 'instances.json')
   const registry = new InstanceRegistry(registryPath)
@@ -64,6 +71,14 @@ async function isApiResponding(port: number, expectedInstanceId: string): Promis
   }
 }
 
+/**
+ * `openacp instances` — Manage registered OpenACP instances.
+ *
+ * Subcommands: list, create
+ *
+ * parentFlags carries workspace flags (--dir, --from, --name) that were consumed by
+ * the top-level extractInstanceFlags() parser and must be re-injected for create.
+ */
 export async function cmdInstances(args: string[] = [], parentFlags?: { dir?: string; from?: string; name?: string }): Promise<void> {
   if (wantsHelp(args)) {
     printInstancesHelp()
@@ -130,6 +145,14 @@ async function cmdInstancesList(args: string[]): Promise<void> {
   console.log('')
 }
 
+/**
+ * Create or register an instance at --dir.
+ *
+ * If .openacp already exists: reconciles the ID (config.json vs registry),
+ * applies --name if provided, and warns without overwriting.
+ * If .openacp does not exist: creates it from scratch or clones from --from.
+ * Orphaned registry entries for deleted .openacp directories are cleaned up.
+ */
 export async function cmdInstancesCreate(args: string[]): Promise<void> {
   const json = isJsonMode(args)
   if (json) await muteForJson()

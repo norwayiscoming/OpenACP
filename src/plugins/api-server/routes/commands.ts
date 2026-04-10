@@ -3,6 +3,16 @@ import type { RouteDeps } from './types.js';
 import { requireScopes } from '../middleware/auth.js';
 import { ExecuteCommandBodySchema } from '../schemas/commands.js';
 
+/**
+ * Command routes under `/api/v1/commands`.
+ *
+ * `GET /` lists all registered chat commands (plugin commands included).
+ * `POST /execute` dispatches a command through the CommandRegistry with `channelId: 'api'`
+ * so the result can be returned synchronously to the HTTP caller rather than routed
+ * back to a messaging adapter.
+ *
+ * Requires `commands:execute` scope.
+ */
 export async function commandRoutes(
   app: FastifyInstance,
   deps: RouteDeps,

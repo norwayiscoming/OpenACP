@@ -1,3 +1,10 @@
+/**
+ * Generate tsconfig.json for a new plugin.
+ *
+ * Uses NodeNext module resolution (required for ESM with .js imports),
+ * strict mode, and targets ES2022 — matching the OpenACP core configuration.
+ * Tests are excluded from the build output (compiled separately by vitest).
+ */
 export function generateTsconfig(): string {
   const tsconfig = {
     compilerOptions: {

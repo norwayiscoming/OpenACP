@@ -7,6 +7,9 @@ import type { LoggingConfig } from '../config/config.js'
 export type Logger = pino.Logger
 
 // --- Default console-only logger (pre-init) ---
+// Before initLogger() is called (e.g., during module-level imports),
+// a basic pino-pretty logger writes to stderr. initLogger() replaces it
+// with a multi-target logger (console + rolling file).
 let rootLogger: pino.Logger = pino({
   level: 'debug',
   transport: { target: 'pino-pretty', options: { colorize: true, translateTime: 'SYS:standard', destination: 2 } },
@@ -20,6 +23,9 @@ function expandHome(p: string): string {
 }
 
 // --- Variadic wrapper for backward compatibility ---
+// Pino's API requires (obj, msg) or (msg) — this wrapper allows
+// callers to use log.info(obj, ...strings) or log.info(...strings),
+// matching the more permissive console.log-style API.
 function wrapVariadic(logger: pino.Logger) {
   return {
     info: (...args: unknown[]) => {
@@ -73,6 +79,14 @@ export const log = wrapVariadic(rootLogger)
 let muteCount = 0
 let savedLevel = 'info'
 
+/**
+ * Suppress all log output. Calls are ref-counted — each muteLogger()
+ * must be balanced by an unmuteLogger(). Used during interactive CLI
+ * prompts (e.g., setup wizard) to avoid log noise in the terminal.
+ *
+ * Must always be paired with a corresponding `unmuteLogger()` call;
+ * otherwise the logger remains permanently silenced.
+ */
 export function muteLogger(): void {
   if (muteCount === 0) {
     savedLevel = rootLogger.level
@@ -81,6 +95,7 @@ export function muteLogger(): void {
   muteCount++
 }
 
+/** Decrement the mute ref count and restore log level when it reaches zero. */
 export function unmuteLogger(): void {
   muteCount--
   if (muteCount <= 0) {
@@ -91,6 +106,15 @@ export function unmuteLogger(): void {
 
 // --- Public API ---
 
+/**
+ * Initialize the root logger with file + console output.
+ *
+ * Sets up a multi-target pino transport: pino-pretty to stderr (for humans)
+ * and pino-roll to a rotating log file (for persistence). Also creates
+ * the sessions/ subdirectory for per-session log files.
+ *
+ * Safe to call multiple times — subsequent calls are no-ops.
+ */
 export function initLogger(config: LoggingConfig): Logger {
   if (initialized) return rootLogger
 
@@ -145,10 +169,14 @@ export function setLogLevel(level: string): void {
   rootLogger.level = level
 }
 
+/**
+ * Create a child logger scoped to a module (e.g., "core", "session", "telegram").
+ *
+ * Returns a Proxy that always delegates to the current rootLogger — this
+ * ensures child loggers created at module-level (before initLogger runs)
+ * pick up the initialized logger with proper transports once it's ready.
+ */
 export function createChildLogger(context: { module: string; [key: string]: unknown }): Logger {
-  // Return a proxy that always delegates to the current rootLogger.
-  // This ensures child loggers created at module-level (before initLogger)
-  // pick up the initialized logger with pino-pretty transport.
   return new Proxy({} as Logger, {
     get(_target, prop, receiver) {
       const child = rootLogger.child(context)
@@ -158,6 +186,16 @@ export function createChildLogger(context: { module: string; [key: string]: unkn
   })
 }
 
+/**
+ * Create a per-session logger that writes to both the combined log and
+ * a session-specific file (`<logDir>/sessions/<sessionId>.log`).
+ *
+ * This dual-write pattern allows operators to view all logs in one place
+ * (combined log) while also being able to inspect a single session's
+ * activity in isolation (session file).
+ *
+ * Falls back to a simple child logger if the session log file can't be created.
+ */
 export function createSessionLogger(sessionId: string, parentLogger: Logger): Logger {
   const sessionLogDir = logDir ? path.join(logDir, 'sessions') : undefined
   if (!sessionLogDir) {
@@ -210,6 +248,7 @@ export function createSessionLogger(sessionId: string, parentLogger: Logger): Lo
   }
 }
 
+/** Close the per-session log file destination to release the file handle. */
 export function closeSessionLogger(logger: Logger): void {
   const dest = (logger as any).__sessionDest
   if (dest && typeof dest.destroy === 'function') {
@@ -217,6 +256,12 @@ export function closeSessionLogger(logger: Logger): void {
   }
 }
 
+/**
+ * Flush and close the root logger transport.
+ *
+ * Resets all state so the logger can be re-initialized (e.g., after restart).
+ * Waits up to 3 seconds for the transport to close gracefully.
+ */
 export async function shutdownLogger(): Promise<void> {
   if (!initialized) return
 
@@ -241,6 +286,12 @@ export async function shutdownLogger(): Promise<void> {
   }
 }
 
+/**
+ * Delete session log files older than the given retention period.
+ *
+ * Called during startup to prevent unbounded disk usage from accumulated
+ * per-session log files.
+ */
 export async function cleanupOldSessionLogs(retentionDays: number): Promise<void> {
   if (!logDir) return
 

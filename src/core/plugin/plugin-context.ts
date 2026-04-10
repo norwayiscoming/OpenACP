@@ -19,6 +19,7 @@ import { MiddlewareChain } from './middleware-chain.js'
 import { ErrorTracker } from './error-tracker.js'
 import { PluginStorageImpl } from './plugin-storage.js'
 
+/** Internal options for creating a PluginContext. Passed from LifecycleManager. */
 interface CreatePluginContextOpts {
   pluginName: string
   pluginConfig: Record<string, unknown>
@@ -39,12 +40,21 @@ interface CreatePluginContextOpts {
   instanceRoot?: string
 }
 
+/** Gate that throws if the plugin's declared permissions don't include the required one. */
 function requirePermission(permissions: PluginPermission[], required: PluginPermission, action: string): void {
   if (!permissions.includes(required)) {
     throw new Error(`Plugin does not have '${required}' permission required for ${action}`)
   }
 }
 
+/**
+ * Factory that creates a scoped, permission-gated PluginContext for a single plugin.
+ *
+ * Every call to a context method checks the plugin's declared permissions first.
+ * The returned object also includes a `cleanup()` method used by LifecycleManager
+ * to remove all registrations (listeners, middleware, services, commands) when
+ * the plugin is unloaded — ensuring no dangling references.
+ */
 export function createPluginContext(opts: CreatePluginContextOpts): PluginContext & { cleanup(): void } {
   const {
     pluginName,
@@ -60,7 +70,8 @@ export function createPluginContext(opts: CreatePluginContextOpts): PluginContex
   } = opts
   const instanceRoot = opts.instanceRoot!
 
-  // Track registered items for cleanup
+  // Track all registrations so cleanup() can remove them on plugin unload.
+  // Without this, unloaded plugins would leave orphaned listeners and middleware.
   const registeredListeners: Array<{ event: string; handler: (...args: unknown[]) => void }> = []
   const registeredCommands: CommandDef[] = []
   const registeredMenuItemIds: string[] = []
@@ -82,7 +93,8 @@ export function createPluginContext(opts: CreatePluginContextOpts): PluginContex
 
   const storageImpl = new PluginStorageImpl(storagePath)
 
-  // Create permission-guarded storage proxy
+  // Wrap storage operations with permission checks — plugins without
+  // storage:read or storage:write permissions cannot access the filesystem.
   const storage: PluginStorage = {
     async get<T>(key: string): Promise<T | undefined> {
       requirePermission(permissions, 'storage:read', 'storage.get')
@@ -168,6 +180,7 @@ export function createPluginContext(opts: CreatePluginContextOpts): PluginContex
       requirePermission(permissions, 'commands:register', 'registerMenuItem()')
       const menuRegistry = serviceRegistry.get('menu-registry') as MenuRegistry | undefined
       if (!menuRegistry) return
+      // Namespace menu item IDs with plugin name to prevent collisions
       const qualifiedId = `${pluginName}:${item.id}`
       menuRegistry.register({ ...item, id: qualifiedId })
       registeredMenuItemIds.push(qualifiedId)
@@ -184,6 +197,7 @@ export function createPluginContext(opts: CreatePluginContextOpts): PluginContex
       requirePermission(permissions, 'commands:register', 'registerAssistantSection()')
       const assistantRegistry = serviceRegistry.get('assistant-registry') as AssistantRegistry | undefined
       if (!assistantRegistry) return
+      // Namespace section IDs with plugin name to prevent collisions
       const qualifiedId = `${pluginName}:${section.id}`
       assistantRegistry.register({ ...section, id: qualifiedId })
       registeredAssistantSectionIds.push(qualifiedId)
@@ -227,6 +241,11 @@ export function createPluginContext(opts: CreatePluginContextOpts): PluginContex
 
     instanceRoot,
 
+    /**
+     * Called by LifecycleManager during plugin teardown.
+     * Unregisters all event handlers, middleware, commands, and services
+     * registered by this plugin, preventing leaks across reloads.
+     */
     cleanup(): void {
       // Remove all event listeners registered by this plugin
       for (const { event, handler } of registeredListeners) {

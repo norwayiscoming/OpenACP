@@ -23,6 +23,14 @@ function getMonacoLang(lang?: string): string {
   return MONACO_LANGUAGE[lang] || 'plaintext'
 }
 
+/**
+ * Render a Monaco-based file viewer HTML page for the given entry.
+ *
+ * Content is JSON-serialised and injected as a JS variable. `</script>` sequences
+ * inside the content are escaped to prevent premature tag closure. The page
+ * supports light/dark themes, word wrap, minimap, and markdown preview.
+ * URL hash fragments (#L42 or #L42-L55) scroll the editor to the referenced line(s).
+ */
 export function renderFileViewer(entry: ViewerEntry): string {
   const fileName = entry.filePath || 'untitled'
   const lang = getMonacoLang(entry.language)

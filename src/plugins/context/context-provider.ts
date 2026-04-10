@@ -3,6 +3,12 @@
 // Providers may only support a subset of query types and should return empty results
 // for unsupported types rather than throwing.
 
+/**
+ * Abstract interface for conversation context sources.
+ *
+ * Two providers are built-in: "local" (history recorder) and "entire" (Claude Code checkpoints).
+ * ContextManager iterates providers in priority order and returns the first non-empty result.
+ */
 export interface ContextProvider {
   readonly name: string;
   isAvailable(repoPath: string): Promise<boolean>;
@@ -10,6 +16,14 @@ export interface ContextProvider {
   buildContext(query: ContextQuery, options?: ContextOptions): Promise<ContextResult>;
 }
 
+/**
+ * Describes which sessions to include in a context build.
+ *
+ * - `type: "latest"` with `value: "5"` returns the 5 most recent sessions.
+ * - `type: "session"` with a UUID returns exactly that session.
+ * - `type: "branch"` / `"commit"` / `"pr"` are only supported by the "entire" provider
+ *   which reads Claude Code checkpoints stored in the git repo.
+ */
 export interface ContextQuery {
   repoPath: string;
   type: "branch" | "commit" | "pr" | "latest" | "checkpoint" | "session";
@@ -25,6 +39,11 @@ export interface ContextOptions {
   noCache?: boolean;
 }
 
+/**
+ * Metadata for a single recorded session, used when listing available context.
+ * Fields like `checkpointId` and `transcriptPath` are populated by the "entire" provider;
+ * the "local" provider leaves them empty since it stores sessions in its own HistoryStore.
+ */
 export interface SessionInfo {
   checkpointId: string;
   sessionIndex: string;
@@ -43,8 +62,19 @@ export interface SessionListResult {
   estimatedTokens: number;
 }
 
+/**
+ * Controls how much detail is rendered per turn in the context markdown.
+ * - `full`: full diffs, tool call outputs, thinking blocks, usage stats
+ * - `balanced`: diffs truncated, thinking omitted
+ * - `compact`: single-line summary per turn pair (user + tools used)
+ */
 export type ContextMode = "full" | "balanced" | "compact";
 
+/**
+ * The built context block to be prepended to an agent prompt.
+ * `markdown` is the formatted text; `truncated` is true when oldest sessions
+ * were dropped to fit within `maxTokens`.
+ */
 export interface ContextResult {
   markdown: string;
   tokenEstimate: number;

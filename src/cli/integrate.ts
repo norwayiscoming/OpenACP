@@ -8,11 +8,17 @@ import type {
   AgentPluginIntegrationSpec,
 } from "../core/agents/agent-dependencies.js";
 
+/** Result of an install/uninstall operation with a human-readable log. */
 export interface IntegrationResult {
   success: boolean;
+  /** Log lines describing what was created, updated, or removed. */
   logs: string[];
 }
 
+/**
+ * A single installable integration component (e.g., handoff scripts, tunnel skill).
+ * Each integration consists of one or more items installed/uninstalled independently.
+ */
 export interface IntegrationItem {
   id: string;
   name: string;
@@ -22,10 +28,13 @@ export interface IntegrationItem {
   uninstall(): Promise<IntegrationResult>;
 }
 
+/** All integration items for a specific agent. */
 export interface AgentIntegration {
   items: IntegrationItem[];
 }
 
+// The filename used to detect whether the inject hook is already installed in an agent's
+// hook event. Checked before adding to prevent duplicate entries across re-runs.
 const HOOK_MARKER = "openacp-inject-session.sh";
 
 function isPluginIntegrationSpec(spec: AgentIntegrationSpec): spec is AgentPluginIntegrationSpec {
@@ -42,6 +51,15 @@ function expandPath(p: string): string {
 
 // --- Script generators ---
 
+/**
+ * Generate the session inject hook script for a hooks-based agent integration.
+ *
+ * The inject script runs before each agent prompt. It reads the ACP session ID and CWD
+ * from the agent's hook input (JSON or plaintext), then outputs them as context variables
+ * that the agent can pass to `openacp adopt` via the handoff command.
+ *
+ * Uses `jq` for JSON parsing; falls back to `~/.openacp/bin/jq` if not on PATH.
+ */
 function generateInjectScript(_agentKey: string, spec: AgentHooksIntegrationSpec): string {
   const sidVar = spec.sessionIdVar ?? "SESSION_ID";
   const cwdVar = spec.workingDirVar ?? "WORKING_DIR";
@@ -77,6 +95,10 @@ exit 0
 `;
 }
 
+/**
+ * Generate the handoff shell script that the agent calls to transfer the session.
+ * Wraps `openacp adopt <agent> <session_id>` with optional --cwd and --channel flags.
+ */
 function generateHandoffScript(agentKey: string): string {
   return `#!/bin/bash
 SESSION_ID=$1
@@ -92,6 +114,11 @@ openacp adopt ${agentKey} "$SESSION_ID" \${CWD:+--cwd "$CWD"} \${CHANNEL:+--chan
 `;
 }
 
+/**
+ * Generate the tunnel skill markdown file.
+ * This is a slash command / skill description that tells the AI agent when and how
+ * to use `openacp tunnel` commands to expose local ports.
+ */
 function generateTunnelCommand(): string {
   return `---
 description: Expose local ports to the internet. Use when user wants to share, preview, or access their local dev server remotely. Triggers on phrases like "expose port", "map port", "share my app", "make it public", "open tunnel", "public URL", "share localhost", "preview on phone", "access from outside", "forward port", "ngrok", "cloudflare tunnel", etc.
@@ -205,7 +232,13 @@ function generateOpencodePlugin(spec: AgentPluginIntegrationSpec): string {
 }
 
 // --- Settings mergers ---
+// These functions add the inject hook to an agent's settings file without clobbering
+// existing hooks. A backup (.bak) is written before any modification.
 
+/**
+ * Add the inject hook to a Claude-style settings.json (hooks nested under groups).
+ * Skips if the hook is already present (idempotent).
+ */
 function mergeSettingsJson(settingsPath: string, hookEvent: string, hookScriptPath: string): void {
   const fullPath = expandPath(settingsPath);
   let settings: Record<string, unknown> = {};
@@ -236,6 +269,11 @@ function mergeSettingsJson(settingsPath: string, hookEvent: string, hookScriptPa
   writeFileSync(fullPath, JSON.stringify(settings, null, 2) + "\n");
 }
 
+/**
+ * Add the inject hook to a flat hooks.json (hooks as direct array entries).
+ * Used for agents that follow the hooks.json format (e.g. Cursor, Cline).
+ * Skips if the hook is already present (idempotent).
+ */
 function mergeHooksJson(settingsPath: string, hookEvent: string, hookScriptPath: string): void {
   const fullPath = expandPath(settingsPath);
   let config: Record<string, unknown> = { version: 1 };
@@ -473,6 +511,10 @@ async function uninstallPluginIntegration(_agentKey: string, spec: AgentPluginIn
   }
 }
 
+/**
+ * Install the integration for an agent based on its spec strategy.
+ * Routes to hooks-based or plugin-based installation depending on `spec.strategy`.
+ */
 export async function installIntegration(agentKey: string, spec: AgentIntegrationSpec): Promise<IntegrationResult> {
   if (isHooksIntegrationSpec(spec)) {
     return installHooksIntegration(agentKey, spec);
@@ -480,6 +522,10 @@ export async function installIntegration(agentKey: string, spec: AgentIntegratio
   return installPluginIntegration(agentKey, spec);
 }
 
+/**
+ * Uninstall the integration for an agent based on its spec strategy.
+ * Routes to hooks-based or plugin-based removal depending on `spec.strategy`.
+ */
 export async function uninstallIntegration(agentKey: string, spec: AgentIntegrationSpec): Promise<IntegrationResult> {
   if (isHooksIntegrationSpec(spec)) {
     return uninstallHooksIntegration(agentKey, spec);
@@ -487,7 +533,8 @@ export async function uninstallIntegration(agentKey: string, spec: AgentIntegrat
   return uninstallPluginIntegration(agentKey, spec);
 }
 
-// --- Public API (backward compat with existing cmdIntegrate / Telegram integrate) ---
+// --- Public API ---
+// These functions build IntegrationItem objects for display and management in cmdIntegrate.
 
 function buildHandoffItem(agentKey: string, spec: AgentIntegrationSpec): IntegrationItem {
   return {
@@ -512,10 +559,10 @@ function buildHandoffItem(agentKey: string, spec: AgentIntegrationSpec): Integra
 }
 
 function getSkillBasePath(spec: AgentHooksIntegrationSpec): string {
-  // Skills go into the agent's skills directory (sibling to commands)
+  // Skills go into the agent's skills directory (sibling to commands/).
   // Claude: ~/.claude/skills/, Cursor: ~/.cursor/skills/
   const base = spec.commandsPath!;
-  // If commandsPath is commands/, use skills/ instead
+  // If commandsPath ends with commands/, replace it with skills/ for skill-format agents
   const skillsBase = base.replace(/\/commands\/?$/, "/skills/");
   return expandPath(skillsBase);
 }
@@ -566,6 +613,10 @@ function buildTunnelItem(spec: AgentIntegrationSpec): IntegrationItem | null {
   };
 }
 
+/**
+ * Return all integration items for the given agent, or undefined if the agent
+ * has no integration support. Includes both handoff and tunnel items where applicable.
+ */
 export function getIntegration(agentName: string): AgentIntegration | undefined {
   const caps = getAgentCapabilities(agentName);
   if (!caps.integration) return undefined;
@@ -575,6 +626,7 @@ export function getIntegration(agentName: string): AgentIntegration | undefined 
   return { items };
 }
 
+/** Return the list of agent keys that have integration support defined. */
 export function listIntegrations(): string[] {
   return listAgentsWithIntegration();
 }

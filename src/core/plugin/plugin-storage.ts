@@ -2,9 +2,19 @@ import fs from 'node:fs'
 import path from 'node:path'
 import type { PluginStorage } from './types.js'
 
+/**
+ * File-backed key-value store for a single plugin.
+ *
+ * Data is stored at `~/.openacp/plugins/<name>/kv.json`. Each plugin gets its
+ * own instance, providing namespace isolation.
+ *
+ * Write operations are serialized through a promise chain (`writeChain`) to
+ * prevent concurrent writes from corrupting the JSON file.
+ */
 export class PluginStorageImpl implements PluginStorage {
   private readonly kvPath: string
   private readonly dataDir: string
+  /** Serializes writes to prevent concurrent file corruption */
   private writeChain: Promise<void> = Promise.resolve()
 
   constructor(baseDir: string) {
@@ -53,6 +63,7 @@ export class PluginStorageImpl implements PluginStorage {
     return Object.keys(this.readKv())
   }
 
+  /** Returns the plugin's data directory, creating it lazily on first access. */
   getDataDir(): string {
     fs.mkdirSync(this.dataDir, { recursive: true })
     return this.dataDir

@@ -2,6 +2,16 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { wantsHelp } from './helpers.js'
 
+/**
+ * `openacp dev` — Run OpenACP with a local plugin in development mode.
+ *
+ * If the plugin has a tsconfig.json, performs an initial tsc compile before starting.
+ * Unless --no-watch is passed, also spawns `tsc --watch` in the background so TypeScript
+ * errors are surfaced as you edit. The server uses OPENACP_DEV_PLUGIN_PATH to load the
+ * local plugin instead of (or in addition to) installed plugins.
+ *
+ * Sets OPENACP_DEV_LOOP=1 to suppress the update check, which would block the dev loop.
+ */
 export async function cmdDev(args: string[] = []): Promise<void> {
   if (wantsHelp(args)) {
     console.log(`

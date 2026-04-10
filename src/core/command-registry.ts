@@ -1,5 +1,9 @@
 import type { CommandDef, CommandArgs, CommandResponse } from './plugin/types.js'
 
+/**
+ * Internal representation of a registered command, extending CommandDef with
+ * a `scope` derived from the plugin name for namespace-qualified lookups.
+ */
 interface RegisteredCommand extends CommandDef {
   /** Scope extracted from pluginName, e.g. '@openacp/speech' → 'speech' */
   scope?: string
@@ -15,6 +19,11 @@ interface RegisteredCommand extends CommandDef {
  * - Adapter plugins (@openacp/telegram, @openacp/discord)
  *   registering a command that already exists → stored as an override
  *   keyed by `channelId:commandName`, used when channelId matches.
+ *
+ * Note: this registry only handles slash commands (e.g. /new, /session).
+ * Callback button routing (inline keyboard buttons) is handled separately
+ * at the adapter level using a `c/` prefix — it is not part of command dispatch
+ * and does not go through this registry.
  */
 export class CommandRegistry {
   /** Main registry: short names + qualified names → RegisteredCommand */
@@ -127,20 +136,25 @@ export class CommandRegistry {
   }
 
   /**
-   * Parse and execute a command string.
-   * @param commandString - Full command string, e.g. "/greet hello world"
-   * @param baseArgs - Base arguments (channelId, userId, etc.)
-   * @returns CommandResponse
+   * Parse and execute a command string (e.g. "/greet hello world").
+   *
+   * Resolution order:
+   * 1. Adapter-specific override (e.g. Telegram's version of /new)
+   * 2. Short name or qualified name in the main registry
+   *
+   * Strips Telegram-style bot mentions (e.g. "/help@MyBot" → "help").
+   * Returns `{ type: 'delegated' }` if the handler returns null/undefined
+   * (meaning it handled the response itself, e.g. via assistant).
    */
   async execute(commandString: string, baseArgs: CommandArgs): Promise<CommandResponse> {
-    // Parse command name and raw args
     const trimmed = commandString.trim()
     const spaceIdx = trimmed.indexOf(' ')
     const rawCmd = spaceIdx === -1 ? trimmed.slice(1) : trimmed.slice(1, spaceIdx)
+    // Strip bot mention suffix: "/help@MyBot" → "help"
     const cmdName = rawCmd.split("@")[0]
     const rawArgs = spaceIdx === -1 ? '' : trimmed.slice(spaceIdx + 1)
 
-    // Check for adapter-specific override first
+    // Adapter-specific overrides take precedence (e.g. Telegram's /new with topic creation)
     const overrideKey = `${baseArgs.channelId}:${cmdName}`
     const override = this.overrides.get(overrideKey)
 

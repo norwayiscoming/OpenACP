@@ -19,6 +19,7 @@ function createSecurityPlugin(): OpenACPPlugin {
     description: 'User access control and session limits',
     essential: false,
     permissions: ['services:register', 'middleware:register', 'kernel:access', 'commands:register'],
+    // These keys are propagated to child plugin configs so adapters can read them directly.
     inheritableKeys: ['allowedUserIds', 'maxConcurrentSessions', 'sessionTimeoutMinutes'],
 
     async install(ctx: InstallContext) {
@@ -96,6 +97,8 @@ function createSecurityPlugin(): OpenACPPlugin {
       const settingsManager = core.lifecycleManager?.settingsManager
       const pluginName = ctx.pluginName
 
+      // Config is re-fetched on every call so that hot-reload changes take effect
+      // without requiring a plugin restart.
       const getSecurityConfig = async (): Promise<SecurityConfig> => {
         if (settingsManager) {
           const settings = await settingsManager.loadSettings(pluginName)

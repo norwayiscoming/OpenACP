@@ -1,7 +1,17 @@
 import type { STTProvider, STTOptions, STTResult } from '../speech-types.js';
 
+// Groq's Whisper-compatible transcription endpoint (OpenAI-compatible API)
 const GROQ_API_URL = "https://api.groq.com/openai/v1/audio/transcriptions";
 
+/**
+ * Speech-to-text provider backed by Groq's hosted Whisper API.
+ *
+ * Groq requires the audio to be submitted as a multipart form upload. The file
+ * must have a valid extension matching its MIME type — Groq uses the extension
+ * to determine the codec, so a mismatch causes a transcription error.
+ *
+ * Free tier limit: 28,800 seconds of audio per day. Max file size: 25 MB.
+ */
 export class GroqSTT implements STTProvider {
   readonly name = "groq";
 
@@ -10,9 +20,16 @@ export class GroqSTT implements STTProvider {
     private defaultModel: string = "whisper-large-v3-turbo",
   ) {}
 
+  /**
+   * Transcribes audio using the Groq Whisper API.
+   *
+   * `verbose_json` response format is requested so the API returns language
+   * detection and duration metadata alongside the transcript text.
+   */
   async transcribe(audioBuffer: Buffer, mimeType: string, options?: STTOptions): Promise<STTResult> {
     const ext = mimeToExt(mimeType);
     const form = new FormData();
+    // Groq uses the filename extension to identify the audio codec — must match mimeType
     form.append("file", new Blob([new Uint8Array(audioBuffer)], { type: mimeType }), `audio${ext}`);
     form.append("model", options?.model || this.defaultModel);
     form.append("response_format", "verbose_json");
@@ -49,6 +66,7 @@ export class GroqSTT implements STTProvider {
   }
 }
 
+/** Maps MIME types to file extensions required by the Groq upload API. */
 function mimeToExt(mimeType: string): string {
   const map: Record<string, string> = {
     "audio/ogg": ".ogg",

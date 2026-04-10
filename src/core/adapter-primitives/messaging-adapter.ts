@@ -12,29 +12,53 @@ import type { DisplayVerbosity, ToolCallMeta } from "./format-types.js";
 import type { IRenderer } from "./rendering/renderer.js";
 import { evaluateNoise } from "./message-formatter.js";
 
+/** Runtime services available to adapters via dependency injection. */
 export interface AdapterContext {
   configManager: { get(): Record<string, unknown> };
   fileService?: unknown;
 }
 
+/** Configuration for adapters that extend MessagingAdapter. */
 export interface MessagingAdapterConfig extends ChannelConfig {
+  /** Platform-imposed limit on a single message body (e.g., 4096 for Telegram). */
   maxMessageLength: number;
+  /** How often (ms) to flush buffered streaming text to the platform. */
   flushInterval?: number;
+  /** Minimum interval (ms) between consecutive send-queue operations. */
   sendInterval?: number;
+  /** How often (ms) to refresh the typing indicator during agent thinking. */
   thinkingRefreshInterval?: number;
+  /** Max duration (ms) to show the typing indicator before auto-dismissing. */
   thinkingDuration?: number;
+  /** Default output verbosity for this adapter (can be overridden per-session). */
   displayVerbosity?: DisplayVerbosity;
 }
 
+/** Represents a message that was successfully sent to the platform. */
 export interface SentMessage {
   messageId: string;
 }
 
+/** Message types that are hidden entirely at "low" verbosity. */
 const HIDDEN_ON_LOW = new Set(["thought", "usage"]);
 
+/**
+ * Abstract base class for platform-specific messaging adapters (Telegram, Slack, etc.).
+ *
+ * Provides a dispatch pipeline: incoming OutgoingMessage -> verbosity filter -> type-based
+ * handler. Subclasses override the `handle*` methods to implement platform-specific rendering
+ * and delivery. The base implementations are no-ops, so subclasses only override what they need.
+ */
 export abstract class MessagingAdapter implements IChannelAdapter {
   abstract readonly name: string;
+  /** Platform-specific renderer that converts OutgoingMessage to formatted output. */
   abstract readonly renderer: IRenderer;
+  /**
+   * Declares what this adapter can do. The platform-specific subclass sets these flags,
+   * and core/stream-adapter use them to decide how to route and format output — e.g.,
+   * whether to stream text in-place (streaming), send to threads/topics (threads),
+   * render markdown (richFormatting), upload files (fileUpload), or play audio (voice).
+   */
   abstract readonly capabilities: AdapterCapabilities;
 
   constructor(
@@ -44,6 +68,11 @@ export abstract class MessagingAdapter implements IChannelAdapter {
 
   // === Message dispatch flow ===
 
+  /**
+   * Entry point for all outbound messages from sessions to the platform.
+   * Resolves the current verbosity, filters messages that should be hidden,
+   * then dispatches to the appropriate type-specific handler.
+   */
   async sendMessage(
     sessionId: string,
     content: OutgoingMessage,
@@ -53,6 +82,11 @@ export abstract class MessagingAdapter implements IChannelAdapter {
     await this.dispatchMessage(sessionId, content, verbosity);
   }
 
+  /**
+   * Routes a message to its type-specific handler.
+   * Subclasses can override this for custom dispatch logic, but typically
+   * override individual handle* methods instead.
+   */
   protected async dispatchMessage(
     sessionId: string,
     content: OutgoingMessage,
@@ -95,6 +129,8 @@ export abstract class MessagingAdapter implements IChannelAdapter {
   }
 
   // === Default handlers — all protected, all overridable ===
+  // Each handler is a no-op by default. Subclasses override only the message
+  // types they support (e.g., Telegram overrides handleText, handleToolCall, etc.).
 
   protected async handleText(
     _sessionId: string,
@@ -168,6 +204,10 @@ export abstract class MessagingAdapter implements IChannelAdapter {
 
   // === Helpers ===
 
+  /**
+   * Resolves the current output verbosity by checking (in priority order):
+   * per-channel config, global config, then adapter default. Falls back to "medium".
+   */
   protected getVerbosity(): DisplayVerbosity {
     const config = this.context.configManager.get();
     const channelConfig = (config as Record<string, unknown>).channels as
@@ -183,6 +223,13 @@ export abstract class MessagingAdapter implements IChannelAdapter {
     return "medium";
   }
 
+  /**
+   * Determines whether a message should be displayed at the given verbosity.
+   *
+   * Noise filtering: tool calls matching noise rules (e.g., `ls`, `glob`, `grep`)
+   * are hidden at medium/low verbosity to reduce clutter. Thoughts and usage
+   * stats are hidden entirely at "low".
+   */
   protected shouldDisplay(
     content: OutgoingMessage,
     verbosity: DisplayVerbosity,
@@ -203,19 +250,25 @@ export abstract class MessagingAdapter implements IChannelAdapter {
 
   // === Abstract — adapter MUST implement ===
 
+  /** Initializes the adapter (e.g., connect to platform API, start polling). */
   abstract start(): Promise<void>;
+  /** Gracefully shuts down the adapter and releases resources. */
   abstract stop(): Promise<void>;
+  /** Creates a platform-specific thread/topic for a session. Returns the thread ID. */
   abstract createSessionThread(
     sessionId: string,
     name: string,
   ): Promise<string>;
+  /** Renames an existing session thread/topic on the platform. */
   abstract renameSessionThread(
     sessionId: string,
     newName: string,
   ): Promise<void>;
+  /** Sends a permission request to the user with approve/deny actions. */
   abstract sendPermissionRequest(
     sessionId: string,
     request: PermissionRequest,
   ): Promise<void>;
+  /** Sends a cross-session notification (e.g., session completed, budget warning). */
   abstract sendNotification(notification: NotificationMessage): Promise<void>;
 }

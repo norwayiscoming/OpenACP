@@ -1,3 +1,10 @@
+/**
+ * Doctor check: Plugins — verifies the plugins directory exists and its
+ * package.json is valid. Missing directory or package.json are auto-fixable.
+ * Corrupt package.json is a risky fix (requires user confirmation since
+ * resetting it loses the dependency list).
+ */
+
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { DoctorCheck, CheckResult } from "../types.js";

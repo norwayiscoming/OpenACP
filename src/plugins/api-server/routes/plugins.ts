@@ -5,9 +5,20 @@ import { requireScopes } from '../middleware/auth.js'
 import { corePlugins } from '../../../plugins/core-plugins.js'
 import { RegistryClient } from '../../../core/plugin/registry-client.js'
 
-// Singleton so the 1-minute TTL cache is shared across requests
+// Singleton so the 1-minute TTL cache is shared across requests to avoid
+// hammering the remote registry on every marketplace page load.
 const registryClient = new RegistryClient()
 
+/**
+ * Plugin management routes under `/api/v1/plugins`.
+ *
+ * All routes require `system:admin` scope.
+ * - `GET /` — lists installed plugins with their runtime state (loaded, failed, essential).
+ * - `GET /marketplace` — proxies the remote plugin registry, annotated with installed status.
+ * - `POST /:name/enable` — hot-loads a disabled plugin without restarting the server.
+ * - `POST /:name/disable` — gracefully unloads an active plugin; blocks essential plugins.
+ * - `DELETE /:name` — uninstalls an npm/local plugin; builtin plugins cannot be removed.
+ */
 export async function pluginRoutes(
   app: FastifyInstance,
   deps: RouteDeps,

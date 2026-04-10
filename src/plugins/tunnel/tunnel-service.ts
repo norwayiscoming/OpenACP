@@ -1,4 +1,10 @@
 // TunnelConfig was removed from config.ts (migrated to plugin settings)
+
+/**
+ * Tunnel plugin settings shape.
+ * `port` is deprecated — the tunnel now always points to the API server port.
+ * `auth` is deprecated — viewer routes are public; authentication was removed.
+ */
 export interface TunnelConfig {
   enabled: boolean
   port: number
@@ -15,6 +21,14 @@ import type { PluginStorage } from '../../core/plugin/types.js'
 
 const log = createChildLogger({ module: 'tunnel' })
 
+/**
+ * High-level facade over TunnelRegistry and ViewerStore.
+ *
+ * Owns the system tunnel (started in `start()` once the API server port is known),
+ * user tunnel management (add/stop/list), and viewer URL generation.
+ * Registered as the `"tunnel"` service so other plugins can call `fileUrl()`,
+ * `diffUrl()`, etc. to share content via the public tunnel URL.
+ */
 export class TunnelService {
   private registry: TunnelRegistry
   private store: ViewerStore

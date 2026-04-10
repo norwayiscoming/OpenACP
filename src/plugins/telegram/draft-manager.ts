@@ -3,11 +3,21 @@ import { MessageDraft } from "./streaming.js";
 import type { SendQueue } from "../../core/adapter-primitives/primitives/send-queue.js";
 import type { DebugTracer } from "../../core/utils/debug-tracer.js";
 
+// Retains a finalized draft so tts_strip can edit the message after finalization.
+// The draft's stripPattern() still holds the message ID and can make a single edit.
 interface FinalizedDraft {
   messageId: number;
   draft: MessageDraft;
 }
 
+/**
+ * Per-session draft lifecycle manager.
+ *
+ * Owns the active `MessageDraft` for each session (the streaming message being
+ * assembled from text_delta events) and keeps a short-lived reference after
+ * finalization so post-send edits (e.g. TTS block removal) can still update
+ * the message in-place.
+ */
 export class DraftManager {
   private drafts: Map<string, MessageDraft> = new Map();
   private textBuffers: Map<string, string> = new Map();
@@ -19,6 +29,10 @@ export class DraftManager {
     private sendQueue: SendQueue,
   ) {}
 
+  /**
+   * Return the active draft for a session, creating one if it doesn't exist yet.
+   * Only one draft per session exists at a time.
+   */
   getOrCreate(sessionId: string, threadId: number, tracer: DebugTracer | null = null): MessageDraft {
     let draft = this.drafts.get(sessionId);
     if (!draft) {
@@ -51,7 +65,12 @@ export class DraftManager {
   }
 
   /**
-   * Finalize the current draft and return the message ID.
+   * Finalize the active draft for a session and retain a short-lived reference for post-send edits.
+   *
+   * Removes the draft from the active map before awaiting to prevent concurrent calls from
+   * double-finalizing the same draft. If the draft produces a message ID, stores it as a
+   * `FinalizedDraft` so `stripPattern` (e.g. TTS block removal) can still edit the message
+   * after it has been sent.
    */
   async finalize(
     sessionId: string,
@@ -91,6 +110,12 @@ export class DraftManager {
     // [TTS] block will remain visible. This is a rare edge case — log for debugging.
   }
 
+  /**
+   * Discard all draft state for a session without sending anything.
+   *
+   * Removes the active draft, text buffer, and finalized draft reference. Called when a
+   * session ends or is reset and any unsent content should be silently dropped.
+   */
   cleanup(sessionId: string): void {
     this.drafts.delete(sessionId);
     this.textBuffers.delete(sessionId);

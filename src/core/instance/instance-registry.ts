@@ -2,6 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { randomUUID } from 'node:crypto'
 
+/** An entry in the instance registry mapping an instance ID to its root directory. */
 export interface InstanceRegistryEntry {
   id: string
   root: string
@@ -12,11 +13,22 @@ interface RegistryData {
   instances: Record<string, InstanceRegistryEntry>
 }
 
+/**
+ * File-based registry that tracks all known OpenACP instances on this machine.
+ *
+ * Stored at `~/.openacp/instances.json`. Each entry maps an instance ID to
+ * its root directory. The registry is the source for instance discovery,
+ * listing, and ID resolution.
+ *
+ * `config.json` inside each instance is the source of truth for the ID.
+ * If the registry disagrees with config.json, the registry is updated to match.
+ */
 export class InstanceRegistry {
   private data: RegistryData = { version: 1, instances: {} }
 
   constructor(private registryPath: string) {}
 
+  /** Load the registry from disk. If the file is missing or corrupt, starts fresh. */
   load(): void {
     try {
       const raw = fs.readFileSync(this.registryPath, 'utf-8')
@@ -47,32 +59,39 @@ export class InstanceRegistry {
     }
   }
 
+  /** Persist the registry to disk, creating parent directories if needed. */
   save(): void {
     const dir = path.dirname(this.registryPath)
     fs.mkdirSync(dir, { recursive: true })
     fs.writeFileSync(this.registryPath, JSON.stringify(this.data, null, 2))
   }
 
+  /** Add or update an instance entry in the registry. Does not persist — call save() after. */
   register(id: string, root: string): void {
     this.data.instances[id] = { id, root }
   }
 
+  /** Remove an instance entry. Does not persist — call save() after. */
   remove(id: string): void {
     delete this.data.instances[id]
   }
 
+  /** Look up an instance by its ID. */
   get(id: string): InstanceRegistryEntry | undefined {
     return this.data.instances[id]
   }
 
+  /** Look up an instance by its root directory path. */
   getByRoot(root: string): InstanceRegistryEntry | undefined {
     return Object.values(this.data.instances).find((e) => e.root === root)
   }
 
+  /** Returns all registered instances. */
   list(): InstanceRegistryEntry[] {
     return Object.values(this.data.instances)
   }
 
+  /** Returns `baseId` if available, otherwise appends `-2`, `-3`, etc. until unique. */
   uniqueId(baseId: string): string {
     if (!this.data.instances[baseId]) return baseId
     let n = 2

@@ -1,6 +1,10 @@
 import { createChildLogger } from '../../core/utils/log.js'
 const log = createChildLogger({ module: 'telegram-validators' })
 
+/**
+ * Validate a bot token by calling the Telegram `getMe` API.
+ * Returns the bot name and username on success, or an error description on failure.
+ */
 export async function validateBotToken(
   token: string,
 ): Promise<
@@ -27,6 +31,10 @@ export async function validateBotToken(
   }
 }
 
+/**
+ * Validate that a chat ID refers to a supergroup (required for forum topics).
+ * Returns whether the group has Topics enabled (`isForum`).
+ */
 export async function validateChatId(
   token: string,
   chatId: number,
@@ -63,6 +71,10 @@ export async function validateChatId(
   }
 }
 
+/**
+ * Check that the bot is an admin in the group and has the `can_manage_topics` permission.
+ * Group creators are always treated as having all permissions.
+ */
 export async function validateBotAdmin(
   token: string,
   chatId: number,
@@ -119,6 +131,15 @@ export async function validateBotAdmin(
   }
 }
 
+/**
+ * Run all prerequisite checks for the topic-per-session model:
+ * 1. Topics are enabled on the group (`is_forum: true`)
+ * 2. Bot is an admin
+ * 3. Bot has `can_manage_topics` permission
+ *
+ * Returns all failing issues so the user can fix them all at once.
+ * Called on adapter startup; if checks fail, a background watcher retries periodically.
+ */
 export async function checkTopicsPrerequisites(
   token: string,
   chatId: number,

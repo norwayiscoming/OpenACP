@@ -1,3 +1,8 @@
+/**
+ * Channel configuration step — manages messaging platform setup
+ * (Telegram, Discord, Desktop App) via plugin install/configure hooks.
+ */
+
 import * as clack from "@clack/prompts";
 import type { Config } from "../config/config.js";
 import type { SettingsManager } from "../plugin/settings-manager.js";
@@ -6,11 +11,15 @@ import { CHANNEL_META } from "./types.js";
 import { guardCancel, ok, c } from "./helpers.js";
 
 // Maps logical channel ID → plugin name used for settings storage and dynamic import.
-// Telegram is built-in so it has no entry here (handled separately via direct import).
+// Telegram is built-in so it uses a direct import path instead of this map.
 const CHANNEL_PLUGIN_NAME: Record<string, string> = {
   discord: "@openacp/discord-adapter",
 };
 
+/**
+ * Reads the current configuration status of all known channels by
+ * checking plugin settings for required credentials.
+ */
 export async function getChannelStatuses(config: Config, settingsManager?: SettingsManager): Promise<ChannelStatus[]> {
   const statuses: ChannelStatus[] = [];
 
@@ -42,6 +51,7 @@ export async function getChannelStatuses(config: Config, settingsManager?: Setti
   return statuses;
 }
 
+/** Prints a formatted summary of all channel statuses to the console. */
 export async function noteChannelStatus(config: Config, settingsManager?: SettingsManager): Promise<void> {
   const statuses = await getChannelStatuses(config, settingsManager);
   const lines = statuses.map((s) => {
@@ -71,6 +81,12 @@ async function promptConfiguredAction(label: string): Promise<ConfiguredChannelA
   );
 }
 
+/**
+ * Delegates channel configuration to the plugin's install() or configure() hook.
+ *
+ * First-time setup calls install() for the full guided flow;
+ * reconfiguration calls configure() for editing individual settings.
+ */
 async function configureViaPlugin(channelId: string, isConfigured: boolean, settingsManager?: SettingsManager): Promise<void> {
   // SSE (Desktop App) connects automatically; no user configuration needed.
   if (channelId === 'sse') return;
@@ -117,6 +133,13 @@ async function configureViaPlugin(channelId: string, isConfigured: boolean, sett
   }
 }
 
+/**
+ * Interactive channel management loop — lets users select a channel,
+ * configure/modify/disable/delete it, then repeat until they choose "Finished".
+ *
+ * Channel credentials are stored in plugin settings (not config.json),
+ * so changes here write to ~/.openacp/plugins/data/<plugin>/settings.json.
+ */
 export async function configureChannels(config: Config, settingsManager?: SettingsManager): Promise<{ config: Config; changed: boolean }> {
   const next = structuredClone(config);
   let changed = false;

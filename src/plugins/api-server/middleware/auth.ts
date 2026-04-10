@@ -8,10 +8,13 @@ import { createChildLogger } from '../../../core/utils/log.js';
 
 const log = createChildLogger({ module: 'api-auth' });
 
+// Augment FastifyRequest so all route handlers have typed access to the authenticated identity.
 declare module 'fastify' {
   interface FastifyRequest {
     auth: {
+      /** "secret" = raw API secret (full admin); "jwt" = scoped JWT token. */
       type: 'secret' | 'jwt';
+      /** Present for JWT auth; used to look up the token record for revocation checks. */
       tokenId?: string;
       role: string;
       scopes: string[];
@@ -26,6 +29,17 @@ function constantTimeSecretCheck(token: string, secret: string): boolean {
   return timingSafeEqual(tokenHash, secretHash);
 }
 
+/**
+ * Creates a Fastify pre-handler that validates incoming auth tokens.
+ *
+ * Two credential types are accepted in priority order:
+ * 1. Raw API secret — constant-time compared; grants full admin access (`scopes: ['*']`).
+ * 2. JWT — verified with HS256, then checked against TokenStore for revocation.
+ *
+ * On success, `request.auth` is populated with role and scopes for downstream handlers.
+ * Token may be provided via `Authorization: Bearer <token>` or `?token=` query param
+ * (the latter is warned against because tunnel providers log query strings).
+ */
 export function createAuthPreHandler(
   getSecret: () => string,
   getJwtSecret: () => string,
@@ -64,16 +78,13 @@ export function createAuthPreHandler(
       throw new AuthError('UNAUTHORIZED', 'Invalid authentication token');
     }
 
-    // 3. Check if token is revoked in TokenStore
     const stored = tokenStore.get(payload.sub);
     if (!stored || stored.revoked) {
       throw new AuthError('UNAUTHORIZED', 'Token has been revoked');
     }
 
-    // 4. Update lastUsedAt
     tokenStore.updateLastUsed(payload.sub);
 
-    // 5. Resolve scopes from token override or role defaults
     const scopes = payload.scopes ?? getRoleScopes(payload.role);
 
     request.auth = {
@@ -85,6 +96,12 @@ export function createAuthPreHandler(
   };
 }
 
+/**
+ * Returns a Fastify pre-handler that enforces one or more required scopes.
+ *
+ * Wildcard `'*'` (admin secret auth) bypasses all scope checks.
+ * Throws 403 listing the specific missing scopes for easier debugging.
+ */
 export function requireScopes(...scopes: string[]): preHandlerHookHandler {
   return async function scopeCheck(request: FastifyRequest, _reply: FastifyReply) {
     const { scopes: userScopes } = request.auth;
@@ -97,6 +114,12 @@ export function requireScopes(...scopes: string[]): preHandlerHookHandler {
   };
 }
 
+/**
+ * Returns a Fastify pre-handler that enforces a minimum role level.
+ *
+ * Roles form a hierarchy: viewer < operator < admin. A user with a higher role
+ * always passes a lower-role gate, so `requireRole('operator')` also admits admins.
+ */
 export function requireRole(role: string): preHandlerHookHandler {
   const roleHierarchy: Record<string, number> = { viewer: 0, operator: 1, admin: 2 };
 

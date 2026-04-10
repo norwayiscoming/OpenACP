@@ -1,10 +1,18 @@
 import type { OutgoingMessage, PermissionRequest, NotificationMessage, AgentCommand } from './types.js'
 
+/**
+ * Configuration for an adapter channel (Telegram, Slack, etc.).
+ * Each adapter defines its own fields beyond `enabled`.
+ */
 export interface ChannelConfig {
   enabled: boolean
   [key: string]: unknown
 }
 
+/**
+ * Declares what a messaging platform supports. Core uses these to decide
+ * whether to attempt features like streaming, file uploads, or voice.
+ */
 export interface AdapterCapabilities {
   streaming: boolean
   richFormatting: boolean
@@ -14,6 +22,17 @@ export interface AdapterCapabilities {
   voice: boolean
 }
 
+/**
+ * Contract for a messaging platform adapter.
+ *
+ * A "channel" in OpenACP is identified by an adapter name (e.g. "telegram", "slack").
+ * Each session binds to a channel + thread ID — together they form a unique conversation
+ * location. The adapter is responsible for platform-specific I/O: sending messages,
+ * creating threads/topics, handling permission buttons, etc.
+ *
+ * Core calls adapter methods via SessionBridge (for agent events) or directly
+ * (for session lifecycle operations like thread creation and archiving).
+ */
 export interface IChannelAdapter {
   readonly name: string
   readonly capabilities: AdapterCapabilities
@@ -21,13 +40,14 @@ export interface IChannelAdapter {
   start(): Promise<void>
   stop(): Promise<void>
 
-  // Outgoing: core → channel
+  // --- Outgoing: core → platform ---
   sendMessage(sessionId: string, content: OutgoingMessage): Promise<void>
   sendPermissionRequest(sessionId: string, request: PermissionRequest): Promise<void>
   sendNotification(notification: NotificationMessage): Promise<void>
 
-  // Session lifecycle on channel side
-  createSessionThread(sessionId: string, name: string): Promise<string>  // returns threadId
+  // --- Session lifecycle on platform side ---
+  /** Create a thread/topic for a session. Returns the platform-specific thread ID. */
+  createSessionThread(sessionId: string, name: string): Promise<string>
   renameSessionThread(sessionId: string, newName: string): Promise<void>
   deleteSessionThread?(sessionId: string): Promise<void>
   archiveSessionTopic?(sessionId: string): Promise<void>
@@ -35,10 +55,10 @@ export interface IChannelAdapter {
   // TTS strip — optional, called after TTS audio is synthesized to remove [TTS] block from text
   stripTTSBlock?(sessionId: string): Promise<void>
 
-  // Skill commands — optional
+  // --- Skill commands — optional, for agents that expose interactive commands ---
   sendSkillCommands?(sessionId: string, commands: AgentCommand[]): Promise<void>
   cleanupSkillCommands?(sessionId: string): Promise<void>
-  /** Flush skill commands that were queued before threadId was available */
+  /** Flush skill commands that were queued before threadId was available. */
   flushPendingSkillCommands?(sessionId: string): Promise<void>
 
   // Agent switch cleanup — optional, called when switching agents to clear adapter-side per-session state
@@ -46,8 +66,14 @@ export interface IChannelAdapter {
 }
 
 /**
- * Base class providing default no-op implementations for optional methods.
- * Adapters can extend this or implement IChannelAdapter directly.
+ * Original base class for channel adapters. Provides default no-op implementations
+ * for optional IChannelAdapter methods so subclasses only need to implement the
+ * methods they care about.
+ *
+ * This class predates the adapter-primitives package. It has since been superseded
+ * by MessagingAdapter and StreamAdapter, which add structured send queuing, streaming
+ * support, and platform-specific rendering out of the box.
+ *
  * @deprecated Use MessagingAdapter or StreamAdapter instead. Kept for backward compat during migration.
  */
 export abstract class ChannelAdapter<TCore = unknown> implements IChannelAdapter {

@@ -17,6 +17,13 @@ function readConfigField(instanceRoot: string, field: string): string | null {
   } catch { return null }
 }
 
+/**
+ * `openacp setup` — Non-interactive instance initialisation for scripted/programmatic use.
+ *
+ * Writes minimal instance files (config.json with agent and runMode) without running
+ * the interactive wizard. Used by the OpenACP App and CI pipelines to bootstrap instances.
+ * The default instanceName is derived from the workspace directory basename if not given.
+ */
 export async function cmdSetup(args: string[], instanceRoot: string): Promise<void> {
   const agentRaw = parseFlag(args, '--agent');
   const json = args.includes('--json');

@@ -10,6 +10,15 @@ const TopicCleanupBodySchema = z.object({
   statuses: z.array(z.enum(VALID_TOPIC_STATUSES)).optional(),
 });
 
+/**
+ * Telegram topic management routes under `/api/v1/topics`.
+ *
+ * Topics are Telegram forum threads created per session. These routes let the App
+ * UI manage topic lifecycle without going through the Telegram adapter directly.
+ * All routes require `sessions:write` scope and return 501 if no topic manager is loaded.
+ *
+ * `DELETE /:sessionId` with `?force=true` bypasses the active-session confirmation gate.
+ */
 export async function topicRoutes(
   app: FastifyInstance,
   deps: RouteDeps,

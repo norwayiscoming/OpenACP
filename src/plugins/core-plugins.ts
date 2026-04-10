@@ -13,6 +13,20 @@ import apiServerPlugin from './api-server/index.js'
 import sseAdapterPlugin from './sse-adapter/index.js'
 import telegramPlugin from './telegram/index.js'
 
+/**
+ * Ordered list of all bundled plugins, passed to `LifecycleManager.boot()` on startup.
+ *
+ * Boot order matters: plugins listed earlier are set up first. Dependencies declared
+ * via `pluginDependencies` / `optionalPluginDependencies` are enforced by the
+ * lifecycle manager, but the order here also determines boot sequence within each
+ * dependency tier:
+ *
+ * 1. **Service plugins** — security, file-service, context, speech, notifications.
+ *    These provide services that infrastructure and adapter plugins depend on.
+ * 2. **Infrastructure plugins** — tunnel (exposes the local server), api-server (HTTP + SSE).
+ * 3. **Adapter plugins** — sse-adapter, telegram. Both depend on api-server, security, and
+ *    notifications, so they must boot after those services are ready.
+ */
 export const corePlugins = [
   // Service plugins (no adapter dependencies)
   securityPlugin,

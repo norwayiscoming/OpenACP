@@ -17,6 +17,15 @@ function botFromCtx(ctx: Context): Bot {
 
 // --- Arg parsing ---
 
+/**
+ * Parse `/resume` arguments into a ContextQuery.
+ *
+ * Supported forms:
+ * - No args → latest 5 sessions
+ * - `pr <number>`, `branch <name>`, `commit <hash>`
+ * - Checkpoint ID (12-char hex) or session ID (auto-detected)
+ * - GitHub/Entire.io URLs (PR, commit, branch, compare, checkpoint)
+ */
 export function parseResumeArgs(matchStr: string): { query: Omit<ContextQuery, "repoPath"> } | null {
   const args = matchStr.split(" ").filter(Boolean);
   if (args.length === 0) return { query: { type: "latest", value: "5" } };
@@ -179,6 +188,14 @@ async function executeResume(
 
 // --- Main handler ---
 
+/**
+ * Handle `/resume [args]` — create a new session with Entire.io conversation context.
+ *
+ * Parses the args into a ContextQuery, resolves the default workspace, checks that
+ * the Entire provider is enabled, then creates the session with historical context
+ * loaded. Creates the forum topic before calling `createSessionWithContext` to
+ * avoid a race where session events fire before the thread is ready.
+ */
 export async function handleResume(
   ctx: Context,
   core: OpenACPCore,

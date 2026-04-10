@@ -1,5 +1,6 @@
 import { ensureBinary, type BinarySpec } from './install-binary.js'
 
+/** Platform/arch mapping for jq binary downloads from GitHub releases. */
 const JQ_SPEC: BinarySpec = {
   name: 'jq',
   githubBaseUrl: 'https://github.com/jqlang/jq/releases/latest/download',
@@ -18,6 +19,13 @@ const JQ_SPEC: BinarySpec = {
   },
 }
 
+/**
+ * Ensure jq is available, downloading from GitHub releases if not found.
+ *
+ * jq is used for JSON processing in agent tool output parsing.
+ * Delegates to ensureBinary() which checks PATH, then ~/.openacp/bin/,
+ * then downloads if needed.
+ */
 export async function ensureJq(): Promise<string> {
   return ensureBinary(JQ_SPEC)
 }

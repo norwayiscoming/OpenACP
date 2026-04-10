@@ -1,3 +1,11 @@
+/**
+ * Doctor check: Config — validates config.json exists, is parseable JSON,
+ * passes Zod schema validation, and has no pending migrations.
+ *
+ * Pending migrations are auto-fixable (safe). This check runs first (order 1)
+ * because most other checks depend on a valid config.
+ */
+
 import * as fs from "node:fs";
 import { ConfigSchema } from "../../config/config.js";
 import { applyMigrations } from "../../config/config-migrations.js";

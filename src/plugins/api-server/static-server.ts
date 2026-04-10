@@ -16,6 +16,22 @@ const MIME_TYPES: Record<string, string> = {
   ".woff2": "font/woff2",
 };
 
+/**
+ * Serves the bundled OpenACP App (a Vite SPA) from the local filesystem.
+ *
+ * Two directory layouts are probed at startup to support both the development
+ * build (`ui/dist/`) and the npm publish layout (`../ui/`). If neither exists,
+ * `isAvailable()` returns false and the server skips static file serving.
+ *
+ * Path traversal is blocked in two stages:
+ * 1. String prefix check before resolving symlinks (catches obvious `..` segments).
+ * 2. `realpathSync` check after resolution (catches symlinks that escape the UI dir).
+ *
+ * Vite content-hashed assets (`*.{hash}.js/css`) receive a 1-year immutable cache.
+ * All other files use `no-cache` so updates roll out on the next page refresh.
+ *
+ * Non-asset routes fall through to `index.html` (SPA client-side routing).
+ */
 export class StaticServer {
   private uiDir: string | undefined;
 
@@ -41,10 +57,16 @@ export class StaticServer {
     }
   }
 
+  /** Returns true if a UI build was found and static serving is active. */
   isAvailable(): boolean {
     return this.uiDir !== undefined;
   }
 
+  /**
+   * Attempts to serve a static file or SPA fallback for the given request.
+   *
+   * @returns true if the response was handled, false if the caller should return a 404.
+   */
   serve(req: http.IncomingMessage, res: http.ServerResponse): boolean {
     if (!this.uiDir) return false;
 

@@ -5,6 +5,7 @@ import { createChildLogger } from '../../core/utils/log.js'
 
 const log = createChildLogger({ module: 'viewer-store' })
 
+// Hard limit per entry to avoid serving multi-MB payloads over the tunnel.
 const MAX_CONTENT_SIZE = 1_000_000  // 1MB
 
 const EXTENSION_LANGUAGE: Record<string, string> = {
@@ -18,6 +19,12 @@ const EXTENSION_LANGUAGE: Record<string, string> = {
   '.tf': 'hcl', '.vue': 'xml', '.svelte': 'xml',
 }
 
+/**
+ * Metadata for a single viewer entry.
+ * For `type: "diff"`, `content` holds the new text and `oldContent` holds the original.
+ * For `type: "output"`, `filePath` is used as the display label (not a real file path).
+ * Entries expire after the configured TTL and are cleaned up lazily on read and periodically.
+ */
 export interface ViewerEntry {
   id: string
   type: 'file' | 'diff' | 'output'
@@ -31,6 +38,13 @@ export interface ViewerEntry {
   expiresAt: number
 }
 
+/**
+ * In-memory store for content shared via tunnel viewer routes.
+ *
+ * Agents call `storeFile()` / `storeDiff()` / `storeOutput()` to get a short URL id,
+ * then pass that URL to the user. The viewer routes serve HTML pages using the stored content.
+ * Content is scoped to the session's working directory to avoid leaking files outside the workspace.
+ */
 export class ViewerStore {
   private entries = new Map<string, ViewerEntry>()
   private cleanupTimer: ReturnType<typeof setInterval>
@@ -38,6 +52,7 @@ export class ViewerStore {
 
   constructor(ttlMinutes: number = 60) {
     this.ttlMs = ttlMinutes * 60 * 1000
+    // Periodic cleanup prevents unbounded memory growth for long-running instances
     this.cleanupTimer = setInterval(() => this.cleanup(), 5 * 60 * 1000)
   }
 
@@ -143,6 +158,9 @@ export class ViewerStore {
     }
   }
 
+  // Guard against agents trying to serve files outside the session workspace
+  // (e.g. /etc/passwd or ~/ paths). Uses realpath to handle symlinks and canonicalize
+  // case on macOS/Windows where the filesystem is case-insensitive.
   private isPathAllowed(filePath: string, workingDirectory: string): boolean {
     const caseInsensitive = process.platform === 'darwin' || process.platform === 'win32'
 

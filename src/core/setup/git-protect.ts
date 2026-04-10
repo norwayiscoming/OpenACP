@@ -1,3 +1,14 @@
+/**
+ * Git protection for local OpenACP instances.
+ *
+ * When a workspace is set up inside a project directory (as opposed to the
+ * global ~/.openacp), the .openacp/ folder contains bot tokens, API keys,
+ * and other secrets that must NEVER be committed to version control.
+ *
+ * This module automatically adds .openacp/ to .gitignore and documents
+ * the restriction in CLAUDE.md so AI coding agents know to avoid it.
+ */
+
 import fs from 'node:fs'
 import path from 'node:path'
 
@@ -17,6 +28,7 @@ export function protectLocalInstance(projectDir: string): void {
   printSecurityWarning()
 }
 
+/** Adds `.openacp` to .gitignore, creating the file if it doesn't exist. */
 function ensureGitignore(projectDir: string): void {
   const gitignorePath = path.join(projectDir, '.gitignore')
   const entry = '.openacp'
@@ -37,6 +49,10 @@ function ensureGitignore(projectDir: string): void {
   }
 }
 
+/**
+ * Adds a warning section to CLAUDE.md so AI coding agents (e.g. Claude Code)
+ * know not to read or reference files inside .openacp/.
+ */
 function ensureClaudeMd(projectDir: string): void {
   const claudeMdPath = path.join(projectDir, 'CLAUDE.md')
   const marker = '## Local OpenACP Workspace'

@@ -2,25 +2,42 @@ import path from 'node:path'
 import fs from 'node:fs'
 import os from 'node:os'
 
+/**
+ * Describes a single OpenACP instance and all its filesystem paths.
+ *
+ * An "instance" is one running OpenACP server process, identified by a
+ * unique ID. Multiple instances can run on the same machine with different
+ * configs, ports, and data directories. The instance root is typically
+ * `<workspace>/.openacp/`.
+ */
 export interface InstanceContext {
+  /** Unique identifier for this instance (UUID). */
   id: string
+  /** Absolute path to the instance root directory (e.g. `~/my-project/.openacp/`). */
   root: string
+  /** Pre-resolved paths to all instance files and directories. */
   paths: {
     config: string
     sessions: string
     agents: string
+    /** Shared across all instances — lives under ~/.openacp/cache/. */
     registryCache: string
     plugins: string
     pluginsData: string
     pluginRegistry: string
     logs: string
+    /** PID file written by the daemon process to track the running server. */
     pid: string
+    /** Marker file that indicates the daemon was intentionally started. */
     running: string
+    /** Written at startup with the API server's port number. */
     apiPort: string
     apiSecret: string
+    /** Shared across all instances — lives under ~/.openacp/bin/. */
     bin: string
     cache: string
     tunnels: string
+    /** Shared across all instances — lives under ~/.openacp/agents/. */
     agentsDir: string
   }
 }
@@ -30,6 +47,12 @@ export interface CreateInstanceContextOpts {
   root: string
 }
 
+/**
+ * Creates an InstanceContext with all filesystem paths pre-resolved.
+ *
+ * Some paths (registryCache, bin, agentsDir) point to the global root
+ * (`~/.openacp/`) because they are shared across all instances.
+ */
 export function createInstanceContext(opts: CreateInstanceContextOpts): InstanceContext {
   const { id, root } = opts
   const globalRoot = getGlobalRoot()
@@ -56,6 +79,7 @@ export function createInstanceContext(opts: CreateInstanceContextOpts): Instance
   }
 }
 
+/** Converts a display name to a URL/filesystem-safe slug (lowercase, hyphens only). */
 export function generateSlug(name: string): string {
   const slug = name.toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '')
   return slug || 'openacp'
@@ -67,11 +91,28 @@ function expandHome(p: string): string {
 }
 
 export interface ResolveOpts {
+  /** Explicit directory flag (`--dir`). */
   dir?: string
+  /** Use CWD as instance root (`--local`). */
   local?: boolean
   cwd?: string
 }
 
+/**
+ * Resolves the instance root directory using a priority chain:
+ *
+ * 1. `--dir` flag (explicit)
+ * 2. `--local` flag (CWD)
+ * 3. CWD contains `.openacp/config.json`
+ * 4. Walk up parent directories (stop at $HOME, skip ~/.openacp)
+ * 5. Home directory fallback: `~/openacp-workspace/.openacp/`
+ * 6. `OPENACP_INSTANCE_ROOT` env var
+ *
+ * Returns null if no instance root is found via any of the above steps.
+ *
+ * `~/.openacp` is always skipped because it's the shared global store
+ * (registry, cache, bin), not an instance directory.
+ */
 export function resolveInstanceRoot(opts: ResolveOpts): string | null {
   const cwd = opts.cwd ?? process.cwd()
   const home = os.homedir()
@@ -118,6 +159,7 @@ export function resolveInstanceRoot(opts: ResolveOpts): string | null {
   return null
 }
 
+/** Returns the global shared root (`~/.openacp/`) used for cross-instance resources. */
 export function getGlobalRoot(): string {
   return path.join(os.homedir(), '.openacp')
 }
@@ -149,6 +191,7 @@ export async function resolveRunningInstance(cwd: string): Promise<string | null
   return null
 }
 
+/** Checks if an instance is running by reading its api.port file and hitting the health endpoint. */
 async function isInstanceRunning(instanceRoot: string): Promise<boolean> {
   const portFile = path.join(instanceRoot, 'api.port')
   try {

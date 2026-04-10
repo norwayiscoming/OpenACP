@@ -1,35 +1,54 @@
 import type { ToolDisplaySpec } from "../display-spec-builder.js";
 import type { PlanEntry } from "../../types.js";
 
+/** Debounce interval for batching rapid tool state updates into a single render. */
 const DEBOUNCE_MS = 500;
 
 export type { ToolDisplaySpec };
 
+/** Token usage and cost data appended to the tool card after the turn completes. */
 export interface UsageData {
   tokensUsed?: number;
   contextSize?: number;
   cost?: number;
 }
 
+/**
+ * A point-in-time snapshot of all tool cards in a turn, used for rendering.
+ * Includes completion counts so adapters can show progress (e.g., "3/5 tools done").
+ */
 export interface ToolCardSnapshot {
   specs: ToolDisplaySpec[];
   planEntries?: PlanEntry[];
   usage?: UsageData;
   totalVisible: number;
   completedVisible: number;
+  /** True when all visible tools have reached a terminal status. */
   allComplete: boolean;
 }
 
 export interface ToolCardStateConfig {
+  /** Called with a snapshot whenever the tool card content changes. */
   onFlush: (snapshot: ToolCardSnapshot) => void;
 }
 
 const DONE_STATUSES = new Set(["completed", "done", "failed", "error"]);
 
+/**
+ * Aggregates tool display specs, plan entries, and usage data for a single
+ * turn, then flushes snapshots to the adapter for rendering.
+ *
+ * Uses debouncing to batch rapid updates (e.g., multiple tools starting
+ * in quick succession) into a single render pass. The first update flushes
+ * immediately for responsiveness; subsequent updates are debounced.
+ */
 export class ToolCardState {
   private specs: ToolDisplaySpec[] = [];
   private planEntries?: PlanEntry[];
   private usage?: UsageData;
+  // Lifecycle: active (first flush pending) → active (subsequent updates debounced) → finalized.
+  // Once finalized, all updateFromSpec/updatePlan/appendUsage/finalize() calls are no-ops —
+  // guards against events arriving after the session has ended or the tool has already completed.
   private finalized = false;
   private isFirstFlush = true;
   private debounceTimer?: ReturnType<typeof setTimeout>;
@@ -39,6 +58,7 @@ export class ToolCardState {
     this.onFlush = config.onFlush;
   }
 
+  /** Adds or updates a tool spec. First call flushes immediately; subsequent calls are debounced. */
   updateFromSpec(spec: ToolDisplaySpec): void {
     if (this.finalized) return;
 
@@ -57,6 +77,7 @@ export class ToolCardState {
     }
   }
 
+  /** Updates the plan entries displayed alongside tool cards. */
   updatePlan(entries: PlanEntry[]): void {
     if (this.finalized) return;
     this.planEntries = entries;
@@ -69,12 +90,14 @@ export class ToolCardState {
     }
   }
 
+  /** Appends token usage data to the tool card (typically at end of turn). */
   appendUsage(usage: UsageData): void {
     if (this.finalized) return;
     this.usage = usage;
     this.scheduleFlush();
   }
 
+  /** Marks the turn as complete and flushes the final snapshot immediately. */
   finalize(): void {
     if (this.finalized) return;
     this.finalized = true;
@@ -82,6 +105,7 @@ export class ToolCardState {
     this.flush();
   }
 
+  /** Stops all pending flushes without emitting a final snapshot. */
   destroy(): void {
     this.finalized = true;
     this.clearDebounce();

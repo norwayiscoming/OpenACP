@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
+/** A running OpenACP instance discovered via the instance registry. */
 export interface DiscoveredInstance {
   id: string;
   root: string;
@@ -9,6 +10,17 @@ export interface DiscoveredInstance {
   running: boolean;
 }
 
+/**
+ * Discovers all currently running OpenACP instances on this machine.
+ *
+ * Reads the instance registry file, then for each registered instance:
+ * 1. Reads its `api.port` file to find the API server port
+ * 2. Sends a health check request to verify the process is alive
+ * 3. Reads `config.json` for the display name (falls back to instance ID)
+ *
+ * Instances that cannot be probed for any reason (missing port file, not responding)
+ * are silently skipped.
+ */
 export async function discoverRunningInstances(registryPath: string): Promise<DiscoveredInstance[]> {
   let registry: { version: number; instances: Record<string, { id: string; root: string }> };
   try {
@@ -47,6 +59,7 @@ export async function discoverRunningInstances(registryPath: string): Promise<Di
   return discovered;
 }
 
+/** Probes the local API server with a 3-second timeout to check if it's alive. */
 async function checkHealth(port: number): Promise<boolean> {
   try {
     const controller = new AbortController();

@@ -2,6 +2,17 @@ import type { OpenACPPlugin, InstallContext } from '../../core/plugin/types.js'
 import type { OpenACPCore } from '../../core/core.js'
 import type { TelegramChannelConfig } from './types.js'
 
+/**
+ * Factory for the Telegram plugin.
+ *
+ * The plugin is `essential: true` — OpenACP won't start without it. Its `setup()`
+ * hook constructs a `TelegramAdapter` and registers it as `adapter:telegram` in
+ * the service registry so other plugins can reference it.
+ *
+ * On first run, topic IDs are null. `TelegramAdapter.start()` creates the system
+ * topics and persists their IDs back to plugin settings via the `saveTopicIds` callback.
+ * On subsequent runs, the persisted IDs are read from plugin settings in `setup()`.
+ */
 function createTelegramPlugin(): OpenACPPlugin {
   let adapter: { stop(): Promise<void> } | null = null
 
@@ -247,6 +258,11 @@ function createTelegramPlugin(): OpenACPPlugin {
   }
 }
 
+/**
+ * Poll `getUpdates` until a group message is received, then return its chat ID.
+ * Used during `install` when the user chooses auto-detect instead of manual entry.
+ * Times out after ~4 minutes (120 attempts × 2s) and falls back to manual input.
+ */
 async function detectChatIdViaPolling(
   token: string,
   terminal: InstallContext['terminal'],

@@ -18,6 +18,7 @@ import { Hook, BusEvent, SessionEv } from "../events.js";
 
 const log = createChildLogger({ module: "session-factory" });
 
+/** Parameters for creating a new session — used by SessionFactory.create() and Core.createFullSession(). */
 export interface SessionCreateParams {
   channelId: string;
   agentName: string;
@@ -34,6 +35,14 @@ export interface SideEffectDeps {
   tunnelService?: TunnelService;
 }
 
+/**
+ * Constructs new Sessions with the right agent, working directory, and initial state.
+ *
+ * Handles agent spawning (or resuming from a previous ACP session), middleware integration,
+ * ACP state hydration, and side-effect wiring (usage tracking, tunnel cleanup).
+ * Also provides lazy resume: when a message arrives for a stored (not live) session,
+ * the factory transparently resumes it by re-spawning the agent with the stored session ID.
+ */
 export class SessionFactory {
   middlewareChain?: MiddlewareChain;
   private resumeLocks: Map<string, Promise<Session | null>> = new Map();
@@ -69,6 +78,10 @@ export class SessionFactory {
       : this.speechServiceAccessor;
   }
 
+  /**
+   * Create a new Session: spawn agent → create Session instance → hydrate ACP state → register.
+   * Runs session:beforeCreate middleware (which can modify params or block creation).
+   */
   async create(params: SessionCreateParams): Promise<Session> {
     // Hook: session:beforeCreate — modifiable, can block
     let createParams = params;
@@ -290,6 +303,11 @@ export class SessionFactory {
     return resumePromise;
   }
 
+  /**
+   * Attempt to resume a session from disk when a message arrives on a thread with
+   * no live session. Deduplicates concurrent resume attempts for the same thread
+   * via resumeLocks to avoid spawning multiple agents.
+   */
   private async lazyResume(channelId: string, threadId: string): Promise<Session | null> {
     const store = this.sessionStore;
     if (!store || !this.createFullSession) return null;
@@ -413,6 +431,7 @@ export class SessionFactory {
     return resumePromise;
   }
 
+  /** Create a brand-new session, resolving agent name and workspace from config if not provided. */
   async handleNewSession(
     channelId: string,
     agentName?: string,
@@ -472,6 +491,7 @@ export class SessionFactory {
     );
   }
 
+  /** Create a session and inject conversation context from a ContextProvider (e.g., history from a previous session). */
   async createSessionWithContext(params: {
     channelId: string;
     agentName: string;
@@ -511,6 +531,7 @@ export class SessionFactory {
     return { session, contextResult };
   }
 
+  /** Wire session-level side effects: usage tracking (via EventBus) and tunnel cleanup on session end. */
   wireSideEffects(session: Session, deps: SideEffectDeps): void {
     // Wire usage tracking via event bus (consumed by usage plugin)
     session.on(SessionEv.AGENT_EVENT, (event: AgentEvent) => {

@@ -1,3 +1,7 @@
+/**
+ * Sets the assistant's persona and basic formatting rules.
+ * This is always the first block in the composed system prompt.
+ */
 export const ASSISTANT_PREAMBLE = `You are the OpenACP Assistant — a helpful guide for managing AI coding sessions.
 
 Respond in the same language the user uses.
@@ -17,6 +21,13 @@ export function resolveCliCommand(): string {
   return 'openacp'
 }
 
+/**
+ * Builds the CLI guidelines section of the assistant's system prompt.
+ *
+ * These guidelines teach the assistant how to invoke OpenACP CLI commands
+ * against the correct instance. The `--dir` flag is critical — without it,
+ * commands may target the wrong instance when multiple instances exist.
+ */
 export function buildAssistantGuidelines(instanceRoot: string): string {
   const cli = resolveCliCommand()
   const baseCmd = `${cli} --dir "${instanceRoot}"`

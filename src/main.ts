@@ -1,5 +1,12 @@
 #!/usr/bin/env node
 
+// Server entry point — orchestrates the full startup sequence:
+//   1. Instance context resolution (finds the .openacp/ workspace root)
+//   2. Config load + Zod validation
+//   3. Plugin boot in dependency order (services → infrastructure → adapters)
+//   4. Adapter wiring from ServiceRegistry into OpenACPCore
+//   5. Signal handlers for graceful shutdown (SIGINT / SIGTERM)
+
 import path from 'node:path'
 import { ConfigManager } from './core/config/config.js'
 import type { InstanceContext } from './core/instance/instance-context.js'
@@ -19,16 +26,41 @@ import { randomUUID } from 'node:crypto'
 import fs from 'node:fs'
 import { BusEvent } from './core/events.js'
 
+/** Exit code that signals the process manager (or self-respawn logic) to restart the server. */
 export const RESTART_EXIT_CODE = 75
+
+// Module-level guard — prevents re-entrant shutdown if a second signal arrives mid-teardown.
 let shuttingDown = false
 
-
+/**
+ * Options for programmatic server startup.
+ *
+ * All fields are optional: when omitted, startServer() resolves them
+ * from the environment (OPENACP_INSTANCE_ROOT or CWD traversal).
+ */
 export interface StartServerOptions {
+  /** Absolute path to a dev plugin directory — enables hot-reload during plugin development. */
   devPluginPath?: string
+  /** Disable file-watcher hot-reload for the dev plugin (useful in CI or when watching externally). */
   noWatch?: boolean
+  /** Pre-resolved instance context — skip the CWD/env resolution step (used by CLI and daemon child). */
   instanceContext?: InstanceContext
 }
 
+/**
+ * Starts the OpenACP server for a given instance.
+ *
+ * The startup sequence is intentionally ordered:
+ *   1. Instance context — must exist before any path resolution
+ *   2. SettingsManager + PluginRegistry — needed by setup wizard if config is missing
+ *   3. Config load — required before logger init (log level comes from config)
+ *   4. Plugin boot — services first, then infrastructure (tunnel, API), then adapters
+ *   5. Adapter wiring — adapters register as services during boot; wired after all plugins are up
+ *   6. core.start() — begins listening only after all plugins and adapters are ready
+ *
+ * Can be called programmatically (e.g., from tests or embedded use) by passing
+ * a pre-built `instanceContext`. When omitted, resolves from env or CWD.
+ */
 export async function startServer(opts?: StartServerOptions) {
   if (!opts?.instanceContext) {
     const { resolveInstanceRoot } = await import('./core/instance/instance-context.js')
@@ -294,7 +326,9 @@ export async function startServer(opts?: StartServerOptions) {
       }
     }
 
-    // Wire adapters from service registry into core (discovered dynamically)
+    // Adapters register themselves into the ServiceRegistry under the key "adapter:<name>"
+    // during their plugin setup() hook. We discover them here after all plugins have booted,
+    // then wire each one into core so it can route incoming messages and send agent responses.
     for (const { name } of serviceRegistry.list()) {
       if (!name.startsWith('adapter:')) continue
       const adapterName = name.slice('adapter:'.length)
@@ -330,6 +364,13 @@ export async function startServer(opts?: StartServerOptions) {
   }
 
   // 5. Setup shutdown handler
+  // Teardown order mirrors the reverse of boot order:
+  //   notifications → sessions → lifecycle (adapters, api-server, tunnel, etc.)
+  // Notifications must fire first while the adapter is still connected.
+  // Sessions are persisted before the plugin layer tears down (some plugins
+  // handle session events during shutdown). core.stop() is intentionally
+  // NOT called — lifecycleManager.shutdown() already stops adapters, and
+  // calling core.stop() afterwards would double-stop and use already-torn-down plugins.
   const shutdown = async (signal: string, exitCode = 0) => {
     if (shuttingDown) return
     shuttingDown = true

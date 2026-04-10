@@ -2,6 +2,14 @@ import type { CommandRegistry } from '../command-registry.js'
 import type { CommandResponse } from '../plugin/types.js'
 import type { OpenACPCore } from '../core.js'
 
+/**
+ * Register session lifecycle commands: /new, /cancel, /status, /sessions,
+ * /newchat, /resume, /handoff, /fork, /archive, /close, /agentsessions.
+ *
+ * These commands manage the full session lifecycle — creating, inspecting,
+ * forking, archiving, and closing sessions. Most require a session context
+ * (i.e. being invoked inside a session topic/thread).
+ */
 export function registerSessionCommands(registry: CommandRegistry, _core: unknown): void {
   const core = _core as OpenACPCore;
   registry.register({

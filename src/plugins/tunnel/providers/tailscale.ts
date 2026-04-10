@@ -6,6 +6,15 @@ const log = createChildLogger({ module: 'tailscale-tunnel' })
 
 const SIGKILL_TIMEOUT_MS = 5_000
 
+/**
+ * Tunnel provider using Tailscale Funnel (https://tailscale.com/kb/1223/funnel).
+ *
+ * Requires tailscale to be installed and authenticated. Funnel exposes a local port
+ * via the device's Tailscale HTTPS URL (*.ts.net). The hostname is pre-resolved via
+ * `tailscale status --json` because the `funnel` command may exit immediately after
+ * configuring the route (rather than staying alive), in which case we construct the
+ * URL ourselves from the resolved hostname.
+ */
 export class TailscaleTunnelProvider implements TunnelProvider {
   private child: ChildProcess | null = null
   private publicUrl = ''
@@ -21,6 +30,8 @@ export class TailscaleTunnelProvider implements TunnelProvider {
   }
 
   async start(localPort: number): Promise<string> {
+    // Resolve hostname upfront so we can construct the URL if `funnel` exits
+    // immediately after configuring the route (before printing the URL).
     let hostname = ''
     try {
       const statusJson = execSync('tailscale status --json', { encoding: 'utf-8', timeout: 10_000 })

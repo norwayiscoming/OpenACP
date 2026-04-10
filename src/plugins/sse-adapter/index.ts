@@ -8,6 +8,8 @@ import { SSEAdapter } from './adapter.js';
 import { sseRoutes } from './routes.js';
 import { BusEvent } from '../../core/events.js';
 
+// Module-level references held for teardown — the plugin lifecycle doesn't
+// pass instances between setup() and teardown(), so we store them here.
 let _adapter: SSEAdapter | null = null;
 let _connectionManager: ConnectionManager | null = null;
 

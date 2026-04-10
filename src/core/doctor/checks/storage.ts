@@ -1,3 +1,9 @@
+/**
+ * Doctor check: Storage — verifies the data directory (.openacp/), session
+ * store, and log directory exist and are writable. Corrupt sessions.json
+ * is a risky fix (resetting it drops session history).
+ */
+
 import * as fs from "node:fs";
 import type { DoctorCheck, CheckResult } from "../types.js";
 

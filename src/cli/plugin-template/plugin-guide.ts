@@ -1,5 +1,15 @@
 import type { TemplateParams } from './package-json.js'
 
+/**
+ * Generate PLUGIN_GUIDE.md — the human-readable developer guide embedded in every plugin.
+ *
+ * Contains practical how-to sections: adding commands, registering services, listening to
+ * events, using middleware, and writing tests. Aimed at plugin authors who prefer docs
+ * over reading the API types directly.
+ *
+ * This file is kept in sync with the actual OpenACP plugin API. When the API changes,
+ * this generator must be updated so newly scaffolded plugins start with accurate examples.
+ */
 export function generatePluginGuide(params: TemplateParams): string {
   return `# Plugin Developer Guide
 

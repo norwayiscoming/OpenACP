@@ -134,6 +134,18 @@ function extractDiffStatsFromToolPayload(
   return null;
 }
 
+/**
+ * Transforms AgentEvents into OutgoingMessages suitable for adapter delivery.
+ *
+ * Handles two key concerns beyond simple type mapping:
+ * 1. **Tool input caching** — `tool_call` events carry `rawInput`, but subsequent
+ *    `tool_update` events for the same tool often omit it. The transformer caches
+ *    rawInput so updates can inherit it for viewer link generation.
+ * 2. **Viewer link enrichment** — when a tunnel service is available, tool events
+ *    for file reads/edits are enriched with public URLs to the code viewer and diff viewer.
+ *    Intermediate updates (with raw content) are preferred over completion events
+ *    (which have formatted content with line numbers).
+ */
 export class MessageTransformer {
   tunnelService?: TunnelServiceInterface;
   /** Cache rawInput from tool_call so it's available in tool_update (which often lacks it) */
@@ -145,6 +157,12 @@ export class MessageTransformer {
     this.tunnelService = tunnelService;
   }
 
+  /**
+   * Convert an agent event to an outgoing message for adapter delivery.
+   *
+   * For tool events, enriches the metadata with diff stats and viewer links
+   * when a tunnel service is available.
+   */
   transform(
     event: AgentEvent,
     sessionContext?: { id: string; workingDirectory: string },

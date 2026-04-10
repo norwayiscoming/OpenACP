@@ -1,6 +1,15 @@
 import type { NoiseAction, NoiseRule } from "./format-types.js";
 import { STATUS_ICONS, KIND_ICONS } from "./format-types.js";
 
+/**
+ * Recursively extracts plain text from an agent's response content.
+ *
+ * Agent responses can be strings, arrays of content blocks, or nested
+ * objects with `text`, `content`, `input`, or `output` fields. This
+ * function normalizes all variants into a single string. Falls back
+ * to JSON serialization for unrecognized structures to avoid silently
+ * dropping edge-case responses.
+ */
 export function extractContentText(content: unknown, depth = 0): string {
   if (!content || depth > 5) return "";
   if (typeof content === "string") return content;
@@ -53,8 +62,12 @@ function parseRawInput(rawInput: unknown): Record<string, unknown> {
   return {};
 }
 
-// --- Step 5: formatToolSummary with displaySummary override ---
-
+/**
+ * Builds a human-readable summary line for a tool call (used at medium/high verbosity).
+ *
+ * Includes an icon and key arguments (e.g., "Read src/foo.ts (50 lines)").
+ * If the agent provides a `displaySummary` override, it takes precedence.
+ */
 export function formatToolSummary(
   name: string,
   rawInput: unknown,
@@ -113,8 +126,12 @@ export function formatToolSummary(
   return `🔧 ${name}`;
 }
 
-// --- Step 6: formatToolTitle for low verbosity ---
-
+/**
+ * Builds a compact title for a tool call (used at low verbosity).
+ *
+ * Returns just the key identifier (file path, command, pattern) without
+ * icons or extra decoration. If `displayTitle` is provided, it takes precedence.
+ */
 export function formatToolTitle(
   name: string,
   rawInput: unknown,
@@ -156,8 +173,10 @@ export function formatToolTitle(
   return name;
 }
 
-// --- Step 7: resolveToolIcon ---
-
+/**
+ * Selects the appropriate emoji icon for a tool call card.
+ * Priority: status icon (e.g., running, done, error) > kind icon (e.g., read, execute) > default.
+ */
 export function resolveToolIcon(tool: {
   status?: string;
   displayKind?: string;
@@ -170,7 +189,8 @@ export function resolveToolIcon(tool: {
   return "🔧";
 }
 
-// --- Step 8: Noise filtering ---
+// Noise filtering — determines which tool calls are low-signal and can be
+// hidden or collapsed at lower verbosity levels to reduce chat clutter.
 
 const NOISE_RULES: NoiseRule[] = [
   {
@@ -196,6 +216,10 @@ const NOISE_RULES: NoiseRule[] = [
   },
 ];
 
+/**
+ * Evaluates whether a tool call is considered "noise" based on its name, kind, and input.
+ * Returns `"hide"` (suppress entirely) or `"collapse"` (show minimally), or `null` if not noise.
+ */
 export function evaluateNoise(
   name: string,
   kind: string,

@@ -1,6 +1,15 @@
 /**
- * OpenACP Product Guide — comprehensive reference for the AI assistant.
- * The assistant reads this at runtime to answer user questions about features.
+ * OpenACP Product Guide — comprehensive reference text injected into the AI assistant's system prompt.
+ *
+ * The assistant (in the Assistant topic/thread) reads this at startup to answer user questions
+ * about features, CLI commands, configuration, and troubleshooting without hitting the network.
+ *
+ * **How it's used:** The assistant plugin reads `PRODUCT_GUIDE` and prepends it to the system
+ * prompt so the AI has full product knowledge baked in, not fetched per-session.
+ *
+ * **How to update:** Edit the Markdown content below. Keep it accurate with the current feature set —
+ * outdated entries cause the assistant to give wrong answers. Sections use `---` dividers and
+ * `##` headings so the assistant can navigate the content efficiently.
  */
 export const PRODUCT_GUIDE = `
 # OpenACP — Product Guide

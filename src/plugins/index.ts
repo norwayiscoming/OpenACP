@@ -1,3 +1,5 @@
+// Legacy export name kept for backward compatibility — callers that import
+// `builtInPlugins` from this path continue to work unchanged.
 import securityPlugin from './security/index.js'
 import fileServicePlugin from './file-service/index.js'
 import contextPlugin from './context/index.js'

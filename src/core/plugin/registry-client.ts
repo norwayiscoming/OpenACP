@@ -1,6 +1,9 @@
+/** URL of the public OpenACP plugin registry (hosted on GitHub). */
 const REGISTRY_URL = 'https://raw.githubusercontent.com/Open-ACP/plugin-registry/main/registry.json'
-const CACHE_TTL = 60 * 1000  // 1 minute
+/** Registry data is cached for 1 minute to reduce network requests during repeated lookups. */
+const CACHE_TTL = 60 * 1000
 
+/** Metadata for a plugin listed in the public OpenACP plugin registry. */
 export interface RegistryPlugin {
   name: string
   displayName?: string
@@ -18,6 +21,7 @@ export interface RegistryPlugin {
   featured: boolean
 }
 
+/** The full registry manifest, fetched as a single JSON file. */
 export interface Registry {
   version: number
   generatedAt: string
@@ -26,6 +30,13 @@ export interface Registry {
   categories: Array<{ id: string; name: string; icon: string }>
 }
 
+/**
+ * Client for the public OpenACP plugin registry.
+ *
+ * The registry is a static JSON file on GitHub — no API server needed.
+ * Results are cached in memory for 1 minute to avoid redundant fetches
+ * during CLI operations like search + install.
+ */
 export class RegistryClient {
   private cache: { data: Registry; fetchedAt: number } | null = null
   private registryUrl: string
@@ -34,6 +45,7 @@ export class RegistryClient {
     this.registryUrl = registryUrl ?? REGISTRY_URL
   }
 
+  /** Fetch the registry, returning cached data if still fresh. */
   async getRegistry(): Promise<Registry> {
     if (this.cache && Date.now() - this.cache.fetchedAt < CACHE_TTL) {
       return this.cache.data
@@ -45,6 +57,7 @@ export class RegistryClient {
     return data
   }
 
+  /** Search plugins by name, description, or tags (case-insensitive substring match). */
   async search(query: string): Promise<RegistryPlugin[]> {
     const registry = await this.getRegistry()
     const q = query.toLowerCase()
@@ -54,12 +67,14 @@ export class RegistryClient {
     })
   }
 
+  /** Resolve a registry plugin name to its npm package name. Returns null if not found. */
   async resolve(name: string): Promise<string | null> {
     const registry = await this.getRegistry()
     const plugin = registry.plugins.find(p => p.name === name)
     return plugin?.npm ?? null
   }
 
+  /** Force next getRegistry() call to refetch from network. */
   clearCache(): void {
     this.cache = null
   }

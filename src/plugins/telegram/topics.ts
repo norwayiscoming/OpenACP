@@ -1,7 +1,10 @@
 import type { Bot } from 'grammy'
 
-// Ensure notification and assistant topics exist, create if needed
-// Returns updated topic IDs
+/**
+ * Ensure the two system topics (Notifications and Assistant) exist in the group.
+ * Creates any missing topic and persists the resulting IDs via `saveConfig`.
+ * Called once on startup; idempotent if both IDs are already present in config.
+ */
 export async function ensureTopics(
   bot: Bot,
   chatId: number,
@@ -26,7 +29,11 @@ export async function ensureTopics(
   return { notificationTopicId, assistantTopicId }
 }
 
-// Create a new forum topic for a session
+/**
+ * Create a new forum topic for a session and return its thread ID.
+ * Each session gets exactly one dedicated topic; the thread ID is used
+ * to route all subsequent messages for that session.
+ */
 export async function createSessionTopic(
   bot: Bot,
   chatId: number,
@@ -36,7 +43,7 @@ export async function createSessionTopic(
   return topic.message_thread_id
 }
 
-// Rename an existing forum topic
+/** Rename an existing forum topic. Failures are silently ignored (topic may be closed/deleted). */
 export async function renameSessionTopic(
   bot: Bot,
   chatId: number,
@@ -50,7 +57,7 @@ export async function renameSessionTopic(
   }
 }
 
-// Delete a forum topic and all its messages
+/** Delete a forum topic and all its messages permanently. */
 export async function deleteSessionTopic(
   bot: Bot,
   chatId: number,
@@ -59,9 +66,14 @@ export async function deleteSessionTopic(
   await bot.api.deleteForumTopic(chatId, threadId);
 }
 
-// Build a Telegram deep link to a specific message in a forum topic
+/**
+ * Build a Telegram deep link that navigates directly to a forum topic or message.
+ *
+ * When `messageId` is provided (and differs from `threadId`), the link points to
+ * that specific message; otherwise it links to the topic root.
+ */
 export function buildDeepLink(chatId: number, threadId: number, messageId?: number): string {
-  // chatId for groups starts with -100, need to strip it for the link
+  // Group chatId is prefixed with -100; strip it to form a valid t.me link
   const cleanId = String(chatId).replace('-100', '')
   // For forum groups: c/{chatId}/{threadId}/{messageId} links to a specific message
   // Without messageId: c/{chatId}/{threadId} links to the topic itself

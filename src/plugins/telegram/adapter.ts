@@ -70,10 +70,11 @@ interface UsageMetadata {
 }
 
 /**
- * Wraps native fetch to work around grammY's polyfilled AbortController.
- * grammY uses abort-controller polyfill whose AbortSignal fails instanceof
- * checks in Node 24+ native fetch. This wrapper re-creates a native
- * AbortSignal from the polyfilled one before passing it to fetch.
+ * Wrap native fetch to work around grammY's polyfilled AbortController.
+ *
+ * grammY uses an abort-controller polyfill whose AbortSignal fails `instanceof`
+ * checks in Node 24+ native fetch. This wrapper re-creates a native AbortSignal
+ * from the polyfilled signal object before forwarding the request.
  */
 function patchedFetch(
   input: RequestInfo | URL,
@@ -95,6 +96,27 @@ function patchedFetch(
   return fetch(input, init);
 }
 
+/**
+ * Telegram adapter — bridges the OpenACP session system to a Telegram supergroup.
+ *
+ * Architecture overview:
+ * - **Topic-per-session model**: each agent session lives in its own Telegram forum
+ *   topic. The topic ID is stored as `session.threadId` and used to route all
+ *   inbound and outbound messages.
+ * - **Two system topics**: "📋 Notifications" (cross-session alerts) and
+ *   "🤖 Assistant" (conversational AI). Created once on first run, IDs persisted.
+ * - **Streaming**: agent text arrives as `text_delta` chunks. A `MessageDraft`
+ *   accumulates chunks and edits the message in-place every 5 seconds, reducing
+ *   API calls while keeping the response live.
+ * - **Callback routing**:
+ *   - `p:<key>:<optionId>` — permission approval buttons
+ *   - `c/<command>` (or `c/#<id>` for long commands) — command button actions
+ *   - `m:<itemId>` — MenuRegistry item dispatch
+ *   - Domain prefixes (`d:`, `v:`, `ns:`, `sw:`, etc.) — specific feature flows
+ * - **Two-phase startup**: Phase 1 starts the bot and registers handlers.
+ *   Phase 2 checks group prerequisites (admin, topics enabled) and creates
+ *   system topics. If prerequisites are not met, a background watcher retries.
+ */
 export class TelegramAdapter extends MessagingAdapter {
   readonly name = "telegram";
   readonly renderer: IRenderer = new TelegramRenderer();
@@ -138,7 +160,11 @@ export class TelegramAdapter extends MessagingAdapter {
   /** Background watcher timer — cancelled on stop() or when topics succeed */
   private _prerequisiteWatcher: ReturnType<typeof setTimeout> | null = null;
 
-  /** Store control message ID in memory + persist to session record */
+  /**
+   * Persist the control message ID both in-memory and to the session record.
+   * The control message is the pinned status card with bypass/TTS buttons; its ID
+   * is needed after a restart to edit it when config changes.
+   */
   private storeControlMsgId(sessionId: string, msgId: number): void {
     this.controlMsgIds.set(sessionId, msgId);
     const record = this.core.sessionManager.getSessionRecord(sessionId);
@@ -215,6 +241,12 @@ export class TelegramAdapter extends MessagingAdapter {
     this.saveTopicIds = saveTopicIds;
   }
 
+  /**
+   * Set up the grammY bot, register all callback and message handlers, then perform
+   * two-phase startup: Phase 1 starts polling immediately; Phase 2 checks group
+   * prerequisites (bot is admin, topics are enabled) and creates/restores system topics.
+   * If prerequisites are not met, a background watcher retries until they are.
+   */
   async start(): Promise<void> {
     this.bot = new Bot(this.telegramConfig.botToken, {
       client: {
@@ -744,6 +776,13 @@ export class TelegramAdapter extends MessagingAdapter {
     this._prerequisiteWatcher = setTimeout(retry, schedule[0]);
   }
 
+  /**
+   * Tear down the bot and release all associated resources.
+   *
+   * Cancels the background prerequisite watcher, destroys all per-session activity
+   * trackers (which hold interval timers), removes eventBus listeners, clears the
+   * send queue, and stops the grammY bot polling loop.
+   */
   async stop(): Promise<void> {
     // Cancel background prerequisite watcher if running
     if (this._prerequisiteWatcher !== null) {
@@ -1014,6 +1053,13 @@ export class TelegramAdapter extends MessagingAdapter {
     return this.core.sessionManager.getSession(sessionId)?.agentInstance?.debugTracer ?? null;
   }
 
+  /**
+   * Primary outbound dispatch method — routes an agent message to the session's Telegram topic.
+   *
+   * Wraps the base class `sendMessage` in a per-session promise chain (`_dispatchQueues`)
+   * so that concurrent events fired from SessionBridge are serialized and delivered in the
+   * order they arrive, preventing fast handlers from overtaking slower ones.
+   */
   async sendMessage(
     sessionId: string,
     content: OutgoingMessage,
@@ -1403,6 +1449,11 @@ export class TelegramAdapter extends MessagingAdapter {
     );
   }
 
+  /**
+   * Render a PermissionRequest as an inline keyboard in the session topic and
+   * notify the Notifications topic. Runs inside a sendQueue item, so
+   * notification is fire-and-forget to avoid deadlock.
+   */
   async sendPermissionRequest(
     sessionId: string,
     request: PermissionRequest,
@@ -1417,6 +1468,11 @@ export class TelegramAdapter extends MessagingAdapter {
     );
   }
 
+  /**
+   * Post a notification to the Notifications topic.
+   * Assistant session notifications are suppressed — the assistant topic is
+   * the user's primary interface and does not need a separate alert.
+   */
   async sendNotification(notification: NotificationMessage): Promise<void> {
     this.getTracer(notification.sessionId)?.log("telegram", { action: "notification:send", sessionId: notification.sessionId, type: notification.type });
     if (notification.sessionId === this.core.assistantManager?.get('telegram')?.id) return;
@@ -1463,6 +1519,10 @@ export class TelegramAdapter extends MessagingAdapter {
     );
   }
 
+  /**
+   * Create a new Telegram forum topic for a session and return its thread ID as a string.
+   * Called by the core when a session is created via the API or CLI (not from the Telegram UI).
+   */
   async createSessionThread(sessionId: string, name: string): Promise<string> {
     this.getTracer(sessionId)?.log("telegram", { action: "thread:create", sessionId, name });
     log.info({ sessionId, name }, "Session topic created");
@@ -1471,6 +1531,10 @@ export class TelegramAdapter extends MessagingAdapter {
     );
   }
 
+  /**
+   * Rename the forum topic for a session and update the session record's display name.
+   * No-ops silently if the session doesn't have a threadId yet (e.g. still initializing).
+   */
   async renameSessionThread(sessionId: string, newName: string): Promise<void> {
     this.getTracer(sessionId)?.log("telegram", { action: "thread:rename", sessionId, newName });
     const session = this.core.sessionManager.getSession(sessionId);
@@ -1489,6 +1553,7 @@ export class TelegramAdapter extends MessagingAdapter {
     await this.core.sessionManager.patchRecord(sessionId, { name: newName });
   }
 
+  /** Delete the forum topic associated with a session. */
   async deleteSessionThread(sessionId: string): Promise<void> {
     const record = this.core.sessionManager.getSessionRecord(sessionId);
     const platform = record?.platform as
@@ -1507,6 +1572,11 @@ export class TelegramAdapter extends MessagingAdapter {
     }
   }
 
+  /**
+   * Display or update the pinned skill commands message for a session.
+   * If the session's threadId is not yet set (e.g. session created from API),
+   * the commands are queued and flushed once the thread becomes available.
+   */
   async sendSkillCommands(
     sessionId: string,
     commands: AgentCommand[],
@@ -1635,11 +1705,25 @@ export class TelegramAdapter extends MessagingAdapter {
       .catch((err) => log.error({ err }, "handleMessage error"));
   }
 
+  /**
+   * Remove skill slash commands from the Telegram bot command list for a session.
+   *
+   * Clears any queued pending commands that hadn't been sent yet, then delegates
+   * to `SkillCommandManager` to delete the commands from the Telegram API. Called
+   * when a session with registered skill commands ends.
+   */
   async cleanupSkillCommands(sessionId: string): Promise<void> {
     this._pendingSkillCommands.delete(sessionId);
     await this.skillManager.cleanup(sessionId);
   }
 
+  /**
+   * Clean up all adapter state associated with a session.
+   *
+   * Finalizes and discards any in-flight draft, destroys the activity tracker
+   * (stopping ThinkingIndicator timers and finalizing any open ToolCard), and
+   * clears pending skill commands. Called when a session ends or is reset.
+   */
   async cleanupSessionState(sessionId: string): Promise<void> {
     this._pendingSkillCommands.delete(sessionId);
     // Finalize and clean up draft state
@@ -1654,10 +1738,23 @@ export class TelegramAdapter extends MessagingAdapter {
     }
   }
 
+  /**
+   * Remove `[TTS]...[/TTS]` blocks from the active or finalized draft for a session.
+   *
+   * The agent embeds these blocks so the speech plugin can extract the TTS text, but
+   * they should never appear in the chat message. Called after TTS audio has been sent.
+   */
   async stripTTSBlock(sessionId: string): Promise<void> {
     await this.draftManager.stripPattern(sessionId, /\[TTS\][\s\S]*?\[\/TTS\]/g);
   }
 
+  /**
+   * Archive a session by deleting its forum topic.
+   *
+   * Sets `session.archiving = true` to suppress any outgoing messages while the
+   * topic is being torn down, finalizes pending drafts, cleans up all trackers,
+   * then deletes the Telegram topic (which removes all messages).
+   */
   async archiveSessionTopic(sessionId: string): Promise<void> {
     this.getTracer(sessionId)?.log("telegram", { action: "thread:archive", sessionId });
     const core = this.core as OpenACPCore;

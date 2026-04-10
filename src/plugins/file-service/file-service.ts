@@ -44,6 +44,17 @@ function classifyMime(mimeType: string): Attachment["type"] {
   return "file";
 }
 
+/**
+ * Provides file I/O for session attachments and agent-generated files.
+ *
+ * All files are stored under `baseDir/<sessionId>/` so that access is naturally
+ * scoped per session and cleanup is a single directory removal. File names are
+ * sanitized and prefixed with a timestamp to prevent collisions and path traversal.
+ *
+ * This service acts as the security boundary between adapters/agents and the
+ * filesystem — callers never write directly; they go through `saveFile` so that
+ * naming, MIME classification, and path normalization are always applied.
+ */
 export class FileService {
   constructor(readonly baseDir: string) {}
 
@@ -75,6 +86,14 @@ export class FileService {
     return removed;
   }
 
+  /**
+   * Persist a file to the session's directory and return an `Attachment` descriptor.
+   *
+   * The file name is sanitized (non-safe characters replaced with `_`) and prefixed
+   * with a millisecond timestamp to prevent name collisions across multiple saves in
+   * the same session. The original `fileName` is preserved in the returned descriptor
+   * so the user-facing name is not lost.
+   */
   async saveFile(
     sessionId: string,
     fileName: string,
@@ -84,6 +103,7 @@ export class FileService {
     const sessionDir = path.join(this.baseDir, sessionId);
     await fs.promises.mkdir(sessionDir, { recursive: true });
 
+    // Sanitize to prevent path traversal and filesystem issues
     const safeName = `${Date.now()}-${fileName.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
     const filePath = path.join(sessionDir, safeName);
     await fs.promises.writeFile(filePath, data);
@@ -97,6 +117,10 @@ export class FileService {
     };
   }
 
+  /**
+   * Build an `Attachment` descriptor for a file that already exists on disk.
+   * Returns `null` if the path does not exist or is not a regular file.
+   */
   async resolveFile(filePath: string): Promise<Attachment | null> {
     try {
       const stat = await fs.promises.stat(filePath);
@@ -155,6 +179,7 @@ export class FileService {
     return FileService.extensionFromMime(mimeType);
   }
 
+  /** Returns the canonical file extension for a given MIME type (e.g. `"image/png"` → `".png"`). */
   static extensionFromMime(mimeType: string): string {
     return MIME_TO_EXT[mimeType] || ".bin";
   }

@@ -1,6 +1,10 @@
 import { getCurrentVersion, getLatestVersion, compareVersions, runUpdate } from '../version.js'
 import { wantsHelp } from './helpers.js'
 
+/**
+ * `openacp update` — Check for a newer CLI version and install it.
+ * Exits with code 1 if the registry cannot be reached or the update fails.
+ */
 export async function cmdUpdate(args: string[] = []): Promise<void> {
   if (wantsHelp(args)) {
     console.log(`

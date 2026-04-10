@@ -2,12 +2,21 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { randomBytes } from 'node:crypto';
 import type { StoredToken, CreateTokenOpts, StoredCode, CreateCodeOpts } from './types.js';
 
+// After this window expires the token can no longer be refreshed and the user must re-authenticate.
+// 7 days is a deliberate balance: long enough that a session-idle app does not surprise the user,
+// short enough that a stolen token has a bounded blast radius.
 const REFRESH_DEADLINE_MS = 7 * 24 * 60 * 60 * 1000;
 
 function generateTokenId(): string {
   return `tok_${randomBytes(12).toString('hex')}`;
 }
 
+/**
+ * Parses a simple duration string (e.g. "24h", "7d", "30m") into milliseconds.
+ *
+ * Supported units: `m` (minutes), `h` (hours), `d` (days).
+ * Throws for unrecognized formats or units.
+ */
 export function parseDuration(duration: string): number {
   const match = duration.match(/^(\d+)(h|d|m)$/);
   if (!match) throw new Error(`Invalid duration: ${duration}`);
@@ -20,6 +29,17 @@ export function parseDuration(duration: string): number {
   }
 }
 
+/**
+ * Persists JWT tokens and one-time authorization codes to a JSON file.
+ *
+ * Revocation is flag-based: tokens are marked `revoked: true` rather than deleted,
+ * so the auth middleware can distinguish a revoked token from an unknown one.
+ * Periodic cleanup (via `cleanup()`) removes tokens past their refresh deadline
+ * and expired/used codes to prevent unbounded file growth.
+ *
+ * Saves are asynchronous and coalesced: concurrent mutations schedule a single write
+ * to avoid thundering-herd disk I/O under bursty auth traffic.
+ */
 export class TokenStore {
   private tokens = new Map<string, StoredToken>();
   private codes = new Map<string, StoredCode>();
@@ -28,6 +48,7 @@ export class TokenStore {
 
   constructor(private filePath: string) {}
 
+  /** Loads token and code state from disk. Safe to call at startup; missing file is not an error. */
   async load(): Promise<void> {
     try {
       const data = await readFile(this.filePath, 'utf-8');
@@ -61,6 +82,10 @@ export class TokenStore {
     await writeFile(this.filePath, JSON.stringify(data, null, 2), 'utf-8');
   }
 
+  /**
+   * Coalesces concurrent writes: if a save is in-flight, sets a pending flag
+   * so the next save fires immediately after the current one completes.
+   */
   private scheduleSave(): void {
     if (this.savePromise) {
       this.savePending = true;
@@ -79,6 +104,7 @@ export class TokenStore {
       });
   }
 
+  /** Creates a new token record and schedules a persist. Returns the stored token including its generated id. */
   create(opts: CreateTokenOpts): StoredToken {
     const now = new Date();
     const token: StoredToken = {
@@ -99,6 +125,7 @@ export class TokenStore {
     return this.tokens.get(id);
   }
 
+  /** Marks a token as revoked; future auth checks will reject it immediately. */
   revoke(id: string): void {
     const token = this.tokens.get(id);
     if (token) {
@@ -107,12 +134,19 @@ export class TokenStore {
     }
   }
 
+  /** Returns all non-revoked tokens. Revoked tokens are retained until cleanup() removes them. */
   list(): StoredToken[] {
     return Array.from(this.tokens.values()).filter((t) => !t.revoked);
   }
 
   private lastUsedSaveTimer: ReturnType<typeof setTimeout> | null = null;
 
+  /**
+   * Records the current timestamp as `lastUsedAt` for the given token.
+   *
+   * Writes are debounced to 60 seconds — every API request updates this field,
+   * so flushing on every call would cause excessive disk I/O.
+   */
   updateLastUsed(id: string): void {
     const token = this.tokens.get(id);
     if (token) {
@@ -148,6 +182,12 @@ export class TokenStore {
     }
   }
 
+  /**
+   * Generates a one-time authorization code that can be exchanged for a JWT.
+   *
+   * Used for the CLI login flow: the server emits a code that the user copies into
+   * the App, which exchanges it for a proper JWT without ever exposing the raw API secret.
+   */
   createCode(opts: CreateCodeOpts): StoredCode {
     const code = randomBytes(16).toString('hex');
     const now = new Date();
@@ -175,6 +215,13 @@ export class TokenStore {
     return stored;
   }
 
+  /**
+   * Atomically marks a code as used and returns it.
+   *
+   * Returns undefined if the code is unknown, already used, or expired.
+   * The one-time-use flag is set before returning, so concurrent calls for the
+   * same code will only succeed once.
+   */
   exchangeCode(code: string): StoredCode | undefined {
     const stored = this.codes.get(code);
     if (!stored) return undefined;
@@ -197,6 +244,13 @@ export class TokenStore {
     this.scheduleSave();
   }
 
+  /**
+   * Removes tokens past their refresh deadline and expired/used codes.
+   *
+   * Called on a 1-hour interval from the plugin setup to prevent unbounded file growth.
+   * Tokens within their refresh deadline are retained even if revoked, so that the
+   * "token revoked" error can be returned instead of "token unknown".
+   */
   cleanup(): void {
     const now = Date.now();
     for (const [id, token] of this.tokens) {

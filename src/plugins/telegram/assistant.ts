@@ -1,3 +1,4 @@
+/** Data needed to render the startup welcome message in the Assistant topic. */
 export interface WelcomeContext {
   activeCount: number;
   errorCount: number;
@@ -7,6 +8,10 @@ export interface WelcomeContext {
   workspace: string;
 }
 
+/**
+ * Build the welcome message sent to the Assistant topic on startup.
+ * The message variant adapts based on whether there are active sessions or errors.
+ */
 export function buildWelcomeMessage(ctx: WelcomeContext): string {
   const { activeCount, errorCount, totalCount, agents, defaultAgent, workspace } = ctx;
 
@@ -43,6 +48,11 @@ export function buildWelcomeMessage(ctx: WelcomeContext): string {
   );
 }
 
+/**
+ * Build a redirect message pointing to the Assistant topic.
+ * Sent when a user sends a plain message in the General topic (threadId = 0),
+ * which is not a session topic and cannot receive session messages.
+ */
 export function redirectToAssistant(
   chatId: number,
   assistantTopicId: number,

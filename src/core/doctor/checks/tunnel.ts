@@ -1,3 +1,9 @@
+/**
+ * Doctor check: Tunnel — verifies tunnel provider binary availability and
+ * port configuration when tunneling is enabled. Currently supports Cloudflare
+ * tunnel (cloudflared). Missing binary is auto-fixable via download.
+ */
+
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";

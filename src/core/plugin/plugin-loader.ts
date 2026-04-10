@@ -3,10 +3,15 @@ import { readFileSync } from 'node:fs'
 import type { OpenACPPlugin } from './types.js'
 
 /**
- * Resolve plugin load order via topological sort.
- * - Handles `overrides` field: overridden plugins are removed before sorting.
- * - Detects circular dependencies and throws.
- * - Missing dependencies: skip plugin + all dependents (cascade).
+ * Resolve plugin load order via topological sort (DFS-based).
+ *
+ * Plugins must boot in dependency order so that services and middleware from
+ * dependencies are available when a plugin's setup() runs. This function:
+ *
+ * 1. Removes overridden plugins (a plugin with `overrides: 'X'` replaces X)
+ * 2. Cascade-skips plugins whose required dependencies are missing
+ * 3. Detects circular dependencies (throws)
+ * 4. Returns plugins in safe boot order (dependencies before dependents)
  */
 export function resolveLoadOrder(plugins: OpenACPPlugin[]): OpenACPPlugin[] {
   // Phase 1: Apply overrides — remove overridden plugins

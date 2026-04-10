@@ -1,16 +1,29 @@
 import type { ContextMode } from "../context-provider.js";
 import type { Turn, Step, ToolCallStep } from "./types.js";
 
+/**
+ * Choose a rendering mode based on the total number of turns.
+ * Short sessions get full fidelity; large sessions fall back to compact
+ * to stay within the prompt token budget.
+ *   ≤10 turns  → full
+ *   11-25 turns → balanced
+ *   >25 turns  → compact
+ */
 export function selectLevel(turnCount: number): ContextMode {
   if (turnCount <= 10) return "full";
   if (turnCount <= 25) return "balanced";
   return "compact";
 }
 
+// Rough heuristic: 1 token ≈ 4 chars for English/code mixed text.
 export function estimateTokens(text: string): number {
   return Math.floor(text.length / 4);
 }
 
+/**
+ * Render a list of turns to markdown in the requested detail level.
+ * Used both for single-session display and as a building block for merged output.
+ */
 export function buildHistoryMarkdown(turns: Turn[], mode: ContextMode): string {
   if (turns.length === 0) return "";
   switch (mode) {

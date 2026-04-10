@@ -35,8 +35,11 @@ function parseCreateArgs(args: string[]): { name?: string; description?: string;
 }
 
 /**
- * Re-extract --name from process.argv for plugin create, since the top-level
- * extractInstanceFlags() consumes --name as an instance flag.
+ * Re-extract --name from process.argv for plugin create.
+ *
+ * The top-level extractInstanceFlags() in cli.ts consumes --name as a workspace flag,
+ * so by the time cmdPluginCreate receives args it is already stripped. We walk
+ * process.argv directly after the 'create' token to recover it.
  */
 function recoverNameFromProcessArgs(): string | undefined {
   const argv = process.argv
@@ -52,6 +55,16 @@ function recoverNameFromProcessArgs(): string | undefined {
   return undefined
 }
 
+/**
+ * `openacp plugin create` — Scaffold a new OpenACP plugin project.
+ *
+ * Interactive mode: prompts for name, description, author, and license via @clack/prompts.
+ * Non-interactive mode: accepts --name (required) and optional --description, --author,
+ * --license, --output flags.
+ *
+ * Generates: package.json, tsconfig.json, src/index.ts, test file, CLAUDE.md,
+ * PLUGIN_GUIDE.md, README.md, and standard dotfiles.
+ */
 export async function cmdPluginCreate(args: string[] = []): Promise<void> {
   if (args.includes('--help') || args.includes('-h')) {
     console.log(`

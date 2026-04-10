@@ -8,8 +8,17 @@ import { createChildLogger } from "../../core/utils/log.js";
 
 const log = createChildLogger({ module: "skill-commands" });
 
+/**
+ * Manages the pinned "Available Skills" message in each session topic.
+ *
+ * When an agent registers skill commands, they are displayed as a pinned HTML
+ * message with tap-to-copy slash commands. The message is edited in-place on
+ * each update and unpinned when the session ends. Message IDs are persisted to
+ * platform data so the correct message is found after a restart.
+ */
 export class SkillCommandManager {
-  private messages: Map<string, number> = new Map(); // sessionId → pinned msgId
+  // sessionId → Telegram message ID of the pinned skills message
+  private messages: Map<string, number> = new Map();
 
   constructor(
     private bot: Bot,
@@ -18,6 +27,11 @@ export class SkillCommandManager {
     private sessionManager: SessionManager,
   ) {}
 
+  /**
+   * Send or update the pinned skill commands message for a session.
+   * Creates a new pinned message if none exists; edits the existing one otherwise.
+   * Passing an empty `commands` array removes the pinned message.
+   */
   async send(
     sessionId: string,
     threadId: number,

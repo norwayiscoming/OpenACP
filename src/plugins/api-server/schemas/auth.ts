@@ -1,5 +1,8 @@
 import { z } from 'zod';
 
+// Zod schemas for token and code auth API requests.
+// Security constraints (max length, regex, expiry cap) are intentional — see inline comments.
+
 // Valid scope strings — prevents arbitrary scope injection and limits payload size.
 // Each scope is at most 50 chars; the array is capped at 20 to prevent DoS.
 const ScopeItemSchema = z.string().min(1).max(50).regex(/^[a-z*]+(?::[a-z]+)?$/, 'Invalid scope format');

@@ -3,6 +3,15 @@ import { wantsHelp } from './helpers.js'
 import { isJsonMode, jsonSuccess, jsonError, muteForJson, ErrorCodes } from '../output.js'
 import { resolveRunningInstance } from '../../core/instance/instance-context.js'
 
+/**
+ * `openacp adopt` — Transfer an existing external agent session into OpenACP.
+ *
+ * Finds the running daemon instance closest to --cwd (via resolveRunningInstance),
+ * then calls the daemon's /api/sessions/adopt endpoint. The daemon creates an OpenACP
+ * session wrapping the external session ID, making it visible in the messaging platform.
+ *
+ * This command is typically called from agent handoff scripts (openacp-handoff.sh).
+ */
 export async function cmdAdopt(args: string[]): Promise<void> {
   if (wantsHelp(args)) {
     console.log(`

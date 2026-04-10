@@ -5,6 +5,7 @@ import { createChildLogger } from "../utils/log.js";
 
 const log = createChildLogger({ module: "session-store" });
 
+/** Persistence interface for session records. Implementations handle serialization format and storage. */
 export interface SessionStore {
   save(record: SessionRecord): Promise<void>;
   /** Immediately flush pending writes to disk (no debounce). */
@@ -20,13 +21,22 @@ export interface SessionStore {
   remove(sessionId: string): Promise<void>;
 }
 
+/** On-disk JSON format: versioned envelope wrapping a session ID → record map. */
 interface StoreFile {
   version: number;
   sessions: Record<string, SessionRecord>;
 }
 
+/** Writes are debounced to avoid excessive disk I/O during rapid state changes. */
 const DEBOUNCE_MS = 2000;
 
+/**
+ * JSON file-backed session store.
+ *
+ * Reads the entire store into memory on startup, applies all mutations in-memory,
+ * and debounces writes to disk. Expired records (past ttlDays) are cleaned up
+ * periodically. On shutdown, pending writes are flushed synchronously.
+ */
 export class JsonFileSessionStore implements SessionStore {
   private records: Map<string, SessionRecord> = new Map();
   private filePath: string;
@@ -80,6 +90,11 @@ export class JsonFileSessionStore implements SessionStore {
     return undefined;
   }
 
+  /**
+   * Find a session by its ACP agent session ID.
+   * Checks current, original, and historical agent session IDs (from agent switches)
+   * since the agent session ID changes on each switch.
+   */
   findByAgentSessionId(agentSessionId: string): SessionRecord | undefined {
     for (const record of this.records.values()) {
       if (
@@ -88,7 +103,6 @@ export class JsonFileSessionStore implements SessionStore {
       ) {
         return record;
       }
-      // Also search switch history
       if (record.agentSwitchHistory?.some((e) => e.agentSessionId === agentSessionId)) {
         return record;
       }
@@ -134,6 +148,7 @@ export class JsonFileSessionStore implements SessionStore {
     fs.writeFileSync(this.filePath, JSON.stringify(data, null, 2));
   }
 
+  /** Clean up timers and process listeners. Call on shutdown to prevent leaks. */
   destroy(): void {
     if (this.debounceTimer) clearTimeout(this.debounceTimer);
     if (this.cleanupInterval) clearInterval(this.cleanupInterval);
@@ -170,7 +185,11 @@ export class JsonFileSessionStore implements SessionStore {
     }
   }
 
-  /** Migrate old SessionRecord format to new multi-adapter format. */
+  /**
+   * Migrate old SessionRecord format to new multi-adapter format.
+   * Converts single-adapter `platform` field to per-adapter `platforms` map,
+   * and initializes `attachedAdapters` for records created before multi-adapter support.
+   */
   private migrateRecord(record: SessionRecord): SessionRecord {
     // Migrate platform → platforms
     if (!record.platforms && record.platform && typeof record.platform === "object") {
@@ -186,6 +205,7 @@ export class JsonFileSessionStore implements SessionStore {
     return record;
   }
 
+  /** Remove expired session records (past TTL). Active and assistant sessions are preserved. */
   private cleanup(): void {
     const cutoff = Date.now() - this.ttlDays * 24 * 60 * 60 * 1000;
     let removed = 0;

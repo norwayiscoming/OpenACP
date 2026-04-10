@@ -3,24 +3,38 @@ import * as fs from 'node:fs'
 import * as path from 'node:path'
 import { expandHome } from '../core/config/config.js'
 
+// Daemon lifecycle utilities.
+// The daemon model runs the server as a detached child process (PID file tracking).
+// This allows `openacp start` to return immediately while the server keeps running
+// independently of the terminal session.
+
+/** Returns the path to the PID file for the given instance root. */
 export function getPidPath(root: string): string {
   return path.join(root, 'openacp.pid')
 }
 
+/** Returns the default log directory for the given instance root. */
 export function getLogDir(root: string): string {
   return path.join(root, 'logs')
 }
 
+/**
+ * Returns the path to the "running" marker file.
+ * The marker exists while the daemon is intentionally running, so launchd/systemd
+ * knows whether to restart it after a crash vs. leaving it stopped after `openacp stop`.
+ */
 export function getRunningMarker(root: string): string {
   return path.join(root, 'running')
 }
 
+/** Write a PID file, creating the parent directory if needed. */
 export function writePidFile(pidPath: string, pid: number): void {
   const dir = path.dirname(pidPath)
   fs.mkdirSync(dir, { recursive: true })
   fs.writeFileSync(pidPath, String(pid))
 }
 
+/** Read a PID from a file. Returns null if the file is missing or malformed. */
 export function readPidFile(pidPath: string): number | null {
   try {
     const content = fs.readFileSync(pidPath, 'utf-8').trim()
@@ -31,6 +45,7 @@ export function readPidFile(pidPath: string): number | null {
   }
 }
 
+/** Remove the PID file. Silently ignores ENOENT (already gone). */
 export function removePidFile(pidPath: string): void {
   try {
     fs.unlinkSync(pidPath)
@@ -39,6 +54,13 @@ export function removePidFile(pidPath: string): void {
   }
 }
 
+/**
+ * Check whether the process recorded in the PID file is alive.
+ *
+ * Uses `process.kill(pid, 0)` as a non-destructive liveness probe — it throws
+ * ESRCH if the PID doesn't exist, or EPERM if owned by another user.
+ * Cleans up stale PID files for dead processes.
+ */
 export function isProcessRunning(pidPath: string): boolean {
   const pid = readPidFile(pidPath)
   if (pid === null) return false
@@ -52,6 +74,10 @@ export function isProcessRunning(pidPath: string): boolean {
   }
 }
 
+/**
+ * Return the running status and PID of the daemon.
+ * Cleans up stale PID files if the recorded process is no longer alive.
+ */
 export function getStatus(pidPath: string): { running: boolean; pid?: number } {
   const pid = readPidFile(pidPath)
   if (pid === null) return { running: false }
@@ -64,6 +90,19 @@ export function getStatus(pidPath: string): { running: boolean; pid?: number } {
   }
 }
 
+/**
+ * Fork the daemon as a detached background process.
+ *
+ * Spawn mechanics:
+ * - The child runs `node <cli> --daemon-child` with OPENACP_INSTANCE_ROOT in its env.
+ * - `detached: true` creates a new process group so the child survives terminal close.
+ * - stdout/stderr are redirected to the log file (append mode); the parent closes its
+ *   copies immediately after spawn so the child holds the only references.
+ * - `child.unref()` removes the child from the parent's event loop reference count,
+ *   allowing the parent (`openacp start`) to exit while the child keeps running.
+ * - The PID file is written by both parent (early report) and child (authoritative write
+ *   in main.ts startServer) to handle race conditions with launchd/systemd starts.
+ */
 export function startDaemon(pidPath: string, logDir: string | undefined, instanceRoot: string): { pid: number } | { error: string } {
   // Mark as running so auto-start works on next boot
   markRunning(instanceRoot)
@@ -78,7 +117,7 @@ export function startDaemon(pidPath: string, logDir: string | undefined, instanc
   fs.mkdirSync(resolvedLogDir, { recursive: true })
   const logFile = path.join(resolvedLogDir, 'openacp.log')
 
-  // Find the CLI entry point
+  // Find the CLI entry point — must be the same binary that invoked this function
   const cliPath = path.resolve(process.argv[1])
   const nodePath = process.execPath
 
@@ -116,6 +155,11 @@ function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms))
 }
 
+/**
+ * Three-way liveness probe: alive, dead (ESRCH), or EPERM.
+ * EPERM means the PID exists but belongs to a different user — the PID file was
+ * likely reused by the OS for an unrelated process after the daemon exited.
+ */
 function isProcessAlive(pid: number): 'alive' | 'dead' | 'eperm' {
   try {
     process.kill(pid, 0)
@@ -127,6 +171,16 @@ function isProcessAlive(pid: number): 'alive' | 'dead' | 'eperm' {
   }
 }
 
+/**
+ * Gracefully stop the daemon, escalating to SIGKILL if it doesn't exit.
+ *
+ * Stop sequence:
+ * 1. Send SIGTERM; poll every 100ms for up to 5 seconds.
+ * 2. If still alive after 5s, send SIGKILL; poll for up to 1 more second.
+ * 3. If still alive after SIGKILL, the process is in uninterruptible I/O — very rare.
+ *
+ * Also clears the "running" marker so the daemon is not restarted on next login.
+ */
 export async function stopDaemon(pidPath: string, instanceRoot: string): Promise<{ stopped: boolean; pid?: number; error?: string }> {
   const pid = readPidFile(pidPath)
   if (pid === null) return { stopped: false, error: 'Not running (no PID file)' }

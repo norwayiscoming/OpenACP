@@ -39,6 +39,7 @@ export interface SessionMarkdownInput {
 
 /**
  * Select rendering mode based on total turn count.
+ * Mirrors the same thresholds used by HistoryProvider to keep context depth consistent.
  *   ≤10  → full
  *   11-25 → balanced
  *   >25  → compact
@@ -51,6 +52,7 @@ export function selectMode(totalTurns: number): ContextMode {
 
 // ─── Token estimation ─────────────────────────────────────────────────────────
 
+// Rough heuristic: 1 token ≈ 4 chars for English/code mixed text.
 export function estimateTokens(text: string): number {
   return Math.floor(text.length / 4);
 }
@@ -197,6 +199,16 @@ interface RawEvent {
   gitBranch?: string;
 }
 
+/**
+ * Parse a Claude Code JSONL transcript into structured turns.
+ *
+ * The JSONL format emitted by Claude Code contains one JSON object per line,
+ * with `type` being either "user" or "assistant". Tool results appear as
+ * "user" messages with `tool_result` content blocks — these are filtered out
+ * since they duplicate information already captured in the assistant's tool_use
+ * blocks. Only Edit and Write tool calls are surfaced; read-only tools are skipped
+ * because they don't contribute meaningful context about what the agent did.
+ */
 export function parseJsonlToTurns(jsonl: string): ParseResult {
   const events: RawEvent[] = [];
   for (const rawLine of jsonl.split("\n")) {
@@ -284,7 +296,7 @@ export function parseJsonlToTurns(jsonl: string): ParseResult {
               fileContent: inp.content ?? "",
             });
           }
-          // Skip Read, Bash, Grep, Glob, etc.
+          // Skip Read, Bash, Grep, Glob, etc. — these don't show what was *changed*
         }
       }
 

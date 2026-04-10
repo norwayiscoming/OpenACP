@@ -1,6 +1,9 @@
 import * as clack from '@clack/prompts'
 import type { TerminalIO } from './types.js'
 
+// @clack/prompts returns a symbol when the user cancels (Ctrl+C).
+// We convert that to an Error so callers can handle cancellation uniformly.
+
 function isCancel(value: unknown): value is symbol {
   return typeof value === 'symbol'
 }
@@ -12,6 +15,13 @@ function guardCancel<T>(value: T | symbol): T {
   return value as T
 }
 
+/**
+ * Create a TerminalIO implementation backed by @clack/prompts.
+ *
+ * Used during plugin install/configure flows — these are CLI-only operations
+ * that require interactive terminal access. Not available during normal
+ * runtime (headless server mode).
+ */
 export function createTerminalIO(): TerminalIO {
   return {
     async text(opts) {

@@ -1,6 +1,15 @@
 import type { ServerResponse } from 'node:http';
 import { randomBytes } from 'node:crypto';
 
+/**
+ * Represents a single active SSE connection from a web client.
+ *
+ * `tokenId` is the auth token that opened this connection — used to forcibly
+ * disconnect all connections when a token is revoked.
+ * `lastEventId` tracks the most recent event delivered, for reconnection replay.
+ * `backpressured` indicates that the last `response.write()` returned false,
+ * meaning the OS send buffer is full.
+ */
 export interface SSEConnection {
   id: string;
   sessionId: string;
@@ -11,8 +20,20 @@ export interface SSEConnection {
   backpressured?: boolean;
 }
 
+/**
+ * Tracks all active SSE connections and provides session-scoped broadcast.
+ *
+ * Connections are indexed both globally (by connection ID) and by session ID
+ * so that `broadcast` can efficiently reach only the connections for a given session
+ * without scanning the entire connection set.
+ *
+ * Limits are enforced to prevent resource exhaustion:
+ * - Per-session limit prevents a single session from consuming all file descriptors.
+ * - Global limit caps total memory and FD usage regardless of distribution.
+ */
 export class ConnectionManager {
   private connections = new Map<string, SSEConnection>();
+  // Secondary index: sessionId → Set of connection IDs for O(1) broadcast targeting
   private sessionIndex = new Map<string, Set<string>>();
   private maxConnectionsPerSession: number;
   private maxTotalConnections: number;
@@ -22,6 +43,14 @@ export class ConnectionManager {
     this.maxTotalConnections = opts?.maxTotal ?? 100;
   }
 
+  /**
+   * Registers a new SSE connection for the given session.
+   *
+   * Wires a `close` listener on the response so the connection is automatically
+   * removed when the client disconnects (browser tab closed, network drop, etc.).
+   *
+   * @throws if the global or per-session connection limit is reached.
+   */
   addConnection(sessionId: string, tokenId: string, response: ServerResponse): SSEConnection {
     // Enforce global connection limit
     if (this.connections.size >= this.maxTotalConnections) {
@@ -51,6 +80,7 @@ export class ConnectionManager {
     return connection;
   }
 
+  /** Remove a connection from both indexes. Called automatically on client disconnect. */
   removeConnection(connectionId: string): void {
     const conn = this.connections.get(connectionId);
     if (!conn) return;
@@ -62,6 +92,7 @@ export class ConnectionManager {
     }
   }
 
+  /** Returns all active connections for a session. */
   getConnectionsBySession(sessionId: string): SSEConnection[] {
     const connIds = this.sessionIndex.get(sessionId);
     if (!connIds) return [];
@@ -70,6 +101,14 @@ export class ConnectionManager {
       .filter((c): c is SSEConnection => c !== undefined);
   }
 
+  /**
+   * Writes a serialized SSE event to all connections for the given session.
+   *
+   * Backpressure handling: if `response.write()` returns false (OS send buffer full),
+   * the connection is flagged as `backpressured`. On the next write attempt, if it is
+   * still backpressured, the connection is forcibly closed to prevent unbounded memory
+   * growth from queuing writes on a slow or stalled client.
+   */
   broadcast(sessionId: string, serializedEvent: string): void {
     for (const conn of this.getConnectionsBySession(sessionId)) {
       if (conn.response.writableEnded) continue;
@@ -92,6 +131,10 @@ export class ConnectionManager {
     }
   }
 
+  /**
+   * Force-close all connections associated with a given auth token.
+   * Called when a token is revoked to immediately terminate those streams.
+   */
   disconnectByToken(tokenId: string): void {
     for (const [id, conn] of this.connections) {
       if (conn.tokenId === tokenId) {
@@ -101,10 +144,12 @@ export class ConnectionManager {
     }
   }
 
+  /** Returns a snapshot of all active connections (used by the admin endpoint). */
   listConnections(): SSEConnection[] {
     return Array.from(this.connections.values());
   }
 
+  /** Close all connections and clear all indexes. Called on plugin teardown. */
   cleanup(): void {
     for (const [, conn] of this.connections) {
       if (!conn.response.writableEnded) conn.response.end();

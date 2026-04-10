@@ -19,6 +19,19 @@ import {
 } from '../schemas/sessions.js';
 
 
+/**
+ * Session management routes under `/api/v1/sessions`.
+ *
+ * Covers the full session lifecycle:
+ * - CRUD: list, get, create (POST /), adopt (from existing agent), delete (cancel)
+ * - Messaging: prompt (POST /:id/prompt), permission resolution (POST /:id/permission)
+ * - Mutation: patch agent/voice/dangerousMode, archive, attach/detach adapter
+ * - Config: read/write per-session config options and client overrides
+ * - History: retrieve full conversation history via context manager
+ *
+ * `sessions:dangerous` scope is required for bypass-permissions routes because it is
+ * not included in the default `operator` role — it must be explicitly granted.
+ */
 export async function sessionRoutes(
   app: FastifyInstance,
   deps: RouteDeps,

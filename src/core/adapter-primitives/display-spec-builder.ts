@@ -8,6 +8,11 @@ import { isApplyPatchOtherTool } from "../utils/apply-patch-detection.js";
 
 // ─── Output spec interfaces ────────────────────────────────────────────────
 
+/**
+ * A fully resolved, platform-agnostic description of how to display a tool call.
+ * Built by DisplaySpecBuilder from a ToolEntry + output mode, then consumed
+ * by adapters to render tool cards.
+ */
 export interface ToolDisplaySpec {
   id: string;
   kind: string;
@@ -30,8 +35,10 @@ export interface ToolDisplaySpec {
   isHidden: boolean;
 }
 
+/** Display specification for an agent's extended thinking block. */
 export interface ThoughtDisplaySpec {
   indicator: string;
+  /** Full thought text, only populated at high verbosity. */
   content: string | null;
 }
 
@@ -221,9 +228,23 @@ function isTitleFromCommand(title: string, command: string): boolean {
 
 // ─── DisplaySpecBuilder ───────────────────────────────────────────────────
 
+/**
+ * Transforms raw ToolEntry state into display-ready ToolDisplaySpec objects.
+ *
+ * This is the central place where output mode (low/medium/high) controls what
+ * information is included in tool cards. Low mode strips metadata; medium mode
+ * includes summaries; high mode includes full output content and viewer links.
+ */
 export class DisplaySpecBuilder {
   constructor(private tunnelService?: TunnelServiceInterface) {}
 
+  /**
+   * Builds a display spec for a single tool call entry.
+   *
+   * Deduplicates fields to avoid repeating the same info (e.g., if the title
+   * was derived from the command, the command field is omitted). For long
+   * output, generates a viewer link via the tunnel service when available.
+   */
   buildToolSpec(
     entry: ToolEntry,
     mode: OutputMode,
@@ -312,6 +333,7 @@ export class DisplaySpecBuilder {
     };
   }
 
+  /** Builds a display spec for an agent thought. Content is only included at high verbosity. */
   buildThoughtSpec(content: string, mode: OutputMode): ThoughtDisplaySpec {
     const indicator = "Thinking...";
     return {

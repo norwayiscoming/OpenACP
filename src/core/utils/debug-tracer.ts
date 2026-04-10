@@ -7,12 +7,15 @@ export type TraceLayer = "acp" | "core" | "telegram";
 const DEBUG_ENABLED = process.env.OPENACP_DEBUG === "true" || process.env.OPENACP_DEBUG === "1";
 
 /**
- * Per-session debug trace logger. Writes JSONL files to <workingDirectory>/.log/.
- * Only active when OPENACP_DEBUG=true. Zero overhead when disabled.
+ * Per-session debug trace logger that writes JSONL files to `<workingDirectory>/.log/`.
  *
- * Note: Uses appendFileSync for simplicity. This blocks the event loop briefly per write,
- * which is acceptable for a debug-only tool. The DEBUG_ENABLED guard ensures zero overhead
- * in production.
+ * Only active when `OPENACP_DEBUG=true` is set in the environment.
+ * Each trace layer (acp, core, telegram) gets its own file, making it easy
+ * to inspect protocol-level, core-level, or adapter-level events separately.
+ *
+ * Uses appendFileSync for simplicity — this blocks the event loop briefly per write,
+ * which is acceptable for a debug-only tool. The DEBUG_ENABLED guard ensures zero
+ * overhead in production.
  */
 export class DebugTracer {
   private dirCreated = false;
@@ -25,6 +28,12 @@ export class DebugTracer {
     this.logDir = path.join(workingDirectory, ".log");
   }
 
+  /**
+   * Write a timestamped JSONL entry to the trace file for the given layer.
+   *
+   * Handles circular references gracefully and silently swallows errors —
+   * debug logging must never crash the application.
+   */
   log(layer: TraceLayer, data: Record<string, unknown>): void {
     try {
       if (!this.dirCreated) {
@@ -32,6 +41,7 @@ export class DebugTracer {
         this.dirCreated = true;
       }
       const filePath = path.join(this.logDir, `${this.sessionId}_${layer}.jsonl`);
+      // WeakSet tracks seen objects to replace circular references with "[Circular]"
       const seen = new WeakSet();
       const line =
         JSON.stringify({ ts: Date.now(), ...data }, (_key, value) => {
@@ -55,7 +65,9 @@ export class DebugTracer {
 
 /**
  * Create a DebugTracer if debug mode is enabled, otherwise return null.
- * The DEBUG_ENABLED const is evaluated once at module load time from process.env.OPENACP_DEBUG.
+ *
+ * The DEBUG_ENABLED const is evaluated once at module load time from
+ * `process.env.OPENACP_DEBUG`, so there is no per-call overhead when disabled.
  */
 export function createDebugTracer(sessionId: string, workingDirectory: string): DebugTracer | null {
   if (!DEBUG_ENABLED) return null;

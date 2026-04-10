@@ -26,11 +26,25 @@ interface SessionMeta {
 
 // ─── CheckpointReader ─────────────────────────────────────────────────────────
 
+// The Entire Claude Code extension pushes session data to this branch.
+// All git show / ls-tree commands read from this remote branch so we never
+// need to check it out locally.
 const ENTIRE_BRANCH = "origin/entire/checkpoints/v1";
 const CHECKPOINT_ID_RE = /^[0-9a-f]{12}$/;
 const SESSION_ID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
+/**
+ * Reads Claude Code session data from the `origin/entire/checkpoints/v1` git branch.
+ *
+ * The branch layout is:
+ *   `<shard[0:2]>/<shard[2:12]>/metadata.json` — checkpoint-level metadata
+ *   `<shard[0:2]>/<shard[2:12]>/<session-idx>/metadata.json` — per-session metadata
+ *   `<shard[0:2]>/<shard[2:12]>/<session-idx>/transcript.jsonl` — raw JSONL conversation
+ *
+ * All git operations use `execFileSync` so errors are caught and returned as
+ * empty strings rather than throwing — callers get null/[] on missing data.
+ */
 export class CheckpointReader {
   constructor(private readonly repoPath: string) {}
 
@@ -125,7 +139,8 @@ export class CheckpointReader {
     const ids = new Set<string>();
     for (const file of out.split("\n")) {
       const parts = file.split("/");
-      // Checkpoint-level metadata: XX/YYYYYYYYYY/metadata.json (3 parts)
+      // Checkpoint-level metadata lives at depth 3: XX/YYYYYYYYYY/metadata.json
+      // Session-level files are deeper — skip them here.
       if (parts.length === 3 && parts[2] === "metadata.json") {
         ids.add(parts[0] + parts[1]);
       }
@@ -173,7 +188,9 @@ export class CheckpointReader {
         sessionIndex: String(idx),
         transcriptPath,
         createdAt,
-        endedAt: createdAt, // will be filled from JSONL by conversation builder
+        // endedAt isn't stored in the checkpoint metadata; EntireProvider fills
+        // it from the last turn timestamp when parsing the JSONL transcript.
+        endedAt: createdAt,
         branch: smeta.branch ?? cpMeta.branch ?? "",
         agent: smeta.agent ?? "",
         turnCount: smeta.session_metrics?.turn_count ?? 0,

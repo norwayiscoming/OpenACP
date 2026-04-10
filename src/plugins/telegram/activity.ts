@@ -18,9 +18,18 @@ const log = createChildLogger({ module: "telegram:activity" });
 
 // ─── ThinkingIndicator ────────────────────────────────────────────────────────
 
+// Refresh the "thinking" message every 15s to show elapsed time.
+// Auto-stop after 3 minutes to avoid leaving stale indicators.
 const THINKING_REFRESH_MS = 15_000;
 const THINKING_MAX_MS = 3 * 60 * 1000;
 
+/**
+ * Manages the transient "💭 Thinking..." message shown while the agent is reasoning.
+ *
+ * Sends a message on `show()`, periodically edits it with elapsed time, and
+ * dismisses it (leaving the message in chat) when text output begins. Leaving
+ * the message avoids an extra API delete call; the indicator is just no longer updated.
+ */
 export class ThinkingIndicator {
   private msgId?: number;
   private sending = false;
@@ -139,6 +148,14 @@ export class ThinkingIndicator {
 
 // ─── ToolCard ─────────────────────────────────────────────────────────────────
 
+/**
+ * Displays the live tool execution card for a prompt cycle.
+ *
+ * Receives tool state updates via `ToolCardState` (which batches rapid updates
+ * and calls `onFlush` with a snapshot). Each flush either sends a new message or
+ * edits the existing one. When the card exceeds Telegram's 4096-char limit, it is
+ * split into overflow messages that are recycled on subsequent renders.
+ */
 export class ToolCard {
   private state: ToolCardState;
   private msgId?: number;
@@ -273,6 +290,17 @@ export class ToolCard {
 
 // ─── ActivityTracker ──────────────────────────────────────────────────────────
 
+/**
+ * Per-session coordinator for all live activity indicators in a topic.
+ *
+ * Owns the ThinkingIndicator and the current ToolCard for a session. On each
+ * new prompt cycle (`onNewPrompt`), the previous card is finalized (frozen) and
+ * a fresh card and thinking indicator are created for the new turn.
+ *
+ * The "seal" mechanism (`sealToolCardIfNeeded`) finalizes the current tool card
+ * when text output begins, preserving tool results as a historical record while
+ * the new streaming draft message appears below them.
+ */
 export class ActivityTracker {
   private isFirstEvent = true;
   private thinking: ThinkingIndicator;

@@ -1,5 +1,12 @@
 import type { ViewerEntry } from '../viewer-store.js'
 
+/**
+ * Render a simple line-numbered output viewer HTML page.
+ *
+ * Intentionally minimal (no Monaco) since command output is plain text and
+ * doesn't benefit from a full code editor. Line numbers are rendered server-side
+ * to avoid any JS dependency, making the page fast to load even for long outputs.
+ */
 export function renderOutputViewer(entry: ViewerEntry): string {
   const label = entry.filePath ?? 'Output'
   const lines = entry.content.split('\n')

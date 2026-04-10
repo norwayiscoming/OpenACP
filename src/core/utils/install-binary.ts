@@ -12,6 +12,12 @@ const log = createChildLogger({ module: 'binary-installer' })
 const DEFAULT_BIN_DIR = path.join(os.homedir(), '.openacp', 'bin')
 const IS_WINDOWS = os.platform() === 'win32'
 
+/**
+ * Specification for a binary that can be auto-downloaded from GitHub releases.
+ *
+ * Used by ensureBinary() to resolve the correct download URL for the
+ * current platform/architecture and handle archive extraction if needed.
+ */
 export interface BinarySpec {
   name: string
   /** GitHub base URL for releases, e.g. "https://github.com/jqlang/jq/releases/latest/download" */
@@ -22,6 +28,11 @@ export interface BinarySpec {
   isArchive?: (url: string) => boolean
 }
 
+/**
+ * Download a file via HTTPS with redirect following and size limit enforcement.
+ *
+ * Cleans up partial downloads on failure to avoid leaving corrupt files.
+ */
 function downloadFile(url: string, dest: string, maxRedirects = 10): Promise<string> {
   return new Promise((resolve, reject) => {
     const file = fs.createWriteStream(dest)
@@ -54,6 +65,7 @@ function downloadFile(url: string, dest: string, maxRedirects = 10): Promise<str
         return
       }
 
+      // Enforce size limit to prevent malicious or oversized downloads
       let totalBytes = 0
       const request = response
 
@@ -85,6 +97,7 @@ function downloadFile(url: string, dest: string, maxRedirects = 10): Promise<str
   })
 }
 
+/** Resolve the download URL for the current platform and architecture. */
 function getDownloadUrl(spec: BinarySpec): string {
   const platform = os.platform()
   const arch = os.arch()
@@ -96,10 +109,15 @@ function getDownloadUrl(spec: BinarySpec): string {
 }
 
 /**
- * Ensure a binary is available.
- * 1. Check PATH first (respects user's system install)
- * 2. Check ~/.openacp/bin/
- * 3. Download from GitHub releases
+ * Ensure a binary is available, downloading it from GitHub if needed.
+ *
+ * Resolution order:
+ *   1. System PATH — respects user's existing install
+ *   2. ~/.openacp/bin/ — previously downloaded by OpenACP
+ *   3. Download from GitHub releases — fetch, verify, extract if needed
+ *
+ * For archives (.tgz), tar contents are validated before extraction
+ * to prevent path traversal attacks.
  */
 export async function ensureBinary(spec: BinarySpec, binDir?: string): Promise<string> {
   const resolvedBinDir = binDir ?? DEFAULT_BIN_DIR
@@ -130,6 +148,7 @@ export async function ensureBinary(spec: BinarySpec, binDir?: string): Promise<s
   await downloadFile(url, downloadDest)
 
   if (isArchive) {
+    // Validate tar contents before extraction to prevent path traversal
     const listing = execFileSync('tar', ['-tf', downloadDest], { stdio: 'pipe' })
       .toString().trim().split("\n").filter(Boolean);
     validateTarContents(listing, resolvedBinDir);

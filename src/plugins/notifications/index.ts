@@ -7,6 +7,7 @@ function createNotificationsPlugin(): OpenACPPlugin {
     version: '1.0.0',
     description: 'Cross-session notification routing',
     essential: false,
+    // Depends on security so the notification service is only active for authorized sessions
     pluginDependencies: { '@openacp/security': '^1.0.0' },
     permissions: ['services:register', 'kernel:access'],
 

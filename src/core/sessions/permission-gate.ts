@@ -3,7 +3,20 @@ import type { PermissionRequest } from "../types.js";
 const DEFAULT_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
 
 /**
- * Encapsulates pending permission state with a typed Promise API.
+ * Blocks the prompt pipeline until the user approves or denies a permission request.
+ *
+ * When an agent requests permission (e.g., to run a shell command), AgentInstance
+ * calls its `onPermissionRequest` callback. SessionBridge handles this by calling
+ * `setPending()`, which returns a promise that blocks the ACP prompt/response cycle
+ * until `resolve()` or `reject()` is called. If the user doesn't respond within
+ * the timeout, the request is automatically rejected.
+ *
+ * Only one permission request can be pending at a time — setting a new one
+ * supersedes (rejects) the previous.
+ *
+ * When `bypassPermissions` is enabled on the session, SessionBridge short-circuits
+ * this gate entirely: `setPending()` is never called, and permissions are auto-approved
+ * upstream before the request reaches this class.
  */
 export class PermissionGate {
   private request?: PermissionRequest;
@@ -17,6 +30,10 @@ export class PermissionGate {
     this.timeoutMs = timeoutMs ?? DEFAULT_TIMEOUT_MS;
   }
 
+  /**
+   * Register a new permission request and return a promise that resolves with the
+   * chosen option ID when the user responds, or rejects on timeout / supersession.
+   */
   setPending(request: PermissionRequest): Promise<string> {
     // Reject any existing pending promise so callers don't hang forever
     if (!this.settled && this.rejectFn) {
@@ -33,12 +50,14 @@ export class PermissionGate {
       this.timeoutTimer = setTimeout(() => {
         this.reject("Permission request timed out (no response received)");
       }, this.timeoutMs);
+      // unref() prevents the timeout from keeping the process alive during shutdown
       if (typeof this.timeoutTimer === 'object' && 'unref' in this.timeoutTimer) {
         (this.timeoutTimer as NodeJS.Timeout).unref();
       }
     });
   }
 
+  /** Approve the pending request with the given option ID. No-op if already settled. */
   resolve(optionId: string): void {
     if (this.settled || !this.resolveFn) return;
     this.settled = true;
@@ -47,6 +66,7 @@ export class PermissionGate {
     this.cleanup();
   }
 
+  /** Deny the pending request. No-op if already settled. */
   reject(reason?: string): void {
     if (this.settled || !this.rejectFn) return;
     this.settled = true;

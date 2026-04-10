@@ -12,6 +12,7 @@ import { pluginsCheck } from "./checks/plugins.js";
 import { daemonCheck } from "./checks/daemon.js";
 import { tunnelCheck } from "./checks/tunnel.js";
 
+/** All registered checks, sorted by order before execution. */
 const ALL_CHECKS: DoctorCheck[] = [
   configCheck,
   agentsCheck,
@@ -23,8 +24,16 @@ const ALL_CHECKS: DoctorCheck[] = [
   tunnelCheck,
 ];
 
+/** Per-check timeout — prevents a single hanging check from blocking the entire run. */
 const CHECK_TIMEOUT_MS = 10_000;
 
+/**
+ * Orchestrates diagnostic checks for an OpenACP installation.
+ *
+ * Runs all registered checks in order, collects results, and automatically
+ * applies safe fixes (unless in dry-run mode). Risky fixes are collected
+ * as `pendingFixes` for the CLI to present interactively.
+ */
 export class DoctorEngine {
   private dryRun: boolean;
   private dataDir: string;
@@ -34,6 +43,12 @@ export class DoctorEngine {
     this.dataDir = options!.dataDir!;
   }
 
+  /**
+   * Executes all checks and returns an aggregated report.
+   *
+   * Safe fixes are applied inline (mutating CheckResult.message to show "Fixed").
+   * Risky fixes are deferred to `report.pendingFixes` for user confirmation.
+   */
   async runAll(): Promise<DoctorReport> {
     const ctx = await this.buildContext();
     const checks = [...ALL_CHECKS].sort((a, b) => a.order - b.order);
@@ -89,6 +104,7 @@ export class DoctorEngine {
     return { categories, summary, pendingFixes };
   }
 
+  /** Constructs the shared context used by all checks — loads config if available. */
   private async buildContext(): Promise<DoctorContext> {
     const dataDir = this.dataDir;
     const configPath = process.env.OPENACP_CONFIG_PATH || path.join(dataDir, "config.json");

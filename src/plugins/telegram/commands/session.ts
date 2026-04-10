@@ -7,6 +7,13 @@ import { createChildLogger } from "../../../core/utils/log.js";
 import type { CommandsAssistantContext } from "../types.js";
 const log = createChildLogger({ module: "telegram-cmd-session" });
 
+/**
+ * Handle `/cancel` — abort the current prompt in the active session.
+ *
+ * In the assistant topic, delegates to the AI to confirm which session to cancel.
+ * In a session topic with an active prompt, calls `session.abortPrompt()`.
+ * If there is no active prompt (session paused/waiting), informs the user.
+ */
 export async function handleCancel(
   ctx: Context,
   core: OpenACPCore,
@@ -46,6 +53,11 @@ export async function handleCancel(
   }
 }
 
+/**
+ * Handle `/status` — show session info for the current topic, or overall system
+ * stats when used outside a topic. Falls back to stored record when the session
+ * is not currently loaded in memory.
+ */
 export async function handleStatus(ctx: Context, core: OpenACPCore): Promise<void> {
   const threadId = ctx.message?.message_thread_id;
   if (threadId) {
@@ -93,6 +105,10 @@ export async function handleStatus(ctx: Context, core: OpenACPCore): Promise<voi
   }
 }
 
+/**
+ * Handle `/sessions` — list all sessions with a status overview and cleanup buttons.
+ * Headless sessions (no Telegram topic) are filtered from the display but counted.
+ */
 export async function handleTopics(ctx: Context, core: OpenACPCore): Promise<void> {
   try {
     const allRecords = core.sessionManager.listRecords();
@@ -307,6 +323,11 @@ export async function handleCleanupEverythingConfirmed(
   );
 }
 
+/**
+ * Programmatically abort the most recently active Telegram session.
+ * Used by the assistant when told to cancel a session via chat.
+ * `excludeSessionId` prevents cancelling the assistant's own session.
+ */
 export async function executeCancelSession(
   core: OpenACPCore,
   excludeSessionId?: string,
@@ -361,6 +382,11 @@ export function setupSessionCallbacks(
   })
 }
 
+/**
+ * Handle `/archive` — show a confirmation prompt before deleting the current
+ * session's topic. The archive destroys the Telegram topic (all messages lost)
+ * and permanently removes the session record.
+ */
 export async function handleArchive(
   ctx: Context,
   core: OpenACPCore,

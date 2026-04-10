@@ -7,6 +7,17 @@ import { createInstanceContext, getGlobalRoot } from '../../core/instance/instan
 import { InstanceRegistry } from '../../core/instance/instance-registry.js'
 import { randomUUID } from 'node:crypto'
 
+/**
+ * `openacp restart` — Stop and restart the daemon.
+ *
+ * Mode selection: explicit --foreground/--daemon flags win; otherwise, if a daemon
+ * was running we restart as daemon, else we honour config.runMode. This logic prevents
+ * a daemon that was started with `openacp start` (runMode='foreground') from accidentally
+ * restarting in foreground mode.
+ *
+ * When restarting as daemon, reinstalls autostart to refresh the node path (handles nvm
+ * version changes between restarts).
+ */
 export async function cmdRestart(args: string[] = [], instanceRoot?: string): Promise<void> {
   const json = isJsonMode(args)
   if (json) await muteForJson()

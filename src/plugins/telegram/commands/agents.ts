@@ -6,6 +6,11 @@ import { escapeHtml } from "../formatting.js";
 
 const AGENTS_PER_PAGE = 6;
 
+/**
+ * Handle `/agents` — show installed and available agents with install buttons.
+ * Available agents are paginated (6 per page). Agents with unmet dependencies
+ * are shown with a warning rather than an install button.
+ */
 export async function handleAgents(ctx: Context, core: OpenACPCore, page = 0): Promise<void> {
   const catalog = core.agentCatalog;
   const items = catalog.getAvailable();
@@ -87,6 +92,11 @@ export async function handleAgents(ctx: Context, core: OpenACPCore, page = 0): P
   }
 }
 
+/**
+ * Handle `/install <agent>` — install an agent by name or ID with live progress updates.
+ * After installation, auto-installs handoff integration if the agent supports it,
+ * and shows required setup steps as copyable commands.
+ */
 export async function handleInstall(ctx: Context, core: OpenACPCore): Promise<void> {
   const text = (ctx.message?.text ?? "").trim();
   const parts = text.split(/\s+/);

@@ -3,6 +3,10 @@ import { InlineKeyboard } from "grammy";
 import type { OpenACPCore } from "../../../core/index.js";
 import { escapeHtml } from "../formatting.js";
 
+/**
+ * Handle `/integrate` — show a list of agents with available integrations.
+ * Tapping an agent opens the integration items (install/uninstall hooks).
+ */
 export async function handleIntegrate(ctx: Context, _core: OpenACPCore): Promise<void> {
   const { listIntegrations } = await import("../../../cli/integrate.js");
   const agents = listIntegrations();

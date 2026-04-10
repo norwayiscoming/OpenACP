@@ -8,7 +8,11 @@ const execFileAsync = promisify(execFile)
 
 /**
  * Import a package resolved from a specific directory (not the project root).
- * Reads the package's package.json to find the ESM entry point, then imports by file path.
+ *
+ * We can't use bare `import('packageName')` because Node resolves from the
+ * project root's node_modules. Plugins are installed to a separate directory
+ * (~/.openacp/plugins/node_modules), so we manually resolve the ESM entry point
+ * from the package's package.json and import by absolute file:// URL.
  */
 export async function importFromDir(packageName: string, dir: string): Promise<any> {
   const pkgDir = path.join(dir, 'node_modules', ...packageName.split('/'))
@@ -46,8 +50,11 @@ export async function importFromDir(packageName: string, dir: string): Promise<a
 const VALID_NPM_NAME = /^(@[a-z0-9][\w.-]*\/)?[a-z0-9][\w.-]*(@[\w.^~>=<|-]+)?$/i;
 
 /**
- * Install an npm package to the plugins directory and return the loaded module.
- * Tries to import first; if not installed, runs npm install asynchronously.
+ * Install an npm package to the isolated plugins directory and return the loaded module.
+ *
+ * Plugins are installed to `~/.openacp/plugins/` (separate from the project's node_modules)
+ * to avoid version conflicts with core dependencies. Uses `--ignore-scripts` for security.
+ * Tries to import first (already installed case) before running npm install.
  */
 export async function installNpmPlugin(packageName: string, pluginsDir?: string): Promise<any> {
   if (!VALID_NPM_NAME.test(packageName)) {

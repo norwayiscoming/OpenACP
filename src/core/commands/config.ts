@@ -68,6 +68,14 @@ function getLabels(category: string, commandName: string): CategoryLabels {
 
 // ── Generic category command factory ─────────────────────────────────
 
+/**
+ * Register a command that reads/writes a session config option by category.
+ *
+ * Each agent exposes config options (mode, model, thought_level) as select menus.
+ * This factory creates a command that:
+ * - With no args: shows a menu of available values with the current one checked
+ * - With a value arg: validates and applies the new value via `session.setConfigOption`
+ */
 function registerCategoryCommand(
   registry: CommandRegistry,
   core: OpenACPCore,
@@ -142,6 +150,15 @@ function registerCategoryCommand(
 
 // ── /bypass_permissions command ───────────────────────────────────────────────
 
+/**
+ * Register /bypass_permissions — toggles auto-approval of permission requests.
+ *
+ * Two mechanisms are supported:
+ * 1. If the agent has a bypass value in its mode options (e.g. Claude Code's "dangermode"),
+ *    the command switches the agent mode via setConfigOption.
+ * 2. Otherwise, falls back to a client-side override on the Session that auto-approves
+ *    all permission requests before they reach the user.
+ */
 function registerDangerousCommand(registry: CommandRegistry, core: OpenACPCore): void {
   registry.register({
     name: 'bypass_permissions',
@@ -246,6 +263,12 @@ function registerDangerousCommand(registry: CommandRegistry, core: OpenACPCore):
 
 // ── Public registration ──────────────────────────────────────────────
 
+/**
+ * Register session configuration commands: /mode, /model, /thought, /bypass_permissions.
+ *
+ * These commands let users change agent behavior at runtime. Each maps to
+ * a config option category exposed by the agent via ACP config_option events.
+ */
 export function registerConfigCommands(registry: CommandRegistry, _core: unknown): void {
   const core = _core as OpenACPCore
   registerCategoryCommand(registry, core, 'mode', 'mode')

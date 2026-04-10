@@ -2,6 +2,13 @@ import type { CommandRegistry } from '../command-registry.js'
 import type { CommandResponse } from '../plugin/types.js'
 import type { OpenACPCore } from '../core.js'
 
+/**
+ * Register agent management commands: /agents and /install.
+ *
+ * /agents lists installed and available agents from the catalog.
+ * /install triggers agent installation, delegating to the assistant for guided flow
+ * or showing a CLI command as fallback.
+ */
 export function registerAgentCommands(registry: CommandRegistry, _core: unknown): void {
   const core = _core as OpenACPCore
 

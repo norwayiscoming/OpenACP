@@ -1,6 +1,13 @@
 import type { CommandRegistry } from '../command-registry.js'
 import type { CommandResponse } from '../plugin/types.js'
 
+/**
+ * Register the /help command.
+ *
+ * With no arguments, auto-generates a command listing from the registry
+ * (grouped by system vs plugin). With a command name argument, shows
+ * detailed usage for that specific command.
+ */
 export function registerHelpCommand(registry: CommandRegistry, _core: unknown): void {
   registry.register({
     name: 'help',

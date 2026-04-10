@@ -1,5 +1,13 @@
 import type { MenuRegistry } from '../menu-registry.js'
 
+/**
+ * Register the default menu items that appear in the interactive menu.
+ *
+ * Items are grouped by function (session, info, config, system, help) and
+ * sorted by priority (lower = higher position). Each item maps to either
+ * a command (`/sessions`), a delegate prompt (assistant-guided new session),
+ * or a callback data string (settings panel).
+ */
 export function registerCoreMenuItems(registry: MenuRegistry): void {
   registry.register({
     id: 'core:new',

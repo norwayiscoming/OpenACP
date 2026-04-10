@@ -2,6 +2,14 @@ import type { CommandRegistry } from '../command-registry.js'
 import type { CommandResponse } from '../plugin/types.js'
 import type { OpenACPCore } from '../core.js'
 
+/**
+ * Register the /switch command for hot-swapping agents mid-session.
+ *
+ * - `/switch` (no args): shows a menu of available agents (excluding current)
+ * - `/switch <agent>`: aborts any running prompt and delegates to AgentSwitchHandler
+ * - `/switch label on|off`: toggles agent attribution labels in conversation history
+ *   (used by the context plugin when building history for the new agent)
+ */
 export function registerSwitchCommands(registry: CommandRegistry, _core: unknown): void {
   const core = _core as OpenACPCore;
 

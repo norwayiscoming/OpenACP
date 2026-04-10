@@ -1,3 +1,17 @@
+/**
+ * AgentInstance — the ACP Client implementation that manages an agent subprocess.
+ *
+ * This is the lowest-level boundary between OpenACP and an external AI agent.
+ * It spawns the agent as a child process, communicates over stdin/stdout using
+ * the Agent Client Protocol (newline-delimited JSON), and translates ACP events
+ * into the internal `AgentEvent` union consumed by Session and adapters.
+ *
+ * Lifecycle: spawn → ACP initialize → newSession/loadSession → prompt ↔ events → destroy
+ *
+ * Session wraps AgentInstance to add prompt queuing, auto-naming, and
+ * permission gating. This module should NOT be used directly by adapters.
+ */
+
 import { spawn, execFileSync, type ChildProcess } from "node:child_process";
 import { Transform } from "node:stream";
 import fs from "node:fs";
@@ -40,7 +54,13 @@ import { createChildLogger } from "../utils/log.js";
 import { Hook, SessionEv } from "../events.js";
 const log = createChildLogger({ module: "agent-instance" });
 
-/** Find the nearest ancestor directory containing package.json */
+/**
+ * Find the nearest ancestor directory containing package.json.
+ *
+ * Used by `resolveAgentCommand` to locate node_modules from the package's
+ * own install location, which differs between tsc output (`dist/core/`)
+ * and tsup bundles (`dist/`).
+ */
 function findPackageRoot(startDir: string): string {
   let dir = startDir;
   while (dir !== path.dirname(dir)) {
@@ -52,7 +72,21 @@ function findPackageRoot(startDir: string): string {
   return startDir;
 }
 
-/** Resolve an agent command to a directly executable form (avoids shell wrappers) */
+/**
+ * Resolve an agent command name to a directly executable form.
+ *
+ * Agent commands (e.g. "claude-agent-acp") are npm package names, not native
+ * binaries. This function locates the actual JS entry point and runs it via
+ * `node` directly, avoiding npm shell wrappers that break subprocess stdio
+ * piping (the ACP protocol relies on clean stdin/stdout streams).
+ *
+ * Resolution order:
+ *  1. node_modules/<package>/dist/index.js (direct entry point)
+ *  2. node_modules/.bin/<cmd> (parse shebang or shell wrapper to find JS target)
+ *  3. System PATH via `which`
+ *  4. Special handling for npx/uvx: derive from the running Node's bin directory
+ *  5. Fallback: use command as-is
+ */
 function resolveAgentCommand(cmd: string): { command: string; args: string[] } {
   // Directories to search for node_modules: cwd AND the package's own directory
   const searchRoots = [process.cwd()];
@@ -150,7 +184,9 @@ function resolveAgentCommand(cmd: string): { command: string; args: string[] } {
 
 // TerminalState has been extracted to TerminalManager
 
-// Local types for ACP session update shapes not fully typed by SDK
+// Local types for ACP session update shapes not fully typed by the SDK.
+// The SDK uses a generic `update` object; these interfaces provide type safety
+// for fields we access when converting ACP events to internal AgentEvent types.
 interface SdkToolCallFields {
   rawInput?: unknown;
   rawOutput?: unknown;
@@ -182,17 +218,35 @@ interface SdkReadTextFileParams {
   limit?: number;
 }
 
+/** Events emitted by AgentInstance — consumed by Session to relay to adapters. */
 export interface AgentInstanceEvents {
   agent_event: (event: AgentEvent) => void;
 }
 
+/**
+ * Manages an ACP agent subprocess and implements the ACP Client interface.
+ *
+ * Each AgentInstance owns exactly one child process. It handles:
+ * - Subprocess spawning with filtered environment and path guarding
+ * - ACP protocol handshake (initialize → newSession/loadSession)
+ * - Translating ACP session updates into internal AgentEvent types
+ * - File I/O and terminal operations requested by the agent
+ * - Permission request proxying (agent → Session → adapter → user → agent)
+ * - Graceful shutdown (SIGTERM with SIGKILL fallback)
+ *
+ * Session wraps this class to add prompt queuing and lifecycle management.
+ */
 export class AgentInstance extends TypedEmitter<AgentInstanceEvents> {
   private connection!: ClientSideConnection;
   private child!: ChildProcess;
   private stderrCapture!: StderrCapture;
+  /** Manages terminal subprocesses that agents can spawn for shell commands. */
   private terminalManager = new TerminalManager();
+  /** Shared across all instances — resolves MCP server configs for ACP sessions. */
   private static mcpManager = new McpManager();
+  /** Guards against emitting crash events during intentional shutdown. */
   private _destroying = false;
+  /** Restricts agent file I/O to the workspace directory and explicitly allowed paths. */
   private pathGuard!: PathGuard;
 
   sessionId!: string;
@@ -204,12 +258,18 @@ export class AgentInstance extends TypedEmitter<AgentInstanceEvents> {
   middlewareChain?: MiddlewareChain;
   debugTracer: DebugTracer | null = null;
 
-  /** Allow external callers (e.g. SessionFactory) to whitelist additional read paths */
+  /**
+   * Whitelist an additional filesystem path for agent read access.
+   *
+   * Called by SessionFactory to allow agents to read files outside the
+   * workspace (e.g., the file-service upload directory for attachments).
+   */
   addAllowedPath(p: string): void {
     this.pathGuard.addAllowedPath(p);
   }
 
-  // Callback — set by core when wiring events
+  // Callback — set by Session/Core when wiring events. Returns the selected
+  // permission option ID. Default no-op auto-selects the first option.
   onPermissionRequest: (request: PermissionRequest) => Promise<string> =
     async () => "";
 
@@ -218,6 +278,20 @@ export class AgentInstance extends TypedEmitter<AgentInstanceEvents> {
     this.agentName = agentName;
   }
 
+  /**
+   * Spawn the agent child process and complete the ACP protocol handshake.
+   *
+   * Steps:
+   *  1. Resolve the agent command to a directly executable path
+   *  2. Create a PathGuard scoped to the working directory
+   *  3. Spawn the subprocess with a filtered environment (security: only whitelisted
+   *     env vars are passed to prevent leaking secrets like API keys)
+   *  4. Wire stdin/stdout through debug-tracing Transform streams
+   *  5. Convert Node streams → Web streams for the ACP SDK
+   *  6. Perform the ACP `initialize` handshake and negotiate capabilities
+   *
+   * Does NOT create a session — callers must follow up with newSession or loadSession.
+   */
   private static async spawnSubprocess(
     agentDef: AgentDefinition,
     workingDirectory: string,
@@ -264,11 +338,17 @@ export class AgentInstance extends TypedEmitter<AgentInstanceEvents> {
       instance.child.on("spawn", () => resolve());
     });
 
+    // Capture last 50 stderr lines for crash diagnostics — stderr is NOT part of
+    // the ACP protocol (which uses stdout), but agents log errors/warnings there.
     instance.stderrCapture = new StderrCapture(50);
     instance.child.stderr!.on("data", (chunk: Buffer) => {
       instance.stderrCapture.append(chunk.toString());
     });
 
+    // stdin/stdout pass-through transforms for ACP protocol tracing.
+    // When debugTracer is active, each ndjson message is logged with direction
+    // (send/recv) for protocol-level debugging. The transforms are transparent
+    // when tracing is off — they pass chunks through without modification.
     const stdinLogger = new Transform({
       transform(chunk, _enc, cb) {
         if (instance.debugTracer) {
@@ -299,15 +379,21 @@ export class AgentInstance extends TypedEmitter<AgentInstanceEvents> {
     });
     instance.child.stdout!.pipe(stdoutLogger);
 
+    // Bridge Node streams → Web Streams API for the ACP SDK, which uses
+    // ReadableStream/WritableStream internally for ndjson parsing.
     const toAgent = nodeToWebWritable(stdinLogger);
     const fromAgent = nodeToWebReadable(stdoutLogger);
     const stream = ndJsonStream(toAgent, fromAgent);
 
+    // ClientSideConnection is the ACP SDK's client. It sends JSON-RPC requests
+    // and routes incoming notifications to the Client callbacks (createClient).
     instance.connection = new ClientSideConnection(
       (_agent: Agent): Client => instance.createClient(_agent),
       stream,
     );
 
+    // ACP handshake: negotiate protocol version and declare client capabilities.
+    // The agent responds with its own capabilities (image/audio support, etc.).
     const initResponse = await instance.connection.initialize({
       protocolVersion: PROTOCOL_VERSION,
       clientCapabilities: {
@@ -337,6 +423,13 @@ export class AgentInstance extends TypedEmitter<AgentInstanceEvents> {
     return instance;
   }
 
+  /**
+   * Monitor the subprocess for unexpected exits and emit error events.
+   *
+   * Distinguishes intentional shutdown (SIGTERM/SIGINT during destroy) from
+   * crashes (non-zero exit code or unexpected signal). Crash events include
+   * captured stderr output for diagnostic context.
+   */
   private setupCrashDetection(): void {
     this.child.on("exit", (code, signal) => {
       if (this._destroying) return;
@@ -362,6 +455,18 @@ export class AgentInstance extends TypedEmitter<AgentInstanceEvents> {
     });
   }
 
+  /**
+   * Spawn a new agent subprocess and create a fresh ACP session.
+   *
+   * This is the primary entry point for starting an agent. It spawns the
+   * subprocess, completes the ACP handshake, and calls `newSession` to
+   * initialize the agent's working context (cwd, MCP servers).
+   *
+   * @param agentDef - Agent definition (command, args, env) from the catalog
+   * @param workingDirectory - Workspace root the agent operates in
+   * @param mcpServers - Optional MCP server configs to extend agent capabilities
+   * @param allowedPaths - Extra filesystem paths the agent may access
+   */
   static async spawn(
     agentDef: AgentDefinition,
     workingDirectory: string,
@@ -405,6 +510,15 @@ export class AgentInstance extends TypedEmitter<AgentInstanceEvents> {
     return instance;
   }
 
+  /**
+   * Spawn a new subprocess and restore an existing agent session.
+   *
+   * Tries loadSession first (preferred, stable API), falls back to the
+   * unstable resumeSession, and finally falls back to creating a brand-new
+   * session if resume fails entirely (e.g., agent lost its state).
+   *
+   * @param agentSessionId - The agent-side session ID to restore
+   */
   static async resume(
     agentDef: AgentDefinition,
     workingDirectory: string,
@@ -483,13 +597,27 @@ export class AgentInstance extends TypedEmitter<AgentInstanceEvents> {
     return instance;
   }
 
-  // createClient — implemented in Task 6b
+  /**
+   * Build the ACP Client callback object.
+   *
+   * The ACP SDK invokes these callbacks when the agent sends notifications
+   * or requests. Each callback maps an ACP protocol message to either:
+   * - An internal AgentEvent (emitted for Session/adapters to consume)
+   * - A filesystem or terminal operation (executed on the agent's behalf)
+   * - A permission request (proxied to the user via the adapter)
+   */
   private createClient(_agent: Agent): Client {
     const self = this;
     const MAX_OUTPUT_BYTES = 1024 * 1024; // 1MB cap
 
     return {
       // ── Session updates ──────────────────────────────────────────────────
+      // The agent streams its response as a series of session update events.
+      // Each event type maps to an internal AgentEvent that Session relays
+      // to adapters for rendering (text chunks, tool calls, usage stats, etc.).
+      // Chunks are forwarded to Session individually as they arrive — no buffering
+      // happens at this layer. If buffering is needed (e.g., to avoid rate limits),
+      // it is the responsibility of the Session or adapter layer.
       async sessionUpdate(params) {
         const update = params.update;
         let event: AgentEvent | null = null;
@@ -640,6 +768,10 @@ export class AgentInstance extends TypedEmitter<AgentInstanceEvents> {
       },
 
       // ── Permission requests ──────────────────────────────────────────────
+      // The agent needs user approval before performing sensitive operations
+      // (e.g., file writes, shell commands). This proxies the request up
+      // through Session → PermissionGate → adapter → user, then returns
+      // the user's chosen option ID back to the agent.
       async requestPermission(params) {
         const permissionRequest: PermissionRequest = {
           id: params.toolCall.toolCallId,
@@ -659,6 +791,9 @@ export class AgentInstance extends TypedEmitter<AgentInstanceEvents> {
       },
 
       // ── File operations ──────────────────────────────────────────────────
+      // The agent reads/writes files through these callbacks rather than
+      // accessing the filesystem directly. This allows PathGuard to enforce
+      // workspace boundaries and middleware hooks to intercept I/O.
       async readTextFile(params) {
         const p = params as unknown as SdkReadTextFileParams;
         // Security: validate path against workspace boundary
@@ -700,6 +835,8 @@ export class AgentInstance extends TypedEmitter<AgentInstanceEvents> {
       },
 
       // ── Terminal operations (delegated to TerminalManager) ─────────────
+      // Agents can spawn shell commands via terminal operations. TerminalManager
+      // handles subprocess lifecycle, output capture, and byte-limit enforcement.
       async createTerminal(params) {
         return self.terminalManager.createTerminal(
           self.sessionId,
@@ -735,6 +872,13 @@ export class AgentInstance extends TypedEmitter<AgentInstanceEvents> {
 
   // ── New ACP methods ──────────────────────────────────────────────────
 
+  /**
+   * Update a session config option (mode, model, etc.) on the agent.
+   *
+   * Falls back to legacy `setSessionMode`/`unstable_setSessionModel` methods
+   * for agents that haven't adopted the unified `session/set_config_option`
+   * ACP method (detected via JSON-RPC -32601 "Method Not Found" error).
+   */
   async setConfigOption(
     configId: string,
     value: SetConfigOptionValue,
@@ -769,6 +913,7 @@ export class AgentInstance extends TypedEmitter<AgentInstanceEvents> {
     }
   }
 
+  /** List the agent's known sessions, optionally filtered by working directory. */
   async listSessions(
     cwd?: string,
     cursor?: string,
@@ -779,6 +924,7 @@ export class AgentInstance extends TypedEmitter<AgentInstanceEvents> {
     });
   }
 
+  /** Load an existing agent session by ID into this subprocess. */
   async loadSession(
     sessionId: string,
     cwd: string,
@@ -792,10 +938,12 @@ export class AgentInstance extends TypedEmitter<AgentInstanceEvents> {
     });
   }
 
+  /** Trigger agent-managed authentication (e.g., OAuth flow). */
   async authenticate(methodId: string): Promise<void> {
     await this.connection.authenticate({ methodId });
   }
 
+  /** Fork an existing session, creating a new branch with shared history. */
   async forkSession(
     sessionId: string,
     cwd: string,
@@ -809,12 +957,27 @@ export class AgentInstance extends TypedEmitter<AgentInstanceEvents> {
     });
   }
 
+  /** Close a session on the agent side (cleanup agent-internal state). */
   async closeSession(sessionId: string): Promise<void> {
     await this.connection.unstable_closeSession({ sessionId });
   }
 
   // ── Prompt & lifecycle ──────────────────────────────────────────────
 
+  /**
+   * Send a user prompt to the agent and wait for the complete response.
+   *
+   * Builds ACP content blocks from the text and any attachments (images
+   * are base64-encoded if the agent supports them, otherwise appended as
+   * file paths). The promise resolves when the agent finishes responding;
+   * streaming events arrive via the `agent_event` emitter during execution.
+   *
+   * Attachments that exceed size limits or use unsupported formats are
+   * skipped with a note appended to the prompt text.
+   *
+   * Call `cancel()` to interrupt a running prompt; the agent will stop and
+   * the promise resolves with partial results.
+   */
   async prompt(text: string, attachments?: Attachment[]): Promise<PromptResponse> {
     const contentBlocks: Array<Record<string, unknown>> = [{ type: "text", text }];
     const capabilities = this.promptCapabilities ?? {};
@@ -862,20 +1025,26 @@ export class AgentInstance extends TypedEmitter<AgentInstanceEvents> {
     });
   }
 
+  /** Cancel the currently running prompt. The agent should stop and return partial results. */
   async cancel(): Promise<void> {
     await this.connection.cancel({ sessionId: this.sessionId });
   }
 
+  /**
+   * Gracefully shut down the agent subprocess.
+   *
+   * Sends SIGTERM first, giving the agent up to 10 seconds to clean up.
+   * If the process hasn't exited by then, SIGKILL forces termination.
+   * The timer is unref'd so it doesn't keep the Node process alive
+   * during shutdown.
+   */
   async destroy(): Promise<void> {
     this._destroying = true;
 
-    // Cleanup terminals
     this.terminalManager.destroyAll();
 
-    // If process already exited, nothing to do
     if (this.child.exitCode !== null) return;
 
-    // Kill agent subprocess and wait for it to actually exit
     await new Promise<void>((resolve) => {
       // Register exit listener BEFORE sending signal to avoid race
       this.child.on("exit", () => {
@@ -886,7 +1055,8 @@ export class AgentInstance extends TypedEmitter<AgentInstanceEvents> {
       this.child.kill("SIGTERM");
 
       const forceKillTimer = setTimeout(() => {
-        // Use exitCode check — child.killed is true after ANY kill() call
+        // Use exitCode check — child.killed is true after ANY kill() call,
+        // even if the process hasn't actually exited yet
         if (this.child.exitCode === null) this.child.kill("SIGKILL");
         resolve();
       }, 10_000);

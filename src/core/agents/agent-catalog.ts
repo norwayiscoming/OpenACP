@@ -25,10 +25,23 @@ interface RegistryCache {
   data: { agents: RegistryAgent[] };
 }
 
+/**
+ * Central catalog of available and installed agents.
+ *
+ * Combines two data sources:
+ *  1. **Registry** — the remote ACP agent registry (CDN-hosted JSON), cached
+ *     locally with a 24-hour TTL and a bundled snapshot as fallback.
+ *  2. **Store** — locally installed agents persisted in `agents.json`.
+ *
+ * Provides discovery (list all agents), installation, uninstallation,
+ * and resolution (name → AgentDefinition for spawning).
+ */
 export class AgentCatalog {
   private store: AgentStore;
+  /** Agents available in the remote registry (cached in memory after load). */
   private registryAgents: RegistryAgent[] = [];
   private cachePath: string;
+  /** Directory where binary agent archives are extracted to. */
   private agentsDir: string | undefined;
 
   constructor(store: AgentStore, cachePath: string, agentsDir?: string) {
@@ -37,6 +50,12 @@ export class AgentCatalog {
     this.agentsDir = agentsDir;
   }
 
+  /**
+   * Load installed agents from disk and hydrate the registry from cache/snapshot.
+   *
+   * Also enriches installed agents with registry metadata — fixes agents that
+   * were migrated from older config formats with incomplete data.
+   */
   load(): void {
     this.store.load();
     this.loadRegistryFromCacheOrSnapshot();
@@ -45,6 +64,7 @@ export class AgentCatalog {
 
   // --- Registry ---
 
+  /** Fetch the latest agent registry from the CDN and update the local cache. */
   async fetchRegistry(): Promise<void> {
     try {
       log.info("Fetching agent registry from CDN...");
@@ -66,6 +86,7 @@ export class AgentCatalog {
     }
   }
 
+  /** Re-fetch registry only if the local cache has expired (24-hour TTL). */
   async refreshRegistryIfStale(): Promise<void> {
     if (this.isCacheStale()) {
       await this.fetchRegistry();
@@ -80,6 +101,7 @@ export class AgentCatalog {
     return this.registryAgents.find((a) => a.id === registryId);
   }
 
+  /** Find a registry agent by registry ID or by its short alias (e.g., "claude"). */
   findRegistryAgent(keyOrId: string): RegistryAgent | undefined {
     const byId = this.registryAgents.find((a) => a.id === keyOrId);
     if (byId) return byId;
@@ -102,6 +124,15 @@ export class AgentCatalog {
 
   // --- Discovery ---
 
+  /**
+   * Build the unified list of all agents (installed + registry-only).
+   *
+   * Installed agents appear first with their live availability status.
+   * Registry agents that aren't installed yet show whether a distribution
+   * exists for the current platform. Missing external dependencies
+   * (e.g., claude CLI) are surfaced as `missingDeps` for UI display
+   * but do NOT block installation.
+   */
   getAvailable(): AgentListItem[] {
     const installed = this.getInstalledEntries();
     const items: AgentListItem[] = [];
@@ -156,6 +187,7 @@ export class AgentCatalog {
     return items;
   }
 
+  /** Check if an agent can be installed on this system (platform + dependencies). */
   checkAvailability(keyOrId: string): AvailabilityResult {
     const agent = this.findRegistryAgent(keyOrId);
     if (!agent) return { available: false, reason: "Not found in the agent registry." };
@@ -170,6 +202,12 @@ export class AgentCatalog {
 
   // --- Install/Uninstall ---
 
+  /**
+   * Install an agent from the registry.
+   *
+   * Resolves the distribution (npx/uvx/binary), downloads binary archives
+   * if needed, and persists the agent definition in the store.
+   */
   async install(keyOrId: string, progress?: InstallProgress, force?: boolean): Promise<InstallResult> {
     const agent = this.findRegistryAgent(keyOrId);
     if (!agent) {
@@ -198,6 +236,7 @@ export class AgentCatalog {
     this.store.addAgent(key, data);
   }
 
+  /** Remove an installed agent and delete its binary directory if applicable. */
   async uninstall(key: string): Promise<{ ok: boolean; error?: string }> {
     if (this.store.hasAgent(key)) {
       await uninstallAgent(key, this.store);
@@ -208,6 +247,7 @@ export class AgentCatalog {
 
   // --- Resolution (for AgentManager) ---
 
+  /** Convert an installed agent's short key to an AgentDefinition for spawning. */
   resolve(key: string): AgentDefinition | undefined {
     const agent = this.store.getAgent(key);
     if (!agent) return undefined;

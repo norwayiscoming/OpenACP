@@ -159,6 +159,8 @@ export class HistoryRecorder {
           status: event.status,
         };
         if (event.kind) step.kind = event.kind;
+        // rawInput may arrive in the initial tool_call event (not just tool_update)
+        if (event.rawInput !== undefined) step.input = event.rawInput;
         steps.push(step);
         break;
       }

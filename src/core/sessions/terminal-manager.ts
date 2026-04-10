@@ -31,6 +31,15 @@ interface WaitForExitResult {
   signal: string | null;
 }
 
+/**
+ * Manages child-process terminals for agents that need interactive command execution.
+ *
+ * Agents request terminals via ACP's terminal_create method. Each terminal is a
+ * spawned child process whose stdout/stderr is captured into a ring buffer
+ * (capped at maxOutputBytes). The agent can poll output, wait for exit, or kill
+ * the process. Terminals are auto-cleaned up 30s after the process exits to allow
+ * final output retrieval.
+ */
 export class TerminalManager {
   private terminals: Map<string, TerminalState> = new Map();
   private maxOutputBytes: number;
@@ -39,6 +48,11 @@ export class TerminalManager {
     this.maxOutputBytes = maxOutputBytes;
   }
 
+  /**
+   * Spawn a new terminal process. Runs terminal:beforeCreate middleware first
+   * (which can modify command/args/env or block creation entirely).
+   * Returns a terminalId for subsequent output/wait/kill operations.
+   */
   async createTerminal(
     sessionId: string,
     params: CreateTerminalParams,
@@ -92,6 +106,8 @@ export class TerminalManager {
 
     const outputByteLimit = params.outputByteLimit ?? this.maxOutputBytes;
 
+    // Ring buffer: keep only the latest outputByteLimit bytes — oldest output
+    // is trimmed from the front when the buffer exceeds the limit.
     const appendOutput = (chunk: string) => {
       state.output += chunk;
       const bytes = Buffer.byteLength(state.output, "utf-8");
@@ -131,6 +147,7 @@ export class TerminalManager {
     return { terminalId };
   }
 
+  /** Retrieve accumulated stdout/stderr output for a terminal. */
   getOutput(terminalId: string): TerminalOutputResult {
     const state = this.terminals.get(terminalId);
     if (!state) {
@@ -148,6 +165,7 @@ export class TerminalManager {
     };
   }
 
+  /** Block until the terminal process exits, returning exit code and signal. */
   async waitForExit(terminalId: string): Promise<WaitForExitResult> {
     const state = this.terminals.get(terminalId);
     if (!state) {
@@ -175,6 +193,7 @@ export class TerminalManager {
     });
   }
 
+  /** Send SIGTERM to a terminal process (graceful shutdown). */
   kill(terminalId: string): void {
     const state = this.terminals.get(terminalId);
     if (!state) {
@@ -183,6 +202,7 @@ export class TerminalManager {
     state.process.kill("SIGTERM");
   }
 
+  /** Force-kill (SIGKILL) and immediately remove a terminal from the registry. */
   release(terminalId: string): void {
     const state = this.terminals.get(terminalId);
     if (!state) {
@@ -192,6 +212,7 @@ export class TerminalManager {
     this.terminals.delete(terminalId);
   }
 
+  /** Force-kill all terminals. Used during session/system teardown. */
   destroyAll(): void {
     for (const [, t] of this.terminals) {
       t.process.kill("SIGKILL");

@@ -1,12 +1,26 @@
 import { nanoid } from "nanoid";
 import type { AgentEvent } from "../types.js";
 
+/**
+ * Immutable context for a single user-prompt → agent-response cycle ("turn").
+ *
+ * Sealed when a prompt is dequeued from the PromptQueue and cleared after the turn
+ * completes. Bridges use this to route agent events to the correct adapter when
+ * multiple adapters are attached to the same session.
+ */
 export interface TurnContext {
+  /** Unique identifier for this turn — shared between message:queued and message:processing events. */
   turnId: string;
+  /** The adapter that originated this prompt. */
   sourceAdapterId: string;
-  responseAdapterId?: string | null; // null = silent, undefined = use sourceAdapterId
+  /** Where to send the response: null = silent (suppress), undefined = same as source, string = explicit target. */
+  responseAdapterId?: string | null;
 }
 
+/**
+ * Routing hints attached to an incoming prompt — carried through the queue
+ * and used to construct TurnContext when the prompt is dequeued.
+ */
 export interface TurnRouting {
   sourceAdapterId: string;
   responseAdapterId?: string | null;

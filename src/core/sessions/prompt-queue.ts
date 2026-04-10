@@ -3,6 +3,11 @@ import type { TurnRouting } from './turn-context.js'
 
 /**
  * Serial prompt queue — ensures prompts are processed one at a time.
+ *
+ * Agents are stateful (each prompt builds on prior context), so concurrent
+ * prompts would corrupt the conversation. This queue guarantees that only
+ * one prompt is processed at a time; additional prompts are buffered and
+ * drained sequentially after the current one completes.
  */
 export class PromptQueue {
   private queue: Array<{ text: string; attachments?: Attachment[]; routing?: TurnRouting; turnId?: string; resolve: () => void }> = []
@@ -16,6 +21,11 @@ export class PromptQueue {
     private onError?: (err: unknown) => void,
   ) {}
 
+  /**
+   * Add a prompt to the queue. If no prompt is currently processing, it runs
+   * immediately. Otherwise, it's buffered and the returned promise resolves
+   * only after the prompt finishes processing.
+   */
   async enqueue(text: string, attachments?: Attachment[], routing?: TurnRouting, turnId?: string): Promise<void> {
     if (this.processing) {
       return new Promise<void>((resolve) => {
@@ -25,6 +35,7 @@ export class PromptQueue {
     await this.process(text, attachments, routing, turnId)
   }
 
+  /** Run a single prompt through the processor, then drain the next queued item. */
   private async process(text: string, attachments?: Attachment[], routing?: TurnRouting, turnId?: string): Promise<void> {
     this.processing = true
     this.abortController = new AbortController()
@@ -52,6 +63,7 @@ export class PromptQueue {
     }
   }
 
+  /** Dequeue and process the next pending prompt, if any. Called after each prompt completes. */
   private drainNext(): void {
     const next = this.queue.shift()
     if (next) {
@@ -59,6 +71,10 @@ export class PromptQueue {
     }
   }
 
+  /**
+   * Abort the in-flight prompt and discard all queued prompts.
+   * Pending promises are resolved (not rejected) so callers don't see unhandled rejections.
+   */
   clear(): void {
     // Abort the currently running prompt so the queue can drain
     if (this.abortController) {

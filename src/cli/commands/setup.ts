@@ -51,11 +51,15 @@ export async function cmdSetup(args: string[], instanceRoot: string): Promise<vo
   } else {
     id = randomUUID()
     registry.register(id, instanceRoot)
-    registry.save()
+    // Save after initInstanceFiles so a crash during init doesn't leave a stale registry entry
   }
 
   // Write instance files with id — config.json now carries the UUID
   initInstanceFiles(instanceRoot, { agents, runMode, mergeExisting: true, id })
+
+  if (!existing) {
+    registry.save()
+  }
 
   // Default instanceName to the workspace directory basename if not already set
   const name = readConfigField(instanceRoot, 'instanceName')

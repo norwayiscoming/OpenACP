@@ -130,11 +130,19 @@ export async function cmdInstancesCreate(args: string[]): Promise<void> {
 
   // Case: .openacp already exists
   if (fs.existsSync(instanceRoot)) {
+    if (rawFrom) {
+      // --from has no effect when the target already has an .openacp directory
+      if (json) jsonError(ErrorCodes.ALREADY_EXISTS, `Instance already exists at ${resolvedDir} — cannot use --from on an existing instance`)
+      console.error(`Error: Instance already exists at ${resolvedDir}. Remove it first to clone from another instance.`)
+      process.exit(1)
+    }
+
     const existing = registry.getByRoot(instanceRoot)
     if (existing) {
       // Idempotent: return existing instance. Also write id to config.json in case
       // this instance was created before uuid-centric identity was introduced.
-      initInstanceFiles(instanceRoot, { mergeExisting: true, id: existing.id })
+      // Pass instanceName so --name updates the config when explicitly provided.
+      initInstanceFiles(instanceRoot, { mergeExisting: true, id: existing.id, instanceName })
       if (!json) console.warn(`Warning: Instance already registered at ${resolvedDir} (id: ${existing.id})`)
       await outputInstance(json, { id: existing.id, root: instanceRoot })
       return
@@ -167,7 +175,8 @@ export async function cmdInstancesCreate(args: string[]): Promise<void> {
     try {
       const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'))
       config.instanceName = name
-      delete config.workspace
+      // copyInstance already strips workspace.baseDir — do not delete the whole
+      // workspace block, which would also drop allowExternalWorkspaces and security settings
       fs.writeFileSync(configPath, JSON.stringify(config, null, 2))
     } catch {}
   } else {

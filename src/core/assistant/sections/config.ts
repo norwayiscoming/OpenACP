@@ -1,5 +1,11 @@
 import type { AssistantSection } from '../assistant-registry.js'
 
+/**
+ * Creates the "Configuration" section for the assistant's system prompt.
+ *
+ * Injects the workspace base path and speech-to-text availability, so the
+ * assistant knows the current environment and can guide config changes.
+ */
 export function createConfigSection(core: {
   configManager: { resolveWorkspace(): string }
   lifecycleManager?: { serviceRegistry: { get<T>(name: string): T | undefined } }

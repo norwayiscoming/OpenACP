@@ -3,10 +3,24 @@ import fs from 'node:fs'
 import path from 'node:path'
 
 export interface CopyOptions {
+  /**
+   * Per-plugin allowlist of settings keys to copy.
+   * Keys: plugin name (e.g. "@openacp/telegram"), values: settings keys to inherit.
+   * Only listed keys are copied — secrets and instance-specific settings are excluded.
+   */
   inheritableKeys?: Record<string, string[]>
   onProgress?: (step: string, status: 'start' | 'done') => void
 }
 
+/**
+ * Copies an instance's configuration and installed plugins to a new directory.
+ *
+ * Used by `openacp instances create --from <id>` to fork an existing instance.
+ * The copy strips instance-specific fields (id, instanceName, workspace.baseDir)
+ * and plugin-owned config sections (security, tunnel, api, etc.) that now live
+ * in per-plugin settings.json files. Plugin settings are selectively copied
+ * based on `inheritableKeys` to avoid leaking secrets.
+ */
 export async function copyInstance(src: string, dst: string, opts: CopyOptions): Promise<void> {
   const { inheritableKeys = {}, onProgress } = opts
   fs.mkdirSync(dst, { recursive: true })
@@ -92,6 +106,10 @@ export async function copyInstance(src: string, dst: string, opts: CopyOptions):
   }
 }
 
+/**
+ * Copies only the allowed keys from each plugin's settings.json.
+ * This prevents secrets (tokens, API keys) from leaking into the new instance.
+ */
 function copyPluginSettings(srcData: string, dstData: string, inheritableKeys: Record<string, string[]>): void {
   walkPluginDirs(srcData, (pluginName, settingsPath) => {
     const allowedKeys = inheritableKeys[pluginName]
@@ -112,6 +130,7 @@ function copyPluginSettings(srcData: string, dstData: string, inheritableKeys: R
   })
 }
 
+/** Walks plugin data directories, handling both scoped (@org/plugin) and unscoped names. */
 function walkPluginDirs(base: string, cb: (pluginName: string, settingsPath: string) => void): void {
   if (!fs.existsSync(base)) return
   for (const entry of fs.readdirSync(base, { withFileTypes: true })) {

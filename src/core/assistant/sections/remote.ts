@@ -1,5 +1,13 @@
 import type { AssistantSection } from '../assistant-registry.js'
 
+/**
+ * Creates the "Remote Access" section for the assistant's system prompt.
+ *
+ * Describes how to generate one-time remote access links so users can
+ * connect to this OpenACP instance from the app or a browser. The section
+ * is static (no live state) — it teaches the assistant about available
+ * roles, link expiry, and tunnel behavior.
+ */
 export function createRemoteSection(): AssistantSection {
   return {
     id: 'core:remote',

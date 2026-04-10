@@ -232,10 +232,14 @@ Files:
 
 1. **Read all files in the assigned module** — understand the full picture before writing any comment
 2. **Read previously commented modules** — reference prior terminology and understand cross-module dependencies
-3. **Analyze each public API** — write JSDoc describing purpose, parameters, return values, and non-obvious behavior
-4. **Identify complex logic** — add inline or block comments for algorithms, state machine transitions, business rules, known limitations, intentional design decisions
-5. **Skip self-explanatory code** — no comments on obvious assignments, simple returns, or what function names already express
-6. **Commit** — one commit for the module with message `feat(comments): add JSDoc and inline comments — <module-path>`
+3. **Follow the logic outward** — for any piece of code that's unclear, read its callers and consumers in other modules to understand how it's actually used in practice. Don't guess intent from the code alone; trace how it's called end-to-end. For example:
+   - Commenting `permission-gate.ts`? Read `session-bridge.ts` and `session.ts` to see how permission requests are created and resolved
+   - Commenting `middleware-chain.ts`? Read `plugin-context.ts` and an actual plugin to see what hooks are registered and why
+   - Commenting `agent-instance.ts`? Read `session.ts` and `core.ts` to understand how AgentInstance is created and what events are consumed upstream
+4. **Analyze each public API** — write JSDoc describing purpose, parameters, return values, and non-obvious behavior
+5. **Identify complex logic** — add inline or block comments for algorithms, state machine transitions, business rules, known limitations, intentional design decisions
+6. **Skip self-explanatory code** — no comments on obvious assignments, simple returns, or what function names already express
+7. **Commit** — one commit for the module with message `feat(comments): add JSDoc and inline comments — <module-path>`
 
 ---
 

@@ -2,20 +2,13 @@ import path from 'node:path'
 import os from 'node:os'
 import fs from 'node:fs'
 import { randomUUID } from 'node:crypto'
-import { InstanceRegistry } from '../../core/instance/instance-registry.js'
+import { InstanceRegistry, readIdFromConfig } from '../../core/instance/instance-registry.js'
 import { getGlobalRoot } from '../../core/instance/instance-context.js'
 import { initInstanceFiles } from '../../core/instance/instance-init.js'
 import { readInstanceInfo } from './status.js'
 import { isJsonMode, jsonSuccess, jsonError, muteForJson, ErrorCodes } from '../output.js'
 import { wantsHelp } from './helpers.js'
 
-/** Read the `id` field from an instance's config.json. Returns null if missing or invalid. */
-function readIdFromConfig(instanceRoot: string): string | null {
-  try {
-    const raw = JSON.parse(fs.readFileSync(path.join(instanceRoot, 'config.json'), 'utf-8'))
-    return typeof raw.id === 'string' && raw.id ? raw.id : null
-  } catch { return null }
-}
 
 export interface InstanceListEntry {
   id: string
@@ -144,28 +137,13 @@ export async function cmdInstancesCreate(args: string[]): Promise<void> {
       process.exit(1)
     }
 
-    // config.json is the source of truth for id — read it first
-    const configId = readIdFromConfig(instanceRoot)
-    const registryEntry = registry.getByRoot(instanceRoot)
-
-    // Reconcile mismatch: if registry and config.json disagree, trust config.json
-    if (registryEntry && configId && registryEntry.id !== configId) {
-      registry.remove(registryEntry.id)
-      registry.register(configId, instanceRoot)
-      registry.save()
-    }
-
-    // Resolve final id: config.json wins, then registry, then fresh uuid
-    const id = configId ?? registryEntry?.id ?? randomUUID()
+    // Resolve id from config.json (source of truth) + registry. Reconciles any mismatch.
+    const { id, registryUpdated } = registry.resolveId(instanceRoot)
 
     // Write id into config.json if missing; apply --name if provided
     initInstanceFiles(instanceRoot, { mergeExisting: true, id, instanceName })
 
-    // Register if not yet in registry (unregistered .openacp case)
-    if (!registry.getByRoot(instanceRoot)) {
-      registry.register(id, instanceRoot)
-      registry.save()
-    }
+    if (registryUpdated) registry.save()
 
     if (!json) console.warn(`Warning: Instance already exists at ${resolvedDir} (id: ${id})`)
     await outputInstance(json, { id, root: instanceRoot })
@@ -194,16 +172,8 @@ export async function cmdInstancesCreate(args: string[]): Promise<void> {
     fs.mkdirSync(instanceRoot, { recursive: true })
     const { copyInstance } = await import('../../core/instance/instance-copy.js')
     await copyInstance(fromRoot, instanceRoot, {})
-    // copyInstance strips id — write the new id and update instance name
-    initInstanceFiles(instanceRoot, { mergeExisting: true, id })
-    const configPath = path.join(instanceRoot, 'config.json')
-    try {
-      const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'))
-      config.instanceName = name
-      // copyInstance already strips workspace.baseDir — do not delete the whole
-      // workspace block, which would also drop allowExternalWorkspaces and security settings
-      fs.writeFileSync(configPath, JSON.stringify(config, null, 2))
-    } catch {}
+    // copyInstance strips id — write the new id and instance name in one pass
+    initInstanceFiles(instanceRoot, { mergeExisting: true, id, instanceName: name })
   } else {
     const agents = agent ? [agent] : undefined
     initInstanceFiles(instanceRoot, { agents, instanceName: name, id })

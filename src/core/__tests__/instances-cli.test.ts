@@ -120,26 +120,31 @@ describe('cmdInstancesCreate', () => {
       getByRoot: vi.fn().mockReturnValue({ id: existingId, root: '/path/.openacp' }),
       register: vi.fn(),
       save: vi.fn(),
+      // resolveId returns existing id, registry not updated (already consistent)
+      resolveId: vi.fn().mockReturnValue({ id: existingId, registryUpdated: false }),
     }
     vi.mocked(InstanceRegistry).mockImplementation(function() { return mockRegistry } as any)
     vi.mocked(readInstanceInfo).mockReturnValue({ name: 'My Project', pid: null, apiPort: null, tunnelPort: null, runMode: null, channels: [] })
     const mockLog = vi.spyOn(console, 'warn').mockImplementation(() => {})
     await cmdInstancesCreate(['--dir', '/path', '--no-interactive'])
-    expect(mockRegistry.register).not.toHaveBeenCalled()
-    expect(mockRegistry.save).not.toHaveBeenCalled()
+    expect(mockRegistry.resolveId).toHaveBeenCalledWith('/path/.openacp')
+    expect(mockRegistry.save).not.toHaveBeenCalled()  // registryUpdated = false
     expect(readInstanceInfo).toHaveBeenCalledWith('/path/.openacp')
     mockLog.mockRestore()
   })
 
   it('registers .openacp that exists but is not in registry', async () => {
-    // .openacp exists but registry has no entry for it
+    // .openacp exists but registry has no entry — resolveId generates a fresh UUID and registers it
     vi.mocked(fs.existsSync).mockReturnValue(true)
+    const freshId = 'fresh-uuid-abc-123'
     const mockRegistry = {
       load: vi.fn(),
       list: vi.fn().mockReturnValue([]),
       getByRoot: vi.fn().mockReturnValue(undefined),
       register: vi.fn(),
       save: vi.fn(),
+      // resolveId handles registration internally and signals the caller via registryUpdated
+      resolveId: vi.fn().mockReturnValue({ id: freshId, registryUpdated: true }),
     }
     vi.mocked(InstanceRegistry).mockImplementation(function() { return mockRegistry } as any)
     vi.mocked(readInstanceInfo).mockReturnValue({
@@ -147,14 +152,10 @@ describe('cmdInstancesCreate', () => {
       tunnelPort: null, runMode: null, channels: [],
     })
 
-    const mockLog = vi.spyOn(console, 'log').mockImplementation(() => {})
+    const mockLog = vi.spyOn(console, 'warn').mockImplementation(() => {})
     await cmdInstancesCreate(['--dir', '/Users/user/my-project'])
-    // ID must be a UUID, not a slug
-    expect(mockRegistry.register).toHaveBeenCalledWith(
-      expect.stringMatching(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/),
-      '/Users/user/my-project/.openacp'
-    )
-    expect(mockRegistry.save).toHaveBeenCalled()
+    expect(mockRegistry.resolveId).toHaveBeenCalledWith('/Users/user/my-project/.openacp')
+    expect(mockRegistry.save).toHaveBeenCalled()  // registryUpdated = true
     mockLog.mockRestore()
   })
 

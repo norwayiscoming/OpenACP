@@ -1,9 +1,8 @@
 import * as path from 'node:path';
 import fs from 'node:fs'
-import { randomUUID } from 'node:crypto'
 import { jsonSuccess, jsonError, muteForJson, ErrorCodes } from '../output.js'
 import { getGlobalRoot } from '../../core/instance/instance-context.js'
-import { InstanceRegistry } from '../../core/instance/instance-registry.js'
+import { InstanceRegistry, readIdFromConfig } from '../../core/instance/instance-registry.js'
 import { initInstanceFiles } from '../../core/instance/instance-init.js'
 
 function parseFlag(args: string[], flag: string): string | undefined {
@@ -39,25 +38,18 @@ export async function cmdSetup(args: string[], instanceRoot: string): Promise<vo
 
   const agents = agentRaw.split(',').map(a => a.trim());
 
-  // Resolve or create UUID (idempotent — existing registration is preserved)
   const registryPath = path.join(getGlobalRoot(), 'instances.json')
   const registry = new InstanceRegistry(registryPath)
   registry.load()
 
-  let id: string
-  const existing = registry.getByRoot(instanceRoot)
-  if (existing) {
-    id = existing.id
-  } else {
-    id = randomUUID()
-    registry.register(id, instanceRoot)
-    // Save after initInstanceFiles so a crash during init doesn't leave a stale registry entry
-  }
+  // Resolve id: config.json is source of truth. Reconciles any mismatch with registry.
+  const { id, registryUpdated } = registry.resolveId(instanceRoot)
 
-  // Write instance files with id — config.json now carries the UUID
+  // Write instance files with id — config.json now carries the UUID.
+  // Save registry after init so a crash during init doesn't leave a stale entry.
   initInstanceFiles(instanceRoot, { agents, runMode, mergeExisting: true, id })
 
-  if (!existing) {
+  if (registryUpdated) {
     registry.save()
   }
 

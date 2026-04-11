@@ -199,6 +199,19 @@ export function createPluginContext(opts: CreatePluginContextOpts): PluginContex
       }
     },
 
+    notify(
+      target: { identityId: string } | { userId: string } | { channelId: string; platformId: string },
+      message: { type: 'text'; text: string },
+      options?: any,
+    ): void {
+      requirePermission(permissions, 'notifications:send', 'notify()')
+      const svc = serviceRegistry.get<{ notifyUser(t: any, m: any, o: any): Promise<void> }>('notifications')
+      if (svc?.notifyUser) {
+        // Fire-and-forget — don't await, swallow errors
+        svc.notifyUser(target, message, options).catch(() => {})
+      }
+    },
+
     defineHook(_name: string): void {
       // MiddlewareChain creates hook entries lazily on first add(), so no pre-registration is needed.
       // This method exists to let plugins declare intent — documentation/discoverability only.

@@ -10,6 +10,8 @@ export interface StoredToken {
   refreshDeadline: string;
   lastUsedAt?: string;
   revoked: boolean;
+  /** User ID from identity system. Null until user completes /identity/setup. */
+  userId?: string;
 }
 
 /** Claims embedded in a signed JWT. `rfd` (refresh deadline) is a Unix timestamp (seconds). */

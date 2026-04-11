@@ -222,6 +222,10 @@ function createApiServerPlugin(): OpenACPPlugin {
       await tokenStore.load()
       tokenStoreRef = tokenStore
 
+      // Expose tokenStore as a service so other plugins (e.g. identity) can associate
+      // their user IDs with tokens without a direct import dependency.
+      ctx.registerService('token-store', tokenStore)
+
       // Lazy import to avoid loading Fastify unless needed
       const { createApiServer } = await import('./server.js')
       const { SSEManager } = await import('./sse-manager.js')
@@ -289,7 +293,12 @@ function createApiServerPlugin(): OpenACPPlugin {
       server.registerPlugin('/api/v1/tunnel', async (app) => tunnelRoutes(app, deps))
       server.registerPlugin('/api/v1/notify', async (app) => notifyRoutes(app, deps))
       server.registerPlugin('/api/v1/commands', async (app) => commandRoutes(app, deps))
-      server.registerPlugin('/api/v1/auth', async (app) => authRoutes(app, { tokenStore, getJwtSecret: () => jwtSecret }))
+      server.registerPlugin('/api/v1/auth', async (app) => authRoutes(app, {
+        tokenStore,
+        getJwtSecret: () => jwtSecret,
+        // Lazy resolver: identity plugin may not be loaded, so we fetch it on demand
+        getIdentityService: () => ctx.getService<{ getUser(userId: string): Promise<{ displayName: string } | undefined> }>('identity') ?? undefined,
+      }))
       server.registerPlugin('/api/v1/plugins', async (app) => pluginRoutes(app, deps))
       const appConfig = core.configManager.get()
       const workspaceName = (appConfig as Record<string, unknown>).instanceName as string ?? 'Main'

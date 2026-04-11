@@ -182,6 +182,20 @@ export class TokenStore {
     }
   }
 
+  /** Associate a user ID with a token. Called by identity plugin after /identity/setup. */
+  setUserId(tokenId: string, userId: string): void {
+    const token = this.tokens.get(tokenId);
+    if (token) {
+      token.userId = userId;
+      this.scheduleSave();
+    }
+  }
+
+  /** Get the user ID associated with a token. */
+  getUserId(tokenId: string): string | undefined {
+    return this.tokens.get(tokenId)?.userId;
+  }
+
   /**
    * Generates a one-time authorization code that can be exchanged for a JWT.
    *

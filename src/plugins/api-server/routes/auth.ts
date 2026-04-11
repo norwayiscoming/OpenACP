@@ -10,6 +10,11 @@ export interface AuthRouteDeps {
   tokenStore: TokenStore;
   /** Returns the current JWT signing secret. Fetched lazily to support future rotation. */
   getJwtSecret: () => string;
+  /**
+   * Optional resolver for the identity service. Provided lazily so the auth plugin
+   * does not hard-depend on identity — if identity is not loaded, this returns undefined.
+   */
+  getIdentityService?: () => { getUser(userId: string): Promise<{ displayName: string } | undefined> } | undefined;
 }
 
 /**
@@ -142,14 +147,29 @@ export async function authRoutes(
     };
   });
 
-  // GET /me — current auth info
+  // GET /me — current auth info, enriched with identity data if available.
+  // Identity fields are optional — callers must not assume they are always present.
   app.get('/me', async (request) => {
     const { auth } = request;
+    const userId = auth.tokenId ? deps.tokenStore.getUserId(auth.tokenId) : undefined;
+
+    let displayName: string | null = null;
+    if (userId && deps.getIdentityService) {
+      const identityService = deps.getIdentityService();
+      if (identityService) {
+        const user = await identityService.getUser(userId);
+        displayName = user?.displayName ?? null;
+      }
+    }
+
     return {
       type: auth.type,
       tokenId: auth.tokenId,
       role: auth.role,
       scopes: auth.scopes,
+      userId: userId ?? null,
+      displayName,
+      claimed: !!userId,
     };
   });
 

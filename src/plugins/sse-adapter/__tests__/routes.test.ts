@@ -39,6 +39,11 @@ function createMockCore(session: ReturnType<typeof createMockSession> | null = n
     },
     adapters: new Map(),
     configManager: { get: vi.fn().mockReturnValue({ security: { maxConcurrentSessions: 10 } }) },
+    // Simulates the middleware chain by delegating directly to session.enqueuePrompt so
+    // existing assertions on enqueuePrompt remain valid in unit tests.
+    handleMessageInSession: vi.fn().mockImplementation(async (sess: any, msg: any) => {
+      await sess.enqueuePrompt(msg.text, msg.attachments, { sourceAdapterId: msg.channelId });
+    }),
   } as any;
 }
 

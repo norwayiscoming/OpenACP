@@ -13,7 +13,7 @@ import type { FileServiceInterface } from "./plugin/types.js";
 import { JsonFileSessionStore, type SessionStore } from "./sessions/session-store.js";
 import type { SecurityGuard } from "../plugins/security/security-guard.js";
 import { SessionFactory } from "./sessions/session-factory.js";
-import type { IncomingMessage, AgentEvent, SessionStatus, TurnMeta } from "./types.js";
+import type { IncomingMessage, AgentEvent, SessionStatus, TurnMeta, Attachment } from "./types.js";
 import type { TunnelService } from "../plugins/tunnel/tunnel-service.js";
 import { getAgentCapabilities } from "./agents/agent-registry.js";
 import { AgentSwitchHandler } from "./agent-switch-handler.js";
@@ -498,16 +498,21 @@ export class OpenACPCore {
    *                     (e.g. channelUser with display name/username).
    */
   async handleMessageInSession(
-    session: import("./sessions/session.js").Session,
-    message: { channelId: string; userId: string; text: string; attachments?: import("./types.js").Attachment[] },
+    session: Session,
+    message: { channelId: string; userId: string; text: string; attachments?: Attachment[] },
     initialMeta?: Record<string, unknown>,
   ): Promise<void> {
     const turnId = nanoid(8);
     const meta: TurnMeta = { turnId, ...initialMeta };
 
     // Run message:incoming middleware so plugins can enrich meta (sender identity, @mentions, etc.)
+    // Note: only text, attachments, and meta are forwarded from the result — other field mutations
+    // (channelId, userId) are intentionally ignored since callers own these for the session lifetime.
+    // Note: assistantManager deferred system prompt injection is intentionally skipped here —
+    // handleMessageInSession is only called for regular (non-assistant) sessions.
     let text = message.text;
     let { attachments } = message;
+    let enrichedMeta: TurnMeta = meta;
     if (this.lifecycleManager?.middlewareChain) {
       const payload = {
         channelId: message.channelId,
@@ -525,11 +530,12 @@ export class OpenACPCore {
       if (!result) return; // blocked by middleware
       text = result.text;
       attachments = result.attachments;
+      // Re-extract meta: plugins typically mutate in-place, but guard against replacement
+      enrichedMeta = (result as any).meta as TurnMeta ?? meta;
     }
 
     const routing = { sourceAdapterId: message.channelId };
-    // meta is mutated in-place by middleware (plugins add keys via meta[key] = value)
-    await session.enqueuePrompt(text, attachments, routing, turnId, meta);
+    await session.enqueuePrompt(text, attachments, routing, turnId, enrichedMeta);
   }
 
   // --- Unified Session Creation Pipeline ---

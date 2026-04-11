@@ -134,7 +134,14 @@ export async function sseRoutes(app: FastifyInstance, deps: SSERouteDeps): Promi
         attachments = await resolveAttachments(fileService, sessionId, body.attachments);
       }
 
-      await session.enqueuePrompt(body.prompt, attachments, { sourceAdapterId: 'sse' });
+      // Route through core's middleware chain (message:incoming → agent:beforePrompt) so plugins
+      // like workspace-plugin can identify the sender and inject team context — same as Telegram.
+      const userId = (request as any).auth?.tokenId ?? 'api';
+      await deps.core.handleMessageInSession(
+        session,
+        { channelId: 'sse', userId, text: body.prompt, attachments },
+        { channelUser: { channelId: 'sse', userId } },
+      );
 
       return { ok: true, sessionId, queueDepth: session.queueDepth };
     },

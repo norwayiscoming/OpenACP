@@ -485,6 +485,53 @@ export class OpenACPCore {
     }
   }
 
+  /**
+   * Send a message to a known session, running the full message:incoming → agent:beforePrompt
+   * middleware chain (same as handleMessage) but without the threadId-based session lookup.
+   *
+   * Used by channels that already hold a direct session reference (e.g. SSE adapter), where
+   * looking up by channelId+threadId is unreliable (API sessions may have no threadId).
+   *
+   * @param session  The target session — caller is responsible for validating its status.
+   * @param message  Sender context and message content.
+   * @param initialMeta  Optional adapter-specific context to seed the TurnMeta bag
+   *                     (e.g. channelUser with display name/username).
+   */
+  async handleMessageInSession(
+    session: import("./sessions/session.js").Session,
+    message: { channelId: string; userId: string; text: string; attachments?: import("./types.js").Attachment[] },
+    initialMeta?: Record<string, unknown>,
+  ): Promise<void> {
+    const turnId = nanoid(8);
+    const meta: TurnMeta = { turnId, ...initialMeta };
+
+    // Run message:incoming middleware so plugins can enrich meta (sender identity, @mentions, etc.)
+    let text = message.text;
+    let { attachments } = message;
+    if (this.lifecycleManager?.middlewareChain) {
+      const payload = {
+        channelId: message.channelId,
+        threadId: session.id,
+        userId: message.userId,
+        text,
+        attachments,
+        meta,
+      };
+      const result = await this.lifecycleManager.middlewareChain.execute(
+        Hook.MESSAGE_INCOMING,
+        payload,
+        async (p) => p,
+      );
+      if (!result) return; // blocked by middleware
+      text = result.text;
+      attachments = result.attachments;
+    }
+
+    const routing = { sourceAdapterId: message.channelId };
+    // meta is mutated in-place by middleware (plugins add keys via meta[key] = value)
+    await session.enqueuePrompt(text, attachments, routing, turnId, meta);
+  }
+
   // --- Unified Session Creation Pipeline ---
 
   /**

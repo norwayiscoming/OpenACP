@@ -130,6 +130,6 @@ export type {
   CommandDef, CommandArgs, CommandResponse, MenuOption, ListItem,
   SecurityService, NotificationService, UsageService,
   SpeechServiceInterface, TunnelServiceInterface, ContextService,
-  FieldDef,
+  FieldDef, MiddlewarePayloadMap, MiddlewareHook,
 } from './plugin/types.js'
 export { PRODUCT_GUIDE } from '../data/product-guide.js'

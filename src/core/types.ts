@@ -47,6 +47,10 @@ export interface IncomingMessage {
   text: string;
   attachments?: Attachment[];
   routing?: TurnRouting;
+  /** Human-readable display name provided by the channel adapter (e.g. Telegram first+last name). */
+  userDisplayName?: string;
+  /** Channel-specific username handle (e.g. Telegram @handle, without the @). */
+  userUsername?: string;
 }
 
 /**

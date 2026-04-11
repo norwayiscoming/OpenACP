@@ -946,12 +946,15 @@ export class TelegramAdapter extends MessagingAdapter {
         await this.drainAndResetTracker(sessionId);
       }
       ctx.replyWithChatAction("typing").catch(() => {});
+      const fromName = [ctx.from.first_name, ctx.from.last_name].filter(Boolean).join(' ') || undefined
       this.core
         .handleMessage({
           channelId: "telegram",
           threadId: String(threadId),
           userId: String(ctx.from.id),
           text: forwardText,
+          userDisplayName: fromName,
+          userUsername: ctx.from.username,
         })
         .catch((err) => log.error({ err }, "handleMessage error"));
     });

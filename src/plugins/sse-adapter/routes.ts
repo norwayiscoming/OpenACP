@@ -28,6 +28,8 @@ export interface SSERouteDeps {
   connectionManager: ConnectionManager;
   eventBuffer: EventBuffer;
   commandRegistry?: CommandRegistry;
+  /** Resolves a tokenId to a userId for user-level connections. Provided by the token-store service. */
+  getUserId?: (tokenId: string) => string | undefined;
 }
 
 /**
@@ -247,5 +249,51 @@ export async function sseRoutes(app: FastifyInstance, deps: SSERouteDeps): Promi
       })),
       total: connections.length,
     };
+  });
+
+  // GET /events — user-level SSE stream (notifications + system events)
+  // Not session-scoped — delivers notifications to any authenticated user with identity set up.
+  app.get('/events', async (request, reply) => {
+    const auth = (request as any).auth;
+    if (!auth?.tokenId) {
+      return reply.status(401).send({ error: 'Unauthorized' });
+    }
+
+    // Resolve userId from the token-store mapping set during identity setup
+    const userId = deps.getUserId?.(auth.tokenId);
+    if (!userId) {
+      return reply.status(403).send({ error: 'Identity not set up. Complete /identity/setup first.' });
+    }
+
+    const raw = reply.raw;
+    raw.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      'Connection': 'keep-alive',
+      // Disable buffering in Nginx/Cloudflare so events arrive without delay
+      'X-Accel-Buffering': 'no',
+    });
+
+    try {
+      deps.connectionManager.addUserConnection(userId, auth.tokenId, raw);
+    } catch (err: any) {
+      raw.writeHead(503, { 'Content-Type': 'application/json' });
+      raw.end(JSON.stringify({ error: err.message }));
+      return;
+    }
+
+    // Initial heartbeat to confirm the stream is live
+    raw.write(`event: heartbeat\ndata: ${JSON.stringify({ ts: Date.now() })}\n\n`);
+
+    // Keep-alive heartbeat every 30s to survive proxy idle-connection timeouts
+    const heartbeat = setInterval(() => {
+      if (raw.writableEnded) {
+        clearInterval(heartbeat);
+        return;
+      }
+      raw.write(`event: heartbeat\ndata: ${JSON.stringify({ ts: Date.now() })}\n\n`);
+    }, 30_000);
+
+    raw.on('close', () => clearInterval(heartbeat));
   });
 }

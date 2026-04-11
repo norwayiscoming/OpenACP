@@ -46,6 +46,10 @@ const plugin: OpenACPPlugin = {
     // Get command registry for command execution in routes
     const commandRegistry = ctx.getService<CommandRegistry>('command-registry');
 
+    // Resolve token→user mapping from the token-store service for user-level SSE streams.
+    // token-store is registered by api-server plugin, which is a declared dependency.
+    const tokenStore = ctx.getService<{ getUserId(tokenId: string): string | undefined } | undefined>('token-store');
+
     // Clean up event buffer when a session ends or is deleted to prevent unbounded memory growth
     ctx.on(BusEvent.SESSION_DELETED, (data: unknown) => {
       const { sessionId } = data as { sessionId: string };
@@ -63,6 +67,7 @@ const plugin: OpenACPPlugin = {
         connectionManager,
         eventBuffer,
         commandRegistry: commandRegistry ?? undefined,
+        getUserId: tokenStore ? (id) => tokenStore.getUserId(id) : undefined,
       });
     }, { auth: true });
 

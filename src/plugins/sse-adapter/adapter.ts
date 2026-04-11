@@ -116,6 +116,20 @@ export class SSEAdapter implements IChannelAdapter {
     }
   }
 
+  /**
+   * Delivers a push notification to a specific user's SSE connections.
+   *
+   * `platformId` is the userId for the SSE adapter — SSE has no concept of
+   * platform-specific user handles, so we use the internal userId directly.
+   */
+  async sendUserNotification(platformId: string, message: any, options?: any): Promise<void> {
+    const serialized = `event: notification:text\ndata: ${JSON.stringify({
+      text: message.text ?? message.summary ?? '',
+      ...(options ?? {}),
+    })}\n\n`;
+    this.connectionManager.pushToUser(platformId, serialized);
+  }
+
   /** SSE has no concept of threads — return sessionId as the threadId */
   async createSessionThread(sessionId: string, _name: string): Promise<string> {
     return sessionId;

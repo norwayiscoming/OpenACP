@@ -9,11 +9,13 @@ import { randomBytes } from 'node:crypto';
  * `lastEventId` tracks the most recent event delivered, for reconnection replay.
  * `backpressured` indicates that the last `response.write()` returned false,
  * meaning the OS send buffer is full.
+ * `userId` is set for user-level connections not tied to a specific session.
  */
 export interface SSEConnection {
   id: string;
   sessionId: string;
   tokenId: string;
+  userId?: string;  // Set for user-level connections
   response: ServerResponse;
   connectedAt: Date;
   lastEventId?: string;
@@ -35,6 +37,8 @@ export class ConnectionManager {
   private connections = new Map<string, SSEConnection>();
   // Secondary index: sessionId → Set of connection IDs for O(1) broadcast targeting
   private sessionIndex = new Map<string, Set<string>>();
+  // Secondary index: userId → Set of connection IDs for user-level event delivery
+  private userIndex = new Map<string, Set<string>>();
   private maxConnectionsPerSession: number;
   private maxTotalConnections: number;
 
@@ -80,7 +84,67 @@ export class ConnectionManager {
     return connection;
   }
 
-  /** Remove a connection from both indexes. Called automatically on client disconnect. */
+  /**
+   * Registers a user-level SSE connection (not tied to a specific session).
+   * Used for notifications and system events delivered to a user.
+   *
+   * @throws if the global connection limit is reached.
+   */
+  addUserConnection(userId: string, tokenId: string, response: ServerResponse): SSEConnection {
+    if (this.connections.size >= this.maxTotalConnections) {
+      throw new Error('Maximum total connections reached');
+    }
+
+    const id = `conn_${randomBytes(8).toString('hex')}`;
+    const connection: SSEConnection = {
+      id, sessionId: '', tokenId, userId, response, connectedAt: new Date()
+    };
+
+    this.connections.set(id, connection);
+
+    let userConns = this.userIndex.get(userId);
+    if (!userConns) {
+      userConns = new Set();
+      this.userIndex.set(userId, userConns);
+    }
+    userConns.add(id);
+
+    response.on('close', () => this.removeConnection(id));
+    return connection;
+  }
+
+  /**
+   * Writes a serialized SSE event to all connections for a given user.
+   *
+   * Uses the same backpressure strategy as `broadcast`: flag on first overflow,
+   * forcibly close if still backpressured on the next write.
+   */
+  pushToUser(userId: string, serializedEvent: string): void {
+    const connIds = this.userIndex.get(userId);
+    if (!connIds) return;
+    for (const connId of connIds) {
+      const conn = this.connections.get(connId);
+      if (!conn || conn.response.writableEnded) continue;
+      try {
+        const ok = conn.response.write(serializedEvent);
+        if (!ok) {
+          if (conn.backpressured) {
+            // Still backpressured from previous write — disconnect to prevent OOM
+            conn.response.end();
+            this.removeConnection(conn.id);
+          } else {
+            conn.backpressured = true;
+            conn.response.once('drain', () => { conn.backpressured = false; });
+          }
+        }
+      } catch {
+        // Connection broken — clean up
+        this.removeConnection(conn.id);
+      }
+    }
+  }
+
+  /** Remove a connection from all indexes. Called automatically on client disconnect. */
   removeConnection(connectionId: string): void {
     const conn = this.connections.get(connectionId);
     if (!conn) return;
@@ -89,6 +153,14 @@ export class ConnectionManager {
     if (sessionConns) {
       sessionConns.delete(connectionId);
       if (sessionConns.size === 0) this.sessionIndex.delete(conn.sessionId);
+    }
+    // Clean user index
+    if (conn.userId) {
+      const userConns = this.userIndex.get(conn.userId);
+      if (userConns) {
+        userConns.delete(connectionId);
+        if (userConns.size === 0) this.userIndex.delete(conn.userId);
+      }
     }
   }
 
@@ -156,5 +228,6 @@ export class ConnectionManager {
     }
     this.connections.clear();
     this.sessionIndex.clear();
+    this.userIndex.clear();
   }
 }

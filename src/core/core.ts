@@ -380,7 +380,7 @@ export class OpenACPCore {
    *
    * If no session is found, the user is told to start one with /new.
    */
-  async handleMessage(message: IncomingMessage): Promise<void> {
+  async handleMessage(message: IncomingMessage, initialMeta?: Record<string, unknown>): Promise<void> {
     log.debug(
       {
         channelId: message.channelId,
@@ -390,9 +390,11 @@ export class OpenACPCore {
       "Incoming message",
     );
 
-    // Generate turnId + meta early so message:incoming middleware can read/enrich them
+    // Generate turnId + meta early so message:incoming middleware can read/enrich them.
+    // Adapters may inject channel-specific context (e.g. display name, username) via initialMeta
+    // so plugins can read it without needing adapter-specific fields on IncomingMessage.
     const turnId = nanoid(8);
-    const meta: TurnMeta = { turnId };
+    const meta: TurnMeta = { turnId, ...initialMeta };
 
     // Hook: message:incoming — modifiable, can block
     if (this.lifecycleManager?.middlewareChain) {

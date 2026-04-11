@@ -948,14 +948,20 @@ export class TelegramAdapter extends MessagingAdapter {
       ctx.replyWithChatAction("typing").catch(() => {});
       const fromName = [ctx.from.first_name, ctx.from.last_name].filter(Boolean).join(' ') || undefined
       this.core
-        .handleMessage({
-          channelId: "telegram",
-          threadId: String(threadId),
-          userId: String(ctx.from.id),
-          text: forwardText,
-          userDisplayName: fromName,
-          userUsername: ctx.from.username,
-        })
+        .handleMessage(
+          {
+            channelId: "telegram",
+            threadId: String(threadId),
+            userId: String(ctx.from.id),
+            text: forwardText,
+          },
+          // Inject Telegram user info into the TurnMeta bag so plugins like workspace-plugin
+          // can populate the identity registry without adapter-specific fields on IncomingMessage.
+          {
+            userDisplayName: fromName,
+            userUsername: ctx.from.username,
+          },
+        )
         .catch((err) => log.error({ err }, "handleMessage error"));
     });
 

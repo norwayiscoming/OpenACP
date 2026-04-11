@@ -78,6 +78,22 @@ function createIdentityPlugin(): OpenACPPlugin {
         },
       })
 
+      // Register REST routes if api-server is available.
+      // Uses optional chaining so the identity plugin boots fine without api-server.
+      const apiServer = ctx.getService<{ registerPlugin(prefix: string, plugin: any, opts?: any): void }>('api-server')
+      if (apiServer) {
+        const tokenStore = ctx.getService<{
+          getUserId(id: string): string | undefined
+          setUserId(id: string, uid: string): void
+        }>('token-store')
+        const { registerIdentityRoutes } = await import('./routes/users.js')
+        const { registerSetupRoutes } = await import('./routes/setup.js')
+        apiServer.registerPlugin('/api/v1/identity', async (app: any) => {
+          registerIdentityRoutes(app, { service, tokenStore: tokenStore ?? undefined })
+          registerSetupRoutes(app, { service, tokenStore: tokenStore ?? undefined })
+        }, { auth: true })
+      }
+
       ctx.log.info(`Identity service ready (${await service.getUserCount()} users)`)
     },
   }

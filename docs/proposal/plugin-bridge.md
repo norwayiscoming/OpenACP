@@ -116,6 +116,68 @@ The result: install a plugin once → it works on every agent OpenACP manages.
 
 ---
 
+## Reference Standard: Claude Code
+
+All ecosystems have converged on similar patterns, but they differ in naming, structure, and completeness. Rather than inventing a new neutral standard, **Plugin Bridge uses Claude Code as the canonical reference** and translates everything else to/from it.
+
+### Why Claude Code?
+
+1. **Most complete plugin format** — Claude is the only ecosystem that bundles all 5 component types (skills, hooks, commands, agents, MCP) in a single plugin. Other ecosystems support subsets:
+   - Codex: skills only (no hooks, no commands, no agents in plugin format)
+   - Gemini: skills + MCP (hooks via settings, not bundled in extensions)
+   - Cursor: skills + agents + hooks + rules (no MCP in plugin bundle)
+   - OpenCode: skills + commands (hooks are JS code, not declarative)
+
+2. **Most comprehensive hook system** — 9 distinct hook events covering the full agent lifecycle. Other agents have 1-5 events.
+
+3. **Highest quality ecosystem** — curated marketplace with manual review means plugins are reliable and well-structured. Gemini has 761+ extensions but no quality gate.
+
+4. **OpenACP already deeply integrated** — session handoff, hook injection, and command integration with Claude Code are production-ready.
+
+5. **Naming is clearest** — `PreToolUse`, `PostToolUse`, `SessionStart`, `Stop` are self-documenting. Compare with OpenCode's `tool.execute.before` or Gemini's `BeforeTool`.
+
+### What "Reference Standard" Means in Practice
+
+**Plugin structure:** The internal `BridgedPlugin` schema mirrors Claude's plugin layout (`skills/`, `agents/`, `commands/`, `hooks/`). Plugins from other ecosystems are mapped into this structure.
+
+**Tool names:** Claude tool names (`Read`, `Write`, `Edit`, `Bash`, `Grep`, `Glob`, `TodoWrite`, `Agent`, `WebSearch`) are the canonical names used internally. Translation happens at the boundary when injecting into a non-Claude agent.
+
+**Hook events:** Claude hook event names are the canonical names in `BridgedHook.event`. The mapper translates from/to platform-specific names:
+
+| Canonical (Claude) | Gemini | Cursor | OpenCode | Cline |
+|---|---|---|---|---|
+| `SessionStart` | `SessionStart` | `sessionStart` | `event(session.created)` | `TaskStart` |
+| `UserPromptSubmit` | `BeforeAgent` | `beforeSubmitPrompt` | `chat.message` | — |
+| `PreToolUse` | `BeforeTool` | — | `tool.execute.before` | — |
+| `PostToolUse` | `AfterTool` | — | `tool.execute.after` | — |
+| `Stop` | — | — | — | — |
+| `SubagentStop` | — | — | — | — |
+| `PreCompact` | `PreCompress` | — | `event(session.compacted)` | — |
+| `Notification` | `Notification` | — | — | — |
+| `SessionEnd` | `SessionEnd` | — | `event(server.instance.disposed)` | — |
+
+**Hook I/O format:** Claude's JSON input + plaintext/JSON output format is the internal standard. Hooks from other ecosystems are adapted to match.
+
+### Required OpenACP Hook Additions
+
+To fully support Claude's hook system as the reference standard, OpenACP needs 7 new middleware hooks. These close the gaps between OpenACP's current 19 hooks and the 9 Claude hook events:
+
+| New Hook | Type | Maps Claude Event | Purpose |
+|---|---|---|---|
+| `tool:beforeUse` | modifiable, can block | `PreToolUse` | Intercept before agent uses a tool — security checks, input validation, audit |
+| `tool:afterUse` | read-only | `PostToolUse` | Observe tool results — logging, cost tracking, post-validation |
+| `agent:beforeStop` | modifiable, can block | `Stop` | Intercept agent's decision to stop — quality gates, verification checks |
+| `session:afterCreate` | read-only | `SessionStart` | React after session is ready — inject initial context, start tracking |
+| `session:beforeDestroy` | modifiable, can block | `SessionEnd` | Intercept before session ends — save state, cleanup, confirmation |
+| `context:beforeCompact` | modifiable | `PreCompact` | Preserve critical context before compression — pin important messages |
+| `fs:afterWrite` | read-only | (OpenCode `file.edited`) | Track file changes — git auto-commit, live reload, change notifications |
+
+After adding these, OpenACP will have **26 middleware hooks** with **100% coverage of all Claude hook events**. This means every Claude plugin hook can be mapped to a native OpenACP middleware hook without lossy translation.
+
+**Priority for implementation:** `tool:beforeUse` and `tool:afterUse` first — they are the most commonly used hooks across all ecosystems and are prerequisites for Plugin Bridge Phase 3.
+
+---
+
 ## Technical Design
 
 ### Architecture Overview
@@ -289,16 +351,21 @@ The translator does a simple string replacement pass over skill content before i
 
 #### 4. Hook Event Mapper
 
-Maps platform-specific hook events to OpenACP middleware hooks:
+Uses Claude hook events as canonical names (see "Reference Standard" section above). Maps platform-specific events to their Claude equivalent, then to OpenACP middleware hooks:
 
-| Concept | Claude | Cursor | Gemini | Cline | OpenCode | **OpenACP Middleware** |
-|---|---|---|---|---|---|---|
-| Session start | `SessionStart` | `sessionStart` | `SessionStart` | `TaskStart` | `event(session.created)` | `session:beforeCreate` |
-| Before prompt | `UserPromptSubmit` | `beforeSubmitPrompt` | `BeforeAgent` | — | `chat.message` | `agent:beforePrompt` |
-| Before tool | `PreToolUse` | — | `BeforeTool` | — | `tool.execute.before` | `message:incoming` (filtered) |
-| After tool | `PostToolUse` | — | `AfterTool` | — | `tool.execute.after` | `agent:afterEvent` |
-| Before stop | `Stop` | — | — | — | — | `turn:end` |
-| Context compact | `PreCompact` | — | `PreCompress` | — | `event(session.compacted)` | (not mapped) |
+| Canonical (Claude) | OpenACP Middleware | Status |
+|---|---|---|
+| `SessionStart` | `session:afterCreate` | **New hook needed** |
+| `UserPromptSubmit` | `agent:beforePrompt` | Exists |
+| `PreToolUse` | `tool:beforeUse` | **New hook needed** |
+| `PostToolUse` | `tool:afterUse` | **New hook needed** |
+| `Stop` | `agent:beforeStop` | **New hook needed** |
+| `SubagentStop` | `agent:beforeStop` (with subagent flag) | **New hook needed** |
+| `PreCompact` | `context:beforeCompact` | **New hook needed** |
+| `Notification` | `message:outgoing` (filtered) | Exists (approximate) |
+| `SessionEnd` | `session:beforeDestroy` | **New hook needed** |
+
+With the 7 proposed new hooks, all 9 Claude hook events have direct 1:1 mappings to OpenACP middleware hooks. No lossy translation needed.
 
 Only `command`-type hooks can be bridged directly (execute script, return output). `prompt`-type hooks require an LLM call, which adds latency and cost — these are bridged as optional and disabled by default.
 
@@ -482,6 +549,17 @@ The bridge reads plugins from where agents already store them (`~/.claude/plugin
 ### Why lazy loading?
 
 With 1,000+ potential plugins, loading all content at boot would be wasteful. The index stores only frontmatter (~100 bytes per skill). Full content (~5-50KB per skill) is loaded on demand. This keeps boot time and memory usage constant regardless of ecosystem size.
+
+### Why Claude Code as the reference standard, not a neutral format?
+
+We could invent a new "OpenACP Plugin Format" as a neutral standard. We chose not to because:
+
+1. **Claude's format is already the most complete** — it has every component type we need. A neutral format would end up looking almost identical to Claude's anyway.
+2. **Zero adoption barrier** — plugin authors who write for Claude automatically write for OpenACP. No new format to learn.
+3. **Living standard** — as Claude evolves its plugin system, OpenACP inherits improvements automatically instead of maintaining a separate spec.
+4. **Pragmatism over purity** — a neutral standard sounds elegant but adds complexity without value. The goal is interoperability, not standards-body politics.
+
+Other ecosystems' plugins are "upconverted" to Claude format on scan. This is straightforward because Claude's format is a superset — every Codex skill, Gemini extension, or Cursor plugin maps cleanly into Claude's structure, but not vice versa.
 
 ### Why tool name translation, not a universal tool abstraction?
 

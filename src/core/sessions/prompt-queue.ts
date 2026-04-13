@@ -10,14 +10,14 @@ import type { TurnRouting } from './turn-context.js'
  * drained sequentially after the current one completes.
  */
 export class PromptQueue {
-  private queue: Array<{ text: string; attachments?: Attachment[]; routing?: TurnRouting; turnId?: string; meta?: TurnMeta; resolve: () => void }> = []
+  private queue: Array<{ text: string; userPrompt: string; attachments?: Attachment[]; routing?: TurnRouting; turnId?: string; meta?: TurnMeta; resolve: () => void }> = []
   private processing = false
   private abortController: AbortController | null = null
   /** Set when abort is triggered; drainNext waits for the current processor to settle before starting the next item. */
   private processorSettled: Promise<void> | null = null
 
   constructor(
-    private processor: (text: string, attachments?: Attachment[], routing?: TurnRouting, turnId?: string, meta?: TurnMeta) => Promise<void>,
+    private processor: (text: string, userPrompt: string, attachments?: Attachment[], routing?: TurnRouting, turnId?: string, meta?: TurnMeta) => Promise<void>,
     private onError?: (err: unknown) => void,
   ) {}
 
@@ -26,17 +26,17 @@ export class PromptQueue {
    * immediately. Otherwise, it's buffered and the returned promise resolves
    * only after the prompt finishes processing.
    */
-  async enqueue(text: string, attachments?: Attachment[], routing?: TurnRouting, turnId?: string, meta?: TurnMeta): Promise<void> {
+  async enqueue(text: string, userPrompt: string, attachments?: Attachment[], routing?: TurnRouting, turnId?: string, meta?: TurnMeta): Promise<void> {
     if (this.processing) {
       return new Promise<void>((resolve) => {
-        this.queue.push({ text, attachments, routing, turnId, meta, resolve })
+        this.queue.push({ text, userPrompt, attachments, routing, turnId, meta, resolve })
       })
     }
-    await this.process(text, attachments, routing, turnId, meta)
+    await this.process(text, userPrompt, attachments, routing, turnId, meta)
   }
 
   /** Run a single prompt through the processor, then drain the next queued item. */
-  private async process(text: string, attachments?: Attachment[], routing?: TurnRouting, turnId?: string, meta?: TurnMeta): Promise<void> {
+  private async process(text: string, userPrompt: string, attachments?: Attachment[], routing?: TurnRouting, turnId?: string, meta?: TurnMeta): Promise<void> {
     this.processing = true
     this.abortController = new AbortController()
     const { signal } = this.abortController
@@ -44,7 +44,7 @@ export class PromptQueue {
     this.processorSettled = new Promise<void>((r) => { settledResolve = r })
     try {
       await Promise.race([
-        this.processor(text, attachments, routing, turnId, meta),
+        this.processor(text, userPrompt, attachments, routing, turnId, meta),
         new Promise<never>((_, reject) => {
           signal.addEventListener('abort', () => reject(new Error('Prompt aborted')), { once: true })
         }),
@@ -67,7 +67,7 @@ export class PromptQueue {
   private drainNext(): void {
     const next = this.queue.shift()
     if (next) {
-      this.process(next.text, next.attachments, next.routing, next.turnId, next.meta).then(next.resolve)
+      this.process(next.text, next.userPrompt, next.attachments, next.routing, next.turnId, next.meta).then(next.resolve)
     }
   }
 
@@ -93,5 +93,13 @@ export class PromptQueue {
 
   get isProcessing(): boolean {
     return this.processing
+  }
+
+  /** Snapshot of queued (not yet processing) items — used for queue inspection by callers. */
+  get pendingItems(): Array<{ userPrompt: string; turnId?: string }> {
+    return this.queue.map(item => ({
+      userPrompt: item.userPrompt,
+      turnId: item.turnId,
+    }))
   }
 }

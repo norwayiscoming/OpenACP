@@ -33,7 +33,7 @@ import type { SpeechService } from "../plugins/speech/exports.js";
 import type { ContextManager } from "../plugins/context/context-manager.js";
 import type { InstanceContext } from "./instance/instance-context.js";
 import { Hook, BusEvent, SessionEv } from "./events.js";
-import { extractSender, type TurnRouting } from "./sessions/turn-context.js";
+import { extractSender, type TurnContext, type TurnRouting } from "./sessions/turn-context.js";
 const log = createChildLogger({ module: "core" });
 
 /**
@@ -717,6 +717,21 @@ export class OpenACPCore {
       // Persist prompt count after each prompt — normally wired by SessionBridge.
       session.on(SessionEv.PROMPT_COUNT_CHANGED, (count: number) => {
         this.sessionManager.patchRecord(session.id, { currentPromptCount: count });
+      });
+
+      // Emit message:processing so SSE clients (App) can transition pending → conversation.
+      // Normally handled by SessionBridge; headless sessions have no bridge.
+      session.on(SessionEv.TURN_STARTED, (ctx: TurnContext) => {
+        this.eventBus.emit(BusEvent.MESSAGE_PROCESSING, {
+          sessionId: session.id,
+          turnId: ctx.turnId,
+          sourceAdapterId: ctx.sourceAdapterId,
+          userPrompt: ctx.userPrompt,
+          finalPrompt: ctx.finalPrompt,
+          attachments: ctx.attachments,
+          sender: extractSender(ctx.meta),
+          timestamp: new Date().toISOString(),
+        });
       });
     }
 

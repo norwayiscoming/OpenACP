@@ -1,5 +1,6 @@
 import { nanoid } from "nanoid";
 import type { AgentEvent } from "../types.js";
+import type { Attachment, TurnMeta } from "../types.js";
 
 /**
  * Immutable context for a single user-prompt → agent-response cycle ("turn").
@@ -15,6 +16,14 @@ export interface TurnContext {
   sourceAdapterId: string;
   /** Where to send the response: null = silent (suppress), undefined = same as source, string = explicit target. */
   responseAdapterId?: string | null;
+  /** The raw user prompt before any middleware modifications. */
+  userPrompt: string;
+  /** The final prompt text sent to the agent after all middleware transformations. */
+  finalPrompt: string;
+  /** File or media attachments included with the prompt. */
+  attachments?: Attachment[];
+  /** Caller-supplied metadata for this turn (e.g., identity, source info). */
+  meta?: TurnMeta;
 }
 
 /**
@@ -26,19 +35,26 @@ export interface TurnRouting {
   responseAdapterId?: string | null;
 }
 
+/** Identity and display info for the user who sent the turn. */
+export interface TurnSender {
+  userId: string;
+  identityId: string;
+  displayName?: string;
+  username?: string;
+}
+
 /**
- * Create a new TurnContext. Called when a prompt is dequeued from the queue.
- * If a pre-generated turnId is provided (from enqueuePrompt), it is used; otherwise a new one is generated.
+ * Extract sender identity from turn metadata.
+ * Returns null if identity fields are missing or incomplete.
  */
-export function createTurnContext(
-  sourceAdapterId: string,
-  responseAdapterId?: string | null,
-  turnId?: string,
-): TurnContext {
+export function extractSender(meta?: TurnMeta): TurnSender | null {
+  const identity = (meta as any)?.identity;
+  if (!identity || !identity.userId || !identity.identityId) return null;
   return {
-    turnId: turnId ?? nanoid(8),
-    sourceAdapterId,
-    responseAdapterId,
+    userId: identity.userId,
+    identityId: identity.identityId,
+    displayName: identity.displayName,
+    username: identity.username,
   };
 }
 
@@ -51,6 +67,30 @@ export function createTurnContext(
 export function getEffectiveTarget(ctx: TurnContext): string | null {
   if (ctx.responseAdapterId === null) return null;
   return ctx.responseAdapterId ?? ctx.sourceAdapterId;
+}
+
+/**
+ * Create a new TurnContext. Called when a prompt is dequeued from the queue.
+ * If a pre-generated turnId is provided (from enqueuePrompt), it is used; otherwise a new one is generated.
+ */
+export function createTurnContext(
+  sourceAdapterId: string,
+  responseAdapterId: string | null | undefined,
+  turnId: string | undefined,
+  userPrompt: string,
+  finalPrompt: string,
+  attachments?: Attachment[],
+  meta?: TurnMeta,
+): TurnContext {
+  return {
+    turnId: turnId ?? nanoid(8),
+    sourceAdapterId,
+    responseAdapterId,
+    userPrompt,
+    finalPrompt,
+    attachments,
+    meta,
+  };
 }
 
 /**

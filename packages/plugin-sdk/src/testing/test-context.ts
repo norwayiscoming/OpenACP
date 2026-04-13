@@ -154,6 +154,7 @@ export function createTestContext(opts: TestContextOpts): TestPluginContext {
     async sendMessage(sessionId: string, content: OutgoingMessage): Promise<void> {
       sentMessages.push({ sessionId, content })
     },
+    notify(_target: any, _message: any, _options?: any): void {},
     defineHook(_name: string): void {},
     async emitHook<T extends Record<string, unknown>>(_name: string, payload: T): Promise<T | null> {
       return payload

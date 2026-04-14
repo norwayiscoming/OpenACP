@@ -139,8 +139,11 @@ export async function sseRoutes(app: FastifyInstance, deps: SSERouteDeps): Promi
       const userId = (request as any).auth?.tokenId ?? 'api';
       const { turnId, queueDepth } = await deps.core.handleMessageInSession(
         session,
-        { channelId: 'sse', userId, text: body.prompt, attachments },
-        { channelUser: { channelId: 'sse', userId } },
+        { channelId: 'api', userId, text: body.prompt, attachments },
+        { channelUser: { channelId: 'api', userId } },
+        // Route response back to the SSE adapter; 'api' is the identity namespace,
+        // not an adapter name, so responseAdapterId must be explicit.
+        { responseAdapterId: 'sse' },
       );
 
       return { ok: true, sessionId, queueDepth, turnId };
@@ -223,7 +226,7 @@ export async function sseRoutes(app: FastifyInstance, deps: SSERouteDeps): Promi
       const result = await deps.commandRegistry.execute(commandString, {
         raw: '',
         sessionId,
-        channelId: 'sse',
+        channelId: 'api',
         userId: (request as any).auth?.tokenId ?? 'api',
         reply: async () => {},
       });

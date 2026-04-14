@@ -168,6 +168,7 @@ describe('Auth code endpoints', () => {
           tokenId: token.id,
           expiresAt: new Date(Date.now() + parseDuration(code.expire)).toISOString(),
           refreshDeadline: token.refreshDeadline,
+          identitySecret: token.identitySecret,
         })
       })
     }, { auth: false })

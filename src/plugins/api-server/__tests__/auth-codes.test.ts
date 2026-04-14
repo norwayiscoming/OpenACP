@@ -374,6 +374,7 @@ describe('TokenStore — identitySecret', () => {
     expect(loaded?.identitySecret).toBeDefined()
     expect(loaded?.identitySecret).toMatch(/^[0-9a-f]{32}$/)
 
+    await freshStore.flush()
     freshStore.destroy()
   })
 })

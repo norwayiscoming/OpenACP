@@ -92,6 +92,23 @@ export function registerSetupRoutes(app: FastifyInstance, deps: SetupDeps): void
     // Path 4: new user — displayName required, username optional
     if (!body?.displayName) return reply.status(400).send({ error: 'displayName is required' })
 
+    // Validate username format — same rules as /whoami command
+    const USERNAME_RE = /^[a-zA-Z0-9_.-]+$/
+    if (body.username !== undefined && body.username !== null) {
+      const u = String(body.username)
+      if (!u || !USERNAME_RE.test(u)) {
+        return reply.status(400).send({ error: 'Invalid username. Only letters, numbers, _ . - allowed.' })
+      }
+    }
+
+    // Check username uniqueness before creating
+    if (body.username) {
+      const existing = await service.getUserByUsername(String(body.username))
+      if (existing) {
+        return reply.status(409).send({ error: 'Username already taken' })
+      }
+    }
+
     const { user } = await service.createUserWithIdentity({
       displayName: body.displayName as string,
       username: body.username as string | undefined,

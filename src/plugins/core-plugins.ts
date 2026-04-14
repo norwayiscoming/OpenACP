@@ -31,7 +31,6 @@ import telegramPlugin from './telegram/index.js'
 export const corePlugins = [
   // Service plugins (no adapter dependencies)
   securityPlugin,
-  identityPlugin,   // Must boot after security (blocked users rejected before identity records are created)
   fileServicePlugin,
   contextPlugin,
   speechPlugin,
@@ -39,6 +38,11 @@ export const corePlugins = [
   // Infrastructure plugins
   tunnelPlugin,
   apiServerPlugin,
+  // Identity boots after api-server so it can register REST routes via
+  // apiServer.registerPlugin(). If booted before, ctx.getService('api-server')
+  // returns null and the /identity/setup route is never registered.
+  // Security is already up at this point, satisfying the priority-100 requirement.
+  identityPlugin,
   // Adapter plugins (depend on security, notifications, etc.)
   sseAdapterPlugin,
   telegramPlugin,

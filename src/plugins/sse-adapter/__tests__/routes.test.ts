@@ -41,8 +41,11 @@ function createMockCore(session: ReturnType<typeof createMockSession> | null = n
     configManager: { get: vi.fn().mockReturnValue({ security: { maxConcurrentSessions: 10 } }) },
     // Simulates the middleware chain by delegating directly to session.enqueuePrompt so
     // existing assertions on enqueuePrompt remain valid in unit tests.
-    handleMessageInSession: vi.fn().mockImplementation(async (sess: any, msg: any) => {
-      await sess.enqueuePrompt(msg.text, msg.attachments, { sourceAdapterId: msg.channelId });
+    handleMessageInSession: vi.fn().mockImplementation(async (sess: any, msg: any, _meta: any, opts: any) => {
+      await sess.enqueuePrompt(msg.text, msg.attachments, {
+        sourceAdapterId: msg.channelId,
+        ...(opts?.responseAdapterId !== undefined && { responseAdapterId: opts.responseAdapterId }),
+      });
       return { turnId: 'test-turn', queueDepth: 0 };
     }),
   } as any;
@@ -92,7 +95,8 @@ describe('SSE Routes', () => {
       const body = response.json();
       expect(body.ok).toBe(true);
       expect(body.sessionId).toBe('sess-1');
-      expect(session.enqueuePrompt).toHaveBeenCalledWith('Hello world', undefined, expect.objectContaining({ sourceAdapterId: 'sse' }));
+      // sourceAdapterId='api' is the identity namespace; responseAdapterId='sse' routes back to the SSE adapter
+      expect(session.enqueuePrompt).toHaveBeenCalledWith('Hello world', undefined, expect.objectContaining({ sourceAdapterId: 'api', responseAdapterId: 'sse' }));
     });
 
     it('returns 404 for non-existent session', async () => {

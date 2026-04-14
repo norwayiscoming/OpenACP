@@ -28,11 +28,12 @@ const linkCodes = new Map<string, { userId: string; expiresAt: number }>()
  * POST /setup — first-time identity claim for API token holders.
  * POST /link-code — generate a one-time code to link a second device/token.
  *
- * Four paths for POST /setup (checked in priority order):
+ * Five paths for POST /setup (checked in priority order):
  * 1. Token already linked → idempotent return of existing user.
  * 2. identitySecret → re-link new token to existing user (reconnect flow).
  * 3. linkCode → link to existing user via short-lived link code (multi-device).
  * 4. displayName → create new user (first-time setup).
+ * 5. else → 400 Bad Request.
  */
 export function registerSetupRoutes(app: FastifyInstance, deps: SetupDeps): void {
   const { service, tokenStore } = deps

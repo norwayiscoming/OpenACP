@@ -193,6 +193,9 @@ export async function startServer(opts?: StartServerOptions) {
   // 3c. Register system commands
   registerSystemCommands(commandRegistry, core)
 
+  // Track dev plugin info for startup summary (logger is muted during boot, so we show it separately)
+  let loadedDevPlugin: { name: string; version: string } | undefined
+
   // 4. Boot all plugins (services, infrastructure, adapters)
   try {
     // Emit kernel:booted before plugin boot
@@ -294,6 +297,7 @@ export async function startServer(opts?: StartServerOptions) {
       try {
         const devPlugin = await devLoader.load()
         await core.lifecycleManager.boot([devPlugin])
+        loadedDevPlugin = { name: devPlugin.name, version: devPlugin.version }
         log.info({ plugin: devPlugin.name, version: devPlugin.version }, 'Dev plugin loaded')
 
         // Watch dist/ directory for changes and hot-reload
@@ -313,6 +317,8 @@ export async function startServer(opts?: StartServerOptions) {
                 const reloaded = await devLoader.load()
                 await core.lifecycleManager.boot([reloaded])
                 log.info({ plugin: reloaded.name, version: reloaded.version }, 'Dev plugin reloaded')
+                // Re-sync command list so Telegram autocomplete and App palette reflect new commands.
+                core.eventBus.emit(BusEvent.SYSTEM_COMMANDS_READY, { commands: commandRegistry.getAll() })
               } catch (err) {
                 log.error({ err }, 'Dev plugin reload failed')
               }
@@ -528,6 +534,10 @@ export async function startServer(opts?: StartServerOptions) {
 
     for (const [name] of core.adapters) {
       ok(`${name.charAt(0).toUpperCase() + name.slice(1)} connected`)
+    }
+
+    if (loadedDevPlugin) {
+      ok(`Dev plugin: ${loadedDevPlugin.name} v${loadedDevPlugin.version}`)
     }
 
     const apiSvc = core.lifecycleManager.serviceRegistry.get<import('./plugins/api-server/service.js').ApiServerService>('api-server')

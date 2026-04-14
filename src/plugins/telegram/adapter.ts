@@ -320,10 +320,9 @@ export class TelegramAdapter extends MessagingAdapter {
     });
 
     // Register Telegram autocomplete commands after all plugins finish setup.
-    // system:commands-ready fires with the full command list (system + plugin).
-    // We merge it with STATIC_COMMANDS so plugin commands (e.g. /teamwork) appear in autocomplete.
+    // Keeps listening persistently so hot-reload (dev plugin) and community plugin
+    // changes re-sync the command list without restarting the server.
     const onCommandsReady = ({ commands }: { commands: Array<{ name: string; description: string; category?: string }> }) => {
-      this.core.eventBus.off(BusEvent.SYSTEM_COMMANDS_READY, onCommandsReady as Parameters<typeof this.core.eventBus.on<'system:commands-ready'>>[1]);
       this.syncCommandsWithRetry(commands);
     };
     this.core.eventBus.on(BusEvent.SYSTEM_COMMANDS_READY, onCommandsReady);

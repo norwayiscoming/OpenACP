@@ -63,8 +63,11 @@ export function registerSetupRoutes(app: FastifyInstance, deps: SetupDeps): void
       if (!userId) {
         return reply.status(401).send({ error: 'No identity linked to this secret' })
       }
+      // Use 'sse' as the source to match how sessions.ts identifies API users
+      // (channelId: 'sse', userId: tokenId). This lets auto-register find this
+      // identity on first message instead of creating a duplicate with displayName=tokenId.
       await service.createIdentity(userId, {
-        source: 'api',
+        source: 'sse',
         platformId: auth.tokenId as string,
       })
       tokenStore?.setUserId?.(auth.tokenId as string, userId)
@@ -81,7 +84,7 @@ export function registerSetupRoutes(app: FastifyInstance, deps: SetupDeps): void
       linkCodes.delete(body.linkCode as string)
 
       await service.createIdentity(entry.userId, {
-        source: 'api',
+        source: 'sse',
         platformId: auth.tokenId as string,
       })
 
@@ -95,7 +98,9 @@ export function registerSetupRoutes(app: FastifyInstance, deps: SetupDeps): void
     const { user } = await service.createUserWithIdentity({
       displayName: body.displayName as string,
       username: body.username as string | undefined,
-      source: 'api',
+      // Use 'sse' to match sessions.ts channelId so auto-register finds this
+      // identity on first message instead of creating a duplicate user.
+      source: 'sse',
       platformId: auth.tokenId as string,
     })
 

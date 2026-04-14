@@ -254,11 +254,19 @@ export async function sessionRoutes(
       const sourceAdapterId = body.sourceAdapterId ?? 'sse';
       const userId = (request as any).auth?.tokenId ?? 'api';
 
+      // Use 'api' as channelId so auto-register creates identity with source='api',
+      // matching POST /identity/setup. Response routing still uses sourceAdapterId ('sse')
+      // because 'api' is not an adapter — it's just the identity namespace.
       const result = await deps.core.handleMessageInSession(
         session,
-        { channelId: sourceAdapterId, userId, text: body.prompt, attachments },
-        { channelUser: { channelId: 'sse', userId } },
-        { externalTurnId: body.turnId, responseAdapterId: body.responseAdapterId },
+        { channelId: 'api', userId, text: body.prompt, attachments },
+        { channelUser: { channelId: 'api', userId } },
+        {
+          externalTurnId: body.turnId,
+          // Preserve null (suppress response) but fall back to sourceAdapterId when
+          // responseAdapterId is not specified, since 'api' has no adapter to route to.
+          responseAdapterId: body.responseAdapterId !== undefined ? body.responseAdapterId : sourceAdapterId,
+        },
       );
 
       // handleMessageInSession returns undefined when a middleware (e.g. security) blocks

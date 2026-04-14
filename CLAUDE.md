@@ -111,6 +111,13 @@ When changing code, **you must update corresponding docs** to keep code and docu
 - **General rule**: Do not merge code without updating docs for new features or changes. README is for users, `docs/` is for both users and contributors.
 - **Plugin Template Sync**: When changing plugin API, architecture, PluginContext, CommandDef, middleware hooks, permissions, or anything affecting how plugins are written → **must update plugin template** at `src/cli/plugin-template/` (especially `claude-md.ts` and `plugin-guide.ts`) so templates always reflect the current API. These templates are the primary reference for both AI agents and plugin developers.
 
+## Error Handling
+
+- **Never silently ignore errors.** Every failed operation must surface a meaningful response — proper HTTP status code + JSON error body for API routes, thrown error for internal services. No empty `catch {}` blocks.
+- API routes must return specific status codes (400 for validation, 401 for auth, 409 for conflicts, 500 for internal errors) with `{ error: "Human-readable message" }` body. Never return 200 for a failed operation.
+- Validate inputs at system boundaries (API route handlers) — reject early with clear error messages. Internal service code can trust validated inputs.
+- The only exception for silent handling is truly optional side-effects (e.g. non-critical logging, best-effort cleanup). When in doubt, surface the error.
+
 ## Conventions
 
 - **English only**: All code, comments, commit messages, documentation, specs, plans, and any text in the repository must be written in English. No exceptions.

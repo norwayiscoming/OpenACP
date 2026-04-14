@@ -60,9 +60,17 @@ export class TokenStore {
         return;
       }
       this.tokens.clear();
+      let needsMigration = false;
       for (const token of parsed.tokens) {
+        // Migrate tokens created before identitySecret was introduced
+        if (!token.identitySecret) {
+          token.identitySecret = randomBytes(16).toString('hex');
+          needsMigration = true;
+        }
         this.tokens.set(token.id, token);
       }
+      // Persist migrated secrets so they survive the next restart
+      if (needsMigration) this.scheduleSave();
       this.codes.clear();
       for (const code of parsed.codes ?? []) {
         this.codes.set(code.code, code);
@@ -115,6 +123,7 @@ export class TokenStore {
       createdAt: now.toISOString(),
       refreshDeadline: new Date(now.getTime() + REFRESH_DEADLINE_MS).toISOString(),
       revoked: false,
+      identitySecret: randomBytes(16).toString('hex'),
     };
     this.tokens.set(token.id, token);
     this.scheduleSave();
@@ -194,6 +203,20 @@ export class TokenStore {
   /** Get the user ID associated with a token. */
   getUserId(tokenId: string): string | undefined {
     return this.tokens.get(tokenId)?.userId;
+  }
+
+  /**
+   * Looks up a non-revoked token by its identity secret.
+   *
+   * Used by the identity re-link flow: the App sends the old token's identitySecret
+   * to prove continuity of identity when reconnecting with a new JWT.
+   * Returns undefined if no match, or if the matching token is revoked.
+   */
+  getByIdentitySecret(secret: string): StoredToken | undefined {
+    for (const token of this.tokens.values()) {
+      if (!token.revoked && token.identitySecret === secret) return token;
+    }
+    return undefined;
   }
 
   /**

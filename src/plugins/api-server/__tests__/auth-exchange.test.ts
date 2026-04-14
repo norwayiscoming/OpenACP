@@ -56,6 +56,7 @@ describe('POST /exchange', () => {
           tokenId: token.id,
           expiresAt: new Date(Date.now() + parseDuration(code.expire)).toISOString(),
           refreshDeadline: token.refreshDeadline,
+          identitySecret: token.identitySecret,
         })
       })
     }, { auth: false })
@@ -117,6 +118,21 @@ describe('POST /exchange', () => {
       payload: { code: created.code },
     })
     expect(second.statusCode).toBe(401)
+  })
+
+  it('exchange response includes identitySecret as 32-char hex', async () => {
+    const created = store.createCode({ role: 'operator', name: 'secret-test', expire: '24h' })
+
+    const res = await server.app.inject({
+      method: 'POST',
+      url: '/api/v1/auth/exchange',
+      payload: { code: created.code },
+    })
+
+    expect(res.statusCode).toBe(200)
+    const body = res.json()
+    expect(body.identitySecret).toBeDefined()
+    expect(body.identitySecret).toMatch(/^[0-9a-f]{32}$/)
   })
 
   it('returns 401 for expired code', async () => {

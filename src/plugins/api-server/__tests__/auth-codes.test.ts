@@ -168,6 +168,7 @@ describe('Auth code endpoints', () => {
           tokenId: token.id,
           expiresAt: new Date(Date.now() + parseDuration(code.expire)).toISOString(),
           refreshDeadline: token.refreshDeadline,
+          identitySecret: token.identitySecret,
         })
       })
     }, { auth: false })
@@ -305,5 +306,76 @@ describe('Auth code endpoints', () => {
       payload: { code },
     })
     expect(exchangeRes.statusCode).toBe(401)
+  })
+})
+
+describe('TokenStore — identitySecret', () => {
+  let store: TokenStore
+  let tmpDir: string
+  let filePath: string
+
+  beforeEach(async () => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'identity-secret-test-'))
+    filePath = path.join(tmpDir, 'tokens.json')
+    store = new TokenStore(filePath)
+    await store.load()
+  })
+
+  afterEach(async () => {
+    await store.flush()
+    store.destroy()
+    fs.rmSync(tmpDir, { recursive: true, force: true })
+  })
+
+  it('create() assigns a 32-char hex identitySecret', () => {
+    const token = store.create({ role: 'admin', name: 'test', expire: '24h' })
+    expect(token.identitySecret).toMatch(/^[0-9a-f]{32}$/)
+  })
+
+  it('each token gets a unique identitySecret', () => {
+    const a = store.create({ role: 'admin', name: 'a', expire: '24h' })
+    const b = store.create({ role: 'admin', name: 'b', expire: '24h' })
+    expect(a.identitySecret).not.toBe(b.identitySecret)
+  })
+
+  it('getByIdentitySecret returns matching non-revoked token', () => {
+    const token = store.create({ role: 'admin', name: 'test', expire: '24h' })
+    const found = store.getByIdentitySecret(token.identitySecret)
+    expect(found?.id).toBe(token.id)
+  })
+
+  it('getByIdentitySecret returns undefined for revoked token', () => {
+    const token = store.create({ role: 'admin', name: 'test', expire: '24h' })
+    store.revoke(token.id)
+    expect(store.getByIdentitySecret(token.identitySecret)).toBeUndefined()
+  })
+
+  it('getByIdentitySecret returns undefined for unknown secret', () => {
+    expect(store.getByIdentitySecret('a'.repeat(32))).toBeUndefined()
+  })
+
+  it('load() migrates tokens without identitySecret', async () => {
+    // Write a tokens.json with a token that has no identitySecret (old format)
+    const oldToken = {
+      id: 'tok_old123',
+      name: 'legacy',
+      role: 'admin',
+      createdAt: new Date().toISOString(),
+      refreshDeadline: new Date(Date.now() + 7 * 86400_000).toISOString(),
+      revoked: false,
+    }
+    await import('node:fs/promises').then(fs =>
+      fs.writeFile(filePath, JSON.stringify({ tokens: [oldToken], codes: [] }))
+    )
+
+    const freshStore = new TokenStore(filePath)
+    await freshStore.load()
+
+    const loaded = freshStore.get('tok_old123')
+    expect(loaded?.identitySecret).toBeDefined()
+    expect(loaded?.identitySecret).toMatch(/^[0-9a-f]{32}$/)
+
+    await freshStore.flush()
+    freshStore.destroy()
   })
 })

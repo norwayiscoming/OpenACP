@@ -12,6 +12,13 @@ export interface StoredToken {
   revoked: boolean;
   /** User ID from identity system. Null until user completes /identity/setup. */
   userId?: string;
+  /**
+   * Per-token secret for identity re-linking on reconnect.
+   * Never embedded in the JWT — only returned at token creation/exchange time.
+   * The App stores this in its workspace store and uses it to silently re-link
+   * a new token to the same user after the old token's refresh deadline expires.
+   */
+  identitySecret: string;
 }
 
 /** Claims embedded in a signed JWT. `rfd` (refresh deadline) is a Unix timestamp (seconds). */
@@ -40,6 +47,8 @@ export interface TokenInfo {
   accessToken: string;
   expiresAt: string;
   refreshDeadline: string;
+  /** Opaque secret for identity re-linking. See StoredToken.identitySecret. */
+  identitySecret: string;
 }
 
 /**

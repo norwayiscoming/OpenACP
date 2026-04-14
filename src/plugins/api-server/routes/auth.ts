@@ -69,6 +69,7 @@ export async function authRoutes(
       accessToken,
       expiresAt,
       refreshDeadline: stored.refreshDeadline,
+      identitySecret: stored.identitySecret,
     };
   });
 

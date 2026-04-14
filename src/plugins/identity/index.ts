@@ -95,6 +95,7 @@ function createIdentityPlugin(): OpenACPPlugin {
         const tokenStore = ctx.getService<{
           getUserId(id: string): string | undefined
           setUserId(id: string, uid: string): void
+          getByIdentitySecret(secret: string): { id: string } | undefined
         }>('token-store')
         const { registerIdentityRoutes } = await import('./routes/users.js')
         const { registerSetupRoutes } = await import('./routes/setup.js')

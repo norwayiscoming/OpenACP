@@ -72,14 +72,22 @@ export class PromptQueue {
   }
 
   /**
+   * Abort only the in-flight prompt, keeping queued prompts intact.
+   * The queue will automatically drain to the next item via `drainNext()`
+   * in the `process()` finally block.
+   */
+  abortCurrent(): void {
+    if (this.abortController) {
+      this.abortController.abort()
+    }
+  }
+
+  /**
    * Abort the in-flight prompt and discard all queued prompts.
    * Pending promises are resolved (not rejected) so callers don't see unhandled rejections.
    */
   clear(): void {
-    // Abort the currently running prompt so the queue can drain
-    if (this.abortController) {
-      this.abortController.abort()
-    }
+    this.abortCurrent()
     // Resolve pending promises so callers don't hang
     for (const item of this.queue) {
       item.resolve()

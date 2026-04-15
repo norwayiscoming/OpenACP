@@ -163,6 +163,43 @@ describe('PromptQueue', () => {
     expect(queue.isProcessing).toBe(false)
   })
 
+  it('abort + clear prevents offset responses', async () => {
+    let resolveFirst!: () => void
+    const firstPromise = new Promise<void>((r) => { resolveFirst = r })
+    const calls: string[] = []
+
+    const processor = vi.fn().mockImplementation(async (text: string) => {
+      calls.push(text)
+      if (text === 'stuck') await firstPromise
+    })
+
+    const queue = new PromptQueue(processor)
+
+    // Simulate: stuck prompt + queued messages
+    queue.enqueue('stuck')
+    queue.enqueue('queued-1')
+    queue.enqueue('queued-2')
+
+    expect(queue.pending).toBe(2)
+    expect(queue.isProcessing).toBe(true)
+
+    // User does /flush: clear everything
+    queue.clear()
+    expect(queue.pending).toBe(0)
+
+    // Resolve the stuck prompt (simulates agent responding to cancel)
+    resolveFirst()
+    await new Promise(r => setTimeout(r, 10))
+
+    expect(queue.isProcessing).toBe(false)
+
+    // User sends fresh message — should process immediately, no offset
+    const freshPromise = queue.enqueue('fresh')
+    await freshPromise
+
+    expect(calls).toEqual(['stuck', 'fresh'])
+  })
+
   it('pendingItems returns userPrompt (not text) for queued items', async () => {
     let resolveFirst!: () => void
     const firstPromise = new Promise<void>((r) => { resolveFirst = r })

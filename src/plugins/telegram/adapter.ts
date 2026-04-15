@@ -757,13 +757,13 @@ export class TelegramAdapter extends MessagingAdapter {
     };
     this.core.eventBus.on("session:configChanged", this._configChangedHandler);
 
-    // Show an inline notification when a message is queued behind an active prompt.
-    // The notification includes action buttons so users can manage the queue without
-    // waiting for the current prompt to finish.
-    this.core.eventBus.on(BusEvent.MESSAGE_QUEUED, async (data) => {
+    // Show an inline notification when a message is actually placed in the pending queue
+    // behind an active prompt. The PROMPT_WAITING event fires from inside PromptQueue.enqueue()
+    // with accurate state, eliminating the race condition from checking promptRunning asynchronously.
+    this.core.eventBus.on(BusEvent.PROMPT_WAITING, async (data) => {
       if (data.sourceAdapterId !== 'telegram') return;
       const session = this.core.sessionManager.getSession(data.sessionId);
-      if (!session || !session.promptRunning) return;
+      if (!session) return;
       const threadId = Number(session.threadId);
       if (!threadId) return;
 

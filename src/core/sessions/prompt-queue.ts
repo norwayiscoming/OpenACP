@@ -19,6 +19,10 @@ export class PromptQueue {
   constructor(
     private processor: (text: string, userPrompt: string, attachments?: Attachment[], routing?: TurnRouting, turnId?: string, meta?: TurnMeta) => Promise<void>,
     private onError?: (err: unknown) => void,
+    // Fires synchronously when an item is placed behind a running prompt — before it's pushed
+    // to the pending list. Called with accurate queue depth so callers can emit notifications
+    // without a race condition on promptRunning state.
+    private onActuallyQueued?: (turnId: string | undefined, position: number, routing: TurnRouting | undefined) => void,
   ) {}
 
   /**
@@ -28,6 +32,11 @@ export class PromptQueue {
    */
   async enqueue(text: string, userPrompt: string, attachments?: Attachment[], routing?: TurnRouting, turnId?: string, meta?: TurnMeta): Promise<void> {
     if (this.processing) {
+      // Fire synchronously BEFORE pushing so the caller sees accurate position and promptRunning state.
+      // This eliminates the race condition where multiple concurrent enqueue() calls all observe
+      // processing=false before any of them sets it to true.
+      const position = this.queue.length + 1;
+      this.onActuallyQueued?.(turnId, position, routing);
       return new Promise<void>((resolve) => {
         this.queue.push({ text, userPrompt, attachments, routing, turnId, meta, resolve })
       })

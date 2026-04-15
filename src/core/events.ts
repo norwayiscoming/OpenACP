@@ -157,6 +157,11 @@ export const BusEvent = {
   /** Fired when a plugin is unloaded during shutdown. */
   PLUGIN_UNLOADED: 'plugin:unloaded',
 
+  // --- Message visibility ---
+  /** Fired when a user message is actually placed in the pending queue behind a running prompt.
+   *  Emitted synchronously from inside PromptQueue.enqueue(), so state is accurate — no race condition. */
+  PROMPT_WAITING: 'prompt:waiting',
+
   // --- Usage ---
   /** Fired when a token usage record is captured (consumed by usage plugin). */
   USAGE_RECORDED: 'usage:recorded',
@@ -210,6 +215,8 @@ export const SessionEv = {
   PROMPT_COUNT_CHANGED: 'prompt_count_changed',
   /** A new prompt turn started (provides TurnContext for middleware). */
   TURN_STARTED: 'turn_started',
+  /** A prompt was placed behind a running prompt — fired synchronously from PromptQueue.enqueue(). */
+  PROMPT_QUEUED: 'prompt_queued',
 } as const satisfies Record<string, keyof SessionEvents>;
 
 export type SessionEvName = typeof SessionEv[keyof typeof SessionEv];

@@ -99,6 +99,20 @@ export interface EventBusEvents {
     reason: string;
   }) => void;
 
+  /**
+   * Fired when a user message is actually placed in the pending queue behind a running prompt.
+   *
+   * Unlike MESSAGE_QUEUED (which fires before enqueuePrompt is called and can race), this event
+   * fires synchronously from inside PromptQueue.enqueue() so queueDepth and sourceAdapterId are
+   * always accurate.
+   */
+  "prompt:waiting": (data: {
+    sessionId: string;
+    turnId: string;
+    sourceAdapterId: string;
+    queueDepth: number;
+  }) => void;
+
   // Agent switch lifecycle (used by UI & dashboards)
   "session:agentSwitch": (data: {
     sessionId: string;

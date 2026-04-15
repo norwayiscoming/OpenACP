@@ -51,6 +51,8 @@ export interface SessionEvents {
   error: (error: Error) => void;
   prompt_count_changed: (count: number) => void;
   turn_started: (ctx: TurnContext) => void;
+  /** Fired synchronously when a prompt is placed behind a running prompt in the queue. */
+  prompt_queued: (data: { turnId: string | undefined; position: number; routing: TurnRouting | undefined }) => void;
 }
 
 /**
@@ -147,6 +149,9 @@ export class Session extends TypedEmitter<SessionEvents> {
         const message = err instanceof Error ? err.message : String(err);
         this.fail(message);
         this.emit(SessionEv.AGENT_EVENT, { type: "error", message: `Prompt execution failed: ${message}` });
+      },
+      (turnId, position, routing) => {
+        this.emit(SessionEv.PROMPT_QUEUED, { turnId, position, routing });
       },
     );
 

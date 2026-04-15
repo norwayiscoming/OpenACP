@@ -108,6 +108,26 @@ export class PromptQueue {
     this.queue = []
   }
 
+  /**
+   * Promote a specific queued item to the front and discard all others.
+   *
+   * Finds the item with the matching turnId, removes every other pending item
+   * (resolving their promises), and leaves only the target in the queue.
+   * Does NOT abort the in-flight prompt — caller handles that separately.
+   *
+   * @returns true if the item was found and promoted, false if not in queue
+   */
+  prioritize(turnId: string): boolean {
+    const idx = this.queue.findIndex(item => item.turnId === turnId)
+    if (idx === -1) return false
+    const target = this.queue[idx]
+    for (let i = 0; i < this.queue.length; i++) {
+      if (i !== idx) this.queue[i].resolve()
+    }
+    this.queue = [target]
+    return true
+  }
+
   get pending(): number {
     return this.queue.length
   }

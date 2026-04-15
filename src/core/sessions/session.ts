@@ -752,6 +752,36 @@ export class Session extends TypedEmitter<SessionEvents> {
     this.log.info("Session flushed (prompt cancelled, queue cleared)");
   }
 
+  /**
+   * Skip the queue: cancel the in-flight prompt, discard all other queued
+   * items, and promote the specified turn to process next.
+   *
+   * Used when the user clicks "Process Now" on a queued message — they want
+   * THIS message handled immediately, discarding everything else in the pipeline.
+   *
+   * @returns true if the turn was found and promoted, false if already processed
+   */
+  async prioritizePrompt(turnId: string): Promise<boolean> {
+    // Rearrange queue: keep only the target item
+    const found = this.queue.prioritize(turnId);
+    if (!found) return false;
+
+    // Cancel agent so the current processPrompt resolves and drainNext
+    // picks up the promoted item. Timeout fallback if agent is unresponsive.
+    await Promise.race([
+      this.agentInstance.cancel().catch(() => {}),
+      new Promise<void>((r) => setTimeout(r, 5000)),
+    ]);
+
+    // If the process didn't settle naturally (timeout), force abort
+    if (this.queue.isProcessing) {
+      this.queue.abortCurrent();
+    }
+
+    this.log.info({ turnId }, "Prompt prioritized");
+    return true;
+  }
+
   /** Search backward through agentSwitchHistory for the last entry matching agentName */
   findLastSwitchEntry(agentName: string): AgentSwitchEntry | undefined {
     for (let i = this.agentSwitchHistory.length - 1; i >= 0; i--) {

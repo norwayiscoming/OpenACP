@@ -200,6 +200,43 @@ describe('PromptQueue', () => {
     expect(calls).toEqual(['stuck', 'fresh'])
   })
 
+  it('prioritize promotes target item and discards others', async () => {
+    let resolveFirst!: () => void
+    const firstPromise = new Promise<void>((r) => { resolveFirst = r })
+    const calls: string[] = []
+
+    const processor = vi.fn().mockImplementation(async (text: string) => {
+      calls.push(text)
+      if (text === 'first') await firstPromise
+    })
+
+    const queue = new PromptQueue(processor)
+
+    queue.enqueue('first')
+    queue.enqueue('second', 'second', undefined, undefined, 'turn-2')
+    queue.enqueue('third', 'third', undefined, undefined, 'turn-3')
+    queue.enqueue('fourth', 'fourth', undefined, undefined, 'turn-4')
+
+    expect(queue.pending).toBe(3)
+
+    const found = queue.prioritize('turn-4')
+    expect(found).toBe(true)
+    expect(queue.pending).toBe(1)
+
+    resolveFirst()
+    await new Promise(r => setTimeout(r, 10))
+
+    await vi.waitFor(() => expect(queue.isProcessing).toBe(false))
+
+    expect(calls).toEqual(['first', 'fourth'])
+  })
+
+  it('prioritize returns false if turnId not found', () => {
+    const processor = vi.fn().mockResolvedValue(undefined)
+    const queue = new PromptQueue(processor)
+    expect(queue.prioritize('nonexistent')).toBe(false)
+  })
+
   it('pendingItems returns userPrompt (not text) for queued items', async () => {
     let resolveFirst!: () => void
     const firstPromise = new Promise<void>((r) => { resolveFirst = r })

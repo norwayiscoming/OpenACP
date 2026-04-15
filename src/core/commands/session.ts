@@ -55,6 +55,43 @@ export function registerSessionCommands(registry: CommandRegistry, _core: unknow
   })
 
   registry.register({
+    name: 'clearqueue',
+    description: 'Discard all queued prompts (keeps current prompt running)',
+    category: 'system',
+    handler: async (args) => {
+      if (args.sessionId) {
+        const session = core.sessionManager.getSession(args.sessionId)
+        if (session) {
+          const dropped = session.queueDepth
+          if (dropped === 0) {
+            return { type: 'text', text: 'Queue is already empty.' }
+          }
+          session.clearQueue()
+          return { type: 'text', text: `🗑️ Cleared ${dropped} queued prompt${dropped > 1 ? 's' : ''}.` }
+        }
+      }
+      return { type: 'error', message: 'No active session in this topic.' }
+    },
+  })
+
+  registry.register({
+    name: 'flush',
+    description: 'Cancel current prompt and clear all queued prompts',
+    category: 'system',
+    handler: async (args) => {
+      if (args.sessionId) {
+        const session = core.sessionManager.getSession(args.sessionId)
+        if (session) {
+          await session.flushAll()
+          session.markCancelled()
+          return { type: 'text', text: '🔄 Session flushed — prompt cancelled, queue cleared.' }
+        }
+      }
+      return { type: 'error', message: 'No active session in this topic.' }
+    },
+  })
+
+  registry.register({
     name: 'status',
     description: 'Show current session status',
     category: 'system',

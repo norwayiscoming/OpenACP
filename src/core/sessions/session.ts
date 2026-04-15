@@ -709,9 +709,47 @@ export class Session extends TypedEmitter<SessionEvents> {
     }
     const turnId = this.activeTurnContext?.turnId;
     if (turnId) this._abortedTurnIds.add(turnId);
+
+    // Cancel agent FIRST so the orphaned processPrompt resolves before
+    // drainNext starts the next item. Timeout prevents hanging if agent
+    // is unresponsive — queue abort proceeds regardless after 5 seconds.
+    await Promise.race([
+      this.agentInstance.cancel().catch(() => {}),
+      new Promise<void>((r) => setTimeout(r, 5000)),
+    ]);
+
     this.queue.abortCurrent();
     this.log.info("Prompt aborted (queue preserved, %d pending)", this.queue.pending);
-    await this.agentInstance.cancel();
+  }
+
+  /** Discard all queued prompts without interrupting the in-flight prompt. */
+  clearQueue(): void {
+    const dropped = this.queue.pending;
+    this.queue.clearPending();
+    this.log.info("Queue cleared (%d pending prompts discarded)", dropped);
+  }
+
+  /**
+   * Cancel the in-flight prompt AND discard all queued prompts.
+   * Full reset — nothing remains in the pipeline after this call.
+   */
+  async flushAll(): Promise<void> {
+    // Hook: agent:beforeCancel — modifiable, can block
+    if (this.middlewareChain) {
+      const result = await this.middlewareChain.execute(Hook.AGENT_BEFORE_CANCEL, { sessionId: this.id }, async (p) => p);
+      if (!result) return; // blocked by middleware
+    }
+    const turnId = this.activeTurnContext?.turnId;
+    if (turnId) this._abortedTurnIds.add(turnId);
+
+    // Cancel agent first, then clear everything
+    await Promise.race([
+      this.agentInstance.cancel().catch(() => {}),
+      new Promise<void>((r) => setTimeout(r, 5000)),
+    ]);
+
+    this.queue.clear();
+    this.log.info("Session flushed (prompt cancelled, queue cleared)");
   }
 
   /** Search backward through agentSwitchHistory for the last entry matching agentName */

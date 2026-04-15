@@ -582,7 +582,7 @@ describe("Session — Abort and Destroy", () => {
     expect(agent.destroy).toHaveBeenCalled();
   });
 
-  it("abortPrompt during processing aborts current and clears pending", async () => {
+  it("abortPrompt during processing aborts current but preserves pending", async () => {
     let resolveFirst!: () => void;
     const blocker = new Promise<void>((r) => {
       resolveFirst = r;
@@ -598,15 +598,18 @@ describe("Session — Abort and Destroy", () => {
     session.name = "skip";
 
     const p1 = session.enqueuePrompt("first");
-    session.enqueuePrompt("second");
+    const p2 = session.enqueuePrompt("second");
 
-    // Abort while first is processing
+    // Abort while first is processing — queue should be preserved
     await session.abortPrompt();
+
+    // Unblock first so drainNext can fire and process 'second'
     resolveFirst();
     await p1.catch(() => {});
+    await p2;
 
-    // 'second' should never have been processed
-    expect(processedTexts).not.toContain("second");
+    // 'second' should have been processed after the abort drained the queue
+    expect(processedTexts).toContain("second");
   });
 });
 

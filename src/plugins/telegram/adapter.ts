@@ -1,4 +1,4 @@
-import { Bot, InputFile } from "grammy";
+import { Bot, InputFile, InlineKeyboard } from "grammy";
 import path from "node:path";
 import { BusEvent } from "../../core/events.js";
 import type {
@@ -155,6 +155,8 @@ export class TelegramAdapter extends MessagingAdapter {
   private _configChangedHandler?: (data: { sessionId: string }) => void;
   /** Mutable ref passed to callbacks before topics are ready; updated in-place by initTopicDependentFeatures */
   private _systemTopicIds = { notificationTopicId: 0, assistantTopicId: 0 };
+  /** Tracks queue notification message IDs per turnId so they can be dismissed */
+  private _queueNotifications = new Map<string, number>();
   /** True once topics are initialized and Phase 2 is complete */
   private _topicsInitialized = false;
   /** Background watcher timer — cancelled on stop() or when topics succeed */
@@ -519,6 +521,48 @@ export class TelegramAdapter extends MessagingAdapter {
       }
     });
 
+    // Callback query handler for queue management buttons (q: prefix).
+    // Buttons are attached to queue notification messages sent by the MESSAGE_QUEUED listener.
+    this.bot.callbackQuery(/^q:/, async (ctx) => {
+      const data = ctx.callbackQuery.data!;
+      const parts = data.split(':');
+      const action = parts[1];
+      const sessionId = parts[2];
+
+      const session = this.core.sessionManager.getSession(sessionId);
+      if (!session) {
+        await ctx.answerCallbackQuery({ text: 'Session not found.' });
+        return;
+      }
+
+      if (action === 'now') {
+        const turnId = parts[3];
+        const found = await session.prioritizePrompt(turnId);
+        await ctx.answerCallbackQuery({ text: found ? '⏭ Processing now!' : 'Message already processed.' });
+      } else if (action === 'clear') {
+        session.clearQueue();
+        await ctx.answerCallbackQuery({ text: '🗑 Queue cleared.' });
+      } else if (action === 'cancel') {
+        await session.abortPrompt();
+        await ctx.answerCallbackQuery({ text: '⛔ Current prompt cancelled.' });
+      } else if (action === 'flush') {
+        await session.flushAll();
+        session.markCancelled();
+        await ctx.answerCallbackQuery({ text: '🔄 Session flushed.' });
+      }
+
+      // For clear/flush/now, all queued notifications are obsolete — dismiss them all
+      if (action === 'clear' || action === 'flush' || action === 'now') {
+        for (const [, msgId] of this._queueNotifications) {
+          this.bot.api.deleteMessage(this.telegramConfig.chatId, msgId).catch(() => {});
+        }
+        this._queueNotifications.clear();
+      }
+
+      // Delete this notification message
+      try { await ctx.deleteMessage(); } catch { /* already deleted */ }
+    });
+
     // Callback registration order matters!
     setupDangerousModeCallbacks(this.bot, this.core as OpenACPCore);
     setupTTSCallbacks(this.bot, this.core as OpenACPCore);
@@ -712,6 +756,60 @@ export class TelegramAdapter extends MessagingAdapter {
       this.updateControlMessage(sessionId).catch(() => {});
     };
     this.core.eventBus.on("session:configChanged", this._configChangedHandler);
+
+    // Show an inline notification when a message is queued behind an active prompt.
+    // The notification includes action buttons so users can manage the queue without
+    // waiting for the current prompt to finish.
+    this.core.eventBus.on(BusEvent.MESSAGE_QUEUED, async (data) => {
+      if (data.sourceAdapterId !== 'telegram') return;
+      const session = this.core.sessionManager.getSession(data.sessionId);
+      if (!session || !session.promptRunning) return;
+      const threadId = Number(session.threadId);
+      if (!threadId) return;
+
+      const position = data.queueDepth;
+      const keyboard = new InlineKeyboard()
+        .text('⏭ Process Now', `q:now:${data.sessionId}:${data.turnId}`)
+        .text('🗑 Clear Queue', `q:clear:${data.sessionId}`)
+        .row()
+        .text('⛔ Cancel Current', `q:cancel:${data.sessionId}`)
+        .text('🔄 Flush All', `q:flush:${data.sessionId}`);
+
+      const text = [
+        `📋 <b>Message queued</b> (#${position} in line)`,
+        '',
+        '<i>Agent is processing another prompt.</i>',
+        '',
+        '⏭ <b>Process Now</b> — Skip queue, process immediately',
+        '🗑 <b>Clear Queue</b> — Remove queued messages',
+        '⛔ <b>Cancel Current</b> — Stop current prompt',
+        '🔄 <b>Flush All</b> — Cancel everything, start fresh',
+      ].join('\n');
+
+      try {
+        const result = await this.sendQueue.enqueue(() =>
+          this.bot.api.sendMessage(this.telegramConfig.chatId, text, {
+            message_thread_id: threadId,
+            parse_mode: 'HTML',
+            reply_markup: keyboard,
+            disable_notification: true,
+          }),
+        );
+        if (result) {
+          this._queueNotifications.set(data.turnId, result.message_id);
+        }
+      } catch (err) {
+        log.warn({ err }, 'Failed to send queue notification');
+      }
+    });
+
+    // Dismiss the queue notification once the queued message starts processing.
+    this.core.eventBus.on(BusEvent.MESSAGE_PROCESSING, async (data) => {
+      const msgId = this._queueNotifications.get(data.turnId);
+      if (!msgId) return;
+      this._queueNotifications.delete(data.turnId);
+      this.bot.api.deleteMessage(this.telegramConfig.chatId, msgId).catch(() => {});
+    });
 
     // Send welcome message
     log.info({ assistantTopicId: this.assistantTopicId }, 'initTopicDependentFeatures: sending welcome message');

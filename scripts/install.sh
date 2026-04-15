@@ -1095,6 +1095,26 @@ install_openacp_npm() {
     local max_retries=3
     local attempt=0
 
+    # If openacp already exists in the current PATH, upgrade it in-place using
+    # the npm that belongs to the same node installation. This prevents creating
+    # a duplicate binary under a different node prefix (e.g. Homebrew vs nvm)
+    # when the user's active node differs from the one that originally installed openacp.
+    local existing_bin
+    existing_bin="$(command -v openacp 2>/dev/null || true)"
+    if [[ -n "$existing_bin" && -x "$existing_bin" ]]; then
+        local bin_dir
+        bin_dir="$(dirname "$existing_bin")"
+        if [[ -x "${bin_dir}/npm" ]]; then
+            ui_info "Found existing openacp at ${existing_bin} — upgrading in place"
+            local -a upgrade_cmd=("${bin_dir}/npm" install -g --no-fund --no-audit "$spec")
+            if "${upgrade_cmd[@]}" >"$log" 2>&1; then
+                ui_success "OpenACP upgraded"
+                return 0
+            fi
+            ui_warn "In-place upgrade failed, falling through to standard install"
+        fi
+    fi
+
     while [[ "$attempt" -lt "$max_retries" ]]; do
         attempt=$((attempt + 1))
 

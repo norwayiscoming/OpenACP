@@ -393,6 +393,11 @@ export async function sessionRoutes(
       const body = UpdateSessionBodySchema.parse(request.body);
       const changes: Record<string, unknown> = {};
 
+      if (body.name !== undefined) {
+        session.setName(body.name);
+        changes.name = body.name;
+      }
+
       if (body.agentName !== undefined) {
         if (session.promptRunning) {
           await session.abortPrompt();

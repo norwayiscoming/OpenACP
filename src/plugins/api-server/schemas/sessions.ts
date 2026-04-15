@@ -68,6 +68,7 @@ export const DangerousModeBodySchema = z.object({
 });
 
 export const UpdateSessionBodySchema = z.object({
+  name: z.string().min(1).max(200).optional(),
   agentName: z.string().min(1).max(200).optional(),
   voiceMode: z.enum(['off', 'next', 'on']).optional(),
   dangerousMode: z.boolean().optional(),

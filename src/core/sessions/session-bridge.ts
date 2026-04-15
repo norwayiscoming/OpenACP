@@ -181,10 +181,8 @@ export class SessionBridge {
       }
     });
 
-    // Wire lifecycle: persist and relay name changes — only rename thread once per session.
+    // Wire lifecycle: persist and relay name changes to all adapters.
     this.listen(this.session, SessionEv.NAMED, async (name: string) => {
-      const record = this.deps.sessionManager.getSessionRecord(this.session.id);
-      const alreadyNamed = !!record?.name;
       await this.deps.sessionManager.patchRecord(this.session.id, { name });
       if (!this.session.isAssistant) {
         this.deps.eventBus?.emit(BusEvent.SESSION_UPDATED, {
@@ -192,9 +190,7 @@ export class SessionBridge {
           name,
         });
       }
-      if (!alreadyNamed) {
-        await this.adapter.renameSessionThread(this.session.id, name);
-      }
+      await this.adapter.renameSessionThread(this.session.id, name);
     });
 
     // Wire lifecycle: persist prompt count after each prompt for resume decisions

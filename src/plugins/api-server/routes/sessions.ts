@@ -301,6 +301,39 @@ export async function sessionRoutes(
     },
   );
 
+  // POST /sessions/:sessionId/clear-queue — discard all pending (queued) prompts without affecting the running prompt
+  app.post<{ Params: { sessionId: string } }>(
+    '/:sessionId/clear-queue',
+    { preHandler: requireScopes('sessions:write') },
+    async (request) => {
+      const { sessionId: rawId } = SessionIdParamSchema.parse(request.params);
+      const sessionId = decodeURIComponent(rawId);
+      const session = await deps.core.getOrResumeSessionById(sessionId);
+      if (!session) {
+        throw new NotFoundError('SESSION_NOT_FOUND', `Session "${sessionId}" not found`);
+      }
+      const dropped = session.queueDepth;
+      session.clearQueue();
+      return { ok: true, dropped };
+    },
+  );
+
+  // POST /sessions/:sessionId/flush — cancel in-flight prompt and discard the entire queue
+  app.post<{ Params: { sessionId: string } }>(
+    '/:sessionId/flush',
+    { preHandler: requireScopes('sessions:write') },
+    async (request) => {
+      const { sessionId: rawId } = SessionIdParamSchema.parse(request.params);
+      const sessionId = decodeURIComponent(rawId);
+      const session = await deps.core.getOrResumeSessionById(sessionId);
+      if (!session) {
+        throw new NotFoundError('SESSION_NOT_FOUND', `Session "${sessionId}" not found`);
+      }
+      await session.flushAll();
+      return { ok: true };
+    },
+  );
+
   // POST /sessions/:sessionId/permission — resolve a pending permission request
   app.post<{ Params: { sessionId: string } }>(
     '/:sessionId/permission',

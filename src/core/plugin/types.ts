@@ -78,6 +78,13 @@ export interface OpenACPPlugin {
   overrides?: string
   /** Required permissions — PluginContext enforces these at runtime */
   permissions?: PluginPermission[]
+  /**
+   * Glob patterns for bash commands that should be auto-approved in sessions
+   * spawned by this plugin. Patterns use micromatch glob syntax.
+   *
+   * Example: `['gh pr view *', 'git -C **\/workspaces\/** pull *']`
+   */
+  autoApprovedCommands?: string[]
   /** Called during startup in dependency order. 30s timeout. */
   setup(ctx: PluginContext): Promise<void>
   /** Called during shutdown in reverse dependency order. 10s timeout. */

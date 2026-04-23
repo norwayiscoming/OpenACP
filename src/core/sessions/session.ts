@@ -122,6 +122,12 @@ export class Session extends TypedEmitter<SessionEvents> {
   /** Last completed turnId — used by abortPrompt() to retroactively mark a just-finished turn as interrupted */
   private _lastCompletedTurnId: string | null = null;
 
+  private _autoApprovedCommands: string[] = []
+
+  get autoApprovedCommands(): string[] {
+    return this._autoApprovedCommands
+  }
+
   constructor(opts: {
     id?: string;
     channelId: string;
@@ -130,6 +136,7 @@ export class Session extends TypedEmitter<SessionEvents> {
     agentInstance: AgentInstance;
     speechService?: SpeechService;
     isAssistant?: boolean;
+    autoApprovedCommands?: string[];
   }) {
     super();
     this.id = opts.id || nanoid(12);
@@ -141,6 +148,7 @@ export class Session extends TypedEmitter<SessionEvents> {
     this.agentInstance = opts.agentInstance;
     this.speechService = opts.speechService;
     this.isAssistant = opts.isAssistant ?? false;
+    this._autoApprovedCommands = opts.autoApprovedCommands ?? [];
     this.log = createSessionLogger(this.id, moduleLog);
     this.log.info({ agentName: this.agentName }, "Session created");
 

@@ -56,6 +56,7 @@ export class SessionManager {
     agentName: string,
     workingDirectory: string,
     agentManager: AgentManager,
+    options?: { autoApprovedCommands?: string[] },
   ): Promise<Session> {
     const agentInstance = await agentManager.spawn(agentName, workingDirectory);
     const session = new Session({
@@ -63,6 +64,7 @@ export class SessionManager {
       agentName,
       workingDirectory,
       agentInstance,
+      autoApprovedCommands: options?.autoApprovedCommands ?? [],
     });
     this.sessions.set(session.id, session);
     session.agentSessionId = session.agentInstance.sessionId;

@@ -10,6 +10,7 @@ import type { MiddlewareChain } from "../plugin/middleware-chain.js";
 import type { DebugTracer } from "../utils/debug-tracer.js";
 import { createChildLogger } from "../utils/log.js";
 import { isPermissionBypass } from "../utils/bypass-detection.js";
+import { isMatch } from "micromatch";
 import { isSystemEvent, getEffectiveTarget, extractSender, type TurnContext, type TurnRouting } from "./turn-context.js";
 import { Hook, BusEvent, SessionEv } from "../events.js";
 
@@ -508,6 +509,21 @@ export class SessionBridge {
           "Bypass mode: auto-approving permission",
         );
         return allowOption.id;
+      }
+    }
+
+    // Plugin-declared auto-approved command patterns (micromatch glob matching)
+    const patterns = this.session.autoApprovedCommands;
+    if (patterns.length > 0 && request.description) {
+      if (isMatch(request.description, patterns, { dot: true })) {
+        const allowOption = request.options.find((o) => o.isAllow);
+        if (allowOption) {
+          log.info(
+            { sessionId: this.session.id, requestId: request.id, command: request.description },
+            "autoApprovedCommands: auto-approving matching command",
+          );
+          return allowOption.id;
+        }
       }
     }
 

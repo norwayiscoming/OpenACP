@@ -35,12 +35,14 @@ export class TunnelService {
   private config: TunnelConfig
   private apiPort: number = 0
   private startError: string | undefined
+  private onEvent: (event: string, data: unknown) => void
 
   constructor(
     config: TunnelConfig,
     registryPath?: string,
     binDir?: string,
     storage?: PluginStorage,
+    onEvent?: (event: string, data: unknown) => void,
   ) {
     this.config = config
     this.store = new ViewerStore(config.storeTtlMinutes)
@@ -51,6 +53,7 @@ export class TunnelService {
       binDir,
       storage,
     })
+    this.onEvent = onEvent ?? (() => {})
   }
 
   async start(apiPort: number): Promise<string> {
@@ -69,7 +72,9 @@ export class TunnelService {
           provider: this.config.provider,
           label: 'system',
         })
-        return entry.publicUrl || `http://localhost:${apiPort}`
+        const publicUrl = entry.publicUrl || `http://localhost:${apiPort}`
+        this.onEvent('tunnel:started', { url: publicUrl })
+        return publicUrl
       } catch (err) {
         // If the OpenACP worker is unreachable (service down, rate-limited, etc.),
         // fall back to Cloudflare quick tunnel so the user is never left without a URL.
@@ -106,6 +111,7 @@ export class TunnelService {
     await this.registry.shutdown()
     this.registry.flush()
     this.store.destroy()
+    this.onEvent('tunnel:stopped', {})
     log.info('Tunnel service stopped')
   }
 

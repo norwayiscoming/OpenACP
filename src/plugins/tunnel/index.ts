@@ -188,6 +188,7 @@ function createTunnelPlugin(): OpenACPPlugin {
         path.join(instanceRoot, 'tunnels.json'),
         path.join(instanceRoot, 'bin'),
         ctx.storage,
+        (event, data) => ctx.emit(event, data),
       )
 
       // Get API server service (new dependency)

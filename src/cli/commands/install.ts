@@ -1,23 +1,15 @@
-import { execSync } from 'node:child_process'
-import * as fs from 'node:fs'
-import * as path from 'node:path'
 import { wantsHelp } from './helpers.js'
-import { isJsonMode, jsonSuccess, jsonError, muteForJson, ErrorCodes } from '../output.js'
+import { isJsonMode } from '../output.js'
+import { cmdPlugin } from './plugins.js'
 
 /**
- * `openacp install` — Install an adapter plugin from npm into the instance's plugins directory.
+ * `openacp install` — Install an adapter plugin from npm.
  *
- * Initializes the plugins directory and its package.json if they don't exist, then
- * delegates to `npm install` to fetch and install the package.
+ * Delegates to `openacp plugin add` so that plugin lifecycle hooks (install,
+ * onboard) are run and the plugin is registered in plugins.json.
  */
 export async function cmdInstall(args: string[], instanceRoot?: string): Promise<void> {
-  const json = isJsonMode(args)
-  if (json) await muteForJson()
-
-  const root = instanceRoot!
-  const pluginsDir = path.join(root, 'plugins')
-
-  if (!json && wantsHelp(args)) {
+  if (!isJsonMode(args) && wantsHelp(args)) {
     console.log(`
 \x1b[1mopenacp install\x1b[0m — Install a plugin adapter
 
@@ -27,7 +19,8 @@ export async function cmdInstall(args: string[], instanceRoot?: string): Promise
 \x1b[1mArguments:\x1b[0m
   <package>       npm package name (e.g. @openacp/discord-adapter)
 
-Installs the plugin to ~/.openacp/plugins/.
+Installs the plugin to the instance's plugins directory and runs its setup hook.
+Equivalent to: openacp plugin add <package>
 
 \x1b[1mOptions:\x1b[0m
   --json          Output result as JSON
@@ -39,26 +32,5 @@ Installs the plugin to ~/.openacp/plugins/.
     return
   }
 
-  const pkg = args.filter(a => a !== '--json')[0]
-  if (!pkg) {
-    if (json) jsonError(ErrorCodes.MISSING_ARGUMENT, 'Package name is required')
-    console.error("Usage: openacp install <package>")
-    process.exit(1)
-  }
-
-  fs.mkdirSync(pluginsDir, { recursive: true })
-  const pkgPath = path.join(pluginsDir, 'package.json')
-  if (!fs.existsSync(pkgPath)) {
-    fs.writeFileSync(pkgPath, JSON.stringify({ name: 'openacp-plugins', private: true, dependencies: {} }, null, 2))
-  }
-
-  if (!json) console.log(`Installing ${pkg}...`)
-  try {
-    execSync(`npm install ${pkg} --prefix "${pluginsDir}"`, { stdio: json ? 'pipe' : 'inherit' })
-  } catch (err) {
-    if (json) jsonError(ErrorCodes.INSTALL_FAILED, `Failed to install ${pkg}`)
-    process.exit(1)
-  }
-  if (json) jsonSuccess({ plugin: pkg, installed: true })
-  console.log(`Plugin ${pkg} installed successfully.`)
+  await cmdPlugin(['add', ...args], instanceRoot)
 }

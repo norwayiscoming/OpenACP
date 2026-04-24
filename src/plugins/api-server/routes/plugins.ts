@@ -31,6 +31,9 @@ export async function pluginRoutes(
     if (!lifecycleManager?.registry) return { plugins: [] }
 
     const registry = lifecycleManager.registry
+    // Reload from disk so CLI-installed plugins appear without a server restart.
+    // The polling flow in the App depends on this being up-to-date.
+    await registry.load()
     const loadedSet = new Set(lifecycleManager.loadedPlugins)
     const failedSet = new Set(lifecycleManager.failedPlugins)
     const loadOrderMap = new Map(lifecycleManager.plugins.map((p) => [p.name, p]))

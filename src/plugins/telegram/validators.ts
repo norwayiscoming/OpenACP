@@ -58,8 +58,8 @@ export async function validateChatId(
     if (data.result.type !== "supergroup") {
       const typeHint =
         data.result.type === "group"
-          ? 'This is a basic group — OpenACP requires a Supergroup with Topics enabled. In Telegram, go to Group Settings → Edit → enable "Topics" (this upgrades the group to a Supergroup automatically).'
-          : `Chat must be a Supergroup with Topics enabled (got: "${data.result.type}"). Channels and private chats are not supported.`;
+          ? 'This group does not have Topics enabled. Tap the group name → Edit (pencil icon) → enable "Topics" → tap the checkmark to save. Telegram will upgrade the group automatically.'
+          : `Chat must be a group with Topics enabled (got: "${data.result.type}"). Channels and private chats are not supported.`;
       return { ok: false, error: typeHint };
     }
     return {

@@ -563,14 +563,15 @@ describe("Session — Audio Transcription (STT)", () => {
 });
 
 describe("Session — Abort and Destroy", () => {
-  it("abortPrompt clears queue and cancels agent", async () => {
+  it("abortPrompt is a no-op when no turn is in-flight", async () => {
     const agent = mockAgentInstance();
     const session = createTestSession(agent);
     session.activate();
 
     await session.abortPrompt();
 
-    expect(agent.cancel).toHaveBeenCalled();
+    // No active turn context → agent.cancel should NOT be called
+    expect(agent.cancel).not.toHaveBeenCalled();
   });
 
   it("destroy calls agent destroy", async () => {

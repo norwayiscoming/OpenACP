@@ -212,7 +212,8 @@ describe('SessionManager', () => {
 
       await manager.cancelSession('sess-cancel')
 
-      expect(session.agentInstance.cancel).toHaveBeenCalled()
+      // No active turn context — agent.cancel is not called when cancelling an idle session
+      expect(session.agentInstance.cancel).not.toHaveBeenCalled()
       expect(session.status).toBe('cancelled')
     })
 

@@ -248,7 +248,8 @@ describe("SessionManager — Comprehensive Tests", () => {
       await mgr.cancelSession(session.id);
 
       expect(session.status).toBe("cancelled");
-      expect(session.agentInstance.cancel).toHaveBeenCalled();
+      // No active turn context — agent.cancel is not called when cancelling an idle session
+      expect(session.agentInstance.cancel).not.toHaveBeenCalled();
     });
 
     it("updates store record for session not in memory", async () => {

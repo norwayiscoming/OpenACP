@@ -121,7 +121,7 @@ export async function cmdPlugin(args: string[] = [], instanceRoot?: string): Pro
 
     case 'add':
     case 'install': {
-      const pkg = args[1]
+      const pkg = args.slice(1).find(a => !a.startsWith('-'))
       if (!pkg) {
         if (isJsonMode(args)) jsonError(ErrorCodes.MISSING_ARGUMENT, 'Package name is required')
         console.error('Error: missing package name. Usage: openacp plugin add <package>')
@@ -133,7 +133,7 @@ export async function cmdPlugin(args: string[] = [], instanceRoot?: string): Pro
 
     case 'remove':
     case 'uninstall': {
-      const pkg = args[1]
+      const pkg = args.slice(1).find(a => !a.startsWith('-'))
       if (!pkg) {
         if (isJsonMode(args)) jsonError(ErrorCodes.MISSING_ARGUMENT, 'Package name is required')
         console.error('Error: missing package name. Usage: openacp plugin remove <package> [--purge]')

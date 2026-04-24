@@ -4,13 +4,35 @@ import * as fs from 'node:fs'
 import * as os from 'node:os'
 import * as path from 'node:path'
 
-vi.mock('node:child_process', () => ({
-  execSync: vi.fn(),
-}))
+vi.mock('node:child_process', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:child_process')>()
+  return {
+    ...actual,
+    execSync: vi.fn(),
+    execFileSync: vi.fn(),
+    execFile: vi.fn((_cmd: unknown, _args: unknown, _opts: unknown, cb: (err: null, stdout: string, stderr: string) => void) => {
+      cb(null, '', '')
+      return {} as any
+    }),
+  }
+})
 
-// Mock the logger to prevent pino initialization errors
+// Mock the logger to prevent pino initialization errors in test environment
+const noopLogger = {
+  info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn(),
+  trace: vi.fn(), fatal: vi.fn(), child: () => noopLogger,
+}
 vi.mock('../../../core/utils/log.js', () => ({
   muteLogger: vi.fn(),
+  unmuteLogger: vi.fn(),
+  initLogger: vi.fn(),
+  setLogLevel: vi.fn(),
+  createChildLogger: vi.fn(() => noopLogger),
+  createSessionLogger: vi.fn(() => noopLogger),
+  closeSessionLogger: vi.fn(),
+  shutdownLogger: vi.fn(),
+  cleanupOldSessionLogs: vi.fn(),
+  log: noopLogger,
 }))
 
 describe('install --json', () => {

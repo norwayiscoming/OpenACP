@@ -195,14 +195,15 @@ describe("Session state machine", () => {
   });
 
   describe("abortPrompt()", () => {
-    it("clears queue and calls agentInstance.cancel()", async () => {
+    it("is a no-op when no turn is in-flight", async () => {
       const agent = createMockAgentInstance();
       const session = createSession({ agentInstance: agent });
       session.activate();
 
       await session.abortPrompt();
 
-      expect(agent.cancel).toHaveBeenCalled();
+      // No active turn context → agent.cancel should NOT be called
+      expect(agent.cancel).not.toHaveBeenCalled();
     });
 
     it("stays in active state", async () => {

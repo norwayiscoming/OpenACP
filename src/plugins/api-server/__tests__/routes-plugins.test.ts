@@ -68,6 +68,7 @@ function makeRegistry(entries: Record<string, Partial<PluginEntry>>): PluginRegi
         ...e,
       }
     },
+    load: async () => {},
     setEnabled: () => {},
     remove: () => {},
     save: async () => {},

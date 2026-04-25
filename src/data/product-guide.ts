@@ -314,7 +314,7 @@ Example: after starting a dev server on port 3000, run \`openacp tunnel add 3000
 
 ## Configuration
 
-Config file: \`~/.openacp/config.json\`
+Config file: \`<workspace>/.openacp/config.json\` (default: \`~/openacp-workspace/.openacp/config.json\`)
 
 ### Channels
 - **channels.telegram.botToken** — Your Telegram bot token
@@ -325,7 +325,7 @@ Config file: \`~/.openacp/config.json\`
 ### Agents
 - **defaultAgent** — Which agent to use by default
 - Agents are managed via \`/agents\` (Telegram) or \`openacp agents\` (CLI)
-- Installed agents are stored in \`~/.openacp/agents.json\`
+- Installed agent definitions are stored in \`<instance-root>/agents.json\`; downloaded agent binaries live in \`~/.openacp/agents/\`
 - Agent list is fetched from the ACP Registry CDN and cached locally (24h)
 
 ### Workspace
@@ -346,7 +346,7 @@ Config file: \`~/.openacp/config.json\`
 
 ### Logging
 - **logging.level** — Log level: silent, debug, info, warn, error, fatal (default: info)
-- **logging.logDir** — Log directory (default: \`~/.openacp/logs\`)
+- **logging.logDir** — Log directory (default: \`<instance-root>/logs\`)
 - **logging.maxFileSize** — Max log file size before rotation
 - **logging.maxFiles** — Max number of rotated log files
 - **logging.sessionLogRetentionDays** — Auto-delete old session logs (default: 30)
@@ -404,7 +404,7 @@ Override config with env vars:
 - If you see messages appearing in the Assistant topic instead of the session topic, try creating a new session
 
 ### Viewing logs
-- Session-specific logs: \`~/.openacp/logs/sessions/\`
+- Session-specific logs: \`<instance-root>/logs/sessions/\`
 - System logs: \`openacp logs\` to tail live
 - Set \`OPENACP_DEBUG=true\` for verbose output
 
@@ -412,16 +412,17 @@ Override config with env vars:
 
 ## Data & Storage
 
-All data is stored in \`~/.openacp/\`:
-- \`config.json\` — Configuration
-- \`agents.json\` — Installed agents (managed by AgentCatalog)
-- \`registry-cache.json\` — Cached ACP Registry data (refreshes every 24h)
-- \`agents/\` — Downloaded binary agents
-- \`sessions/\` — Session records and state
-- \`topics/\` — Topic-to-session mappings
-- \`logs/\` — System and session logs
-- \`plugins/\` — Installed adapter plugins
-- \`openacp.pid\` — Daemon PID file
+OpenACP stores per-instance state in \`<workspace>/.openacp/\` (the instance root), with shared downloads and caches under \`~/.openacp/\`:
+- \`<instance-root>/config.json\` — Configuration
+- \`<instance-root>/agents.json\` — Installed agent definitions (managed by AgentCatalog)
+- \`<instance-root>/sessions.json\` — Session records and state
+- \`<instance-root>/usage.json\` — Token and cost tracking
+- \`<instance-root>/history/\` — Per-session conversation history
+- \`<instance-root>/logs/\` — System and session logs
+- \`<instance-root>/plugins/\` — Installed adapter plugins and plugin data
+- \`<instance-root>/openacp.pid\` — Daemon PID file
+- \`~/.openacp/cache/registry-cache.json\` — Cached ACP Registry data (refreshes every 24h)
+- \`~/.openacp/agents/\` — Downloaded binary agents
 
 Session records auto-cleanup: 30 days (configurable via \`sessionStore.ttlDays\`).
 Session logs auto-cleanup: 30 days (configurable via \`logging.sessionLogRetentionDays\`).

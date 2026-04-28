@@ -91,4 +91,4 @@ On next startup, OpenACP will create fresh sessions. If a session record in `<in
 
 ### How do I report a bug or request a feature?
 
-Open an issue on the [OpenACP GitHub repository](https://github.com/OpenACP/OpenACP). Before filing, run `openacp doctor` and include its output. Enable debug logging with `OPENACP_DEBUG=true openacp start` and attach the relevant log section.
+Open an issue on the [OpenACP GitHub repository](https://github.com/Open-ACP/OpenACP). Before filing, run `openacp doctor` and include its output. Enable debug logging with `OPENACP_DEBUG=true openacp start` and attach the relevant log section.

@@ -25,7 +25,7 @@ import telegramPlugin from './telegram/index.js'
  * 1. **Service plugins** — security, file-service, context, speech, notifications.
  *    These provide services that infrastructure and adapter plugins depend on.
  * 2. **Infrastructure plugins** — tunnel (exposes the local server), api-server (HTTP + SSE).
- * 3. **Adapter plugins** — sse-adapter, telegram. Both depend on api-server, security, and
+ * 3. **Adapter plugins** — sse-adapter and telegram. Both depend on api-server, security, and
  *    notifications, so they must boot after those services are ready.
  */
 export const corePlugins = [

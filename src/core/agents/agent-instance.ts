@@ -72,6 +72,14 @@ function findPackageRoot(startDir: string): string {
   return startDir;
 }
 
+function commandForWindowsScript(filePath: string): { command: string; args: string[] } {
+  const ext = path.extname(filePath).toLowerCase();
+  if (process.platform === "win32" && (ext === ".cmd" || ext === ".bat")) {
+    return { command: process.env.ComSpec ?? "cmd.exe", args: ["/d", "/s", "/c", `"${filePath}"`] };
+  }
+  return { command: filePath, args: [] };
+}
+
 /**
  * Resolve an agent command name to a directly executable form.
  *
@@ -130,10 +138,51 @@ function resolveAgentCommand(cmd: string): { command: string; args: string[] } {
     }
   }
 
-  // 3. Try resolving from PATH using which
+  // 3. For npx/uvx: derive from the running Node's bin directory.
+  //    When openacp is installed globally (e.g. via Homebrew or nvm), npx lives
+  //    next to the same node binary that is executing this process.  The user's
+  //    shell PATH may not include that directory (common with nvm in non-interactive
+  //    shells), so resolve it explicitly. On Windows, prefer .cmd/.exe wrappers;
+  //    extensionless shim files cannot be spawned reliably by CreateProcess.
+  if (cmd === "npx" || cmd === "uvx") {
+    const seen = new Set<string>();
+    const candidates: string[] = [];
+    const addCandidate = (dir: string) => {
+      if (!seen.has(dir)) { seen.add(dir); candidates.push(dir); }
+    };
+
+    addCandidate(path.dirname(process.execPath));
+    try { addCandidate(path.dirname(fs.realpathSync(process.execPath))); } catch { /* ignore */ }
+    addCandidate("/opt/homebrew/bin");
+    addCandidate("/usr/local/bin");
+
+    const executableNames = process.platform === "win32" ? [`${cmd}.cmd`, `${cmd}.exe`, cmd] : [cmd];
+    for (const dir of candidates) {
+      if (cmd === "npx") {
+        const npxCli = path.join(dir, "node_modules", "npm", "bin", "npx-cli.js");
+        if (fs.existsSync(npxCli)) {
+          log.info({ cmd, resolved: npxCli }, "Resolved npx CLI from Node installation");
+          return { command: process.execPath, args: [npxCli] };
+        }
+      }
+      for (const name of executableNames) {
+        const candidate = path.join(dir, name);
+        if (fs.existsSync(candidate)) {
+          const resolved = commandForWindowsScript(candidate);
+          log.info({ cmd, resolved: candidate }, "Resolved package runner from fallback search");
+          return resolved;
+        }
+      }
+    }
+  }
+
+  // 4. Try resolving from PATH using which
   try {
     const fullPath = execFileSync("which", [cmd], { encoding: "utf-8" }).trim();
     if (fullPath) {
+      if (process.platform === "win32" && (cmd === "npx" || cmd === "uvx") && !path.extname(fullPath)) {
+        throw new Error("Skipping extensionless Windows package runner");
+      }
       try {
         const content = fs.readFileSync(fullPath, "utf-8");
         if (content.startsWith("#!/usr/bin/env node")) {
@@ -143,39 +192,10 @@ function resolveAgentCommand(cmd: string): { command: string; args: string[] } {
         // Binary file (not readable as utf-8) — use full path directly
       }
       // Found via PATH but not a node script — use the resolved full path
-      return { command: fullPath, args: [] };
+      return commandForWindowsScript(fullPath);
     }
   } catch {
     // which failed — command not on PATH
-  }
-
-  // 4. For npx/uvx: derive from the running Node's bin directory.
-  //    When openacp is installed globally (e.g. via Homebrew or nvm), npx lives
-  //    next to the same node binary that is executing this process.  The user's
-  //    shell PATH may not include that directory (common with nvm in non-interactive
-  //    shells), so resolve it explicitly.
-  if (cmd === "npx" || cmd === "uvx") {
-    // Collect candidate directories: process.execPath, its realpath, and well-known locations
-    const seen = new Set<string>();
-    const candidates: string[] = [];
-    const addCandidate = (dir: string) => {
-      if (!seen.has(dir)) { seen.add(dir); candidates.push(dir); }
-    };
-
-    addCandidate(path.dirname(process.execPath));
-    try { addCandidate(path.dirname(fs.realpathSync(process.execPath))); } catch { /* ignore */ }
-    // Well-known Node.js install locations on macOS/Linux
-    addCandidate("/opt/homebrew/bin");
-    addCandidate("/usr/local/bin");
-
-    for (const dir of candidates) {
-      const candidate = path.join(dir, cmd);
-      if (fs.existsSync(candidate)) {
-        log.info({ cmd, resolved: candidate }, "Resolved package runner from fallback search");
-        return { command: candidate, args: [] };
-      }
-    }
-    log.warn({ cmd, execPath: process.execPath, candidates }, "Could not find package runner");
   }
 
   // 5. Fallback: use command as-is

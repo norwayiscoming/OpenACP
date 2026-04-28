@@ -159,10 +159,18 @@ function resolveAgentCommand(cmd: string): { command: string; args: string[] } {
     const executableNames = process.platform === "win32" ? [`${cmd}.cmd`, `${cmd}.exe`, cmd] : [cmd];
     for (const dir of candidates) {
       if (cmd === "npx") {
-        const npxCli = path.join(dir, "node_modules", "npm", "bin", "npx-cli.js");
-        if (fs.existsSync(npxCli)) {
-          log.info({ cmd, resolved: npxCli }, "Resolved npx CLI from Node installation");
-          return { command: process.execPath, args: [npxCli] };
+        // npm layout differs by platform:
+        //   Windows (nvm-windows): {bindir}/node_modules/npm/bin/npx-cli.js
+        //   macOS/Linux:           {noderoot}/lib/node_modules/npm/bin/npx-cli.js  (bindir is {noderoot}/bin)
+        const npxCliCandidates = [
+          path.join(dir, "node_modules", "npm", "bin", "npx-cli.js"),
+          path.join(path.dirname(dir), "lib", "node_modules", "npm", "bin", "npx-cli.js"),
+        ];
+        for (const npxCli of npxCliCandidates) {
+          if (fs.existsSync(npxCli)) {
+            log.info({ cmd, resolved: npxCli }, "Resolved npx CLI from Node installation");
+            return { command: process.execPath, args: [npxCli] };
+          }
         }
       }
       for (const name of executableNames) {
@@ -174,15 +182,17 @@ function resolveAgentCommand(cmd: string): { command: string; args: string[] } {
         }
       }
     }
+    log.warn({ cmd, execPath: process.execPath, candidates }, "Could not find package runner in candidate directories");
   }
 
   // 4. Try resolving from PATH using which
   try {
     const fullPath = execFileSync("which", [cmd], { encoding: "utf-8" }).trim();
-    if (fullPath) {
-      if (process.platform === "win32" && (cmd === "npx" || cmd === "uvx") && !path.extname(fullPath)) {
-        throw new Error("Skipping extensionless Windows package runner");
-      }
+    // On Windows, which may return an extensionless shim that CreateProcess cannot spawn directly.
+    // Skip it and let the fallback handle it via commandForWindowsScript.
+    const isUnspawnableWindowsShim =
+      process.platform === "win32" && (cmd === "npx" || cmd === "uvx") && !path.extname(fullPath);
+    if (fullPath && !isUnspawnableWindowsShim) {
       try {
         const content = fs.readFileSync(fullPath, "utf-8");
         if (content.startsWith("#!/usr/bin/env node")) {

@@ -309,7 +309,6 @@ export async function runSetup(
         });
       }
 
-
       // Handle official adapter selections (Discord, Slack, etc.)
       if (channelId.startsWith('official:')) {
         const npmPackage = channelId.slice('official:'.length);

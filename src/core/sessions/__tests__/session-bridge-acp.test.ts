@@ -78,13 +78,12 @@ describe('SessionBridge ACP events', () => {
     })
   })
 
-  it('session_info_update without title sends message but does not call setName', async () => {
+  it('session_info_update without title silently updates state without notifying adapter', async () => {
     const event: AgentEvent = { type: 'session_info_update', updatedAt: '2026-03-26' }
     session.emit('agent_event', event)
-    await vi.waitFor(() => {
-      expect(session.setName).not.toHaveBeenCalled()
-      expect(adapter.sendMessage).toHaveBeenCalled()
-    })
+    await new Promise(resolve => setTimeout(resolve, 50))
+    expect(session.setName).not.toHaveBeenCalled()
+    expect(adapter.sendMessage).not.toHaveBeenCalled()
   })
 
   it('config_option_update calls updateConfigOptions, persists ACP state, and sends message', async () => {

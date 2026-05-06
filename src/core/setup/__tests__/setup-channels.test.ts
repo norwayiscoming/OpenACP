@@ -76,4 +76,5 @@ describe('getChannelStatuses', () => {
     const tg = statuses.find(s => s.id === 'telegram')
     expect(tg?.configured).toBe(true)
   })
+
 })

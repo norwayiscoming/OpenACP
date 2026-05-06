@@ -39,7 +39,6 @@ src/
     setup/            — First-run setup wizard
   plugins/            — All plugins (adapters + services)
     telegram/         — Telegram adapter (grammY)
-    slack/            — Slack adapter (@slack/bolt)
     speech/           — TTS/STT (Edge TTS, Groq STT)
     tunnel/           — Port forwarding (Cloudflare, ngrok, Bore, Tailscale)
     security/         — Access control, rate limiting
@@ -227,3 +226,7 @@ Users who installed and ran older versions will have config, data, and storage i
 - **CLI flags & commands**: Do not remove or rename existing commands/flags. If deprecating, keep them working and log a warning.
 - **Plugin API**: When changing interfaces that plugins use, must maintain backward compat or bump major version.
 - **General rule**: New code must work with old data/config without requiring user action. If migration is needed, run it automatically on startup.
+
+## Local OpenACP Workspace
+
+The `.openacp/` directory contains a local OpenACP workspace with secrets (bot tokens, API keys). Do not read, commit, or reference files inside it.

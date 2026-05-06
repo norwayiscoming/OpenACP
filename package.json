@@ -1,6 +1,6 @@
 {
   "name": "@openacp/cli",
-  "version": "2026.424.2",
+  "version": "2026.506.1",
   "private": true,
   "license": "MIT",
   "type": "module",
@@ -18,7 +18,7 @@
     "openacp": "dist/cli.js"
   },
   "scripts": {
-    "build": "tsc && mkdir -p dist/data && cp src/data/registry-snapshot.json dist/data/",
+    "build": "tsx scripts/build.ts",
     "build:publish": "tsx scripts/build-publish.ts",
     "dev": "./scripts/dev-loop.sh",
     "dev:loop": "./scripts/dev-loop.sh",

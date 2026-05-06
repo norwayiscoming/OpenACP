@@ -11,7 +11,7 @@ import { CHANNEL_META } from "./types.js";
 import { guardCancel, ok, c } from "./helpers.js";
 
 // Maps logical channel ID → plugin name used for settings storage and dynamic import.
-// Telegram is built-in so it uses a direct import path instead of this map.
+// Telegram is built-in, so it uses a direct import path instead of this map.
 const CHANNEL_PLUGIN_NAME: Record<string, string> = {
   discord: "@openacp/discord-adapter",
 };

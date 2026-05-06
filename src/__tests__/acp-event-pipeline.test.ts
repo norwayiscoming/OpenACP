@@ -88,12 +88,11 @@ describe('ACP Event Pipeline Integration', () => {
       })
     })
 
-    it('agent session_info_update without title → adapter message only', async () => {
+    it('agent session_info_update without title → no adapter message', async () => {
       session.emit('agent_event', { type: 'session_info_update', updatedAt: '2026-03-26' } as AgentEvent)
-      await vi.waitFor(() => {
-        expect(session.setName).not.toHaveBeenCalled()
-        expect(adapter.sendMessage).toHaveBeenCalled()
-      })
+      await new Promise(resolve => setTimeout(resolve, 50))
+      expect(session.setName).not.toHaveBeenCalled()
+      expect(adapter.sendMessage).not.toHaveBeenCalled()
     })
   })
 

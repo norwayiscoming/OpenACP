@@ -387,9 +387,10 @@ export class SessionBridge {
         case "session_info_update":
           if (event.title) {
             this.session.setName(event.title);
+            outgoing = this.deps.messageTransformer.transform(event);
+            this.sendMessage(this.session.id, outgoing);
           }
-          outgoing = this.deps.messageTransformer.transform(event);
-          this.sendMessage(this.session.id, outgoing);
+          // title-less updates (e.g. updatedAt-only) carry no user-visible content
           break;
 
         case "config_option_update":

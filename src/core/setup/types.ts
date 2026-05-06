@@ -41,7 +41,7 @@ export const ONBOARD_SECTION_OPTIONS: Array<{
   { value: "integrations", label: "Integrations", hint: "Claude CLI session transfer" },
 ];
 
-/** Display metadata for each built-in channel type. */
+/** Display metadata for each core-managed channel type. */
 export const CHANNEL_META: Record<string, { label: string; method: string }> = {
   sse: { label: "Desktop App", method: "SSE" },
   telegram: { label: "Telegram", method: "Bot API" },

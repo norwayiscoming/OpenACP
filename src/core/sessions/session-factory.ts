@@ -297,6 +297,24 @@ export class SessionFactory {
             session.setAgentCapabilities(record.acpState.agentCapabilities);
           }
         }
+
+        // Re-apply persisted configOptions that differ from what the live agent reports.
+        // Agents spawn with default values; without this step the persisted user preference
+        // (e.g. mode=bypassPermissions) silently diverges from the agent's actual state.
+        if (record.acpState?.configOptions) {
+          for (const persisted of record.acpState.configOptions) {
+            const live = session.getConfigOption(persisted.id);
+            if (live && live.currentValue !== persisted.currentValue) {
+              try {
+                await session.setConfigOption(persisted.id, {
+                  type: persisted.type,
+                  value: persisted.currentValue as string & boolean,
+                });
+              } catch { /* best-effort — don't fail resume if one option sync fails */ }
+            }
+          }
+        }
+
         log.info({ sessionId }, "Lazy resume by ID successful");
         return session;
       } catch (err) {
@@ -391,6 +409,23 @@ export class SessionFactory {
           }
           if (record.acpState.agentCapabilities && !session.agentCapabilities) {
             session.setAgentCapabilities(record.acpState.agentCapabilities);
+          }
+        }
+
+        // Re-apply persisted configOptions that differ from what the live agent reports.
+        // Agents spawn with default values; without this step the persisted user preference
+        // (e.g. mode=bypassPermissions) silently diverges from the agent's actual state.
+        if (record.acpState?.configOptions) {
+          for (const persisted of record.acpState.configOptions) {
+            const live = session.getConfigOption(persisted.id);
+            if (live && live.currentValue !== persisted.currentValue) {
+              try {
+                await session.setConfigOption(persisted.id, {
+                  type: persisted.type,
+                  value: persisted.currentValue as string & boolean,
+                });
+              } catch { /* best-effort — don't fail resume if one option sync fails */ }
+            }
           }
         }
 
